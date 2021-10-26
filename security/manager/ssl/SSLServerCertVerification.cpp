@@ -806,8 +806,7 @@ void GatherRootCATelemetry(const UniqueCERTCertList& certList) {
   if (!rootCert) {
     return;
   }
-  Span<uint8_t> certSpan =
-      MakeSpan(rootCert->derCert.data, rootCert->derCert.len);
+  Span<uint8_t> certSpan = {rootCert->derCert.data, rootCert->derCert.len};
   AccumulateTelemetryForRootCA(Telemetry::CERT_VALIDATION_SUCCESS_BY_CA,
                                certSpan);
 }
@@ -926,8 +925,7 @@ void GatherCertificateTransparencyTelemetry(
   }
 
   // Report CT Policy compliance by CA.
-  Span<uint8_t> certSpan =
-      MakeSpan(rootCert->derCert.data, rootCert->derCert.len);
+  Span<uint8_t> certSpan = {rootCert->derCert.data, rootCert->derCert.len};
   switch (info.policyCompliance) {
     case ct::CTPolicyCompliance::Compliant:
       AccumulateTelemetryForRootCA(
@@ -1018,6 +1016,10 @@ static void CollectCertTelemetry(
     case CRLiteLookupResult::LibraryFailure:
       Telemetry::AccumulateCategorical(
           Telemetry::LABELS_CRLITE_RESULT::LibraryFailure);
+      break;
+    case CRLiteLookupResult::CertRevokedByStash:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::CertRevokedByStash);
       break;
     case CRLiteLookupResult::NeverChecked:
       break;

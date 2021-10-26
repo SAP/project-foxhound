@@ -10,9 +10,9 @@ import org.mozilla.gecko.util.GeckoBundle;
 
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.annotation.AnyThread;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.AnyThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -206,7 +206,7 @@ public final class GeckoSessionSettings implements Parcelable {
     private static final String LOGTAG = "GeckoSessionSettings";
     private static final boolean DEBUG = false;
 
-    // This needs to match nsIDocShell.idl
+    // This needs to match GeckoViewSettings.jsm
     public static final int DISPLAY_MODE_BROWSER = 0;
     public static final int DISPLAY_MODE_MINIMAL_UI = 1;
     public static final int DISPLAY_MODE_STANDALONE = 2;

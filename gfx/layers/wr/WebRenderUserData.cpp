@@ -231,9 +231,9 @@ already_AddRefed<ImageClient> WebRenderImageData::GetImageClient() {
 void WebRenderImageData::CreateAsyncImageWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder, ImageContainer* aContainer,
     const StackingContextHelper& aSc, const LayoutDeviceRect& aBounds,
-    const LayoutDeviceRect& aSCBounds, const gfx::Matrix4x4& aSCTransform,
-    const gfx::MaybeIntSize& aScaleToSize, const wr::ImageRendering& aFilter,
-    const wr::MixBlendMode& aMixBlendMode, bool aIsBackfaceVisible) {
+    const LayoutDeviceRect& aSCBounds, VideoInfo::Rotation aRotation,
+    const wr::ImageRendering& aFilter, const wr::MixBlendMode& aMixBlendMode,
+    bool aIsBackfaceVisible) {
   MOZ_ASSERT(aContainer->IsAsync());
 
   if (mPipelineId.isSome() && mContainer != aContainer) {
@@ -266,8 +266,7 @@ void WebRenderImageData::CreateAsyncImageWebRenderCommands(
                       /*ignoreMissingPipelines*/ false);
 
   WrBridge()->AddWebRenderParentCommand(OpUpdateAsyncImagePipeline(
-      mPipelineId.value(), aSCBounds, aSCTransform, aScaleToSize, aFilter,
-      aMixBlendMode, LayoutDeviceSize()));
+      mPipelineId.value(), aSCBounds, aRotation, aFilter, aMixBlendMode));
 }
 
 void WebRenderImageData::CreateImageClientIfNeeded() {

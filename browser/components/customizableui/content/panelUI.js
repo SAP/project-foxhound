@@ -38,11 +38,9 @@ const PanelUI = {
    */
   get kElements() {
     return {
-      mainView: "appMenu-mainView",
       multiView: "appMenu-multiView",
       menuButton: "PanelUI-menu-button",
       panel: "appMenu-popup",
-      addonNotificationContainer: "appMenu-addon-banners",
       overflowFixedList: "widget-overflow-fixed-list",
       overflowPanel: "widget-overflow",
       navbar: "nav-bar",
@@ -960,6 +958,24 @@ const PanelUI = {
     return this._notificationPanel;
   },
 
+  get mainView() {
+    if (!this._mainView) {
+      this._mainView = PanelMultiView.getViewNode(document, "appMenu-mainView");
+    }
+    return this._mainView;
+  },
+
+  get addonNotificationContainer() {
+    if (!this._addonNotificationContainer) {
+      this._addonNotificationContainer = PanelMultiView.getViewNode(
+        document,
+        "appMenu-addon-banners"
+      );
+    }
+
+    return this._addonNotificationContainer;
+  },
+
   _formatDescriptionMessage(n) {
     let text = {};
     let array = n.options.message.split("<>");
@@ -1085,8 +1101,27 @@ const PanelUI = {
   },
 
   _addedShortcuts: false,
+  _formatPrintButtonShortcuts() {
+    let printButton = this.mainView.querySelector("#appMenu-print-button");
+    if (
+      !Services.prefs.getBoolPref("print.tab_modal.enabled") &&
+      AppConstants.platform !== "macosx"
+    ) {
+      printButton.removeAttribute("shortcut");
+    } else if (!printButton.hasAttribute("shortcut")) {
+      printButton.setAttribute(
+        "shortcut",
+        ShortcutUtils.prettifyShortcut(
+          document.getElementById(printButton.getAttribute("key"))
+        )
+      );
+    }
+  },
   _ensureShortcutsShown(view = this.mainView) {
     if (view.hasAttribute("added-shortcuts")) {
+      // The print button shorcut visibility can change depending on the pref value,
+      // so we need to check this each time, even if we've already added shortcuts.
+      this._formatPrintButtonShortcuts();
       return;
     }
     view.setAttribute("added-shortcuts", "true");
@@ -1098,6 +1133,7 @@ const PanelUI = {
       }
       button.setAttribute("shortcut", ShortcutUtils.prettifyShortcut(key));
     }
+    this._formatPrintButtonShortcuts();
   },
 };
 

@@ -20,11 +20,7 @@ add_task(async function setup() {
 
   Services.telemetry.clearEvents();
   registerCleanupFunction(() => {
-    const { ExtensionsUI } = ChromeUtils.import(
-      "resource:///modules/ExtensionsUI.jsm"
-    );
-    info("Cleanup any pending notification before exiting the test");
-    ExtensionsUI.pendingNotifications.delete(window);
+    cleanupPendingNotifications();
   });
 });
 
@@ -72,12 +68,12 @@ add_task(async function testChangeAutoUpdates() {
   ok(inputs.checkForUpdate.hidden, "Update check is hidden");
 
   inputs.on.click();
-  is(addon.applyBackgroundUpdates, 2, "Updates are now enabled");
+  is(addon.applyBackgroundUpdates, "2", "Updates are now enabled");
   ok(inputs.on.checked, "The on option is selected");
   ok(inputs.checkForUpdate.hidden, "Update check is hidden");
 
   inputs.off.click();
-  is(addon.applyBackgroundUpdates, 0, "Updates are now disabled");
+  is(addon.applyBackgroundUpdates, "0", "Updates are now disabled");
   ok(inputs.off.checked, "The off option is selected");
   ok(!inputs.checkForUpdate.hidden, "Update check is visible");
 
@@ -101,18 +97,18 @@ add_task(async function testChangeAutoUpdates() {
   await updated;
 
   // Updates are still the same.
-  is(addon.applyBackgroundUpdates, 0, "Updates are now disabled");
+  is(addon.applyBackgroundUpdates, "0", "Updates are now disabled");
   ok(inputs.off.checked, "The off option is selected");
   ok(!inputs.checkForUpdate.hidden, "Update check is visible");
 
   // Check default.
   inputs.default.click();
-  is(addon.applyBackgroundUpdates, 1, "Default is set");
+  is(addon.applyBackgroundUpdates, "1", "Default is set");
   ok(inputs.default.checked, "The default option is selected");
   ok(!inputs.checkForUpdate.hidden, "Update check is visible");
 
   inputs.on.click();
-  is(addon.applyBackgroundUpdates, 2, "Updates are now enabled");
+  is(addon.applyBackgroundUpdates, "2", "Updates are now enabled");
   ok(inputs.on.checked, "The on option is selected");
   ok(inputs.checkForUpdate.hidden, "Update check is hidden");
 
@@ -171,35 +167,6 @@ add_task(async function testChangeAutoUpdates() {
     ],
   ]);
 });
-
-function promisePermissionPrompt(addonId) {
-  return BrowserUtils.promiseObserved(
-    "webextension-permission-prompt",
-    subject => {
-      const { info } = subject.wrappedJSObject || {};
-      return !addonId || (info.addon && info.addon.id === addonId);
-    }
-  ).then(({ subject }) => {
-    return subject.wrappedJSObject.info;
-  });
-}
-
-async function handlePermissionPrompt({ addonId, reject = false } = {}) {
-  const info = await promisePermissionPrompt(addonId);
-  // Assert that info.addon and info.icon are defined as expected.
-  is(
-    info.addon && info.addon.id,
-    addonId,
-    "Got the AddonWrapper in the permission prompt info"
-  );
-  ok(info.icon != null, "Got an addon icon in the permission prompt info");
-
-  if (reject) {
-    info.reject();
-  } else {
-    info.resolve();
-  }
-}
 
 async function setupExtensionWithUpdate(
   id,

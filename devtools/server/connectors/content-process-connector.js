@@ -32,13 +32,17 @@ function connectToContentProcess(connection, mm, onDestroy) {
     mm.addMessageListener("debug:content-process-actor", function listener(
       msg
     ) {
+      // Ignore actors being created by a Watcher actor,
+      // they will be handled by devtools/server/watcher/target-helpers/process.js
+      if (msg.watcherActorID) {
+        return;
+      }
       mm.removeMessageListener("debug:content-process-actor", listener);
 
       // Pipe Debugger message from/to parent/child via the message manager
       childTransport = new ChildDebuggerTransport(mm, prefix);
       childTransport.hooks = {
         onPacket: connection.send.bind(connection),
-        onClosed() {},
       };
       childTransport.ready();
 
@@ -98,8 +102,10 @@ function connectToContentProcess(connection, mm, onDestroy) {
     const onMessageManagerClose = DevToolsUtils.makeInfallible(
       (subject, topic, data) => {
         if (subject == mm) {
-          onClose();
+          // Send the "tabDetached" event before closing the connection which
+          // will destroy fronts on the client.
           connection.send({ from: actor.actor, type: "tabDetached" });
+          onClose();
         }
       }
     );

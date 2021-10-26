@@ -118,8 +118,6 @@ var gViewSourceUtils = {
     }
 
     if (browser) {
-      viewSourceBrowser.sameProcessAsFrameLoader = browser.frameLoader;
-
       // If we're dealing with a remote browser, then the browser
       // for view source needs to be remote as well.
       if (viewSourceBrowser.remoteType != browser.remoteType) {
@@ -220,6 +218,7 @@ var gViewSourceUtils = {
           characterSet: browser.characterSet,
           contentType: browser.documentContentType,
           title: browser.contentTitle,
+          cookieJarSettings: browser.cookieJarSettings,
         };
         data.isPrivate = PrivateBrowsingUtils.isBrowserPrivate(browser);
       }
@@ -238,6 +237,7 @@ var gViewSourceUtils = {
 
         var path;
         var contentType = data.doc ? data.doc.contentType : null;
+        var cookieJarSettings = data.doc ? data.doc.cookieJarSettings : null;
         if (uri.scheme == "file") {
           // it's a local file; we can open it directly
           path = uri.QueryInterface(Ci.nsIFileURL).file.path;
@@ -273,6 +273,7 @@ var gViewSourceUtils = {
             principal,
             null,
             null,
+            cookieJarSettings,
             null,
             null,
             file,

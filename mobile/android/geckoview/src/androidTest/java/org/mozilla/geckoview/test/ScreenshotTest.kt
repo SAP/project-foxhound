@@ -27,6 +27,7 @@ import kotlin.math.max
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assume.assumeThat
 import java.lang.IllegalStateException
 import java.lang.NullPointerException
 
@@ -151,6 +152,34 @@ class ScreenshotTest : BaseSessionTest() {
             it.surfaceDestroyed()
 
             sessionRule.waitForResult(result)
+        }
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun capturePixelsWhileSessionDeactivated() {
+        // TODO: Bug 1673955
+        assumeThat(sessionRule.env.isFission, equalTo(false))
+        val screenshotFile = getComparisonScreenshot(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+        sessionRule.session.loadTestPath(COLORS_HTML_PATH)
+        sessionRule.waitUntilCalled(object : Callbacks.ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onFirstContentfulPaint(session: GeckoSession) {
+            }
+        })
+
+        sessionRule.session.setActive(false)
+
+        // Deactivating the session should trigger a flush state change
+        sessionRule.waitUntilCalled(object : Callbacks.ProgressDelegate {
+            @AssertCalled(count = 1)
+            override fun onSessionStateChange(session: GeckoSession,
+                                              sessionState: GeckoSession.SessionState) {}
+        })
+
+        sessionRule.display?.let {
+            assertScreenshotResult(it.capturePixels(), screenshotFile)
         }
     }
 

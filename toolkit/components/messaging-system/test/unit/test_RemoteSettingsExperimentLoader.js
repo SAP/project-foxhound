@@ -17,6 +17,7 @@ const { RemoteSettingsExperimentLoader } = ChromeUtils.import(
 
 const ENABLED_PREF = "messaging-system.rsexperimentloader.enabled";
 const RUN_INTERVAL_PREF = "app.normandy.run_interval_seconds";
+const STUDIES_OPT_OUT_PREF = "app.shield.optoutstudies.enabled";
 
 add_task(async function test_real_exp_manager() {
   equal(
@@ -69,16 +70,43 @@ add_task(async function test_init() {
   ok(loader.updateRecipes.calledOnce, "should call .updateRecipes");
 });
 
+add_task(async function test_init_with_opt_in() {
+  const loader = ExperimentFakes.rsLoader();
+  sinon.stub(loader, "setTimer");
+  sinon.stub(loader, "updateRecipes").resolves();
+
+  Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, false);
+  await loader.init();
+  equal(
+    loader.setTimer.callCount,
+    0,
+    `should not initialize if ${STUDIES_OPT_OUT_PREF} pref is false`
+  );
+
+  Services.prefs.setBoolPref(ENABLED_PREF, false);
+  await loader.init();
+  equal(
+    loader.setTimer.callCount,
+    0,
+    `should not initialize if ${ENABLED_PREF} pref is false`
+  );
+
+  Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, true);
+  Services.prefs.setBoolPref(ENABLED_PREF, true);
+  await loader.init();
+  ok(loader.setTimer.calledOnce, "should call .setTimer");
+  ok(loader.updateRecipes.calledOnce, "should call .updateRecipes");
+});
+
 add_task(async function test_updateRecipes() {
   const loader = ExperimentFakes.rsLoader();
-  const PASS_FILTER_RECIPE = {
+
+  const PASS_FILTER_RECIPE = ExperimentFakes.recipe("foo", {
     targeting: "true",
-    arguments: ExperimentFakes.recipe("foo"),
-  };
-  const FAIL_FILTER_RECIPE = {
+  });
+  const FAIL_FILTER_RECIPE = ExperimentFakes.recipe("foo", {
     targeting: "false",
-    arguments: ExperimentFakes.recipe("foo"),
-  };
+  });
   sinon.stub(loader, "setTimer");
   sinon.spy(loader, "updateRecipes");
 
@@ -97,20 +125,16 @@ add_task(async function test_updateRecipes() {
     "should call .onRecipe only for recipes that pass"
   );
   ok(
-    loader.manager.onRecipe.calledWith(
-      PASS_FILTER_RECIPE.arguments,
-      "rs-loader"
-    ),
+    loader.manager.onRecipe.calledWith(PASS_FILTER_RECIPE, "rs-loader"),
     "should call .onRecipe with argument data"
   );
 });
 
 add_task(async function test_updateRecipes_forFirstStartup() {
   const loader = ExperimentFakes.rsLoader();
-  const PASS_FILTER_RECIPE = {
+  const PASS_FILTER_RECIPE = ExperimentFakes.recipe("foo", {
     targeting: "isFirstStartup",
-    arguments: ExperimentFakes.recipe("foo"),
-  };
+  });
   sinon.stub(loader.remoteSettingsClient, "get").resolves([PASS_FILTER_RECIPE]);
   sinon.stub(loader.manager, "onRecipe").resolves();
   sinon.stub(loader.manager, "onFinalize");
@@ -126,10 +150,9 @@ add_task(async function test_updateRecipes_forFirstStartup() {
 
 add_task(async function test_updateRecipes_forNoneFirstStartup() {
   const loader = ExperimentFakes.rsLoader();
-  const PASS_FILTER_RECIPE = {
+  const PASS_FILTER_RECIPE = ExperimentFakes.recipe("foo", {
     targeting: "isFirstStartup",
-    arguments: ExperimentFakes.recipe("foo"),
-  };
+  });
   sinon.stub(loader.remoteSettingsClient, "get").resolves([PASS_FILTER_RECIPE]);
   sinon.stub(loader.manager, "onRecipe").resolves();
   sinon.stub(loader.manager, "onFinalize");
@@ -159,5 +182,28 @@ add_task(async function test_checkTargeting() {
     await loader.checkTargeting({ targeting: "aPropertyThatDoesNotExist" }),
     false,
     "should return false for falsey expression"
+  );
+});
+
+add_task(async function test_checkExperimentSelfReference() {
+  const loader = ExperimentFakes.rsLoader();
+  const PASS_FILTER_RECIPE = ExperimentFakes.recipe("foo", {
+    targeting:
+      "experiment.slug == 'foo' && experiment.branches[0].slug == 'control'",
+  });
+
+  const FAIL_FILTER_RECIPE = ExperimentFakes.recipe("foo", {
+    targeting: "experiment.slug == 'bar'",
+  });
+
+  equal(
+    await loader.checkTargeting(PASS_FILTER_RECIPE),
+    true,
+    "Should return true for matching on slug name and branch"
+  );
+  equal(
+    await loader.checkTargeting(FAIL_FILTER_RECIPE),
+    false,
+    "Should fail targeting"
   );
 });

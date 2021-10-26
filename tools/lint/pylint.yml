@@ -8,7 +8,9 @@ pylint:
         - accessible/
         - docs/
         - dom/base/
+        - dom/websocket/
         - mozglue/
+        - toolkit/components/telemetry/
     exclude:
         - dom/bindings/Codegen.py
         - dom/bindings/Configuration.py

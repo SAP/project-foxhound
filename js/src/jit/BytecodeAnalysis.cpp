@@ -7,6 +7,7 @@
 #include "jit/BytecodeAnalysis.h"
 
 #include "jit/JitSpewer.h"
+#include "jit/WarpBuilder.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"
@@ -72,6 +73,10 @@ bool BytecodeAnalysis::init(TempAllocator& alloc) {
 
     JitSpew(JitSpew_BaselineOp, "Analyzing op @ %u (end=%u): %s",
             unsigned(offset), unsigned(script_->length()), CodeName(op));
+
+    if (JitOptions.warpBuilder) {
+      checkWarpSupport(op);
+    }
 
     // If this bytecode info has not yet been initialized, it's not reachable.
     if (!infos_[offset].initialized) {
@@ -221,6 +226,18 @@ bool BytecodeAnalysis::init(TempAllocator& alloc) {
   return true;
 }
 
+void BytecodeAnalysis::checkWarpSupport(JSOp op) {
+  switch (op) {
+#define DEF_CASE(OP) case JSOp::OP:
+    WARP_UNSUPPORTED_OPCODE_LIST(DEF_CASE)
+#undef DEF_CASE
+    script_->disableIon();
+    break;
+    default:
+      break;
+  }
+}
+
 IonBytecodeInfo js::jit::AnalyzeBytecodeForIon(JSContext* cx,
                                                JSScript* script) {
   IonBytecodeInfo result;
@@ -231,10 +248,10 @@ IonBytecodeInfo js::jit::AnalyzeBytecodeForIon(JSContext* cx,
     result.usesEnvironmentChain = true;
   }
 
-  jsbytecode const* pcEnd = script->codeEnd();
-  for (jsbytecode* pc = script->code(); pc < pcEnd; pc = GetNextPc(pc)) {
-    JSOp op = JSOp(*pc);
-    switch (op) {
+  AllBytecodesIterable iterator(script);
+
+  for (const BytecodeLocation& location : iterator) {
+    switch (location.getOp()) {
       case JSOp::SetArg:
         result.modifiesArguments = true;
         break;

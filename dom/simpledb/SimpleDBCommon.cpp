@@ -6,24 +6,8 @@
 
 #include "SimpleDBCommon.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 const char* kPrefSimpleDBEnabled = "dom.simpleDB.enabled";
 
-namespace simpledb {
-
-void HandleError(const nsLiteralCString& aExpr,
-                 const nsLiteralCString& aSourceFile, int32_t aSourceLine) {
-#ifdef DEBUG
-  NS_DebugBreak(NS_DEBUG_WARNING, "Error", aExpr.get(), aSourceFile.get(),
-                aSourceLine);
-#endif
-
-  // TODO: Report to browser console
-}
-
-}  // namespace simpledb
-
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

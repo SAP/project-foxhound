@@ -190,8 +190,8 @@ add_task(async function pinTabFromPanel() {
     Assert.ok(gBrowser.selectedTab.pinned, "Tab was pinned");
 
     // Open the panel and click Unpin Tab.
-    Assert.equal(pinTabButton.label, "Unpin Tab");
     await promisePageActionPanelOpen();
+    Assert.equal(pinTabButton.label, "Unpin Tab");
 
     hiddenPromise = promisePageActionPanelHidden();
     EventUtils.synthesizeMouseAtCenter(pinTabButton, {});
@@ -508,6 +508,11 @@ add_task(async function sendToDevice_syncNotReady_configured() {
             label: "Send to All Devices",
           },
         });
+        expectedItems.push(null, {
+          attrs: {
+            label: "Manage Devices...",
+          },
+        });
         checkSendToDeviceItems(expectedItems);
       } else {
         ok(false, "This should never happen");
@@ -739,6 +744,11 @@ add_task(async function sendToDevice_devices() {
           label: "Send to All Devices",
         },
       },
+      {
+        attrs: {
+          label: "Manage Devices...",
+        },
+      },
     ];
     checkSendToDeviceItems(expectedItems);
 
@@ -877,10 +887,6 @@ add_task(async function sendToDevice_title() {
         Assert.ok(!sendToDeviceButton.disabled);
 
         Assert.equal(sendToDeviceButton.label, "Send Tab to Device");
-        Assert.equal(
-          PageActions.actionForID("sendToDevice").getTitle(window),
-          "Send Tab to Device"
-        );
 
         // Hide the panel.
         let hiddenPromise = promisePageActionPanelHidden();
@@ -898,10 +904,6 @@ add_task(async function sendToDevice_title() {
         await promisePageActionPanelOpen();
         Assert.ok(!sendToDeviceButton.disabled);
         Assert.equal(sendToDeviceButton.label, "Send 2 Tabs to Device");
-        Assert.equal(
-          PageActions.actionForID("sendToDevice").getTitle(window),
-          "Send 2 Tabs to Device"
-        );
 
         // Hide the panel.
         hiddenPromise = promisePageActionPanelHidden();
@@ -1012,6 +1014,11 @@ add_task(async function sendToDevice_inUrlbar() {
       {
         attrs: {
           label: "Send to All Devices",
+        },
+      },
+      {
+        attrs: {
+          label: "Manage Devices...",
         },
       },
     ];

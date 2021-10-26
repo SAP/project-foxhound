@@ -18,13 +18,13 @@
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
 
-#include "signaling/src/sdp/SdpMediaSection.h"
-#include "signaling/src/sdp/SipccSdpParser.h"
-#include "signaling/src/jsep/JsepCodecDescription.h"
-#include "signaling/src/jsep/JsepTrack.h"
-#include "signaling/src/jsep/JsepSession.h"
-#include "signaling/src/jsep/JsepSessionImpl.h"
-#include "signaling/src/jsep/JsepTrack.h"
+#include "sdp/SdpMediaSection.h"
+#include "sdp/SipccSdpParser.h"
+#include "jsep/JsepCodecDescription.h"
+#include "jsep/JsepTrack.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepSessionImpl.h"
+#include "jsep/JsepTrack.h"
 
 namespace mozilla {
 static std::string kAEqualsCandidate("a=candidate:");
@@ -159,7 +159,7 @@ class JsepSessionTest : public JsepSessionTestBase,
 
     std::cerr << "OFFER: " << offer << std::endl;
 
-    ValidateTransport(*mOffererTransport, offer);
+    ValidateTransport(*mOffererTransport, offer, sdp::kOffer);
 
     if (transceiversBefore.size() != mSessionOff->GetTransceivers().size()) {
       EXPECT_TRUE(false) << "CreateOffer changed number of transceivers!";
@@ -756,7 +756,7 @@ class JsepSessionTest : public JsepSessionTestBase,
 
     std::cerr << "ANSWER: " << answer << std::endl;
 
-    ValidateTransport(*mAnswererTransport, answer);
+    ValidateTransport(*mAnswererTransport, answer, sdp::kAnswer);
     CheckTransceiverInvariants(transceiversBefore,
                                mSessionAns->GetTransceivers());
 
@@ -1206,6 +1206,7 @@ class JsepSessionTest : public JsepSessionTestBase,
       ASSERT_TRUE(transceiver->HasBundleLevel())
       << context;
       ASSERT_EQ(0U, transceiver->BundleLevel()) << context;
+      ASSERT_NE("", transceiver->mTransport.mTransportId);
     }
   }
 
@@ -1407,7 +1408,8 @@ class JsepSessionTest : public JsepSessionTestBase,
   std::vector<std::pair<std::string, uint16_t>> mGatheredCandidates;
 
  private:
-  void ValidateTransport(TransportData& source, const std::string& sdp_str) {
+  void ValidateTransport(TransportData& source, const std::string& sdp_str,
+                         sdp::SdpType type) {
     UniquePtr<Sdp> sdp(Parse(sdp_str));
     ASSERT_TRUE(!!sdp);
     size_t num_m_sections = sdp->GetMediaSectionCount();
@@ -1432,7 +1434,7 @@ class JsepSessionTest : public JsepSessionTestBase,
         ValidateDisabledMSection(&msection);
         continue;
       }
-      if (mSdpHelper.HasOwnTransport(*sdp, i)) {
+      if (mSdpHelper.OwnsTransport(*sdp, i, type)) {
         const SdpAttributeList& attrs = msection.GetAttributeList();
 
         ASSERT_FALSE(attrs.GetIceUfrag().empty());
@@ -2555,21 +2557,40 @@ TEST_P(JsepSessionTest, RenegotiationAnswererDisablesBundleTransport) {
   ASSERT_EQ(0U, ot0->mTransport.mComponents);
   ASSERT_EQ(0U, at0->mTransport.mComponents);
 
+  // With bundle-policy "balanced", this ends up being somewhat complicated.
+  // The first m-section of each type is _not_ marked bundle-only,
+  // but subsequent m-sections of that type are. This means that if there is
+  // more than one type, there is more than one transport, which means there's
+  // a fallback when the bundle-tag is disabled (the first such transport). We
+  // should be using that fallback when it exists.
+  Maybe<size_t> fallbackTransport;
+  for (size_t level = 1; level != types.size(); ++level) {
+    if (types[level] != types[0]) {
+      fallbackTransport = Some(level);
+      break;
+    }
+  }
+
   for (size_t i = 1; i < newOffererTransceivers.size(); ++i) {
     JsepTransceiver* ot = GetTransceiverByLevel(newOffererTransceivers, i);
     JsepTransceiver* at = GetTransceiverByLevel(newAnswererTransceivers, i);
-    JsepTransceiver* ot1 = GetTransceiverByLevel(newOffererTransceivers, 1);
-    JsepTransceiver* at1 = GetTransceiverByLevel(newAnswererTransceivers, 1);
+    // If there is no fallback, the bundle level will be left pointing at the
+    // dead transport at index 0.
+    size_t expectedBundleLevel = fallbackTransport.valueOr(0);
+    JsepTransceiver* otWithTransport =
+        GetTransceiverByLevel(newOffererTransceivers, expectedBundleLevel);
+    JsepTransceiver* atWithTransport =
+        GetTransceiverByLevel(newAnswererTransceivers, expectedBundleLevel);
     ASSERT_TRUE(ot->HasBundleLevel());
     ASSERT_TRUE(at->HasBundleLevel());
-    ASSERT_EQ(1U, ot->BundleLevel());
-    ASSERT_EQ(1U, at->BundleLevel());
+    ASSERT_EQ(expectedBundleLevel, ot->BundleLevel());
+    ASSERT_EQ(expectedBundleLevel, at->BundleLevel());
     // TODO: When creating an answer where we have rejected the bundle
     // transport, we do not do a good job of creating a sensible SDP. Mainly,
     // when we remove the rejected mid from the bundle group, we can leave a
     // bundle-only mid as the first one when others are available.
-    ASSERT_TRUE(Equals(ot1->mTransport, ot->mTransport));
-    ASSERT_TRUE(Equals(at1->mTransport, at->mTransport));
+    ASSERT_TRUE(Equals(otWithTransport->mTransport, ot->mTransport));
+    ASSERT_TRUE(Equals(atWithTransport->mTransport, at->mTransport));
   }
 }
 
@@ -2805,7 +2826,10 @@ TEST_P(JsepSessionTest, RenegotiationWithCandidates) {
       Parse(mSessionOff->GetLocalDescription(kJsepDescriptionPending)));
   for (size_t level = 1; level < types.size(); ++level) {
     std::string id = GetTransportId(*mSessionOff, level);
-    if (!id.empty()) {
+    bool bundleOnly =
+        localOffer->GetMediaSection(level).GetAttributeList().HasAttribute(
+            SdpAttribute::kBundleOnlyAttribute);
+    if (!id.empty() && !bundleOnly) {
       mOffCandidates->Gather(*mSessionOff, id, RTP);
       if (types[level] != SdpMediaSection::kApplication) {
         mOffCandidates->Gather(*mSessionOff, id, RTCP);
@@ -5023,10 +5047,9 @@ TEST_P(JsepSessionTest, TestMaxBundle) {
   AddTracks(*mSessionAns);
 
   mSessionOff->SetBundlePolicy(kBundleMaxBundle);
-  OfferAnswer();
-
-  std::string offer = mSessionOff->GetLocalDescription(kJsepDescriptionCurrent);
+  std::string offer = CreateOffer();
   UniquePtr<Sdp> parsedOffer = std::move(SipccSdpParser().Parse(offer)->Sdp());
+
   ASSERT_TRUE(parsedOffer.get());
 
   ASSERT_FALSE(parsedOffer->GetMediaSection(0).GetAttributeList().HasAttribute(
@@ -5037,6 +5060,25 @@ TEST_P(JsepSessionTest, TestMaxBundle) {
         SdpAttribute::kBundleOnlyAttribute));
     ASSERT_EQ(0U, parsedOffer->GetMediaSection(i).GetPort());
   }
+
+  SetLocalOffer(offer);
+  for (const auto& [id, transceiver] : mSessionOff->GetTransceivers()) {
+    (void)id;  // Lame, but no better way to do this right now.
+    if (transceiver->GetLevel() == 0) {
+      // We do not set the bundle-level in have-local-offer unless the
+      // m-section is bundle-only.
+      ASSERT_FALSE(transceiver->HasBundleLevel());
+    } else {
+      ASSERT_TRUE(transceiver->HasBundleLevel());
+      ASSERT_EQ(0U, transceiver->BundleLevel());
+    }
+    ASSERT_NE("", transceiver->mTransport.mTransportId);
+  }
+
+  SetRemoteOffer(offer);
+  std::string answer = CreateAnswer();
+  SetLocalAnswer(answer);
+  SetRemoteAnswer(answer);
 
   CheckTransceiversAreBundled(*mSessionOff, "Offerer transceivers");
   CheckTransceiversAreBundled(*mSessionAns, "Answerer transceivers");
@@ -6948,4 +6990,46 @@ TEST_F(JsepSessionTest, TestOfferRtxNoMsid) {
   ASSERT_EQ(std::string::npos, offer.find("FID")) << offer;
 }
 
+TEST_F(JsepSessionTest, TestDuplicatePayloadTypes) {
+  for (auto& codec : mSessionOff->Codecs()) {
+    if (codec->mType == SdpMediaSection::kVideo) {
+      JsepVideoCodecDescription* videoCodec =
+          static_cast<JsepVideoCodecDescription*>(codec.get());
+      videoCodec->mRtxPayloadType = "97";
+      videoCodec->EnableFec("97", "97");
+    }
+  }
+
+  types.push_back(SdpMediaSection::kVideo);
+  AddTracks(*mSessionOff, "video");
+  AddTracks(*mSessionAns, "video");
+
+  OfferAnswer();
+
+  std::vector<sdp::Direction> directions = {sdp::kSend, sdp::kRecv};
+  for (auto direction : directions) {
+    UniquePtr<JsepCodecDescription> codec;
+    std::set<std::string> payloadTypes;
+    std::string redPt, ulpfecPt;
+    for (size_t i = 0; i < 4; ++i) {
+      GetCodec(*mSessionOff, 0, direction, 0, i, &codec);
+      ASSERT_TRUE(codec);
+      JsepVideoCodecDescription* videoCodec =
+          static_cast<JsepVideoCodecDescription*>(codec.get());
+      ASSERT_TRUE(payloadTypes.insert(videoCodec->mDefaultPt).second);
+      ASSERT_TRUE(payloadTypes.insert(videoCodec->mRtxPayloadType).second);
+      // ULPFEC and RED payload types are the same for each codec, so we only
+      // check them for the first one.
+      if (i == 0) {
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mREDPayloadType).second);
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mULPFECPayloadType).second);
+        redPt = videoCodec->mREDPayloadType;
+        ulpfecPt = videoCodec->mULPFECPayloadType;
+      } else {
+        ASSERT_TRUE(redPt == videoCodec->mREDPayloadType);
+        ASSERT_TRUE(ulpfecPt == videoCodec->mULPFECPayloadType);
+      }
+    }
+  }
+}
 }  // namespace mozilla

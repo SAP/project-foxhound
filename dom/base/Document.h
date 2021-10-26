@@ -3,6 +3,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifndef mozilla_dom_Document_h___
 #define mozilla_dom_Document_h___
 
@@ -24,6 +25,7 @@
 #include "nsIChannelEventSink.h"
 #include "nsIProgressEventSink.h"
 #include "nsIRadioGroupContainer.h"
+#include "nsIScriptGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIURI.h"                 // for use in inline functions
 #include "nsIWeakReferenceUtils.h"  // for nsWeakPtr
@@ -54,7 +56,8 @@
 #include "mozilla/SegmentedVector.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include <bitset>  // for member
+#include <bitset>                // for member
+#include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
 
 // XXX We need to include this here to ensure that DefaultDeleter for Servo
 // types is specialized before the template is instantiated. Probably, this
@@ -104,7 +107,6 @@ class nsILayoutHistoryState;
 class nsIObjectLoadingContent;
 class nsIRequest;
 class nsIRunnable;
-class nsIScriptGlobalObject;
 class nsISecurityConsoleMessage;
 class nsIStructuredCloneContainer;
 class nsIVariant;
@@ -180,6 +182,7 @@ class ImageTracker;
 class HTMLAllCollection;
 class HTMLBodyElement;
 class HTMLMetaElement;
+class HTMLDialogElement;
 class HTMLSharedElement;
 class HTMLImageElement;
 struct LifecycleCallbackArgs;
@@ -909,7 +912,8 @@ class Document : public nsINode,
   /**
    * Resolves a URI based on the document's base URI.
    */
-  Result<nsCOMPtr<nsIURI>, nsresult> ResolveWithBaseURI(const nsAString& aURI);
+  Result<OwningNonNull<nsIURI>, nsresult> ResolveWithBaseURI(
+      const nsAString& aURI);
 
   /**
    * Return the URL data which style system needs for resolving url value.
@@ -1155,6 +1159,10 @@ class Document : public nsINode,
 
   nsIBFCacheEntry* GetBFCacheEntry() const { return mBFCacheEntry; }
 
+  // Removes this document from the BFCache, if it is cached, and returns
+  // true if it was.
+  bool RemoveFromBFCacheSync();
+
   /**
    * Return the parent document of this document. Will return null
    * unless this document is within a compound document and has a
@@ -1239,8 +1247,6 @@ class Document : public nsINode,
 
   // Returns a ViewportMetaData for this document.
   ViewportMetaData GetViewportMetaData() const;
-
-  void UpdateForScrollAnchorAdjustment(nscoord aLength);
 
   /**
    * True iff this doc will ignore manual character encoding overrides.
@@ -1457,6 +1463,8 @@ class Document : public nsINode,
   PreloadService& Preloads() { return mPreloadService; }
 
   bool HasThirdPartyChannel();
+
+  bool ShouldIncludeInTelemetry(bool aAllowExtensionURIs);
 
  protected:
   friend class nsUnblockOnloadEvent;
@@ -1852,7 +1860,7 @@ class Document : public nsINode,
   void CleanupFullscreenState();
 
   // Pushes aElement onto the top layer
-  bool TopLayerPush(Element* aElement);
+  void TopLayerPush(Element* aElement);
 
   // Removes the topmost element which have aPredicate return true from the top
   // layer. The removed element, if any, is returned.
@@ -1864,10 +1872,14 @@ class Document : public nsINode,
 
   // Pushes the given element into the top of top layer and set fullscreen
   // flag.
-  bool SetFullscreenElement(Element* aElement);
+  void SetFullscreenElement(Element* aElement);
 
   // Cancel the dialog element if the document is blocked by the dialog
   void TryCancelDialog();
+
+  void SetBlockedByModalDialog(HTMLDialogElement&);
+
+  void UnsetBlockedByModalDialog(HTMLDialogElement&);
 
   /**
    * Called when a frame in a child process has entered fullscreen or when a
@@ -2024,7 +2036,7 @@ class Document : public nsINode,
 
   // Observation hooks for style data to propagate notifications
   // to document observers
-  void RuleChanged(StyleSheet&, css::Rule*);
+  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
   void SheetCloned(StyleSheet&) {}
@@ -2148,12 +2160,6 @@ class Document : public nsINode,
   bool IsTopLevelContentDocument() const { return mIsTopLevelContentDocument; }
   void SetIsTopLevelContentDocument(bool aIsTopLevelContentDocument) {
     mIsTopLevelContentDocument = aIsTopLevelContentDocument;
-    // When a document is set as TopLevelContentDocument, it must be
-    // allowpaymentrequest. We handle the false case while a document is
-    // appended in SetSubDocumentFor
-    if (aIsTopLevelContentDocument) {
-      SetAllowPaymentRequest(true);
-    }
   }
 
   bool IsContentDocument() const { return mIsContentDocument; }
@@ -2161,6 +2167,7 @@ class Document : public nsINode,
     mIsContentDocument = aIsContentDocument;
   }
 
+  void ProcessMETATag(HTMLMetaElement* aMetaElement);
   /**
    * Create an element with the specified name, prefix and namespace ID.
    * Returns null if element name parsing failed.
@@ -2629,6 +2636,13 @@ class Document : public nsINode,
            IsStaticDocument();
   }
 
+  void SetHasPrintCallbacks() {
+    MOZ_DIAGNOSTIC_ASSERT(IsStaticDocument());
+    mHasPrintCallbacks = true;
+  }
+
+  bool HasPrintCallbacks() const { return mHasPrintCallbacks; }
+
   /**
    * Register/Unregister the ActivityObserver into mActivityObservers to listen
    * the document's activity changes such as OnPageHide, visibility, activity.
@@ -2681,8 +2695,15 @@ class Document : public nsINode,
 
   uint32_t EventHandlingSuppressed() const { return mEventsSuppressed; }
 
-  bool IsEventHandlingEnabled() {
+  bool IsEventHandlingEnabled() const {
     return !EventHandlingSuppressed() && mScriptGlobalObject;
+  }
+
+  bool WouldScheduleFrameRequestCallbacks() const {
+    // If this function changes to depend on some other variable, make sure to
+    // call UpdateFrameRequestCallbackSchedulingState() calls to the places
+    // where that variable can change.
+    return mPresShell && IsEventHandlingEnabled();
   }
 
   void DecreaseEventSuppression() {
@@ -2690,6 +2711,13 @@ class Document : public nsINode,
     --mEventsSuppressed;
     UpdateFrameRequestCallbackSchedulingState();
   }
+
+  /**
+   * Some clipboard commands are unconditionally enabled on some documents, so
+   * as to always dispatch copy / paste events even though you'd normally not be
+   * able to copy.
+   */
+  bool AreClipboardCommandsUnconditionallyEnabled() const;
 
   /**
    * Note a ChannelEventQueue which has been suspended on the document's behalf
@@ -2799,9 +2827,14 @@ class Document : public nsINode,
    * and replace the cloned resources).
    *
    * @param aCloneContainer The container for the clone document.
+   * @param aContentViewer The viewer for the clone document. Must be the viewer
+   *                       of aCloneContainer, but callers must have a reference
+   *                       to it already and ensure it's not null.
+   * @param aOutHasInProcessPrintCallbacks Self-descriptive.
    */
-  virtual already_AddRefed<Document> CreateStaticClone(
-      nsIDocShell* aCloneContainer);
+  already_AddRefed<Document> CreateStaticClone(
+      nsIDocShell* aCloneContainer, nsIContentViewer* aContentViewer,
+      bool* aOutHasInProcessPrintCallbacks);
 
   /**
    * If this document is a static clone, this returns the original
@@ -3016,7 +3049,7 @@ class Document : public nsINode,
    * throttled. We throttle requestAnimationFrame for documents which aren't
    * visible (e.g. scrolled out of the viewport).
    */
-  bool ShouldThrottleFrameRequests();
+  bool ShouldThrottleFrameRequests() const;
 
   // This returns true when the document tree is being teared down.
   bool InUnlinkOrDeletion() { return mInUnlinkOrDeletion; }
@@ -3084,6 +3117,9 @@ class Document : public nsINode,
   const ShadowRootSet& ComposedShadowRoots() const {
     return mComposedShadowRoots;
   }
+
+  // WebIDL method for chrome code.
+  void GetConnectedShadowRoots(nsTArray<RefPtr<ShadowRoot>>&) const;
 
   // Notifies any responsive content added by AddResponsiveContent upon media
   // features values changing.
@@ -3367,6 +3403,16 @@ class Document : public nsINode,
   bool Hidden() const { return mVisibilityState != VisibilityState::Visible; }
   dom::VisibilityState VisibilityState() const { return mVisibilityState; }
 
+ private:
+  int32_t mPictureInPictureChildElementCount = 0;
+
+ public:
+  void EnableChildElementInPictureInPictureMode();
+  void DisableChildElementInPictureInPictureMode();
+
+  // True if any child element is being used in picture in picture mode.
+  bool HasPictureInPictureChildElement() const;
+
   void GetSelectedStyleSheetSet(nsAString& aSheetSet);
   void SetSelectedStyleSheetSet(const nsAString& aSheetSet);
   void GetLastStyleSheetSet(nsAString& aSheetSet) {
@@ -3512,7 +3558,22 @@ class Document : public nsINode,
 
   bool IsSynthesized();
 
-  void ReportUseCounters();
+  // Records whether we will track use counters for this document, and if so,
+  // which top-level document that page counters will be accumulated to.
+  //
+  // Informs the parent process that page use counters will be sent once the
+  // document goes away.
+  void InitUseCounters();
+
+  // Reports document use counters via telemetry.  This method only has an
+  // effect once per document, and so is called during document destruction.
+  void ReportDocumentUseCounters();
+
+  // Sends page use counters to the parent process to accumulate against the
+  // top-level document.  Must be called while we still have access to our
+  // WindowContext.  This method has an effect each time it is called, and we
+  // call it just before the document loses its window.
+  void SendPageUseCounters();
 
   void SetUseCounter(UseCounter aUseCounter) {
     mUseCounters[aUseCounter] = true;
@@ -3522,8 +3583,13 @@ class Document : public nsINode,
     return mStyleUseCounters.get();
   }
 
-  void PropagateUseCountersToPage();
-  void PropagateUseCounters(Document* aParentDocument);
+  // Propagate our use counters explicitly into the specified referencing
+  // document.
+  //
+  // This is used for SVG image documents, which cannot be enumerated in the
+  // referencing document's ReportUseCounters() like external resource documents
+  // can.
+  void PropagateImageUseCounters(Document* aReferencingDocument);
 
   // Called to track whether this document has had any interaction.
   // This is used to track whether we should permit "beforeunload".
@@ -3609,7 +3675,7 @@ class Document : public nsINode,
     return !mIntersectionObservers.IsEmpty();
   }
 
-  void UpdateIntersectionObservations();
+  void UpdateIntersectionObservations(TimeStamp aNowTime);
   void ScheduleIntersectionObserverNotification();
   MOZ_CAN_RUN_SCRIPT void NotifyIntersectionObservers();
 
@@ -3834,12 +3900,6 @@ class Document : public nsINode,
     --mIgnoreOpensDuringUnloadCounter;
   }
 
-  bool AllowPaymentRequest() const { return mAllowPaymentRequest; }
-
-  void SetAllowPaymentRequest(bool aAllowPaymentRequest) {
-    mAllowPaymentRequest = aAllowPaymentRequest;
-  }
-
   mozilla::dom::FeaturePolicy* FeaturePolicy() const;
 
   bool ModuleScriptsEnabled();
@@ -3856,8 +3916,8 @@ class Document : public nsINode,
 
   void ReportShadowDOMUsage();
 
-  // Sets flags for media autoplay telemetry.
-  void SetDocTreeHadAudibleMedia();
+  // Sets flags for media telemetry.
+  void SetDocTreeHadMedia();
 
   dom::XPathEvaluator* XPathEvaluator();
 
@@ -3901,11 +3961,16 @@ class Document : public nsINode,
     RefPtr<nsFrameLoaderOwner> mElement;
     RefPtr<nsFrameLoader> mStaticCloneOf;
   };
-  nsTArray<PendingFrameStaticClone> TakePendingFrameStaticClones();
   void AddPendingFrameStaticClone(nsFrameLoaderOwner* aElement,
                                   nsFrameLoader* aStaticCloneOf);
 
+  bool ShouldAvoidNativeTheme() const;
+
  protected:
+  // Returns the WindowContext for the document that we will contribute
+  // page use counters to.
+  WindowContext* GetWindowContextForPageUseCounters() const;
+
   void DoUpdateSVGUseElementShadowTrees();
 
   already_AddRefed<nsIPrincipal> MaybeDowngradePrincipal(
@@ -3943,20 +4008,6 @@ class Document : public nsINode,
   // events. It returns false if the fullscreen element ready check
   // fails and nothing gets changed.
   bool ApplyFullscreen(UniquePtr<FullscreenRequest>);
-
-  bool GetUseCounter(UseCounter aUseCounter) {
-    return mUseCounters[aUseCounter];
-  }
-
-  void SetChildDocumentUseCounter(UseCounter aUseCounter) {
-    if (!mChildDocumentUseCounters[aUseCounter]) {
-      mChildDocumentUseCounters[aUseCounter] = true;
-    }
-  }
-
-  bool GetChildDocumentUseCounter(UseCounter aUseCounter) {
-    return mChildDocumentUseCounters[aUseCounter];
-  }
 
   void RemoveDocStyleSheetsFromStyleSets();
   void ResetStylesheetsToURI(nsIURI* aURI);
@@ -4077,8 +4128,7 @@ class Document : public nsINode,
    *                            sInternalCommandDataHashtable.
    */
   static InternalCommandData ConvertToInternalCommand(
-      const nsAString& aHTMLCommandName,
-      const nsAString& aValue = EmptyString(),
+      const nsAString& aHTMLCommandName, const nsAString& aValue = u""_ns,
       nsAString* aAdjustedValue = nullptr);
 
   /**
@@ -4367,6 +4417,10 @@ class Document : public nsINode,
   // True while this document is being cloned to a static document.
   bool mCreatingStaticClone : 1;
 
+  // True if this static document has any <canvas> element with a
+  // mozPrintCallback property at the time of the clone.
+  bool mHasPrintCallbacks : 1;
+
   // True iff the document is being unlinked or deleted.
   bool mInUnlinkOrDeletion : 1;
 
@@ -4459,9 +4513,6 @@ class Document : public nsINode,
   // True if we have called BeginLoad and are expecting a paired EndLoad call.
   bool mDidCallBeginLoad : 1;
 
-  // True if the document is allowed to use PaymentRequest.
-  bool mAllowPaymentRequest : 1;
-
   // True if the encoding menu should be disabled.
   bool mEncodingMenuDisabled : 1;
 
@@ -4530,13 +4581,13 @@ class Document : public nsINode,
   // terminated instead of letting it finish at its own pace.
   bool mParserAborted : 1;
 
-  // Whether we have reported use counters for this document with Telemetry yet.
-  // Normally this is only done at document destruction time, but for image
-  // documents (SVG documents) that are not guaranteed to be destroyed, we
-  // report use counters when the image cache no longer has any imgRequestProxys
-  // pointing to them.  We track whether we ever reported use counters so
-  // that we only report them once for the document.
-  bool mReportedUseCounters : 1;
+  // Whether we have reported document use counters for this document with
+  // Telemetry yet.  Normally this is only done at document destruction time,
+  // but for image documents (SVG documents) that are not guaranteed to be
+  // destroyed, we report use counters when the image cache no longer has any
+  // imgRequestProxys pointing to them.  We track whether we ever reported use
+  // counters so that we only report them once for the document.
+  bool mReportedDocumentUseCounters : 1;
 
   bool mHasReportedShadowDOMUsage : 1;
 
@@ -4798,12 +4849,27 @@ class Document : public nsINode,
   nsTObserverArray<nsIDocumentObserver*> mObservers;
 
   // Flags for use counters used directly by this document.
-  std::bitset<eUseCounter_Count> mUseCounters;
-  // Flags for use counters used by any child documents of this document.
-  std::bitset<eUseCounter_Count> mChildDocumentUseCounters;
+  UseCounters mUseCounters;
+  // Flags for use counters from resource documents, static clones,
+  // and SVG images referenced by this document.  Those documents propagate
+  // their use counters up to here, which then count towards the top-level
+  // document's page use counters.
+  UseCounters mChildDocumentUseCounters;
 
   // The CSS property use counters.
   UniquePtr<StyleUseCounters> mStyleUseCounters;
+
+  // Whether we have initialized mShouldReportUseCounters and
+  // mShouldSendPageUseCounters, and sent any needed message to the parent
+  // process to indicate that use counter data will be sent at some later point.
+  bool mUseCountersInitialized : 1;
+
+  // Whether this document should report use counters.
+  bool mShouldReportUseCounters : 1;
+
+  // Whether this document should send page use counters.  Set to true after
+  // we've called SendExpectPageUseCounters on the top-level WindowGlobal.
+  bool mShouldSendPageUseCounters : 1;
 
   // Whether the user has interacted with the document or not:
   bool mUserHasInteracted;
@@ -4881,9 +4947,6 @@ class Document : public nsINode,
   nsWeakPtr mAutoFocusElement;
 
   nsCString mScrollToRef;
-
-  nscoord mScrollAnchorAdjustmentLength;
-  int32_t mScrollAnchorAdjustmentCount;
 
   // Weak reference to the scope object (aka the script global object)
   // that, unlike mScriptGlobalObject, is never unset once set. This
@@ -5051,9 +5114,15 @@ class Document : public nsINode,
   // Scope preloads per document.  This is used by speculative loading as well.
   PreloadService mPreloadService;
 
+  // Accumulate JS telemetry collected
+  void AccumulateJSTelemetry();
+
+  // Accumulate page load metrics
+  void AccumulatePageLoadTelemetry();
+
  public:
   // Needs to be public because the bindings code pokes at it.
-  js::ExpandoAndGeneration mExpandoAndGeneration;
+  JS::ExpandoAndGeneration mExpandoAndGeneration;
 
   bool HasPendingInitialTranslation();
 
@@ -5066,6 +5135,8 @@ class Document : public nsINode,
   void SetSavedResolutionBeforeMVM(float aResolution) {
     mSavedResolutionBeforeMVM = aResolution;
   }
+
+  void LoadEventFired();
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Document, NS_IDOCUMENT_IID)

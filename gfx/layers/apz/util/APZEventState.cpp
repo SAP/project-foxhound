@@ -10,7 +10,6 @@
 
 #include "APZCCallbackHelper.h"
 #include "ActiveElementManager.h"
-#include "LayersLogging.h"
 #include "TouchManager.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/IntegerPrintfMacros.h"
@@ -19,11 +18,13 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_ui.h"
+#include "mozilla/ToString.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
+#include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/widget/nsAutoRollup.h"
 #include "nsCOMPtr.h"
 #include "nsDocShell.h"
@@ -165,7 +166,7 @@ void APZEventState::ProcessSingleTap(const CSSPoint& aPoint,
                                      const CSSToLayoutDeviceScale& aScale,
                                      Modifiers aModifiers,
                                      int32_t aClickCount) {
-  APZES_LOG("Handling single tap at %s with %d\n", Stringify(aPoint).c_str(),
+  APZES_LOG("Handling single tap at %s with %d\n", ToString(aPoint).c_str(),
             mTouchEndCancelled);
 
   RefPtr<nsIContent> touchRollup = GetTouchRollup();
@@ -251,7 +252,7 @@ void APZEventState::ProcessLongTap(PresShell* aPresShell,
                                    const CSSToLayoutDeviceScale& aScale,
                                    Modifiers aModifiers,
                                    uint64_t aInputBlockId) {
-  APZES_LOG("Handling long tap at %s\n", Stringify(aPoint).c_str());
+  APZES_LOG("Handling long tap at %s\n", ToString(aPoint).c_str());
 
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) {
@@ -301,27 +302,34 @@ void APZEventState::ProcessLongTapUp(PresShell* aPresShell,
 #endif
 }
 
-void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
-                                      const ScrollableLayerGuid& aGuid,
-                                      uint64_t aInputBlockId,
-                                      nsEventStatus aApzResponse,
-                                      nsEventStatus aContentResponse) {
+void APZEventState::ProcessTouchEvent(
+    const WidgetTouchEvent& aEvent, const ScrollableLayerGuid& aGuid,
+    uint64_t aInputBlockId, nsEventStatus aApzResponse,
+    nsEventStatus aContentResponse,
+    nsTArray<TouchBehaviorFlags>&& aAllowedTouchBehaviors) {
   if (aEvent.mMessage == eTouchStart && aEvent.mTouches.Length() > 0) {
     mActiveElementManager->SetTargetElement(aEvent.mTouches[0]->GetTarget());
     mLastTouchIdentifier = aEvent.mTouches[0]->Identifier();
   }
+  if (aEvent.mMessage == eTouchStart) {
+    // We get the allowed touch behaviors on a touchstart, but may not actually
+    // use them until the first touchmove, so we stash them in a member
+    // variable.
+    mTouchBlockAllowedBehaviors = std::move(aAllowedTouchBehaviors);
+  }
 
   bool isTouchPrevented = aContentResponse == nsEventStatus_eConsumeNoDefault;
   bool sentContentResponse = false;
-  APZES_LOG("Handling event type %d\n", aEvent.mMessage);
+  APZES_LOG("Handling event type %d isPrevented=%d\n", aEvent.mMessage,
+            isTouchPrevented);
   switch (aEvent.mMessage) {
     case eTouchStart: {
       mTouchEndCancelled = false;
       mTouchRollup = do_GetWeakReference(widget::nsAutoRollup::GetLastRollup());
 
-      sentContentResponse = SendPendingTouchPreventedResponse(false);
-      // sentContentResponse can be true here if we get two TOUCH_STARTs in a
-      // row and just responded to the first one.
+      SendPendingTouchPreventedResponse(false);
+      // The above call may have sent a message to APZ if we get two
+      // TOUCH_STARTs in a row and just responded to the first one.
 
       // We're about to send a response back to APZ, but we should only do it
       // for events that went through APZ (which should be all of them).
@@ -348,7 +356,7 @@ void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
         sentContentResponse = true;
       } else {
         APZES_LOG("Event not prevented; pending response for %" PRIu64 " %s\n",
-                  aInputBlockId, Stringify(aGuid).c_str());
+                  aInputBlockId, ToString(aGuid).c_str());
         mPendingTouchPreventedResponse = true;
         mPendingTouchPreventedGuid = aGuid;
         mPendingTouchPreventedBlockId = aInputBlockId;
@@ -385,7 +393,8 @@ void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
 
   if (sentContentResponse && !isTouchPrevented &&
       aApzResponse == nsEventStatus_eConsumeDoDefault &&
-      StaticPrefs::dom_w3c_pointer_events_enabled()) {
+      StaticPrefs::dom_w3c_pointer_events_enabled() &&
+      MainThreadAgreesEventsAreConsumableByAPZ()) {
     WidgetTouchEvent cancelEvent(aEvent);
     cancelEvent.mMessage = eTouchPointerCancel;
     cancelEvent.mFlags.mCancelable = false;  // mMessage != eTouchCancel;
@@ -396,6 +405,48 @@ void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
     }
     nsEventStatus status;
     cancelEvent.mWidget->DispatchEvent(&cancelEvent, status);
+  }
+}
+
+bool APZEventState::MainThreadAgreesEventsAreConsumableByAPZ() const {
+  // APZ errs on the side of saying it can consume touch events to perform
+  // default user-agent behaviours. In particular it may say this if it hasn't
+  // received accurate touch-action information. Here we double-check using
+  // accurate touch-action information. This code is kinda-sorta the main
+  // thread equivalent of AsyncPanZoomController::ArePointerEventsConsumable().
+
+  switch (mTouchBlockAllowedBehaviors.Length()) {
+    case 0:
+      // If we don't have any touch-action (e.g. because it is disabled) then
+      // APZ has no restrictions.
+      return true;
+
+    case 1: {
+      // If there's one touch point in this touch block, then check the pan-x
+      // and pan-y flags. If neither is allowed, then we disagree with APZ and
+      // say that it can't do anything with this touch block. Note that it would
+      // be even better if we could check the allowed scroll directions of the
+      // scrollframe at this point and refine this further.
+      TouchBehaviorFlags flags = mTouchBlockAllowedBehaviors[0];
+      return (flags & AllowedTouchBehavior::HORIZONTAL_PAN) ||
+             (flags & AllowedTouchBehavior::VERTICAL_PAN);
+    }
+
+    case 2: {
+      // If there's two touch points in this touch block, check that they both
+      // allow zooming.
+      for (const auto& allowed : mTouchBlockAllowedBehaviors) {
+        if (!(allowed & AllowedTouchBehavior::PINCH_ZOOM)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    default:
+      // More than two touch points? APZ shouldn't be doing anything with this,
+      // so APZ shouldn't be consuming them.
+      return false;
   }
 }
 
@@ -474,7 +525,7 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
 bool APZEventState::SendPendingTouchPreventedResponse(bool aPreventDefault) {
   if (mPendingTouchPreventedResponse) {
     APZES_LOG("Sending response %d for pending guid: %s\n", aPreventDefault,
-              Stringify(mPendingTouchPreventedGuid).c_str());
+              ToString(mPendingTouchPreventedGuid).c_str());
     mContentReceivedInputBlockCallback(mPendingTouchPreventedBlockId,
                                        aPreventDefault);
     mPendingTouchPreventedResponse = false;

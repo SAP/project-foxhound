@@ -221,8 +221,8 @@ fn consume_operation_or_colon(input: &mut Parser) -> Result<Option<Operator>, ()
 fn disabled_by_pref(feature: &Atom, context: &ParserContext) -> bool {
     #[cfg(feature = "gecko")]
     {
-        if *feature == atom!("-moz-touch-enabled") {
-            return !static_prefs::pref!("layout.css.moz-touch-enabled.enabled");
+        if *feature == atom!("forced-colors") {
+            return !static_prefs::pref!("layout.css.forced-colors.enabled");
         }
         // prefers-contrast is always enabled in the ua and chrome. On
         // the web it is hidden behind a preference.

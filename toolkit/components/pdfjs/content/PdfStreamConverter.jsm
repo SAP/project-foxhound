@@ -306,6 +306,21 @@ class ChromeActions {
       filename = "document.pdf";
     }
     var blobUri = NetUtil.newURI(blobUrl);
+
+    // If the download was triggered from the ctrl/cmd+s or "Save Page As"
+    // launch the "Save As" dialog.
+    if (data.sourceEventType == "save") {
+      let actor = getActor(this.domWindow);
+      actor.sendAsyncMessage("PDFJS:Parent:saveURL", {
+        blobUrl,
+        filename,
+      });
+      return;
+    }
+
+    // The download is from the fallback bar or the download button, so trigger
+    // the open dialog to make it easier for users to save in the downloads
+    // folder or launch a different PDF viewer.
     var extHelperAppSvc = Cc[
       "@mozilla.org/uriloader/external-helper-app-service;1"
     ].getService(Ci.nsIExternalHelperAppService);
@@ -495,6 +510,9 @@ class ChromeActions {
           ] = true;
         }
         break;
+      case "tagged":
+        PdfJsTelemetry.onTagged(probeInfo.tagged);
+        break;
     }
   }
 
@@ -555,12 +573,18 @@ class ChromeActions {
     if (isValidMatchesCount(data.matchesCount)) {
       matchesCount = data.matchesCount;
     }
+    // Same for the `rawQuery` property.
+    let rawQuery = null;
+    if (typeof data.rawQuery === "string") {
+      rawQuery = data.rawQuery;
+    }
 
     let actor = getActor(this.domWindow);
     actor?.sendAsyncMessage("PDFJS:Parent:updateControlState", {
       result,
       findPrevious,
       matchesCount,
+      rawQuery,
     });
   }
 
@@ -1050,11 +1074,16 @@ PdfStreamConverter.prototype = {
     // We can be invoked for application/octet-stream; check if we want the
     // channel first:
     if (aFromType != "application/pdf") {
-      let isPDF = channelURI?.QueryInterface(Ci.nsIURL).fileExtension == "pdf";
-      let typeIsOctetStream = aFromType == "application/octet-stream";
+      let ext = channelURI?.QueryInterface(Ci.nsIURL).fileExtension;
+      let isPDF = ext.toLowerCase() == "pdf";
+      let browsingContext = aChannel?.loadInfo.targetBrowsingContext;
+      let toplevelOctetStream =
+        aFromType == "application/octet-stream" &&
+        browsingContext &&
+        !browsingContext.parent;
       if (
         !isPDF ||
-        !typeIsOctetStream ||
+        !toplevelOctetStream ||
         !getBoolPref(PREF_PREFIX + ".handleOctetStream", false)
       ) {
         throw new Components.Exception(

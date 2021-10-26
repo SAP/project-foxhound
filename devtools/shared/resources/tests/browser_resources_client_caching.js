@@ -16,11 +16,9 @@ add_task(async function() {
 
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info("Add messages as existing resources");
   const messages = ["a", "b", "c"];
@@ -31,7 +29,7 @@ add_task(async function() {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => cachedResources1.push(resource),
+      onAvailable: resources => cachedResources1.push(...resources),
     }
   );
 
@@ -40,14 +38,14 @@ add_task(async function() {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => cachedResources2.push(resource),
+      onAvailable: resources => cachedResources2.push(...resources),
     }
   );
 
   assertContents(cachedResources1, messages);
   assertResources(cachedResources2, cachedResources1);
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 });
 
@@ -58,11 +56,9 @@ add_task(async function() {
 
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info("Add messages as existing resources");
   const existingMessages = ["a", "b", "c"];
@@ -73,7 +69,7 @@ add_task(async function() {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => availableResources.push(resource),
+      onAvailable: resources => availableResources.push(...resources),
     }
   );
 
@@ -90,14 +86,14 @@ add_task(async function() {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => cachedResources.push(resource),
+      onAvailable: resources => cachedResources.push(...resources),
     }
   );
 
   assertContents(availableResources, allMessages);
   assertResources(cachedResources, availableResources);
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 });
 
@@ -106,11 +102,9 @@ add_task(async function() {
 
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info("Add messages as existing resources");
   const existingMessages = ["a", "b", "c"];
@@ -134,13 +128,13 @@ add_task(async function() {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => cachedResources.push(resource),
+      onAvailable: resources => cachedResources.push(...resources),
     }
   );
 
   is(cachedResources.length, 0, "The cache in ResourceWatcher is cleared");
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 });
 
@@ -149,11 +143,9 @@ add_task(async function() {
 
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info("Register first listener to get all available resources");
   const availableResources = [];
@@ -163,7 +155,7 @@ add_task(async function() {
       ResourceWatcher.TYPES.ERROR_MESSAGE,
     ],
     {
-      onAvailable: ({ resource }) => availableResources.push(resource),
+      onAvailable: resources => availableResources.push(...resources),
     }
   );
 
@@ -194,13 +186,13 @@ add_task(async function() {
       ResourceWatcher.TYPES.ERROR_MESSAGE,
     ],
     {
-      onAvailable: ({ resource }) => cachedResources.push(resource),
+      onAvailable: resources => cachedResources.push(...resources),
     }
   );
 
   assertResources(cachedResources, availableResources);
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 });
 
@@ -213,11 +205,9 @@ add_task(async function() {
 async function testIgnoreExistingResources(isFirstListenerIgnoreExisting) {
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info("Add messages as existing resources");
   const existingMessages = ["a", "b", "c"];
@@ -228,7 +218,7 @@ async function testIgnoreExistingResources(isFirstListenerIgnoreExisting) {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => cachedResources1.push(resource),
+      onAvailable: resources => cachedResources1.push(...resources),
       ignoreExistingResources: isFirstListenerIgnoreExisting,
     }
   );
@@ -238,7 +228,7 @@ async function testIgnoreExistingResources(isFirstListenerIgnoreExisting) {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
     {
-      onAvailable: ({ resource }) => cachedResources2.push(resource),
+      onAvailable: resources => cachedResources2.push(...resources),
       ignoreExistingResources: !isFirstListenerIgnoreExisting,
     }
   );
@@ -271,9 +261,56 @@ async function testIgnoreExistingResources(isFirstListenerIgnoreExisting) {
   assertContents(cachedResourcesWithFlag, additionalMessages);
   assertContents(cachedResourcesWithoutFlag, allMessages);
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 }
+
+add_task(async function() {
+  info("Test that onAvailable is not called with an empty resources array");
+
+  const tab = await addTab(TEST_URI);
+
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
+
+  info("Register first listener to get all available resources");
+  const availableResources = [];
+  let onAvailableCallCount = 0;
+  const onAvailable = resources => {
+    ok(
+      resources.length > 0,
+      "onAvailable is called with a non empty resources array"
+    );
+    availableResources.push(...resources);
+    onAvailableCallCount++;
+  };
+
+  await resourceWatcher.watchResources(
+    [ResourceWatcher.TYPES.CONSOLE_MESSAGE],
+    { onAvailable }
+  );
+  is(availableResources.length, 0, "availableResources array is empty");
+  is(onAvailableCallCount, 0, "onAvailable was never called");
+
+  info("Add messages as console message");
+  await logMessages(tab.linkedBrowser, ["expected message"]);
+
+  await waitUntil(() => availableResources.length === 1);
+  is(availableResources.length, 1, "availableResources array has one item");
+  is(onAvailableCallCount, 1, "onAvailable was called only once");
+  is(
+    availableResources[0].message.arguments[0],
+    "expected message",
+    "onAvailable was called with the expected resource"
+  );
+
+  resourceWatcher.unwatchResources([ResourceWatcher.TYPES.CONSOLE_MESSAGE], {
+    onAvailable,
+  });
+  await targetList.destroy();
+  await client.close();
+});
 
 function assertContents(resources, expectedMessages) {
   is(

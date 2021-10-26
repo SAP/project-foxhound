@@ -21,7 +21,7 @@ const { L10N } = require("devtools/client/netmonitor/src/utils/l10n.js");
 const {
   getMessagePayload,
   getResponseHeader,
-  isJSON,
+  parseJSON,
 } = require("devtools/client/netmonitor/src/utils/request-utils.js");
 const {
   getFormattedSize,
@@ -38,6 +38,9 @@ const {
 const {
   parseSockJS,
 } = require("devtools/client/netmonitor/src/components/messages/parsers/sockjs/index.js");
+const {
+  parseStompJs,
+} = require("devtools/client/netmonitor/src/components/messages/parsers/stomp/index.js");
 const {
   wampSerializers,
 } = require("devtools/client/netmonitor/src/components/messages/parsers/wamp/serializers.js");
@@ -159,8 +162,20 @@ class MessagePayload extends Component {
     // sockjs payload
     const sockJSPayload = parseSockJS(payload);
     if (sockJSPayload) {
+      let formattedData = sockJSPayload.data;
+
+      if (sockJSPayload.type === "message") {
+        if (Array.isArray(formattedData)) {
+          formattedData = formattedData.map(
+            message => parseStompJs(message) || message
+          );
+        } else {
+          formattedData = parseStompJs(formattedData) || formattedData;
+        }
+      }
+
       return {
-        formattedData: sockJSPayload,
+        formattedData,
         formattedDataTitle: "SockJS",
       };
     }
@@ -172,9 +187,17 @@ class MessagePayload extends Component {
         formattedDataTitle: "SignalR",
       };
     }
+    // STOMP
+    const stompPayload = parseStompJs(payload);
+    if (stompPayload) {
+      return {
+        formattedData: stompPayload,
+        formattedDataTitle: "STOMP",
+      };
+    }
 
     // json payload
-    const { json } = isJSON(payload);
+    let { json } = parseJSON(payload);
     if (json) {
       const actionCablePayload = this.parseActionCable(json);
       if (actionCablePayload) {
@@ -183,6 +206,11 @@ class MessagePayload extends Component {
           formattedDataTitle: "Action Cable",
         };
       }
+
+      if (Array.isArray(json)) {
+        json = json.map(message => parseStompJs(message) || message);
+      }
+
       return {
         formattedData: json,
         formattedDataTitle: "JSON",
@@ -248,7 +276,7 @@ class MessagePayload extends Component {
 
     // MVP Signalr
     if (payload.endsWith("\u001e")) {
-      const { json } = isJSON(payload.slice(0, -1));
+      const { json } = parseJSON(payload.slice(0, -1));
       if (json) {
         return json;
       }
@@ -258,8 +286,8 @@ class MessagePayload extends Component {
   }
 
   parseActionCable(payload) {
-    const identifier = payload.identifier && isJSON(payload.identifier).json;
-    const data = payload.data && isJSON(payload.data).json;
+    const identifier = payload.identifier && parseJSON(payload.identifier).json;
+    const data = payload.data && parseJSON(payload.data).json;
     if (!data && !identifier) {
       return null;
     }

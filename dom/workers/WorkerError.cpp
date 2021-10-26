@@ -6,6 +6,7 @@
 
 #include "WorkerError.h"
 
+#include "js/friend/ErrorMessages.h"  // JSMSG_OVER_RECURSED
 #include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/ErrorEvent.h"
@@ -98,9 +99,9 @@ class ReportErrorRunnable final : public WorkerDebuggeeRunnable {
           if (swm) {
             swm->HandleError(aCx, aWorkerPrivate->GetPrincipal(),
                              aWorkerPrivate->ServiceWorkerScope(),
-                             aWorkerPrivate->ScriptURL(), EmptyString(),
-                             EmptyString(), EmptyString(), 0, 0,
-                             nsIScriptError::errorFlag, JSEXN_ERR);
+                             aWorkerPrivate->ScriptURL(), u""_ns, u""_ns,
+                             u""_ns, 0, 0, nsIScriptError::errorFlag,
+                             JSEXN_ERR);
           }
         }
 
@@ -189,9 +190,8 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
         if (swm) {
           swm->HandleError(aCx, aWorkerPrivate->GetPrincipal(),
                            aWorkerPrivate->ServiceWorkerScope(),
-                           aWorkerPrivate->ScriptURL(), EmptyString(),
-                           EmptyString(), EmptyString(), 0, 0,
-                           nsIScriptError::errorFlag, JSEXN_ERR);
+                           aWorkerPrivate->ScriptURL(), u""_ns, u""_ns, u""_ns,
+                           0, 0, nsIScriptError::errorFlag, JSEXN_ERR);
         }
       }
 
@@ -216,7 +216,7 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
 }  // namespace
 
 void WorkerErrorBase::AssignErrorBase(JSErrorBase* aReport) {
-  mFilename = NS_ConvertUTF8toUTF16(aReport->filename);
+  CopyUTF8toUTF16(MakeStringSpan(aReport->filename), mFilename);
   mLineNumber = aReport->lineno;
   mColumnNumber = aReport->column;
   mErrorNumber = aReport->errorNumber;

@@ -892,7 +892,7 @@ nsresult nsSocketTransport::InitWithConnectedSocket(PRFileDesc* fd,
   NS_ASSERTION(!mFD.IsInitialized(), "already initialized");
 
   char buf[kNetAddrMaxCStrBufSize];
-  NetAddrToString(addr, buf, sizeof(buf));
+  addr->ToStringBuffer(buf, sizeof(buf));
   mHost.Assign(buf);
 
   uint16_t port;
@@ -1045,6 +1045,10 @@ nsresult nsSocketTransport::ResolveHost() {
   if (mConnectionFlags & nsSocketTransport::DISABLE_TRR)
     dnsFlags |= nsIDNSService::RESOLVE_DISABLE_TRR;
 
+  if (mConnectionFlags & nsSocketTransport::USE_IP_HINT_ADDRESS) {
+    dnsFlags |= nsIDNSService::RESOLVE_IP_HINT;
+  }
+
   dnsFlags |= nsIDNSService::GetFlagsFromTRRMode(
       nsISocketTransport::GetTRRModeFromFlags(mConnectionFlags));
 
@@ -1064,12 +1068,15 @@ nsresult nsSocketTransport::ResolveHost() {
     SOCKET_LOG(("nsSocketTransport %p origin %s doing dns for %s\n", this,
                 mOriginHost.get(), SocketHost().get()));
   }
-  rv = dns->AsyncResolveNative(SocketHost(), dnsFlags, this,
-                               mSocketTransportService, mOriginAttributes,
-                               getter_AddRefs(mDNSRequest));
+  rv =
+      dns->AsyncResolveNative(SocketHost(), nsIDNSService::RESOLVE_TYPE_DEFAULT,
+                              dnsFlags, nullptr, this, mSocketTransportService,
+                              mOriginAttributes, getter_AddRefs(mDNSRequest));
   mEsniQueried = false;
+  // NOTE: If we already have echConfig, we don't try ESNI.
   if (mSocketTransportService->IsEsniEnabled() && NS_SUCCEEDED(rv) &&
-      !(mConnectionFlags & (DONT_TRY_ESNI | BE_CONSERVATIVE))) {
+      !(mConnectionFlags & (DONT_TRY_ESNI_OR_ECH | BE_CONSERVATIVE)) &&
+      mEchConfig.IsEmpty()) {
     bool isSSL = false;
     for (unsigned int i = 0; i < mTypes.Length(); ++i) {
       if (mTypes[i].EqualsLiteral("ssl")) {
@@ -1084,10 +1091,10 @@ nsresult nsSocketTransport::ResolveHost() {
       // This might end up being the SocketHost
       // see https://github.com/ekr/draft-rescorla-tls-esni/issues/61
       esniHost.Append(SocketHost());
-      rv = dns->AsyncResolveByTypeNative(
-          esniHost, nsIDNSService::RESOLVE_TYPE_TXT, dnsFlags, this,
-          mSocketTransportService, mOriginAttributes,
-          getter_AddRefs(mDNSTxtRequest));
+      rv = dns->AsyncResolveNative(esniHost, nsIDNSService::RESOLVE_TYPE_TXT,
+                                   dnsFlags, nullptr, this,
+                                   mSocketTransportService, mOriginAttributes,
+                                   getter_AddRefs(mDNSTxtRequest));
       if (NS_FAILED(rv)) {
         SOCKET_LOG(("  dns request by type failed."));
         mDNSTxtRequest = nullptr;
@@ -1305,8 +1312,8 @@ nsresult nsSocketTransport::InitiateSocket() {
 #endif
 
     if (NS_SUCCEEDED(mCondition) && xpc::AreNonLocalConnectionsDisabled() &&
-        !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr) ||
-          IsIPAddrShared(&mNetAddr))) {
+        !(mNetAddr.IsIPAddrAny() || mNetAddr.IsIPAddrLocal() ||
+          mNetAddr.IsIPAddrShared())) {
       nsAutoCString ipaddr;
       RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
       netaddr->GetAddress(ipaddr);
@@ -1328,12 +1335,12 @@ nsresult nsSocketTransport::InitiateSocket() {
   // Hosts/Proxy Hosts that are Local IP Literals should not be speculatively
   // connected - Bug 853423.
   if (mConnectionFlags & nsISocketTransport::DISABLE_RFC1918 &&
-      IsIPAddrLocal(&mNetAddr)) {
+      mNetAddr.IsIPAddrLocal()) {
     if (SOCKET_LOG_ENABLED()) {
       nsAutoCString netAddrCString;
       netAddrCString.SetLength(kIPv6CStrBufSize);
-      if (!NetAddrToString(&mNetAddr, netAddrCString.BeginWriting(),
-                           kIPv6CStrBufSize))
+      if (!mNetAddr.ToStringBuffer(netAddrCString.BeginWriting(),
+                                   kIPv6CStrBufSize))
         netAddrCString = "<IP-to-string failed>"_ns;
       SOCKET_LOG(
           ("nsSocketTransport::InitiateSocket skipping "
@@ -1517,7 +1524,7 @@ nsresult nsSocketTransport::InitiateSocket() {
 
   if (SOCKET_LOG_ENABLED()) {
     char buf[kNetAddrMaxCStrBufSize];
-    NetAddrToString(&mNetAddr, buf, sizeof(buf));
+    mNetAddr.ToStringBuffer(buf, sizeof(buf));
     SOCKET_LOG(("  trying address: %s\n", buf));
   }
 
@@ -1525,6 +1532,7 @@ nsresult nsSocketTransport::InitiateSocket() {
   // Initiate the connect() to the host...
   //
   PRNetAddr prAddr;
+  memset(&prAddr, 0, sizeof(prAddr));
   {
     if (mBindAddr) {
       MutexAutoLock lock(mLock);
@@ -1553,9 +1561,16 @@ nsresult nsSocketTransport::InitiateSocket() {
   }
 #endif
 
-  if (!mDNSRecordTxt.IsEmpty() && !mUsingQuic && mSecInfo) {
-    nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
-    if (secCtrl) {
+  nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
+  if (secCtrl) {
+    if (!mEchConfig.IsEmpty() &&
+        !(mConnectionFlags & (DONT_TRY_ESNI_OR_ECH | BE_CONSERVATIVE))) {
+      SOCKET_LOG(("nsSocketTransport::InitiateSocket set echconfig."));
+      rv = secCtrl->SetEchConfig(mEchConfig);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+    } else if (!mDNSRecordTxt.IsEmpty() && !mUsingQuic) {
       SOCKET_LOG(("nsSocketTransport::InitiateSocket set esni keys."));
       rv = secCtrl->SetEsniTxt(mDNSRecordTxt);
       if (NS_FAILED(rv)) {
@@ -1890,7 +1905,16 @@ bool nsSocketTransport::RecoverFromError() {
       } else if (!(mConnectionFlags & DISABLE_TRR)) {
         bool trrEnabled;
         mDNSRecord->IsTRR(&trrEnabled);
-        if (trrEnabled) {
+
+        // Bug 1648147 - If the server responded with `0.0.0.0` or `::` then we
+        // should intentionally not fallback to regular DNS.
+        if (!StaticPrefs::network_trr_fallback_on_zero_response() &&
+            ((mNetAddr.raw.family == AF_INET && mNetAddr.inet.ip == 0) ||
+             (mNetAddr.raw.family == AF_INET6 &&
+              mNetAddr.inet6.ip.u64[0] == 0 &&
+              mNetAddr.inet6.ip.u64[1] == 0))) {
+          SOCKET_LOG(("  TRR returned 0.0.0.0 and there are no other IPs"));
+        } else if (trrEnabled) {
           // Drop state to closed.  This will trigger a new round of
           // DNS resolving. Bypass the cache this time since the
           // cached data came from TRR and failed already!
@@ -2521,7 +2545,7 @@ void nsSocketTransport::IsLocal(bool* aIsLocal) {
     }
 #endif
 
-    *aIsLocal = IsLoopBackAddress(&mNetAddr);
+    *aIsLocal = mNetAddr.IsLoopbackAddr();
   }
 }
 
@@ -3011,7 +3035,8 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
   if (NS_FAILED(status) && mDNSTxtRequest) {
     mDNSTxtRequest->Cancel(NS_ERROR_ABORT);
   } else if (NS_SUCCEEDED(status)) {
-    mDNSRecord = rec;
+    mDNSRecord = do_QueryInterface(rec);
+    MOZ_ASSERT(mDNSRecord);
   }
 
   // flag host lookup complete for the benefit of the ResolveHost method.
@@ -3042,7 +3067,8 @@ nsSocketTransport::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
 // nsIInterfaceRequestor
 NS_IMETHODIMP
 nsSocketTransport::GetInterface(const nsIID& iid, void** result) {
-  if (iid.Equals(NS_GET_IID(nsIDNSRecord))) {
+  if (iid.Equals(NS_GET_IID(nsIDNSRecord)) ||
+      iid.Equals(NS_GET_IID(nsIDNSAddrRecord))) {
     return mDNSRecord ? mDNSRecord->QueryInterface(iid, result)
                       : NS_ERROR_NO_INTERFACE;
   }
@@ -3609,6 +3635,12 @@ nsSocketTransport::GetResetIPFamilyPreference(bool* aReset) {
 NS_IMETHODIMP
 nsSocketTransport::GetEsniUsed(bool* aEsniUsed) {
   *aEsniUsed = mEsniUsed;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSocketTransport::SetEchConfig(const nsACString& aEchConfig) {
+  mEchConfig = aEchConfig;
   return NS_OK;
 }
 

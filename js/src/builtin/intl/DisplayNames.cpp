@@ -30,6 +30,8 @@
 #include "gc/Rooting.h"
 #include "js/CallArgs.h"
 #include "js/Class.h"
+#include "js/experimental/Intl.h"  // JS::AddMozDateTimeFormatConstructor, JS::AddDisplayNamesConstructor
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/GCVector.h"
 #include "js/PropertyDescriptor.h"
 #include "js/PropertySpec.h"
@@ -223,7 +225,7 @@ void js::DisplayNamesObject::finalize(JSFreeOp* fop, JSObject* obj) {
   }
 }
 
-bool js::AddDisplayNamesConstructor(JSContext* cx, HandleObject intl) {
+bool JS::AddDisplayNamesConstructor(JSContext* cx, HandleObject intl) {
   JSObject* ctor =
       GlobalObject::getOrCreateConstructor(cx, JSProto_DisplayNames);
   if (!ctor) {
@@ -234,7 +236,7 @@ bool js::AddDisplayNamesConstructor(JSContext* cx, HandleObject intl) {
   return DefineDataProperty(cx, intl, cx->names().DisplayNames, ctorValue, 0);
 }
 
-bool js::AddMozDisplayNamesConstructor(JSContext* cx, HandleObject intl) {
+bool JS::AddMozDisplayNamesConstructor(JSContext* cx, HandleObject intl) {
   RootedObject ctor(cx, GlobalObject::createConstructor(
                             cx, MozDisplayNames, cx->names().DisplayNames, 2));
   if (!ctor) {
@@ -771,9 +773,8 @@ static JSString* GetWeekdayDisplayName(JSContext* cx,
       UCAL_MONDAY, UCAL_TUESDAY,  UCAL_WEDNESDAY, UCAL_THURSDAY,
       UCAL_FRIDAY, UCAL_SATURDAY, UCAL_SUNDAY};
 
-  ListObject* names =
-      GetDateTimeDisplayNames(cx, displayNames, locale, calendar, symbolType,
-                              mozilla::MakeSpan(indices));
+  ListObject* names = GetDateTimeDisplayNames(
+      cx, displayNames, locale, calendar, symbolType, mozilla::Span(indices));
   if (!names) {
     return nullptr;
   }
@@ -823,9 +824,8 @@ static JSString* GetMonthDisplayName(
       UCAL_SEPTEMBER, UCAL_OCTOBER,  UCAL_NOVEMBER, UCAL_DECEMBER,
       UCAL_UNDECIMBER};
 
-  ListObject* names =
-      GetDateTimeDisplayNames(cx, displayNames, locale, calendar, symbolType,
-                              mozilla::MakeSpan(indices));
+  ListObject* names = GetDateTimeDisplayNames(
+      cx, displayNames, locale, calendar, symbolType, mozilla::Span(indices));
   if (!names) {
     return nullptr;
   }
@@ -876,9 +876,8 @@ static JSString* GetQuarterDisplayName(JSContext* cx,
   // ICU doesn't provide an enum for quarters.
   static constexpr int32_t indices[] = {0, 1, 2, 3};
 
-  ListObject* names =
-      GetDateTimeDisplayNames(cx, displayNames, locale, calendar, symbolType,
-                              mozilla::MakeSpan(indices));
+  ListObject* names = GetDateTimeDisplayNames(
+      cx, displayNames, locale, calendar, symbolType, mozilla::Span(indices));
   if (!names) {
     return nullptr;
   }
@@ -905,9 +904,8 @@ static JSString* GetDayPeriodDisplayName(
 
   static constexpr int32_t indices[] = {UCAL_AM, UCAL_PM};
 
-  ListObject* names =
-      GetDateTimeDisplayNames(cx, displayNames, locale, calendar, symbolType,
-                              mozilla::MakeSpan(indices));
+  ListObject* names = GetDateTimeDisplayNames(
+      cx, displayNames, locale, calendar, symbolType, mozilla::Span(indices));
   if (!names) {
     return nullptr;
   }

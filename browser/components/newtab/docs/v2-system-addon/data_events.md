@@ -723,6 +723,27 @@ This reports the user's interaction with those Pocket tiles.
 }
 ```
 
+## Save to Pocket button pings
+
+Right now the save to Pocket button, while technically outside of newtab, has some similarities with the newtab telemetry.
+
+These pings record user interaction with the save to Pocket button.
+
+### Click/impression ping
+
+```js
+{
+  "locale": "en-US",
+  "version": "83.0a1",
+  "release_channel": "default",
+  "model": "",
+  "events": [{"action":"click|impression|unpin","position":0,"source":"save_button|on_save_recs|learn_more|sign_up_1|sign_up_2|log_in"}],
+  "pocket_logged_in_state": true|false,
+  "impression_id": "{005deed0-e3e4-4c02-a041-17405fd703f6}",
+  "profile_creation_date": 18550
+}
+```
+
 ## Performance pings
 
 These pings are captured to record performance related events i.e. how long certain operations take to execute.
@@ -1353,23 +1374,6 @@ This reports a failure in the Remote Settings loader to load messages for Activi
 }
 ```
 
-## Trailhead experiment enrollment ping
-
-This reports an enrollment ping when a user gets enrolled in a Trailhead experiment. Note that this ping is only collected through the Mozilla Events telemetry pipeline.
-
-```js
-{
-  "category": "activity_stream",
-  "method": "enroll",
-  "object": "preference_study"
-  "value": "activity-stream-firstup-trailhead-interrupts",
-  "extra_keys": {
-    "experimentType": "as-firstrun",
-    "branch": ["supercharge" | "join" | "sync" | "privacy" ...]
-  }
-}
-```
-
 ## Feature Callouts interaction pings
 
 This reports when a user has seen or clicked a badge/notification in the browser toolbar in a non-PBM window
@@ -1413,6 +1417,18 @@ For message impressions we concatenate the ids of all messages in the panel.
   "message_id": "WHATS_NEW_70",
   "event": ["CLICK" | "IMPRESSION"],
   "value": { "view": ["application_menu" | "toolbar_dropdown"] }
+}
+```
+
+We also report when the panel checkbox (used to allow users to opt out of
+notifications) is checked or unchecked.
+
+```
+{
+  ...
+  "message_id": "n/a",
+  "event": "WNP_PREF_TOGGLE",
+  "value": { "prefValue": true }
 }
 ```
 

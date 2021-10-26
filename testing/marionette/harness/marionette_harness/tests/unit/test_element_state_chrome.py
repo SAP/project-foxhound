@@ -10,7 +10,6 @@ from marionette_harness import MarionetteTestCase, skip, WindowManagerMixin
 
 
 class TestElementState(WindowManagerMixin, MarionetteTestCase):
-
     def setUp(self):
         super(TestElementState, self).setUp()
 
@@ -24,7 +23,6 @@ class TestElementState(WindowManagerMixin, MarionetteTestCase):
 
         super(TestElementState, self).tearDown()
 
-    @skip("Switched off in bug 896043, and to be turned on in bug 896046")
     def test_is_displayed(self):
         l = self.marionette.find_element(By.ID, "textInput")
         self.assertTrue(l.is_displayed())
@@ -42,13 +40,17 @@ class TestElementState(WindowManagerMixin, MarionetteTestCase):
     def test_can_get_element_rect(self):
         l = self.marionette.find_element(By.ID, "textInput")
         rect = l.rect
-        self.assertTrue(rect['x'] > 0)
-        self.assertTrue(rect['y'] > 0)
+        self.assertTrue(rect["x"] > 0)
+        self.assertTrue(rect["y"] > 0)
 
     def test_get_attribute(self):
-        el = self.marionette.execute_script("return window.document.getElementById('textInput');")
+        el = self.marionette.execute_script(
+            "return window.document.getElementById('textInput');"
+        )
         self.assertEqual(el.get_attribute("id"), "textInput")
 
     def test_get_property(self):
-        el = self.marionette.execute_script("return window.document.getElementById('textInput');")
+        el = self.marionette.execute_script(
+            "return window.document.getElementById('textInput');"
+        )
         self.assertEqual(el.get_property("id"), "textInput")

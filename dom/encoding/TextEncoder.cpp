@@ -9,8 +9,7 @@
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsReadableUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void TextEncoder::Encode(JSContext* aCx, JS::Handle<JSObject*> aObj,
                          const nsACString& aUtf8String,
@@ -34,7 +33,7 @@ void TextEncoder::EncodeInto(JSContext* aCx, JS::Handle<JSString*> aSrc,
   size_t read;
   size_t written;
   auto maybe = JS_EncodeStringToUTF8BufferPartial(
-      aCx, aSrc, AsWritableChars(MakeSpan(aDst.Data(), aDst.Length())));
+      aCx, aSrc, AsWritableChars(Span(aDst.Data(), aDst.Length())));
   if (!maybe) {
     aError.ReportOOM();
     return;
@@ -49,5 +48,4 @@ void TextEncoder::GetEncoding(nsACString& aEncoding) {
   aEncoding.AssignLiteral("utf-8");
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

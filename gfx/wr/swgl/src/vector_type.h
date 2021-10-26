@@ -39,6 +39,16 @@ SI VectorType<T, 16> combine(VectorType<T, 8> a, VectorType<T, 8> b) {
 }
 
 template <typename T>
+SI VectorType<T, 2> lowHalf(VectorType<T, 4> a) {
+  return __builtin_shufflevector(a, a, 0, 1);
+}
+
+template <typename T>
+SI VectorType<T, 2> highHalf(VectorType<T, 4> a) {
+  return __builtin_shufflevector(a, a, 2, 3);
+}
+
+template <typename T>
 SI VectorType<T, 4> lowHalf(VectorType<T, 8> a) {
   return __builtin_shufflevector(a, a, 0, 1, 2, 3);
 }
@@ -309,6 +319,8 @@ struct VectorType {
 #  define zwzw swizzle(2, 3, 2, 3)
 #  define zyxw swizzle(2, 1, 0, 3)
 #  define xyzz swizzle(0, 1, 2, 2)
+#  define yzwx swizzle(1, 2, 3, 0)
+#  define wxyz swizzle(3, 0, 1, 2)
 #  define xxxxyyyy XXXXYYYY()
   VectorType<T, 8> XXXXYYYY() const {
     return swizzle(0, 0, 0, 0).combine(swizzle(1, 1, 1, 1));
@@ -343,6 +355,12 @@ struct VectorType<T, 2> {
     };
     T elements[2];
   };
+
+  SI VectorType wrap(const data_type& data) {
+    VectorType v;
+    v.data = data;
+    return v;
+  }
 };
 
 #  define CONVERT(vector, type) ((type)(vector))
@@ -409,6 +427,23 @@ template <typename T>
 SI VectorType<T, 8> zip2High(VectorType<T, 8> a, VectorType<T, 8> b) {
   return SHUFFLE(a, b, 4, 5, 12, 13, 6, 7, 14, 15);
 }
+
+#ifdef __clang__
+template <typename T>
+SI VectorType<T, 8> zip(VectorType<T, 4> a, VectorType<T, 4> b) {
+  return SHUFFLE(a, b, 0, 4, 1, 5, 2, 6, 3, 7);
+}
+
+template <typename T>
+SI VectorType<T, 16> zip(VectorType<T, 8> a, VectorType<T, 8> b) {
+  return SHUFFLE(a, b, 0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
+}
+#else
+template <typename T, int N>
+SI VectorType<T, N * 2> zip(VectorType<T, N> a, VectorType<T, N> b) {
+  return combine(zipLow(a, b), zipHigh(a, b));
+}
+#endif
 
 template <typename T>
 struct Unaligned {

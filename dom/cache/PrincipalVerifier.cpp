@@ -13,14 +13,13 @@
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/BasePrincipal.h"
+#include "CacheCommon.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsNetUtil.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 using mozilla::ipc::BackgroundParent;
@@ -103,16 +102,11 @@ void PrincipalVerifier::VerifyOnMainThread() {
 
   // No matter what happens, we need to release the actor before leaving
   // this method.
-  RefPtr<ContentParent> actor;
-  actor.swap(mActor);
+  RefPtr<ContentParent> actor = std::move(mActor);
 
-  auto principalOrErr = PrincipalInfoToPrincipal(mPrincipalInfo);
-  if (NS_WARN_IF(principalOrErr.isErr())) {
-    DispatchToInitiatingThread(principalOrErr.unwrapErr());
-    return;
-  }
-
-  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+  CACHE_TRY_INSPECT(
+      const auto& principal, PrincipalInfoToPrincipal(mPrincipalInfo), QM_VOID,
+      [this](const nsresult result) { DispatchToInitiatingThread(result); });
 
   // We disallow null principal on the client side, but double-check here.
   if (NS_WARN_IF(principal->GetIsNullPrincipal())) {
@@ -194,6 +188,4 @@ void PrincipalVerifier::DispatchToInitiatingThread(nsresult aRv) {
   }
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

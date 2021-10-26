@@ -20,6 +20,9 @@ using struct mozilla::void_t
 using moveonly struct mozilla::SerializedStructuredCloneBuffer
   from "ipc/IPCMessageUtils.h";
 
+using class mozilla::dom::LoadingSessionHistoryInfo
+  from "mozilla/dom/SessionHistoryEntry.h";
+
 using LayoutDeviceIntRect from "Units.h";
 using DesktopIntRect from "Units.h";
 using DesktopToLayoutDeviceScale from "Units.h";
@@ -147,6 +150,7 @@ struct FrameScriptInfo
 struct FeaturePolicyInfo
 {
   nsString[]   inheritedDeniedFeatureNames;
+  nsString[]   attributeEnabledFeatureNames;
   nsString     declaredString;
   nsIPrincipal defaultOrigin;
   nsIPrincipal selfOrigin;
@@ -161,7 +165,6 @@ struct CreatedWindowInfo
   nsresult rv;
   bool windowOpened;
   FrameScriptInfo[] frameScripts;
-  nsCString urlToLoad;
   uint32_t maxTouchPoints;
   DimensionInfo dimensions;
   bool hasSiblings;
@@ -265,6 +268,10 @@ struct DocShellLoadStateInit
   MaybeDiscardedBrowsingContext SourceBrowsingContext;
   MaybeDiscardedBrowsingContext TargetBrowsingContext;
 
+  // The TriggineringSandboxFlags are the SandboxFlags of the entity
+  // responsible for causing the load to occur.
+  uint32_t TriggeringSandboxFlags;
+
   nsCString? OriginalURIString;
   int32_t? CancelContentJSEpoch;
 
@@ -281,6 +288,10 @@ struct DocShellLoadStateInit
   uint64_t LoadIdentifier;
 
   bool ChannelInitialized;
+
+  bool TryToReplaceWithSessionHistoryLoad;
+
+  LoadingSessionHistoryInfo? loadingSessionHistoryInfo;
 };
 
 struct TimedChannelInfo

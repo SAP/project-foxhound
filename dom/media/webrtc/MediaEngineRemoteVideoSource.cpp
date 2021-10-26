@@ -6,9 +6,11 @@
 #include "MediaEngineRemoteVideoSource.h"
 
 #include "CamerasChild.h"
+#include "Layers.h"
 #include "MediaManager.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/ErrorNames.h"
+#include "mozilla/gfx/Point.h"
 #include "mozilla/RefPtr.h"
 #include "Tracing.h"
 #include "VideoFrameUtils.h"
@@ -261,14 +263,15 @@ nsresult MediaEngineRemoteVideoSource::Deallocate() {
   return NS_OK;
 }
 
-void MediaEngineRemoteVideoSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+void MediaEngineRemoteVideoSource::SetTrack(const RefPtr<MediaTrack>& aTrack,
+                                            const PrincipalHandle& aPrincipal) {
   LOG("%s", __PRETTY_FUNCTION__);
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
   MOZ_ASSERT(aTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
   if (!mImageContainer) {
     mImageContainer = layers::LayerManager::CreateImageContainer(
@@ -277,7 +280,7 @@ void MediaEngineRemoteVideoSource::SetTrack(
 
   {
     MutexAutoLock lock(mMutex);
-    mTrack = aTrack;
+    mTrack = aTrack->AsSourceTrack();
     mPrincipal = aPrincipal;
   }
 }
@@ -463,23 +466,26 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
     uint8_t* aBuffer, const camera::VideoFrameProperties& aProps) {
   // Cameras IPC thread - take great care with accessing members!
 
-  int32_t req_max_width;
-  int32_t req_max_height;
-  int32_t req_ideal_width;
-  int32_t req_ideal_height;
+  Maybe<int32_t> req_max_width;
+  Maybe<int32_t> req_max_height;
+  Maybe<int32_t> req_ideal_width;
+  Maybe<int32_t> req_ideal_height;
   {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(mState == kStarted);
     // TODO: These can be removed in bug 1453269.
-    req_max_width = mCapability.width & 0xffff;
-    req_max_height = mCapability.height & 0xffff;
-    req_ideal_width = (mCapability.width >> 16) & 0xffff;
-    req_ideal_height = (mCapability.height >> 16) & 0xffff;
+    const int32_t max_width = mCapability.width & 0xffff;
+    const int32_t max_height = mCapability.height & 0xffff;
+    const int32_t ideal_width = (mCapability.width >> 16) & 0xffff;
+    const int32_t ideal_height = (mCapability.height >> 16) & 0xffff;
+
+    req_max_width = max_width ? Some(max_width) : Nothing();
+    req_max_height = max_height ? Some(max_height) : Nothing();
+    req_ideal_width = ideal_width ? Some(ideal_width) : Nothing();
+    req_ideal_height = ideal_height ? Some(ideal_height) : Nothing();
   }
 
   // This is only used in the case of screen sharing, see bug 1453269.
-  const int32_t target_width = aProps.width();
-  const int32_t target_height = aProps.height();
 
   if (aProps.rotation() == 90 || aProps.rotation() == 270) {
     // This frame is rotated, so what was negotiated as width is now height,
@@ -488,21 +494,22 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
     std::swap(req_ideal_width, req_ideal_height);
   }
 
-  int32_t dst_max_width = req_max_width == 0
-                              ? aProps.width()
-                              : std::min(req_max_width, aProps.width());
-  int32_t dst_max_height = req_max_height == 0
-                               ? aProps.height()
-                               : std::min(req_max_height, aProps.height());
+  int32_t dst_max_width =
+      std::min(aProps.width(), req_max_width.valueOr(aProps.width()));
+  int32_t dst_max_height =
+      std::min(aProps.height(), req_max_height.valueOr(aProps.height()));
   // This logic works for both camera and screen sharing case.
-  // for camera case, req_ideal_width and req_ideal_height is 0.
-  // The following snippet will set dst_width to dst_max_width and dst_height to
-  // dst_max_height
-  int32_t dst_width = std::min(
-      req_ideal_width > 0 ? req_ideal_width : aProps.width(), dst_max_width);
-  int32_t dst_height =
-      std::min(req_ideal_height > 0 ? req_ideal_height : aProps.height(),
-               dst_max_height);
+  // for camera case, req_ideal_width and req_ideal_height are absent.
+  int32_t dst_width = req_ideal_width.valueOr(aProps.width());
+  int32_t dst_height = req_ideal_height.valueOr(aProps.height());
+
+  if (!req_ideal_width && req_ideal_height) {
+    dst_width = *req_ideal_height * aProps.width() / aProps.height();
+  } else if (!req_ideal_height && req_ideal_width) {
+    dst_height = *req_ideal_width * aProps.height() / aProps.width();
+  }
+  dst_width = std::min(dst_width, dst_max_width);
+  dst_height = std::min(dst_height, dst_max_height);
 
   // Apply scaling for screen sharing, see bug 1453269.
   switch (mCapEngine) {
@@ -512,8 +519,15 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
       float scale_width = (float)dst_width / (float)aProps.width();
       float scale_height = (float)dst_height / (float)aProps.height();
       float scale = (scale_width + scale_height) / 2;
-      dst_width = (int)(scale * target_width);
-      dst_height = (int)(scale * target_height);
+      // If both req_ideal_width & req_ideal_height are absent, scale is 1, but
+      // if one is present and the other not, scale precisely to the one present
+      if (!req_ideal_width) {
+        scale = scale_height;
+      } else if (!req_ideal_height) {
+        scale = scale_width;
+      }
+      dst_width = int32_t(scale * (float)aProps.width());
+      dst_height = int32_t(scale * (float)aProps.height());
 
       // if scaled rectangle exceeds max rectangle, scale to minimum of portrait
       // and landscape
@@ -521,8 +535,8 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
         scale_width = (float)dst_max_width / (float)dst_width;
         scale_height = (float)dst_max_height / (float)dst_height;
         scale = std::min(scale_width, scale_height);
-        dst_width = (int32_t)(scale * dst_width);
-        dst_height = (int32_t)(scale * dst_height);
+        dst_width = int32_t(scale * dst_width);
+        dst_height = int32_t(scale * dst_height);
       }
       break;
     }
@@ -561,17 +575,17 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
 
   layers::PlanarYCbCrData data;
   data.mYChannel = const_cast<uint8_t*>(buffer->DataY());
-  data.mYSize = IntSize(buffer->width(), buffer->height());
+  data.mYSize = gfx::IntSize(buffer->width(), buffer->height());
   data.mYStride = buffer->StrideY();
   MOZ_ASSERT(buffer->StrideU() == buffer->StrideV());
   data.mCbCrStride = buffer->StrideU();
   data.mCbChannel = const_cast<uint8_t*>(buffer->DataU());
   data.mCrChannel = const_cast<uint8_t*>(buffer->DataV());
   data.mCbCrSize =
-      IntSize((buffer->width() + 1) / 2, (buffer->height() + 1) / 2);
+      gfx::IntSize((buffer->width() + 1) / 2, (buffer->height() + 1) / 2);
   data.mPicX = 0;
   data.mPicY = 0;
-  data.mPicSize = IntSize(buffer->width(), buffer->height());
+  data.mPicSize = gfx::IntSize(buffer->width(), buffer->height());
   data.mYUVColorSpace = gfx::YUVColorSpace::BT601;
 
   RefPtr<layers::PlanarYCbCrImage> image =

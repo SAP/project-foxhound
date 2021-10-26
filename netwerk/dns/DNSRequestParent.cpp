@@ -13,6 +13,7 @@
 #include "nsIDNSRecord.h"
 #include "nsHostResolver.h"
 #include "mozilla/Unused.h"
+#include "DNSResolverInfo.h"
 
 using namespace mozilla::ipc;
 
@@ -47,18 +48,13 @@ void DNSRequestHandler::DoAsyncResolve(const nsACString& hostname,
   if (NS_SUCCEEDED(rv)) {
     nsCOMPtr<nsIEventTarget> main = GetMainThreadEventTarget();
     nsCOMPtr<nsICancelable> unused;
-    if (type != nsIDNSService::RESOLVE_TYPE_DEFAULT) {
-      rv = dns->AsyncResolveByTypeNative(hostname, type, flags, this, main,
-                                         originAttributes,
-                                         getter_AddRefs(unused));
-    } else if (trrServer.IsEmpty()) {
-      rv = dns->AsyncResolveNative(hostname, flags, this, main,
-                                   originAttributes, getter_AddRefs(unused));
-    } else {
-      rv = dns->AsyncResolveWithTrrServerNative(hostname, trrServer, flags,
-                                                this, main, originAttributes,
-                                                getter_AddRefs(unused));
+    RefPtr<DNSResolverInfo> res;
+    if (!trrServer.IsEmpty()) {
+      res = new DNSResolverInfo(trrServer);
     }
+    rv = dns->AsyncResolveNative(
+        hostname, static_cast<nsIDNSService::ResolveType>(type), flags, res,
+        this, main, originAttributes, getter_AddRefs(unused));
   }
 
   if (NS_FAILED(rv) && mIPCActor->CanSend()) {
@@ -73,16 +69,13 @@ void DNSRequestHandler::OnRecvCancelDNSRequest(
   nsresult rv;
   nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID, &rv);
   if (NS_SUCCEEDED(rv)) {
-    if (type != nsIDNSService::RESOLVE_TYPE_DEFAULT) {
-      rv = dns->CancelAsyncResolveByTypeNative(hostName, type, flags, this,
-                                               reason, originAttributes);
-    } else if (aTrrServer.IsEmpty()) {
-      rv = dns->CancelAsyncResolveNative(hostName, flags, this, reason,
-                                         originAttributes);
-    } else {
-      rv = dns->CancelAsyncResolveWithTrrServerNative(
-          hostName, aTrrServer, flags, this, reason, originAttributes);
+    RefPtr<DNSResolverInfo> res;
+    if (!aTrrServer.IsEmpty()) {
+      res = new DNSResolverInfo(aTrrServer);
     }
+    rv = dns->CancelAsyncResolveNative(
+        hostName, static_cast<nsIDNSService::ResolveType>(type), flags, res,
+        this, reason, originAttributes);
   }
 }
 
@@ -95,17 +88,17 @@ bool DNSRequestHandler::OnRecvLookupCompleted(const DNSRequestResponse& reply) {
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
-DNSRequestHandler::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
-                                    nsresult status) {
+DNSRequestHandler::OnLookupComplete(nsICancelable* request,
+                                    nsIDNSRecord* aRecord, nsresult status) {
   if (!mIPCActor || !mIPCActor->CanSend()) {
     // nothing to do: child probably crashed
     return NS_OK;
   }
 
   if (NS_SUCCEEDED(status)) {
-    MOZ_ASSERT(rec);
+    MOZ_ASSERT(aRecord);
 
-    nsCOMPtr<nsIDNSByTypeRecord> byTypeRec = do_QueryInterface(rec);
+    nsCOMPtr<nsIDNSByTypeRecord> byTypeRec = do_QueryInterface(aRecord);
     if (byTypeRec) {
       IPCTypeRecord result;
       byTypeRec->GetResults(&result.mData);
@@ -113,6 +106,8 @@ DNSRequestHandler::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
       return NS_OK;
     }
 
+    nsCOMPtr<nsIDNSAddrRecord> rec = do_QueryInterface(aRecord);
+    MOZ_ASSERT(rec);
     nsAutoCString cname;
     if (mFlags & nsHostResolver::RES_CANON_NAME) {
       rec->GetCanonicalName(cname);

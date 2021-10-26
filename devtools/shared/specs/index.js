@@ -78,6 +78,11 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/descriptors/webextension",
   },
   {
+    types: ["workerDescriptor"],
+    spec: "devtools/shared/specs/descriptors/worker",
+    front: "devtools/client/fronts/descriptors/worker",
+  },
+  {
     types: ["device"],
     spec: "devtools/shared/specs/device",
     front: "devtools/client/fronts/device",
@@ -109,7 +114,7 @@ const Types = (exports.__TypesForTests = [
     front: null,
   },
   {
-    types: ["highlighter", "customhighlighter"],
+    types: ["customhighlighter"],
     spec: "devtools/shared/specs/highlighters",
     front: "devtools/client/fronts/highlighters",
   },
@@ -129,9 +134,19 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/manifest",
   },
   {
+    types: ["mediarule"],
+    spec: "devtools/shared/specs/media-rule",
+    front: "devtools/client/fronts/media-rule",
+  },
+  {
     types: ["memory"],
     spec: "devtools/shared/specs/memory",
     front: "devtools/client/fronts/memory",
+  },
+  {
+    types: ["network"],
+    spec: "devtools/shared/specs/network",
+    front: "devtools/client/fronts/network",
   },
   {
     types: ["netEvent"],
@@ -153,6 +168,11 @@ const Types = (exports.__TypesForTests = [
     types: ["obj", "object.descriptor"],
     spec: "devtools/shared/specs/object",
     front: null,
+  },
+  {
+    types: ["pagestyle"],
+    spec: "devtools/shared/specs/page-style",
+    front: "devtools/client/fronts/page-style",
   },
   {
     types: ["perf"],
@@ -205,6 +225,11 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/source",
   },
   {
+    types: ["stacktraces"],
+    spec: "devtools/shared/specs/stacktraces",
+    front: "devtools/client/fronts/stacktraces",
+  },
+  {
     types: [
       "cookies",
       "localStorage",
@@ -228,14 +253,19 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/string",
   },
   {
-    types: ["pagestyle", "domstylerule"],
-    spec: "devtools/shared/specs/styles",
-    front: "devtools/client/fronts/styles",
+    types: ["domstylerule"],
+    spec: "devtools/shared/specs/style-rule",
+    front: "devtools/client/fronts/style-rule",
   },
   {
-    types: ["mediarule", "stylesheet", "stylesheets"],
-    spec: "devtools/shared/specs/stylesheets",
-    front: "devtools/client/fronts/stylesheets",
+    types: ["stylesheet"],
+    spec: "devtools/shared/specs/style-sheet",
+    front: "devtools/client/fronts/style-sheet",
+  },
+  {
+    types: ["stylesheets"],
+    spec: "devtools/shared/specs/style-sheets",
+    front: "devtools/client/fronts/style-sheets",
   },
   {
     types: ["symbol"],

@@ -1,4 +1,6 @@
+/* clang-format off */
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +25,8 @@
 namespace mozilla {
 namespace a11y {
 
-inline mozAccessible* GetNativeFromGeckoAccessible(mozilla::a11y::AccessibleOrProxy aAccOrProxy) {
+inline mozAccessible* GetNativeFromGeckoAccessible(
+    mozilla::a11y::AccessibleOrProxy aAccOrProxy) {
   MOZ_ASSERT(!aAccOrProxy.IsNull(), "Cannot get native from null accessible");
   if (Accessible* acc = aAccOrProxy.AsAccessible()) {
     mozAccessible* native = nil;
@@ -54,6 +57,8 @@ inline mozAccessible* GetNativeFromGeckoAccessible(mozilla::a11y::AccessibleOrPr
    * A cache of a subset of our states.
    */
   uint64_t mCachedState;
+
+  nsStaticAtom* mARIARole;
 }
 
 // inits with the given wrap or proxy accessible
@@ -78,6 +83,9 @@ inline mozAccessible* GetNativeFromGeckoAccessible(mozilla::a11y::AccessibleOrPr
 
 - (void)handleAccessibleTextChangeEvent:(NSString*)change
                                inserted:(BOOL)isInserted
+                            inContainer:
+                                (const mozilla::a11y::AccessibleOrProxy&)
+                                    container
                                      at:(int32_t)start;
 
 // internal method to retrieve a child at a given index.
@@ -94,6 +102,12 @@ inline mozAccessible* GetNativeFromGeckoAccessible(mozilla::a11y::AccessibleOrPr
 
 // Invalidate cached state.
 - (void)invalidateState;
+
+// Get top level (tab) web area.
+- (mozAccessible*)topWebArea;
+
+// Handle a role change
+- (void)handleRoleChanged:(mozilla::a11y::role)newRole;
 
 #pragma mark - mozAccessible protocol / widget
 
@@ -179,6 +193,20 @@ inline mozAccessible* GetNativeFromGeckoAccessible(mozilla::a11y::AccessibleOrPr
 - (NSNumber*)moxRequired;
 
 // override
+- (id)moxEditableAncestor;
+
+#ifndef RELEASE_OR_BETA
+// override
+- (NSString*)moxMozDebugDescription;
+#endif
+
+// override
+- (NSArray*)moxUIElementsForSearchPredicate:(NSDictionary*)searchPredicate;
+
+// override
+- (NSNumber*)moxUIElementCountForSearchPredicate:(NSDictionary*)searchPredicate;
+
+// override
 - (void)moxSetFocused:(NSNumber*)focused;
 
 // override
@@ -204,10 +232,5 @@ inline mozAccessible* GetNativeFromGeckoAccessible(mozilla::a11y::AccessibleOrPr
 - (void)expire;
 // override
 - (BOOL)isExpired;
-
-// ---- NSAccessibility methods ---- //
-
-// override
-- (NSString*)description;
 
 @end

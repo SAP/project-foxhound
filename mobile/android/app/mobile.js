@@ -1,6 +1,8 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#filter dumbComments emptyLines substitution
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Non-static prefs that are specific to Firefox on Android belong in this file
 // (unless there is a compelling and documented reason for them to belong in
@@ -9,8 +11,6 @@
 // Please indent all prefs defined within #ifdef/#ifndef conditions. This
 // improves readability, particular for conditional blocks that exceed a single
 // screen.
-
-#filter substitution
 
 // For browser.js element
 //
@@ -230,10 +230,6 @@ pref("browser.menu.showCharacterEncoding", "chrome://browser/locale/browser.prop
 pref("browser.ssl_override_behavior", 2);
 pref("browser.xul.error_pages.expert_bad_cert", false);
 
-// Market-specific search defaults
-pref("browser.search.geoSpecificDefaults", true);
-pref("browser.search.geoSpecificDefaults.url", "https://search.services.mozilla.com/1/%APP%/%VERSION%/%CHANNEL%/%LOCALE%/%REGION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%");
-
 // disable updating
 pref("browser.search.update", false);
 
@@ -314,7 +310,6 @@ pref("privacy.item.syncAccount", true);
 
 pref("javascript.options.mem.high_water_mark", 32);
 
-pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
 pref("dom.max_script_run_time", 20);
 
 // Absolute path to the devtools unix domain socket file used
@@ -380,11 +375,6 @@ pref("app.update.url.android", "https://aus5.mozilla.org/update/4/%PRODUCT%/%VER
   pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
 #endif
 
-// threshold where a tap becomes a drag, in 1/240" reference pixels
-// The names of the preferences are to be in sync with EventStateManager.cpp
-pref("ui.dragThresholdX", 25);
-pref("ui.dragThresholdY", 25);
-
 pref("layers.async-video.enabled", true);
 
 // APZ physics settings (fling acceleration, fling curving and axis lock) have
@@ -393,7 +383,6 @@ pref("apz.axis_lock.breakout_angle", "0.7853982");    // PI / 4 (45 degrees)
 pref("apz.axis_lock.mode", 1); // Use "strict" axis locking
 pref("apz.content_response_timeout", 600);
 pref("apz.drag.enabled", false);
-pref("apz.fling_accel_interval_ms", 750);
 pref("apz.fling_curve_function_x1", "0.59");
 pref("apz.fling_curve_function_y1", "0.46");
 pref("apz.fling_curve_function_x2", "0.05");

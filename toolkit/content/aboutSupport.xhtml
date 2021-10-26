@@ -134,6 +134,15 @@
             </td>
           </tr>
 
+#ifdef XP_MACOSX
+          <tr>
+            <th class="column" data-l10n-id="app-basics-rosetta"/>
+
+            <td id="rosetta-box">
+            </td>
+          </tr>
+#endif
+
           <tr class="no-copy">
             <th class="column" data-l10n-id="app-basics-binary"/>
 
@@ -205,7 +214,15 @@
 
             <td id="multiprocess-box">
               <span id="multiprocess-box-process-count"/>
-              <span id="multiprocess-box-status"/>
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column" data-l10n-id="app-basics-fission-support"/>
+
+            <td id="fission-box">
+              <span id="fission-box-process-count"/>
+              <span id="fission-box-status"/>
             </td>
           </tr>
 
@@ -480,6 +497,22 @@
 
       </table>
 
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section" data-l10n-id="environment-variables-title"/>
+
+      <table class="prefs-table">
+        <thead class="no-copy">
+          <th class="name" data-l10n-id="environment-variables-name"/>
+
+          <th class="value" data-l10n-id="environment-variables-value"/>
+        </thead>
+
+        <tbody id="environment-variables-tbody">
+        </tbody>
+      </table>
+
+
 #ifndef ANDROID
       <!-- - - - - - - - - - - - - - - - - - - - - -->
 
@@ -719,6 +752,34 @@
             <th class="column" data-l10n-id="remote-debugging-url"/>
             <td id="remote-debugging-url"></td>
           </tr>
+        </tbody>
+      </table>
+#endif
+
+#ifndef ANDROID
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section" data-l10n-id="support-printing-title"/>
+
+      <table>
+        <tr class="no-copy">
+          <th class="column" data-l10n-id="support-printing-troubleshoot"/>
+          <td>
+            <button id="support-printing-clear-settings-button" data-l10n-id="support-printing-clear-settings-button"/>
+          </td>
+        </tr>
+      </table>
+
+      <h3 data-l10n-id="support-printing-modified-settings"/>
+
+      <table class="prefs-table">
+        <thead class="no-copy">
+          <th class="name" data-l10n-id="support-printing-prefs-name"/>
+
+          <th class="value" data-l10n-id="support-printing-prefs-value"/>
+        </thead>
+
+        <tbody id="support-printing-prefs-tbody">
         </tbody>
       </table>
 #endif

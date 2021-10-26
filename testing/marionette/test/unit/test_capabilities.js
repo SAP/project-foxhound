@@ -7,10 +7,9 @@
 const { Preferences } = ChromeUtils.import(
   "resource://gre/modules/Preferences.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const { InvalidArgumentError } = ChromeUtils.import(
-  "chrome://marionette/content/error.js"
-);
+const { error } = ChromeUtils.import("chrome://marionette/content/error.js");
 const {
   Capabilities,
   PageLoadStrategy,
@@ -68,7 +67,7 @@ add_test(function test_Timeouts_fromJSON_unrecognised_field() {
   try {
     Timeouts.fromJSON(json);
   } catch (e) {
-    equal(e.name, InvalidArgumentError.name);
+    equal(e.name, error.InvalidArgumentError.name);
     equal(e.message, "Unrecognised timeout: sessionId");
   }
 
@@ -411,13 +410,14 @@ add_test(function test_Capabilities_ctor() {
   equal(false, caps.get("acceptInsecureCerts"));
   ok(caps.get("timeouts") instanceof Timeouts);
   ok(caps.get("proxy") instanceof Proxy);
-  equal(caps.get("setWindowRect"), false); // xpcshell does not populate appinfo
+  equal(caps.get("setWindowRect"), !Services.androidBridge);
   equal(caps.get("strictFileInteractability"), false);
 
   ok(caps.has("rotatable"));
 
   equal(false, caps.get("moz:accessibilityChecks"));
   ok(caps.has("moz:buildID"));
+  ok(caps.has("moz:debuggerAddress"));
   ok(caps.has("moz:processID"));
   ok(caps.has("moz:profile"));
   equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
@@ -451,6 +451,7 @@ add_test(function test_Capabilities_toJSON() {
 
   equal(caps.get("moz:accessibilityChecks"), json["moz:accessibilityChecks"]);
   equal(caps.get("moz:buildID"), json["moz:buildID"]);
+  equal(caps.get("moz:debuggerAddress"), json["moz:debuggerAddress"]);
   equal(caps.get("moz:processID"), json["moz:processID"]);
   equal(caps.get("moz:profile"), json["moz:profile"]);
   equal(
@@ -482,7 +483,7 @@ add_test(function test_Capabilities_fromJSON() {
   equal(false, caps.get("acceptInsecureCerts"));
   Assert.throws(
     () => fromJSON({ acceptInsecureCerts: "foo" }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
 
   for (let strategy of Object.values(PageLoadStrategy)) {
@@ -491,11 +492,11 @@ add_test(function test_Capabilities_fromJSON() {
   }
   Assert.throws(
     () => fromJSON({ pageLoadStrategy: "foo" }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
   Assert.throws(
     () => fromJSON({ pageLoadStrategy: null }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
 
   let proxyConfig = { proxyType: "manual" };
@@ -506,9 +507,19 @@ add_test(function test_Capabilities_fromJSON() {
   caps = fromJSON({ timeouts: timeoutsConfig });
   equal(123, caps.get("timeouts").implicit);
 
-  caps = fromJSON({ setWindowRect: false });
-  equal(false, caps.get("setWindowRect"));
-  Assert.throws(() => fromJSON({ setWindowRect: true }), InvalidArgumentError);
+  if (!Services.androidBridge) {
+    caps = fromJSON({ setWindowRect: true });
+    equal(true, caps.get("setWindowRect"));
+    Assert.throws(
+      () => fromJSON({ setWindowRect: false }),
+      /InvalidArgumentError/
+    );
+  } else {
+    Assert.throws(
+      () => fromJSON({ setWindowRect: true }),
+      /InvalidArgumentError/
+    );
+  }
 
   caps = fromJSON({ strictFileInteractability: false });
   equal(false, caps.get("strictFileInteractability"));
@@ -521,12 +532,20 @@ add_test(function test_Capabilities_fromJSON() {
   equal(false, caps.get("moz:accessibilityChecks"));
   Assert.throws(
     () => fromJSON({ "moz:accessibilityChecks": "foo" }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
   Assert.throws(
     () => fromJSON({ "moz:accessibilityChecks": 1 }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
+
+  // capability is always populated with null if remote agent is not listening
+  caps = fromJSON({});
+  equal(null, caps.get("moz:debuggerAddress"));
+  caps = fromJSON({ "moz:debuggerAddress": "foo" });
+  equal(null, caps.get("moz:debuggerAddress"));
+  caps = fromJSON({ "moz:debuggerAddress": true });
+  equal(null, caps.get("moz:debuggerAddress"));
 
   caps = fromJSON({ "moz:useNonSpecCompliantPointerOrigin": false });
   equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
@@ -534,11 +553,11 @@ add_test(function test_Capabilities_fromJSON() {
   equal(true, caps.get("moz:useNonSpecCompliantPointerOrigin"));
   Assert.throws(
     () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": "foo" }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
   Assert.throws(
     () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": 1 }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
 
   caps = fromJSON({ "moz:webdriverClick": true });
@@ -547,11 +566,11 @@ add_test(function test_Capabilities_fromJSON() {
   equal(false, caps.get("moz:webdriverClick"));
   Assert.throws(
     () => fromJSON({ "moz:webdriverClick": "foo" }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
   Assert.throws(
     () => fromJSON({ "moz:webdriverClick": 1 }),
-    InvalidArgumentError
+    /InvalidArgumentError/
   );
 
   run_next_test();

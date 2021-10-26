@@ -60,6 +60,7 @@
 #include "AndroidAlerts.h"
 #include "AndroidUiThread.h"
 #include "GeckoBatteryManager.h"
+#include "GeckoEditableSupport.h"
 #include "GeckoNetworkManager.h"
 #include "GeckoProcessManager.h"
 #include "GeckoScreenOrientation.h"
@@ -72,6 +73,7 @@
 #include "Telemetry.h"
 #include "WebExecutorSupport.h"
 #include "Base64UtilsSupport.h"
+#include "WebAuthnTokenManager.h"
 
 #ifdef DEBUG_ANDROID_EVENTS
 #  define EVLOG(args...) ALOG(args)
@@ -737,8 +739,11 @@ already_AddRefed<nsIURI> nsAppShell::ResolveURI(const nsCString& aUriStr) {
   }
 
   nsCOMPtr<nsIURIFixup> fixup = components::URIFixup::Service();
-  if (fixup && NS_SUCCEEDED(fixup->CreateFixupURI(aUriStr, 0, nullptr,
-                                                  getter_AddRefs(uri)))) {
+  nsCOMPtr<nsIURIFixupInfo> fixupInfo;
+  if (fixup &&
+      NS_SUCCEEDED(fixup->GetFixupURIInfo(aUriStr, nsIURIFixup::FIXUP_FLAG_NONE,
+                                          getter_AddRefs(fixupInfo))) &&
+      NS_SUCCEEDED(fixupInfo->GetPreferredURI(getter_AddRefs(uri)))) {
     return uri.forget();
   }
   return nullptr;

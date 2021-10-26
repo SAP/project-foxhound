@@ -20,12 +20,20 @@
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsIProtocolHandler.h"
 #endif
+#include "nsIClassInfoImpl.h"
 #include "nsICookieManager.h"
 #include "nsICookieService.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
 namespace net {
+
+NS_IMPL_CLASSINFO(CookieJarSettings, nullptr, nsIClassInfo::THREADSAFE,
+                  COOKIEJARSETTINGS_CID)
+
+NS_IMPL_ISUPPORTS_CI(CookieJarSettings, nsICookieJarSettings, nsISerializable)
 
 static StaticRefPtr<CookieJarSettings> sBlockinAll;
 
@@ -58,10 +66,8 @@ class PermissionComparator {
 
 class ReleaseCookiePermissions final : public Runnable {
  public:
-  explicit ReleaseCookiePermissions(nsTArray<RefPtr<nsIPermission>>& aArray)
-      : Runnable("ReleaseCookiePermissions") {
-    mArray.SwapElements(aArray);
-  }
+  explicit ReleaseCookiePermissions(nsTArray<RefPtr<nsIPermission>>&& aArray)
+      : Runnable("ReleaseCookiePermissions"), mArray(std::move(aArray)) {}
 
   NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread());
@@ -132,7 +138,8 @@ CookieJarSettings::CookieJarSettings(uint32_t aCookieBehavior,
 
 CookieJarSettings::~CookieJarSettings() {
   if (!NS_IsMainThread() && !mCookiePermissions.IsEmpty()) {
-    RefPtr<Runnable> r = new ReleaseCookiePermissions(mCookiePermissions);
+    RefPtr<Runnable> r =
+        new ReleaseCookiePermissions(std::move(mCookiePermissions));
     MOZ_ASSERT(mCookiePermissions.IsEmpty());
 
     SchedulerGroup::Dispatch(TaskCategory::Other, r.forget());
@@ -342,7 +349,7 @@ void CookieJarSettings::Serialize(CookieJarSettingsArgs& aData) {
 
   cookieJarSettings->mIsOnContentBlockingAllowList =
       aData.isOnContentBlockingAllowList();
-  cookieJarSettings->mCookiePermissions.SwapElements(list);
+  cookieJarSettings->mCookiePermissions = std::move(list);
   cookieJarSettings->mPartitionKey = aData.partitionKey();
 
   cookieJarSettings.forget(aCookieJarSettings);
@@ -467,7 +474,146 @@ bool CookieJarSettings::IsRejectThirdPartyWithExceptions(
          StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled();
 }
 
-NS_IMPL_ISUPPORTS(CookieJarSettings, nsICookieJarSettings)
+NS_IMETHODIMP
+CookieJarSettings::Read(nsIObjectInputStream* aStream) {
+  nsresult rv = aStream->Read32(&mCookieBehavior);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aStream->ReadBoolean(&mIsFirstPartyIsolated);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  bool isFixed;
+  aStream->ReadBoolean(&isFixed);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  mState = isFixed ? eFixed : eProgressive;
+
+  rv = aStream->ReadBoolean(&mIsOnContentBlockingAllowList);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aStream->ReadString(mPartitionKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // Deserializing the cookie permission list.
+  uint32_t cookiePermissionsLength;
+  rv = aStream->Read32(&cookiePermissionsLength);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (!cookiePermissionsLength) {
+    // Bailing out early because there is no cookie permission.
+    return NS_OK;
+  }
+
+  CookiePermissionList list;
+  mCookiePermissions.SetCapacity(cookiePermissionsLength);
+  for (uint32_t i = 0; i < cookiePermissionsLength; ++i) {
+    nsAutoCString principalJSON;
+    aStream->ReadCString(principalJSON);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    nsCOMPtr<nsIPrincipal> principal = BasePrincipal::FromJSON(principalJSON);
+
+    if (NS_WARN_IF(!principal)) {
+      continue;
+    }
+
+    uint32_t cookiePermission;
+    aStream->Read32(&cookiePermission);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    nsCOMPtr<nsIPermission> permission =
+        Permission::Create(principal, "cookie"_ns, cookiePermission, 0, 0, 0);
+    if (NS_WARN_IF(!permission)) {
+      continue;
+    }
+
+    list.AppendElement(permission);
+  }
+
+  mCookiePermissions = std::move(list);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookieJarSettings::Write(nsIObjectOutputStream* aStream) {
+  nsresult rv = aStream->Write32(mCookieBehavior);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aStream->WriteBoolean(mIsFirstPartyIsolated);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aStream->WriteBoolean(mState == eFixed);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aStream->WriteBoolean(mIsOnContentBlockingAllowList);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aStream->WriteWStringZ(mPartitionKey.get());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // Serializing the cookie permission list. It will first write the length of
+  // the list, and then, write the cookie permission consecutively.
+  uint32_t cookiePermissionsLength = mCookiePermissions.Length();
+  rv = aStream->Write32(cookiePermissionsLength);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  for (const RefPtr<nsIPermission>& permission : mCookiePermissions) {
+    nsCOMPtr<nsIPrincipal> principal;
+    nsresult rv = permission->GetPrincipal(getter_AddRefs(principal));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+
+    nsAutoCString principalJSON;
+    BasePrincipal::Cast(principal)->ToJSON(principalJSON);
+
+    rv = aStream->WriteStringZ(principalJSON.get());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    uint32_t cookiePermission = 0;
+    rv = permission->GetCapability(&cookiePermission);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+
+    rv = aStream->Write32(cookiePermission);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+  }
+
+  return NS_OK;
+}
 
 }  // namespace net
 }  // namespace mozilla

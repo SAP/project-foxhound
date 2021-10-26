@@ -26,6 +26,7 @@ class JS_PUBLIC_API ContextOptions {
         wasmIon_(true),
         wasmCranelift_(false),
         wasmReftypes_(true),
+        wasmFunctionReferences_(false),
         wasmGc_(false),
         wasmMultiValue_(false),
         wasmSimd_(false),
@@ -43,7 +44,9 @@ class JS_PUBLIC_API ContextOptions {
         trackNotImplemented_(false),
         trySmoosh_(false),
 #endif
-        fuzzing_(false) {
+        fuzzing_(false),
+        privateClassFields_(false),
+        privateClassMethods_(false) {
   }
 
   bool asmJS() const { return asmJS_; }
@@ -106,6 +109,10 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
+  bool wasmFunctionReferences() const { return wasmFunctionReferences_; }
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmFunctionReferences(bool flag);
+
   bool wasmGc() const { return wasmGc_; }
   // Defined out-of-line because it depends on a compile-time option
   ContextOptions& setWasmGc(bool flag);
@@ -136,6 +143,18 @@ class JS_PUBLIC_API ContextOptions {
   bool disableIon() const { return disableIon_; }
   ContextOptions& setDisableIon() {
     disableIon_ = true;
+    return *this;
+  }
+
+  bool privateClassFields() const { return privateClassFields_; }
+  ContextOptions& setPrivateClassFields(bool enabled) {
+    privateClassFields_ = enabled;
+    return *this;
+  }
+
+  bool privateClassMethods() const { return privateClassMethods_; }
+  ContextOptions& setPrivateClassMethods(bool enabled) {
+    privateClassMethods_ = enabled;
     return *this;
   }
 
@@ -228,6 +247,7 @@ class JS_PUBLIC_API ContextOptions {
   bool wasmIon_ : 1;
   bool wasmCranelift_ : 1;
   bool wasmReftypes_ : 1;
+  bool wasmFunctionReferences_ : 1;
   bool wasmGc_ : 1;
   bool wasmMultiValue_ : 1;
   bool wasmSimd_ : 1;
@@ -246,6 +266,8 @@ class JS_PUBLIC_API ContextOptions {
   bool trySmoosh_ : 1;
 #endif
   bool fuzzing_ : 1;
+  bool privateClassFields_ : 1;
+  bool privateClassMethods_ : 1;
 };
 
 JS_PUBLIC_API ContextOptions& ContextOptionsRef(JSContext* cx);

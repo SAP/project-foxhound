@@ -92,19 +92,19 @@
 //! [segment.rs]: ../segment/index.html
 //!
 
-use api::{BorderRadius, ClipIntern, ClipMode, ComplexClipRegion, ImageMask};
+use api::{BorderRadius, ClipMode, ComplexClipRegion, ImageMask};
 use api::{BoxShadowClipMode, ClipId, ImageKey, ImageRendering, PipelineId};
 use api::units::*;
-use api::image_tiling::{self, Repetition};
+use crate::image_tiling::{self, Repetition};
 use crate::border::{ensure_no_corner_overlap, BorderRadiusAu};
 use crate::box_shadow::{BLUR_SAMPLE_SCALE, BoxShadowClipSource, BoxShadowCacheKey};
 use crate::spatial_tree::{ROOT_SPATIAL_NODE_INDEX, SpatialTree, SpatialNodeIndex, CoordinateSystemId};
 use crate::ellipse::Ellipse;
-use crate::gpu_cache::{GpuCache, GpuCacheHandle, ToGpuBlocks};
+use crate::gpu_cache::GpuCache;
 use crate::gpu_types::{BoxShadowStretchMode};
 use crate::intern::{self, ItemUid};
 use crate::internal_types::{FastHashMap, FastHashSet};
-use crate::prim_store::{ClipData, ImageMaskData, VisibleMaskImageTile};
+use crate::prim_store::{VisibleMaskImageTile};
 use crate::prim_store::{PointKey, SizeKey, RectangleKey};
 use crate::render_task_cache::to_cache_size;
 use crate::resource_cache::{ImageRequest, ResourceCache};
@@ -116,12 +116,16 @@ use smallvec::SmallVec;
 
 // Type definitions for interning clip nodes.
 
+#[derive(Copy, Clone, Debug, MallocSizeOf, PartialEq)]
+#[cfg_attr(any(feature = "serde"), derive(Deserialize, Serialize))]
+pub enum ClipIntern {}
+
 pub type ClipDataStore = intern::DataStore<ClipIntern>;
 pub type ClipDataHandle = intern::Handle<ClipIntern>;
 
 /// Defines a clip that is positioned by a specific spatial node
 #[cfg_attr(feature = "capture", derive(Serialize))]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct ClipInstance {
     /// Handle to the interned clip
     pub handle: ClipDataHandle,
@@ -142,6 +146,18 @@ impl ClipInstance {
     }
 }
 
+/// Defines a clip instance with some extra information that is available
+/// during scene building (since interned clips cannot retrieve the underlying
+/// data from the scene building thread).
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[derive(Copy, Clone)]
+pub struct SceneClipInstance {
+    /// The interned clip + positioning information that is used during frame building.
+    pub clip: ClipInstance,
+    /// The definition of the clip, used during scene building to optimize clip-chains.
+    pub key: ClipItemKey,
+}
+
 /// A clip template defines clips in terms of the public API. Specifically,
 /// this is a parent `ClipId` and some number of clip instances. See the
 /// CLIPPING_AND_POSITIONING.md document in doc/ for more information.
@@ -150,7 +166,7 @@ pub struct ClipTemplate {
     /// Parent of this clip, in terms of the public clip API
     pub parent: ClipId,
     /// List of instances that define this clip template
-    pub instances: SmallVec<[ClipInstance; 2]>,
+    pub clips: SmallVec<[SceneClipInstance; 2]>,
 }
 
 /// A helper used during scene building to construct (internal) clip chains from
@@ -229,8 +245,8 @@ impl ClipChainBuilder {
         let template = &templates[&clip_id];
         let mut clip_chain_id = parent_clip_chain_id;
 
-        for clip in &template.instances {
-            let key = (clip.handle.uid(), clip.spatial_node_index);
+        for clip in &template.clips {
+            let key = (clip.clip.handle.uid(), clip.clip.spatial_node_index);
 
             // If this clip chain already has this clip instance, skip it
             if existing_clips.contains(&key) {
@@ -241,8 +257,8 @@ impl ClipChainBuilder {
             let new_clip_chain_id = ClipChainId(clip_chain_nodes.len() as u32);
             existing_clips.insert(key);
             clip_chain_nodes.push(ClipChainNode {
-                handle: clip.handle,
-                spatial_node_index: clip.spatial_node_index,
+                handle: clip.clip.handle,
+                spatial_node_index: clip.clip.spatial_node_index,
                 parent_clip_chain_id: clip_chain_id,
             });
             clip_chain_id = new_clip_chain_id;
@@ -258,6 +274,36 @@ impl ClipChainBuilder {
             clip_chain_id,
             existing_clips,
             clip_chain_nodes,
+            templates,
+        )
+    }
+
+    /// Return true if any of the clips in the hierarchy from clip_id to the
+    /// root clip are complex.
+    // TODO(gw): This method should only be required until the shared_clip
+    //           optimization patches are complete, and can then be removed.
+    fn has_complex_clips(
+        &self,
+        clip_id: ClipId,
+        templates: &FastHashMap<ClipId, ClipTemplate>,
+    ) -> bool {
+        let template = &templates[&clip_id];
+
+        // Check if any of the clips in this template are complex
+        for clip in &template.clips {
+            if let ClipNodeKind::Complex = clip.key.kind.node_kind() {
+                return true;
+            }
+        }
+
+        // The ClipId parenting is terminated when we reach the root ClipId
+        if clip_id == template.parent {
+            return false;
+        }
+
+        // Recurse into parent clip template to also check those
+        self.has_complex_clips(
+            template.parent,
             templates,
         )
     }
@@ -333,7 +379,6 @@ enum ClipResult {
 #[derive(MallocSizeOf)]
 pub struct ClipNode {
     pub item: ClipItem,
-    pub gpu_cache_handle: GpuCacheHandle,
 }
 
 // Convert from an interning key for a clip item
@@ -374,7 +419,6 @@ impl From<ClipItemKey> for ClipNode {
             item: ClipItem {
                 kind,
             },
-            gpu_cache_handle: GpuCacheHandle::new(),
         }
     }
 }
@@ -415,6 +459,16 @@ pub struct ClipChainNode {
     pub handle: ClipDataHandle,
     pub spatial_node_index: SpatialNodeIndex,
     pub parent_clip_chain_id: ClipChainId,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+pub struct ClipSet {
+    /// Local space clip rect
+    pub local_clip_rect: LayoutRect,
+
+    /// ID of the clip chain that this set is clipped by.
+    pub clip_chain_id: ClipChainId,
 }
 
 // When a clip node is found to be valid for a
@@ -628,35 +682,14 @@ impl ClipNodeInfo {
 impl ClipNode {
     pub fn update(
         &mut self,
-        gpu_cache: &mut GpuCache,
         device_pixel_scale: DevicePixelScale,
     ) {
         match self.item.kind {
-            ClipItemKind::Image { rect, .. } => {
-                if let Some(request) = gpu_cache.request(&mut self.gpu_cache_handle) {
-                    let data = ImageMaskData {
-                        local_mask_size: rect.size,
-                    };
-                    data.write_gpu_blocks(request);
-                }
-            }
-            ClipItemKind::BoxShadow { ref mut source } => {
-                if let Some(mut request) = gpu_cache.request(&mut self.gpu_cache_handle) {
-                    request.push([
-                        source.original_alloc_size.width,
-                        source.original_alloc_size.height,
-                        source.clip_mode as i32 as f32,
-                        0.0,
-                    ]);
-                    request.push([
-                        source.stretch_mode_x as i32 as f32,
-                        source.stretch_mode_y as i32 as f32,
-                        0.0,
-                        0.0,
-                    ]);
-                    request.push(source.prim_shadow_rect);
-                }
+            ClipItemKind::Image { .. } |
+            ClipItemKind::Rectangle { .. } |
+            ClipItemKind::RoundedRectangle { .. } => {}
 
+            ClipItemKind::BoxShadow { ref mut source } => {
                 // Quote from https://drafts.csswg.org/css-backgrounds-3/#shadow-blur
                 // "the image that would be generated by applying to the shadow a
                 // Gaussian blur with a standard deviation equal to half the blur radius."
@@ -681,28 +714,6 @@ impl ClipNode {
                 };
 
                 source.cache_key = Some((cache_size, bs_cache_key));
-
-                if let Some(mut request) = gpu_cache.request(&mut source.clip_data_handle) {
-                    let data = ClipData::rounded_rect(
-                        source.minimal_shadow_rect.size,
-                        &source.shadow_radius,
-                        ClipMode::Clip,
-                    );
-
-                    data.write(&mut request);
-                }
-            }
-            ClipItemKind::Rectangle { rect, mode } => {
-                if let Some(mut request) = gpu_cache.request(&mut self.gpu_cache_handle) {
-                    let data = ClipData::uniform(rect.size, 0.0, mode);
-                    data.write(&mut request);
-                }
-            }
-            ClipItemKind::RoundedRectangle { rect, ref radius, mode } => {
-                if let Some(mut request) = gpu_cache.request(&mut self.gpu_cache_handle) {
-                    let data = ClipData::rounded_rect(rect.size, radius, mode);
-                    data.write(&mut request);
-                }
             }
         }
     }
@@ -723,7 +734,7 @@ pub struct ClipStore {
 
     /// Map of all clip templates defined by the public API to templates
     #[ignore_malloc_size_of = "range missing"]
-    templates: FastHashMap<ClipId, ClipTemplate>,
+    pub templates: FastHashMap<ClipId, ClipTemplate>,
 
     /// A stack of current clip-chain builders. A new clip-chain builder is
     /// typically created each time a clip root (such as an iframe or stacking
@@ -972,11 +983,11 @@ impl ClipStore {
         &mut self,
         clip_id: ClipId,
         parent: ClipId,
-        instances: &[ClipInstance],
+        clips: &[SceneClipInstance],
     ) {
         self.templates.insert(clip_id, ClipTemplate {
             parent,
-            instances: instances.into(),
+            clips: clips.into(),
         });
     }
 
@@ -1002,6 +1013,23 @@ impl ClipStore {
             .get_or_build_clip_chain_id(
                 clip_id,
                 &mut self.clip_chain_nodes,
+                &self.templates,
+            )
+    }
+
+    /// Return true if any of the clips in the hierarchy from clip_id to the
+    /// root clip are complex.
+    // TODO(gw): This method should only be required until the shared_clip
+    //           optimization patches are complete, and can then be removed.
+    pub fn has_complex_clips(
+        &self,
+        clip_id: ClipId,
+    ) -> bool {
+        self.chain_builder_stack
+            .last()
+            .unwrap()
+            .has_complex_clips(
+                clip_id,
                 &self.templates,
             )
     }
@@ -1205,10 +1233,7 @@ impl ClipStore {
                     // Needs a mask -> add to clip node indices
 
                     // TODO(gw): Ensure this only runs once on each node per frame?
-                    node.update(
-                        gpu_cache,
-                        device_pixel_scale,
-                    );
+                    node.update(device_pixel_scale);
 
                     // Create the clip node instance for this clip node
                     if let Some(instance) = node_info.create_instance(
@@ -1328,7 +1353,7 @@ impl ClipRegion<Option<ComplexClipRegion>> {
 // the uploaded GPU cache handle to be retained between display lists.
 // TODO(gw): Maybe we should consider constructing these directly
 //           in the DL builder?
-#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash)]
+#[derive(Copy, Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum ClipItemKeyKind {
@@ -1400,7 +1425,7 @@ impl ClipItemKeyKind {
     }
 }
 
-#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, MallocSizeOf, PartialEq, Hash)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ClipItemKey {
@@ -1422,6 +1447,7 @@ impl intern::Internable for ClipIntern {
     type Key = ClipItemKey;
     type StoreData = ClipNode;
     type InternData = ClipInternData;
+    const PROFILE_COUNTER: usize = crate::profiler::INTERNED_CLIPS;
 }
 
 #[derive(Debug, MallocSizeOf)]
@@ -1543,7 +1569,6 @@ fn compute_box_shadow_parameters(
         stretch_mode_y,
         cache_handle: None,
         cache_key: None,
-        clip_data_handle: GpuCacheHandle::new(),
         minimal_shadow_rect,
     }
 }

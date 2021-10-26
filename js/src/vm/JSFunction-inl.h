@@ -86,7 +86,7 @@ inline JSFunction* CloneFunctionObjectIfNotSingleton(
 
 } /* namespace js */
 
-/* static */ inline JS::Result<JSFunction*, JS::OOM&> JSFunction::create(
+/* static */ inline JS::Result<JSFunction*, JS::OOM> JSFunction::create(
     JSContext* cx, js::gc::AllocKind kind, js::gc::InitialHeap heap,
     js::HandleShape shape, js::HandleObjectGroup group) {
   MOZ_ASSERT(kind == js::gc::AllocKind::FUNCTION ||
@@ -98,8 +98,8 @@ inline JSFunction* CloneFunctionObjectIfNotSingleton(
   MOZ_ASSERT(clasp->isJSFunction());
 
   static constexpr size_t NumDynamicSlots = 0;
-  MOZ_ASSERT(dynamicSlotsCount(shape->numFixedSlots(), shape->slotSpan(),
-                               clasp) == NumDynamicSlots);
+  MOZ_ASSERT(calculateDynamicSlots(shape->numFixedSlots(), shape->slotSpan(),
+                                   clasp) == NumDynamicSlots);
 
   JSObject* obj = js::AllocateObject(cx, kind, NumDynamicSlots, heap, clasp);
   if (!obj) {
@@ -110,7 +110,7 @@ inline JSFunction* CloneFunctionObjectIfNotSingleton(
   nobj->initGroup(group);
   nobj->initShape(shape);
 
-  nobj->initSlots(nullptr);
+  nobj->initEmptyDynamicSlots();
   nobj->setEmptyElements();
 
   MOZ_ASSERT(!clasp->hasPrivate());
@@ -123,13 +123,12 @@ inline JSFunction* CloneFunctionObjectIfNotSingleton(
   // value to which we could sensibly initialize this.
   MOZ_MAKE_MEM_UNDEFINED(&fun->u, sizeof(u));
 
-  // Safe: we're initializing for the very first time.
-  fun->atom_.unsafeSet(nullptr);
+  fun->atom_.init(nullptr);
 
   if (kind == js::gc::AllocKind::FUNCTION_EXTENDED) {
     fun->setFlags(FunctionFlags::EXTENDED);
     for (js::GCPtrValue& extendedSlot : fun->toExtended()->extendedSlots) {
-      extendedSlot.unsafeSet(JS::UndefinedValue());
+      extendedSlot.init(JS::UndefinedValue());
     }
   } else {
     fun->setFlags(0);

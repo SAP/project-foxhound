@@ -28,8 +28,7 @@
 #include "nsTransitionManager.h"      // For CSSTransition
 #include "PendingAnimationTracker.h"  // For PendingAnimationTracker
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Static members
 uint64_t Animation::sNextAnimationIndex = 0;
@@ -59,9 +58,7 @@ namespace {
 // appropriate document from the supplied animation.
 class MOZ_RAII AutoMutationBatchForAnimation {
  public:
-  explicit AutoMutationBatchForAnimation(
-      const Animation& aAnimation MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoMutationBatchForAnimation(const Animation& aAnimation) {
     NonOwningAnimationTarget target = aAnimation.GetTargetForAnimation();
     if (!target) {
       return;
@@ -72,7 +69,6 @@ class MOZ_RAII AutoMutationBatchForAnimation {
   }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
   Maybe<nsAutoAnimationMutationBatch> mAutoBatch;
 };
 }  // namespace
@@ -105,6 +101,14 @@ already_AddRefed<Animation> Animation::ClonePausedAnimation(
   // Setup the effect's link to this.
   animation->mEffect = &aEffect;
   animation->mEffect->SetAnimation(animation);
+
+  animation->mPendingState = PendingState::PausePending;
+
+  Document* doc = animation->GetRenderedDocument();
+  MOZ_ASSERT(doc,
+             "Cloning animation should already have the rendered document");
+  PendingAnimationTracker* tracker = doc->GetOrCreatePendingAnimationTracker();
+  tracker->AddPausePending(*animation);
 
   // We expect our relevance to be the same as the orginal.
   animation->mIsRelevant = aOther.mIsRelevant;
@@ -705,7 +709,8 @@ void Animation::CommitStyles(ErrorResult& aRv) {
   }
 
   // Check it is an element with a style attribute
-  nsCOMPtr<nsStyledElement> styledElement = do_QueryInterface(target.mElement);
+  RefPtr<nsStyledElement> styledElement =
+      nsStyledElement::FromNodeOrNull(target.mElement);
   if (!styledElement) {
     return aRv.ThrowNoModificationAllowedError(
         "Target is not capable of having a style attribute");
@@ -1851,5 +1856,4 @@ bool Animation::IsRunningOnCompositor() const {
          mEffect->AsKeyframeEffect()->IsRunningOnCompositor();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

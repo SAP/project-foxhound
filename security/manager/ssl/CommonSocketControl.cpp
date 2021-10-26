@@ -13,8 +13,11 @@
 #include "SharedSSLState.h"
 #include "sslt.h"
 #include "ssl.h"
+#include "mozilla/net/SSLTokensCache.h"
 
 using namespace mozilla;
+
+extern LazyLogModule gPIPNSSLog;
 
 NS_IMPL_ISUPPORTS_INHERITED(CommonSocketControl, TransportSecurityInfo,
                             nsISSLSocketControl)
@@ -143,6 +146,8 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
     return NS_OK;
   }
 
+  MutexAutoLock lock(mMutex);
+
   // An empty mSucceededCertChain means the server certificate verification
   // failed before, so don't join in this case.
   if (mSucceededCertChain.IsEmpty()) {
@@ -183,8 +188,20 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
     bool chainHasValidPins;
     bool enforceTestMode =
         (pinningMode == mozilla::psm::CertVerifier::pinningEnforceTestMode);
+
+    nsTArray<nsTArray<uint8_t>> rawDerCertList;
+    nsTArray<Span<const uint8_t>> derCertSpanList;
+    for (const auto& cert : mSucceededCertChain) {
+      rawDerCertList.EmplaceBack();
+      nsresult nsrv = cert->GetRawDER(rawDerCertList.LastElement());
+      if (NS_FAILED(nsrv)) {
+        return nsrv;
+      }
+      derCertSpanList.EmplaceBack(rawDerCertList.LastElement());
+    }
+
     nsresult nsrv = mozilla::psm::PublicKeyPinningService::ChainHasValidPins(
-        mSucceededCertChain, PromiseFlatCString(hostname).BeginReading(), Now(),
+        derCertSpanList, PromiseFlatCString(hostname).BeginReading(), Now(),
         enforceTestMode, GetOriginAttributes(), chainHasValidPins, nullptr);
     if (NS_FAILED(nsrv)) {
       return NS_OK;
@@ -198,6 +215,39 @@ CommonSocketControl::IsAcceptableForHost(const nsACString& hostname,
   // All tests pass
   *_retval = true;
   return NS_OK;
+}
+
+void CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache() {
+  nsAutoCString key;
+  GetPeerId(key);
+  mozilla::net::SessionCacheInfo info;
+  if (!mozilla::net::SSLTokensCache::GetSessionCacheInfo(key, info)) {
+    MOZ_LOG(
+        gPIPNSSLog, LogLevel::Debug,
+        ("CommonSocketControl::RebuildCertificateInfoFromSSLTokenCache cannot "
+         "find cached info."));
+    return;
+  }
+
+  RefPtr<nsNSSCertificate> nssc = nsNSSCertificate::ConstructFromDER(
+      BitwiseCast<char*, uint8_t*>(info.mServerCertBytes.Elements()),
+      info.mServerCertBytes.Length());
+  if (!nssc) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("RebuildCertificateInfoFromSSLTokenCache failed to construct "
+             "server cert"));
+    return;
+  }
+
+  SetServerCert(nssc, info.mEVStatus);
+  SetCertificateTransparencyStatus(info.mCertificateTransparencyStatus);
+  if (info.mSucceededCertChainBytes) {
+    SetSucceededCertChain(std::move(*info.mSucceededCertChainBytes));
+  }
+
+  if (info.mIsBuiltCertChainRootBuiltInRoot) {
+    SetIsBuiltCertChainRootBuiltInRoot(*info.mIsBuiltCertChainRootBuiltInRoot);
+  }
 }
 
 NS_IMETHODIMP
@@ -274,6 +324,22 @@ CommonSocketControl::SetEsniTxt(const nsACString& aEsniTxt) {
 }
 
 NS_IMETHODIMP
+CommonSocketControl::GetEchConfig(nsACString& aEchConfig) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+CommonSocketControl::SetEchConfig(const nsACString& aEchConfig) {
+  // TODO: Implement this in bug 1654507.
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 CommonSocketControl::GetPeerId(nsACString& aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+CommonSocketControl::GetRetryEchConfig(nsACString& aEchConfig) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

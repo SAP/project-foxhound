@@ -1,35 +1,25 @@
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef MOCKCUBEB_H_
 #define MOCKCUBEB_H_
 
 #include "AudioDeviceInfo.h"
+#include "AudioGenerator.h"
+#include "AudioVerifier.h"
+#include "MediaEventSource.h"
+#include "mozilla/DataMutex.h"
 #include "nsTArray.h"
+
+#include "mozilla/DataMutex.h"
 
 #include <thread>
 #include <atomic>
 #include <chrono>
 
-using namespace std::chrono_literals;
-using namespace mozilla;
-
-const long NUM_OF_FRAMES = 512;
+namespace mozilla {
 const uint32_t NUM_OF_CHANNELS = 2;
-
-#ifdef LOG
-#  undef LOG
-#endif
-//#define LOGGING_ENABLED
-#ifdef LOGGING_ENABLED
-#  if defined(__ANDROID__)
-#    define LOG(args...) \
-      __android_log_print(ANDROID_LOG_INFO, "MockCubeb", ##args)
-#  else
-#    define LOG(args...)       \
-      fprintf(stderr, ##args); \
-      fprintf(stderr, "\n")
-#  endif
-#else
-#  define LOG(...)
-#endif
 
 struct cubeb_ops {
   int (*init)(cubeb** context, char const* context_name);
@@ -56,8 +46,9 @@ struct cubeb_ops {
   int (*stream_reset_default_device)(cubeb_stream* stream);
   int (*stream_get_position)(cubeb_stream* stream, uint64_t* position);
   int (*stream_get_latency)(cubeb_stream* stream, uint32_t* latency);
+  int (*stream_get_input_latency)(cubeb_stream* stream, uint32_t* latency);
   int (*stream_set_volume)(cubeb_stream* stream, float volumes);
-  int (*stream_set_panning)(cubeb_stream* stream, float panning);
+  int (*stream_set_name)(cubeb_stream* stream, char const* stream_name);
   int (*stream_get_current_device)(cubeb_stream* stream,
                                    cubeb_device** const device);
   int (*stream_device_destroy)(cubeb_stream* stream, cubeb_device* device);
@@ -123,12 +114,14 @@ cubeb_ops const mock_ops = {
     /*.stream_reset_default_device =*/NULL,
     /*.stream_get_position =*/NULL,
     /*.stream_get_latency =*/NULL,
+    /*.stream_get_input_latency =*/NULL,
     /*.stream_set_volume =*/cubeb_mock_stream_set_volume,
-    /*.stream_set_panning =*/NULL,
+    /*.stream_set_name =*/NULL,
     /*.stream_get_current_device =*/NULL,
     /*.stream_device_destroy =*/NULL,
     /*.stream_register_device_changed_callback =*/NULL,
     /*.register_device_collection_changed =*/
+
     cubeb_mock_register_device_collection_changed};
 
 // Represents the fake cubeb_stream. The context instance is needed to
@@ -140,94 +133,65 @@ class MockCubebStream {
                   cubeb_devid aOutputDevice,
                   cubeb_stream_params* aOutputStreamParams,
                   cubeb_data_callback aDataCallback,
-                  cubeb_state_callback aStateCallback, void* aUserPtr)
-      : context(aContext),
-        mDataCallback(aDataCallback),
-        mStateCallback(aStateCallback),
-        mUserPtr(aUserPtr),
-        mSampleRate(aInputStreamParams ? aInputStreamParams->rate
-                                       : aOutputStreamParams->rate),
-        mInputDeviceID(aInputDevice),
-        mOutputDeviceID(aOutputDevice) {
-    LOG("MockCubeb(%p) StreamInit: Input id = %p, Output id = %p", this,
-        mInputDeviceID, mOutputDeviceID);
-  }
+                  cubeb_state_callback aStateCallback, void* aUserPtr);
 
-  ~MockCubebStream() { assert(!mFakeAudioThread); }
+  ~MockCubebStream();
 
-  int Start() {
-    assert(!mFakeAudioThread);
-    mStreamStop = false;
-    mFakeAudioThread.reset(new std::thread(ThreadFunction_s, this));
-    assert(mFakeAudioThread);
-    cubeb_stream* stream = reinterpret_cast<cubeb_stream*>(this);
-    mStateCallback(stream, mUserPtr, CUBEB_STATE_STARTED);
-    return CUBEB_OK;
-  }
+  int Start();
+  int Stop();
 
-  int Stop() {
-    assert(mFakeAudioThread);
-    mStreamStop = true;
-    mFakeAudioThread->join();
-    mFakeAudioThread.reset();
-    cubeb_stream* stream = reinterpret_cast<cubeb_stream*>(this);
-    mStateCallback(stream, mUserPtr, CUBEB_STATE_STOPPED);
-    return CUBEB_OK;
-  }
+  cubeb_devid GetInputDeviceID() const;
+  cubeb_devid GetOutputDeviceID() const;
 
-  cubeb_devid GetInputDeviceID() { return mInputDeviceID; }
-  cubeb_devid GetOutputDeviceID() { return mOutputDeviceID; }
+  uint32_t InputChannels() const;
+  uint32_t InputSampleRate() const;
+  uint32_t InputFrequency() const;
 
-  void ForceError() { mForceErrorState = true; }
+  void SetDriftFactor(float aDriftFactor);
+  void ForceError();
 
- private:
-  // Simulates the audio thread. The thread is created at Start anda destroyed
-  // at Stop. At next StreamStart a new thread is created.
-  static void ThreadFunction_s(MockCubebStream* that) {
-    that->ThreadFunction();
-  }
+  MediaEventSource<uint32_t>& FramesProcessedEvent();
+  MediaEventSource<uint32_t>& FramesVerifiedEvent();
+  MediaEventSource<Tuple<uint64_t, float, uint32_t>>& OutputVerificationEvent();
+  MediaEventSource<void>& ErrorForcedEvent();
 
-  void ThreadFunction() {
-    while (!mStreamStop) {
-      cubeb_stream* stream = reinterpret_cast<cubeb_stream*>(this);
-      long outframes = mDataCallback(stream, mUserPtr, nullptr, mOutputBuffer,
-                                     NUM_OF_FRAMES);
-      if (outframes < NUM_OF_FRAMES) {
-        mStateCallback(stream, mUserPtr, CUBEB_STATE_DRAINED);
-        break;
-      }
-      if (mForceErrorState) {
-        mStateCallback(stream, mUserPtr, CUBEB_STATE_ERROR);
-        break;
-      }
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(NUM_OF_FRAMES * 1000 / mSampleRate));
-    }
-  }
+  void Process10Ms();
 
  public:
   cubeb* context = nullptr;
 
+  const bool mHasInput;
+  const bool mHasOutput;
+
  private:
-  // Thread that simulates the audio thread.
-  std::unique_ptr<std::thread> mFakeAudioThread;
   // Signal to the audio thread that stream is stopped.
   std::atomic_bool mStreamStop{true};
   // The audio buffer used on data callback.
-  float mOutputBuffer[NUM_OF_CHANNELS * NUM_OF_FRAMES];
+  AudioDataValue mOutputBuffer[NUM_OF_CHANNELS * 1920] = {};
+  AudioDataValue mInputBuffer[NUM_OF_CHANNELS * 1920] = {};
   // The audio callback
   cubeb_data_callback mDataCallback = nullptr;
   // The stream state callback
   cubeb_state_callback mStateCallback = nullptr;
   // Stream's user data
   void* mUserPtr = nullptr;
-  // The stream sample rate
-  uint32_t mSampleRate = 0;
+  // The stream params
+  cubeb_stream_params mOutputParams = {};
+  cubeb_stream_params mInputParams = {};
   /* Device IDs */
   cubeb_devid mInputDeviceID;
   cubeb_devid mOutputDeviceID;
 
+  std::atomic<float> mDriftFactor{1.0};
+  std::atomic_bool mFastMode{false};
   std::atomic_bool mForceErrorState{false};
+  AudioGenerator<AudioDataValue> mAudioGenerator;
+  AudioVerifier<AudioDataValue> mAudioVerifier;
+
+  MediaEventProducer<uint32_t> mFramesProcessedEvent;
+  MediaEventProducer<uint32_t> mFramesVerifiedEvent;
+  MediaEventProducer<Tuple<uint64_t, float, uint32_t>> mOutputVerificationEvent;
+  MediaEventProducer<void> mErrorForcedEvent;
 };
 
 // This class has two facets: it is both a fake cubeb backend that is intended
@@ -236,156 +200,38 @@ class MockCubebStream {
 // should do, depending on what is being tested.
 class MockCubeb {
  public:
-  MockCubeb() : ops(&mock_ops) { LOG("MockCubeb(%p) created", this); }
-  ~MockCubeb() = default;
+  MockCubeb();
+  ~MockCubeb();
   // Cubeb backend implementation
   // This allows passing this class as a cubeb* instance.
-  cubeb* AsCubebContext() { return reinterpret_cast<cubeb*>(this); }
+  cubeb* AsCubebContext();
   // Fill in the collection parameter with all devices of aType.
   int EnumerateDevices(cubeb_device_type aType,
-                       cubeb_device_collection* collection) {
-#ifdef ANDROID
-    EXPECT_TRUE(false) << "This is not to be called on Android.";
-#endif
-    size_t count = 0;
-    if (aType & CUBEB_DEVICE_TYPE_INPUT) {
-      count += mInputDevices.Length();
-    }
-    if (aType & CUBEB_DEVICE_TYPE_OUTPUT) {
-      count += mOutputDevices.Length();
-    }
-    collection->device = new cubeb_device_info[count];
-    collection->count = count;
-
-    uint32_t collection_index = 0;
-    if (aType & CUBEB_DEVICE_TYPE_INPUT) {
-      for (auto& device : mInputDevices) {
-        collection->device[collection_index] = device;
-        collection_index++;
-      }
-    }
-    if (aType & CUBEB_DEVICE_TYPE_OUTPUT) {
-      for (auto& device : mOutputDevices) {
-        collection->device[collection_index] = device;
-        collection_index++;
-      }
-    }
-
-    return CUBEB_OK;
-  }
+                       cubeb_device_collection* collection);
 
   // For a given device type, add a callback, called with a user pointer, when
   // the device collection for this backend changes (i.e. a device has been
   // removed or added).
   int RegisterDeviceCollectionChangeCallback(
       cubeb_device_type aDevType,
-      cubeb_device_collection_changed_callback aCallback, void* aUserPtr) {
-    if (!mSupportsDeviceCollectionChangedCallback) {
-      return CUBEB_ERROR;
-    }
-
-    if (aDevType & CUBEB_DEVICE_TYPE_INPUT) {
-      mInputDeviceCollectionChangeCallback = aCallback;
-      mInputDeviceCollectionChangeUserPtr = aUserPtr;
-    }
-    if (aDevType & CUBEB_DEVICE_TYPE_OUTPUT) {
-      mOutputDeviceCollectionChangeCallback = aCallback;
-      mOutputDeviceCollectionChangeUserPtr = aUserPtr;
-    }
-
-    return CUBEB_OK;
-  }
+      cubeb_device_collection_changed_callback aCallback, void* aUserPtr);
 
   // Control API
 
   // Add an input or output device to this backend. This calls the device
   // collection invalidation callback if needed.
-  void AddDevice(cubeb_device_info aDevice) {
-    if (aDevice.type == CUBEB_DEVICE_TYPE_INPUT) {
-      mInputDevices.AppendElement(aDevice);
-    } else if (aDevice.type == CUBEB_DEVICE_TYPE_OUTPUT) {
-      mOutputDevices.AppendElement(aDevice);
-    } else {
-      MOZ_CRASH("bad device type when adding a device in mock cubeb backend");
-    }
-
-    bool isInput = aDevice.type & CUBEB_DEVICE_TYPE_INPUT;
-    if (isInput && mInputDeviceCollectionChangeCallback) {
-      mInputDeviceCollectionChangeCallback(AsCubebContext(),
-                                           mInputDeviceCollectionChangeUserPtr);
-    }
-    if (!isInput && mOutputDeviceCollectionChangeCallback) {
-      mOutputDeviceCollectionChangeCallback(
-          AsCubebContext(), mOutputDeviceCollectionChangeUserPtr);
-    }
-  }
+  void AddDevice(cubeb_device_info aDevice);
   // Remove a specific input or output device to this backend, returns true if
   // a device was removed. This calls the device collection invalidation
   // callback if needed.
-  bool RemoveDevice(cubeb_devid aId) {
-    bool foundInput = false;
-    bool foundOutput = false;
-    mInputDevices.RemoveElementsBy(
-        [aId, &foundInput](cubeb_device_info& aDeviceInfo) {
-          bool foundThisTime = aDeviceInfo.devid == aId;
-          foundInput |= foundThisTime;
-          return foundThisTime;
-        });
-    mOutputDevices.RemoveElementsBy(
-        [aId, &foundOutput](cubeb_device_info& aDeviceInfo) {
-          bool foundThisTime = aDeviceInfo.devid == aId;
-          foundOutput |= foundThisTime;
-          return foundThisTime;
-        });
-
-    if (foundInput && mInputDeviceCollectionChangeCallback) {
-      mInputDeviceCollectionChangeCallback(AsCubebContext(),
-                                           mInputDeviceCollectionChangeUserPtr);
-    }
-    if (foundOutput && mOutputDeviceCollectionChangeCallback) {
-      mOutputDeviceCollectionChangeCallback(
-          AsCubebContext(), mOutputDeviceCollectionChangeUserPtr);
-    }
-    // If the device removed was a default device, set another device as the
-    // default, if there are still devices available.
-    bool foundDefault = false;
-    for (uint32_t i = 0; i < mInputDevices.Length(); i++) {
-      foundDefault |= mInputDevices[i].preferred != CUBEB_DEVICE_PREF_NONE;
-    }
-
-    if (!foundDefault) {
-      if (!mInputDevices.IsEmpty()) {
-        mInputDevices[mInputDevices.Length() - 1].preferred =
-            CUBEB_DEVICE_PREF_ALL;
-      }
-    }
-
-    foundDefault = false;
-    for (uint32_t i = 0; i < mOutputDevices.Length(); i++) {
-      foundDefault |= mOutputDevices[i].preferred != CUBEB_DEVICE_PREF_NONE;
-    }
-
-    if (!foundDefault) {
-      if (!mOutputDevices.IsEmpty()) {
-        mOutputDevices[mOutputDevices.Length() - 1].preferred =
-            CUBEB_DEVICE_PREF_ALL;
-      }
-    }
-
-    return foundInput | foundOutput;
-  }
+  bool RemoveDevice(cubeb_devid aId);
   // Remove all input or output devices from this backend, without calling the
   // callback. This is meant to clean up in between tests.
-  void ClearDevices(cubeb_device_type aType) {
-    mInputDevices.Clear();
-    mOutputDevices.Clear();
-  }
+  void ClearDevices(cubeb_device_type aType);
 
   // This allows simulating a backend that does not support setting a device
   // collection invalidation callback, to be able to test the fallback path.
-  void SetSupportDeviceChangeCallback(bool aSupports) {
-    mSupportsDeviceCollectionChangedCallback = aSupports;
-  }
+  void SetSupportDeviceChangeCallback(bool aSupports);
 
   int StreamInit(cubeb* aContext, cubeb_stream** aStream,
                  cubeb_devid aInputDevice,
@@ -393,26 +239,33 @@ class MockCubeb {
                  cubeb_devid aOutputDevice,
                  cubeb_stream_params* aOutputStreamParams,
                  cubeb_data_callback aDataCallback,
-                 cubeb_state_callback aStateCallback, void* aUserPtr) {
-    MockCubebStream* mockStream = new MockCubebStream(
-        aContext, aInputDevice, aInputStreamParams, aOutputDevice,
-        aOutputStreamParams, aDataCallback, aStateCallback, aUserPtr);
-    *aStream = reinterpret_cast<cubeb_stream*>(mockStream);
-    mCurrentMockStream = mockStream;
-    return CUBEB_OK;
+                 cubeb_state_callback aStateCallback, void* aUserPtr);
+
+  void StreamDestroy(cubeb_stream* aStream);
+
+  void GoFaster();
+  void DontGoFaster();
+
+  MediaEventSource<MockCubebStream*>& StreamInitEvent();
+  MediaEventSource<void>& StreamDestroyEvent();
+
+  // MockCubeb specific API
+  void StartStream(MockCubebStream* aStream);
+  int StopStream(MockCubebStream* aStream);
+
+  // Simulates the audio thread. The thread is created at Start and destroyed
+  // at Stop. At next StreamStart a new thread is created.
+  static void ThreadFunction_s(MockCubeb* aContext) {
+    aContext->ThreadFunction();
   }
 
-  void StreamDestroy(cubeb_stream* aStream) {
-    MockCubebStream* mockStream = reinterpret_cast<MockCubebStream*>(aStream);
-    delete mockStream;
-  }
-
-  MockCubebStream* CurrentStream() { return mCurrentMockStream; }
+  void ThreadFunction();
 
  private:
   // This needs to have the exact same memory layout as a real cubeb backend.
   // It's very important for this `ops` member to be the very first member of
-  // the class, and to not have any virtual members (to avoid having a vtable).
+  // the class, and to not have any virtual members (to avoid having a
+  // vtable).
   const cubeb_ops* ops;
   // The callback to call when the device list has been changed.
   cubeb_device_collection_changed_callback
@@ -423,17 +276,27 @@ class MockCubeb {
   void* mInputDeviceCollectionChangeUserPtr = nullptr;
   void* mOutputDeviceCollectionChangeUserPtr = nullptr;
   void* mUserPtr = nullptr;
-  // Whether or not this backend supports device collection change notification
-  // via a system callback. If not, Gecko is expected to re-query the list every
-  // time.
+  // Whether or not this backend supports device collection change
+  // notification via a system callback. If not, Gecko is expected to re-query
+  // the list every time.
   bool mSupportsDeviceCollectionChangedCallback = true;
   // Our input and output devices.
   nsTArray<cubeb_device_info> mInputDevices;
   nsTArray<cubeb_device_info> mOutputDevices;
 
-  // The latest cubeb stream. The init of a stream happens in a helper thread
-  // inside Gecko so a synchronization method is needed.
-  std::atomic<MockCubebStream*> mCurrentMockStream{nullptr};
+  // The streams that are currently running.
+  DataMutex<nsTArray<MockCubebStream*>> mLiveStreams{"MockCubeb::mLiveStreams"};
+  // Thread that simulates the audio thread, shared across MockCubebStreams to
+  // avoid unintended drift. This is set together with mLiveStreams, under the
+  // mLiveStreams DataMutex.
+  UniquePtr<std::thread> mFakeAudioThread;
+  // Whether to run the fake audio thread in fast mode, not caring about wall
+  // clock time. false is default and means data is processed every 10ms. When
+  // true we sleep(0) between iterations instead of 10ms.
+  std::atomic<bool> mFastMode{false};
+
+  MediaEventProducer<MockCubebStream*> mStreamInitEvent;
+  MediaEventProducer<void> mStreamDestroyEvent;
 };
 
 void cubeb_mock_destroy(cubeb* context) {
@@ -508,7 +371,7 @@ static int cubeb_mock_stream_set_volume(cubeb_stream* stream, float volume) {
 
 int cubeb_mock_get_min_latency(cubeb* context, cubeb_stream_params params,
                                uint32_t* latency_ms) {
-  *latency_ms = NUM_OF_FRAMES;
+  *latency_ms = 10;
   return CUBEB_OK;
 }
 
@@ -642,5 +505,6 @@ void AddDevices(MockCubeb* mock, uint32_t device_count,
     mock->AddDevice(device);
   }
 }
+}  // namespace mozilla
 
 #endif  // MOCKCUBEB_H_

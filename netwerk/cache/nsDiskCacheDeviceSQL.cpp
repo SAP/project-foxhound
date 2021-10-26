@@ -263,8 +263,7 @@ void nsOfflineCacheEvictionFunction::Apply() {
     return;
   }
 
-  appcachedetail::FileArray items;
-  items.SwapElements(*pitems);
+  appcachedetail::FileArray items = std::move(*pitems);
 
   for (int32_t i = 0; i < items.Count(); i++) {
     if (MOZ_LOG_TEST(gCacheLog, LogLevel::Debug)) {
@@ -662,7 +661,7 @@ nsApplicationCache::GetManifestURI(nsIURI** out) {
   nsresult rv = NS_NewURI(getter_AddRefs(uri), mGroup);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = NS_GetURIWithNewRef(uri, EmptyCString(), out);
+  rv = NS_GetURIWithNewRef(uri, ""_ns, out);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1232,7 +1231,7 @@ nsresult nsOfflineCacheDevice::BuildApplicationCacheGroupID(
     nsACString& _result) {
   nsCOMPtr<nsIURI> newURI;
   nsresult rv =
-      NS_GetURIWithNewRef(aManifestURL, EmptyCString(), getter_AddRefs(newURI));
+      NS_GetURIWithNewRef(aManifestURL, ""_ns, getter_AddRefs(newURI));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoCString manifestSpec;
@@ -2107,7 +2106,7 @@ nsresult nsOfflineCacheDevice::RunSimpleQuery(mozIStorageStatement* statement,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  values.SwapElements(valArray);
+  values = std::move(valArray);
   return NS_OK;
 }
 

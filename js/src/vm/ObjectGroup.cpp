@@ -17,6 +17,7 @@
 #include "gc/Policy.h"
 #include "gc/StoreBuffer.h"
 #include "js/CharacterEncoding.h"
+#include "js/friend/WindowProxy.h"  // js::IsWindow
 #include "js/UniquePtr.h"
 #include "vm/ArrayObject.h"
 #include "vm/ErrorObject.h"
@@ -116,11 +117,11 @@ void ObjectGroup::setAddendum(AddendumKind kind, void* addendum,
     AutoSweepObjectGroup sweep(this);
     switch (addendumKind()) {
       case Addendum_PreliminaryObjects:
-        PreliminaryObjectArrayWithTemplate::writeBarrierPre(
+        PreliminaryObjectArrayWithTemplate::preWriteBarrier(
             maybePreliminaryObjects(sweep));
         break;
       case Addendum_NewScript:
-        TypeNewScript::writeBarrierPre(newScript(sweep));
+        TypeNewScript::preWriteBarrier(newScript(sweep));
         break;
       case Addendum_None:
         break;
@@ -558,7 +559,8 @@ ObjectGroup* ObjectGroup::defaultNewGroup(JSContext* cx, const JSClass* clasp,
     // that their type information can be tracked more precisely. Limit
     // this group change to plain objects, to avoid issues with other types
     // of singletons like typed arrays.
-    if (protoObj->is<PlainObject>() && !protoObj->isSingleton()) {
+    if (protoObj->is<PlainObject>() && !protoObj->isSingleton() &&
+        IsTypeInferenceEnabled()) {
       if (!JSObject::changeToSingleton(cx, protoObj)) {
         return nullptr;
       }
@@ -1346,8 +1348,9 @@ struct ObjectGroupRealm::AllocationSiteKey {
   }
 
   bool needsSweep() {
-    return IsAboutToBeFinalizedUnbarriered(script.unsafeGet()) ||
-           (proto && IsAboutToBeFinalizedUnbarriered(proto.unsafeGet()));
+    return IsAboutToBeFinalizedUnbarriered(script.unbarrieredAddress()) ||
+           (proto &&
+            IsAboutToBeFinalizedUnbarriered(proto.unbarrieredAddress()));
   }
 
   bool operator==(const AllocationSiteKey& other) const {
@@ -1488,11 +1491,14 @@ ObjectGroup* ObjectGroup::callingAllocationSiteGroup(JSContext* cx,
                                                      HandleObject proto) {
   MOZ_ASSERT_IF(proto, key == JSProto_Array);
 
-  jsbytecode* pc;
-  RootedScript script(cx, cx->currentScript(&pc));
-  if (script) {
-    return allocationSiteGroup(cx, script, pc, key, proto);
+  if (IsTypeInferenceEnabled()) {
+    jsbytecode* pc;
+    RootedScript script(cx, cx->currentScript(&pc));
+    if (script) {
+      return allocationSiteGroup(cx, script, pc, key, proto);
+    }
   }
+
   if (proto) {
     return defaultNewGroup(cx, GetClassForProtoKey(key), TaggedProto(proto));
   }
@@ -1504,6 +1510,8 @@ bool ObjectGroup::setAllocationSiteObjectGroup(JSContext* cx,
                                                HandleScript script,
                                                jsbytecode* pc, HandleObject obj,
                                                bool singleton) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
+
   JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(obj->getClass());
   MOZ_ASSERT(key != JSProto_Null);
   MOZ_ASSERT(singleton == useSingletonForAllocationSite(script, pc, key));

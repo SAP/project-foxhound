@@ -1029,8 +1029,20 @@ var AddonTestUtils = {
       this.overrideEntry = null;
     }
 
+    const XPIscope = ChromeUtils.import(
+      "resource://gre/modules/addons/XPIProvider.jsm",
+      null
+    );
+
     Services.obs.notifyObservers(null, "quit-application-granted");
     await MockAsyncShutdown.quitApplicationGranted.trigger();
+
+    // If XPIDatabase.asyncLoadDB() has been called before, then _dbPromise is
+    // a promise, potentially still pending. Wait for it to settle before
+    // triggering profileBeforeChange, because the latter can trigger errors in
+    // the pending asyncLoadDB() by an indirect call to XPIDatabase.shutdown().
+    await XPIscope.XPIDatabase._dbPromise;
+
     await MockAsyncShutdown.profileBeforeChange.trigger();
     await MockAsyncShutdown.profileChangeTeardown.trigger();
 
@@ -1052,10 +1064,7 @@ var AddonTestUtils = {
 
     // Force the XPIProvider provider to reload to better
     // simulate real-world usage.
-    let XPIscope = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm",
-      null
-    );
+
     // This would be cleaner if I could get it as the rejection reason from
     // the AddonManagerInternal.shutdown() promise
     let shutdownError = XPIscope.XPIDatabase._saveError;
@@ -1443,7 +1452,7 @@ var AddonTestUtils = {
   },
 
   async promiseSetExtensionModifiedTime(path, time) {
-    await OS.File.setDates(path, time, time);
+    await IOUtils.touch(path, time);
 
     let iterator = new OS.File.DirectoryIterator(path);
     try {
@@ -1492,14 +1501,22 @@ var AddonTestUtils = {
    * @param {string} event
    *        The name of the AddonListener event handler method for which
    *        an event is expected.
+   * @param {function} checkFn [optional]
+   *        A function to check if this is the right event. Should return true
+   *        for the event that it wants, false otherwise. Will be passed
+   *        all the relevant arguments.
+   *        If not passed, any event will do to resolve the promise.
    * @returns {Promise<Array>}
    *        Resolves to an array containing the event handler's
    *        arguments the first time it is called.
    */
-  promiseAddonEvent(event) {
+  promiseAddonEvent(event, checkFn) {
     return new Promise(resolve => {
       let listener = {
         [event](...args) {
+          if (typeof checkFn == "function" && !checkFn(...args)) {
+            return;
+          }
           AddonManager.removeAddonListener(listener);
           resolve(args);
         },

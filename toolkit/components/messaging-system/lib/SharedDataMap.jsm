@@ -80,6 +80,9 @@ class SharedDataMap extends EventEmitter {
   }
 
   get(key) {
+    if (!this._data) {
+      return null;
+    }
     return this._data[key];
   }
 
@@ -111,16 +114,16 @@ class SharedDataMap extends EventEmitter {
   }
 
   has(key) {
-    return Boolean(this._data[key]);
+    return Boolean(this.get(key));
   }
 
   /**
    * Notify store listeners of updates
    * Called both from Main and Content process
    */
-  _notifyUpdate() {
-    for (let key of Object.keys(this._data)) {
-      this.emit(`update:${key}`, this._data[key]);
+  _notifyUpdate(process = "parent") {
+    for (let key of Object.keys(this._data || {})) {
+      this.emit(`${process}-store-update:${key}`, this._data[key]);
     }
   }
 
@@ -134,7 +137,7 @@ class SharedDataMap extends EventEmitter {
   _syncFromParent() {
     this._data = Services.cpmm.sharedData.get(this.sharedDataKey);
     this._checkIfReady();
-    this._notifyUpdate();
+    this._notifyUpdate("child");
   }
 
   _checkIfReady() {

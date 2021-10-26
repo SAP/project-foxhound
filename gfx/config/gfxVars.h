@@ -23,6 +23,10 @@ class gfxVarReceiver;
 // Generator for graphics vars.
 #define GFX_VARS_LIST(_)                                           \
   /* C++ Name,                  Data Type,        Default Value */ \
+  _(AllowEglRbab, bool, true)                                      \
+  _(AllowWebgl2, bool, true)                                       \
+  _(AllowWebglAccelAngle, bool, true)                              \
+  _(AllowWebglOop, bool, true)                                     \
   _(BrowserTabsRemoteAutostart, bool, false)                       \
   _(ContentBackend, BackendType, BackendType::NONE)                \
   _(SoftwareBackend, BackendType, BackendType::NONE)               \
@@ -42,12 +46,16 @@ class gfxVarReceiver;
   _(UseWebRenderANGLE, bool, false)                                \
   _(UseWebRenderFlipSequentialWin, bool, false)                    \
   _(UseWebRenderDCompWin, bool, false)                             \
+  _(UseWebRenderDCompVideoOverlayWin, bool, false)                 \
   _(UseWebRenderTripleBufferingWin, bool, false)                   \
   _(UseWebRenderCompositor, bool, false)                           \
   _(UseWebRenderProgramBinaryDisk, bool, false)                    \
   _(UseWebRenderOptimizedShaders, bool, false)                     \
   _(UseWebRenderMultithreading, bool, false)                       \
   _(UseWebRenderScissoredCacheClears, bool, true)                  \
+  _(WebRenderProfilerUI, nsCString, nsCString())                   \
+  _(WebglAllowCoreProfile, bool, true)                             \
+  _(WebglAllowWindowsNativeGl, bool, false)                        \
   _(WebRenderMaxPartialPresentRects, int32_t, 0)                   \
   _(WebRenderDebugFlags, int32_t, 0)                               \
   _(WebRenderBatchingLookback, int32_t, 10)                        \
@@ -66,6 +74,7 @@ class gfxVarReceiver;
   _(DwmCompositionEnabled, bool, true)                             \
   _(FxREmbedded, bool, false)                                      \
   _(UseAHardwareBufferContent, bool, false)                        \
+  _(UseAHardwareBufferSharedSurface, bool, false)                  \
   _(UseEGL, bool, false)
 
 /* Add new entries above this line. */

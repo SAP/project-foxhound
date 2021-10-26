@@ -13,7 +13,6 @@
 
 #include "mozIPlacesAutoComplete.h"
 #include "nsNavBookmarks.h"
-#include "nsAnnotationService.h"
 #include "nsFaviconService.h"
 #include "nsPlacesMacros.h"
 #include "nsPlacesTriggers.h"
@@ -116,9 +115,6 @@ using namespace mozilla::places;
 // In order to avoid calling PR_now() too often we use a cached "now" value
 // for repeating stuff.  These are milliseconds between "now" cache refreshes.
 #define RENEW_CACHED_NOW_TIMEOUT ((int32_t)3 * PR_MSEC_PER_SEC)
-
-// character-set annotation
-#define CHARSET_ANNO "URIProperties/characterSet"_ns
 
 // These macros are used when splitting history by date.
 // These are the day containers and catch-all final container.
@@ -924,7 +920,9 @@ nsresult nsNavHistory::CanAddURIToHistory(nsIURI* aURI, bool* aCanAdd) {
       !scheme.EqualsLiteral("imap") && !scheme.EqualsLiteral("javascript") &&
       !scheme.EqualsLiteral("mailbox") && !scheme.EqualsLiteral("moz-anno") &&
       !scheme.EqualsLiteral("news") && !scheme.EqualsLiteral("page-icon") &&
-      !scheme.EqualsLiteral("resource") && !scheme.EqualsLiteral("view-source");
+      !scheme.EqualsLiteral("resource") &&
+      !scheme.EqualsLiteral("view-source") &&
+      !scheme.EqualsLiteral("moz-extension");
 
   return NS_OK;
 }
@@ -1020,8 +1018,8 @@ nsNavHistory::ExecuteQuery(nsINavHistoryQuery* aQuery,
     nsAutoCString queryUri;
     nsresult rv = QueryToQueryString(query, options, queryUri);
     NS_ENSURE_SUCCESS(rv, rv);
-    rootNode = new nsNavHistoryQueryResultNode(EmptyCString(), 0, queryUri,
-                                               query, options);
+    rootNode =
+        new nsNavHistoryQueryResultNode(""_ns, 0, queryUri, query, options);
   }
 
   // Create the result that will hold nodes.  Inject batching status into it.
@@ -3065,6 +3063,7 @@ nsresult nsNavHistory::QueryRowToResult(int64_t itemId,
 nsresult nsNavHistory::VisitIdToResultNode(int64_t visitId,
                                            nsNavHistoryQueryOptions* aOptions,
                                            nsNavHistoryResultNode** aResult) {
+  MOZ_ASSERT(visitId > 0, "The passed-in visit id must be valid");
   nsAutoCString tagsFragment;
   GetTagsSqlFragment(GetTagsFolder(), "h.id"_ns, true, tagsFragment);
 
@@ -3115,8 +3114,13 @@ nsresult nsNavHistory::VisitIdToResultNode(int64_t visitId,
   rv = statement->ExecuteStep(&hasMore);
   NS_ENSURE_SUCCESS(rv, rv);
   if (!hasMore) {
-    MOZ_ASSERT_UNREACHABLE("Trying to get a result node for an invalid visit");
-    return NS_ERROR_INVALID_ARG;
+    // Oops, we were passed an id that doesn't exist! It is indeed possible
+    // that between the insertion and the notification time, another enqueued
+    // task removed it. Since this can happen, we'll just issue a warning.
+    NS_WARNING(
+        "Cannot build a result node for a non existing visit id, was it "
+        "removed?");
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   nsCOMPtr<mozIStorageValueArray> row = do_QueryInterface(statement, &rv);
@@ -3128,6 +3132,7 @@ nsresult nsNavHistory::VisitIdToResultNode(int64_t visitId,
 nsresult nsNavHistory::BookmarkIdToResultNode(
     int64_t aBookmarkId, nsNavHistoryQueryOptions* aOptions,
     nsNavHistoryResultNode** aResult) {
+  MOZ_ASSERT(aBookmarkId > 0, "The passed-in bookmark id must be valid");
   nsAutoCString tagsFragment;
   GetTagsSqlFragment(GetTagsFolder(), "h.id"_ns, true, tagsFragment);
   // Should match kGetInfoIndex_*
@@ -3152,10 +3157,13 @@ nsresult nsNavHistory::BookmarkIdToResultNode(
   rv = stmt->ExecuteStep(&hasMore);
   NS_ENSURE_SUCCESS(rv, rv);
   if (!hasMore) {
-    MOZ_ASSERT_UNREACHABLE(
-        "Trying to get a result node for an invalid "
-        "bookmark identifier");
-    return NS_ERROR_INVALID_ARG;
+    // Oops, we were passed an id that doesn't exist! It is indeed possible
+    // that between the insertion and the notification time, another enqueued
+    // task removed it. Since this can happen, we'll just issue a warning.
+    NS_WARNING(
+        "Cannot build a result node for a non existing bookmark id, was it "
+        "removed?");
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   nsCOMPtr<mozIStorageValueArray> row = do_QueryInterface(stmt, &rv);
@@ -3167,6 +3175,7 @@ nsresult nsNavHistory::BookmarkIdToResultNode(
 nsresult nsNavHistory::URIToResultNode(nsIURI* aURI,
                                        nsNavHistoryQueryOptions* aOptions,
                                        nsNavHistoryResultNode** aResult) {
+  MOZ_ASSERT(aURI, "The passed-in URI must be not-null");
   nsAutoCString tagsFragment;
   GetTagsSqlFragment(GetTagsFolder(), "h.id"_ns, true, tagsFragment);
   // Should match kGetInfoIndex_*
@@ -3191,8 +3200,13 @@ nsresult nsNavHistory::URIToResultNode(nsIURI* aURI,
   rv = stmt->ExecuteStep(&hasMore);
   NS_ENSURE_SUCCESS(rv, rv);
   if (!hasMore) {
-    MOZ_ASSERT_UNREACHABLE("Trying to get a result node for an invalid url");
-    return NS_ERROR_INVALID_ARG;
+    // Oops, we were passed an URL that doesn't exist! It is indeed possible
+    // that between the insertion and the notification time, another enqueued
+    // task removed it. Since this can happen, we'll just issue a warning.
+    NS_WARNING(
+        "Cannot build a result node for a non existing page id, was it "
+        "removed?");
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   nsCOMPtr<mozIStorageValueArray> row = do_QueryInterface(stmt, &rv);
@@ -3243,8 +3257,9 @@ void nsNavHistory::GetStringFromName(const char* aName, nsACString& aResult) {
 void nsNavHistory::GetMonthName(const PRExplodedTime& aTime,
                                 nsACString& aResult) {
   nsAutoString month;
-  nsresult rv = DateTimeFormat::FormatPRExplodedTime(
-      kDateFormatMonthLong, kTimeFormatNone, &aTime, month);
+  nsresult rv = mozilla::DateTimeFormat::GetCalendarSymbol(
+      mozilla::DateTimeFormat::Field::Month,
+      mozilla::DateTimeFormat::Style::Wide, &aTime, month);
   if (NS_FAILED(rv)) {
     aResult = nsPrintfCString("[%d]", aTime.tm_month + 1);
     return;
@@ -3256,8 +3271,8 @@ void nsNavHistory::GetMonthName(const PRExplodedTime& aTime,
 void nsNavHistory::GetMonthYear(const PRExplodedTime& aTime,
                                 nsACString& aResult) {
   nsAutoString monthYear;
-  nsresult rv = DateTimeFormat::FormatPRExplodedTime(
-      kDateFormatYearMonthLong, kTimeFormatNone, &aTime, monthYear);
+  nsresult rv = mozilla::DateTimeFormat::FormatDateTime(
+      &aTime, DateTimeFormat::Skeleton::yyyyMMMM, monthYear);
   if (NS_FAILED(rv)) {
     aResult = nsPrintfCString("[%d-%d]", aTime.tm_month + 1, aTime.tm_year);
     return;
@@ -3280,18 +3295,16 @@ namespace {
 static nsCString GetSimpleBookmarksQueryParent(
     const RefPtr<nsNavHistoryQuery>& aQuery,
     const RefPtr<nsNavHistoryQueryOptions>& aOptions) {
-  if (aQuery->Parents().Length() != 1) return EmptyCString();
+  if (aQuery->Parents().Length() != 1) return ""_ns;
 
   bool hasIt;
-  if (NS_SUCCEEDED(aQuery->GetHasBeginTime(&hasIt)) && hasIt)
-    return EmptyCString();
-  if (NS_SUCCEEDED(aQuery->GetHasEndTime(&hasIt)) && hasIt)
-    return EmptyCString();
-  if (!aQuery->Domain().IsVoid()) return EmptyCString();
-  if (aQuery->Uri()) return EmptyCString();
-  if (!aQuery->SearchTerms().IsEmpty()) return EmptyCString();
-  if (aQuery->Tags().Length() > 0) return EmptyCString();
-  if (aOptions->MaxResults() > 0) return EmptyCString();
+  if (NS_SUCCEEDED(aQuery->GetHasBeginTime(&hasIt)) && hasIt) return ""_ns;
+  if (NS_SUCCEEDED(aQuery->GetHasEndTime(&hasIt)) && hasIt) return ""_ns;
+  if (!aQuery->Domain().IsVoid()) return ""_ns;
+  if (aQuery->Uri()) return ""_ns;
+  if (!aQuery->SearchTerms().IsEmpty()) return ""_ns;
+  if (aQuery->Tags().Length() > 0) return ""_ns;
+  if (aOptions->MaxResults() > 0) return ""_ns;
 
   // Don't care about onlyBookmarked flag, since specifying a bookmark
   // folder is inferring onlyBookmarked.

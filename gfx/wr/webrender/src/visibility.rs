@@ -7,11 +7,12 @@
 //! TODO: document what this pass does!
 //!
 
-use api::{ColorF, DebugFlags, EdgeAaSegmentMask};
+use api::{ColorF, DebugFlags};
 use api::units::*;
-use api::image_tiling;
 use euclid::Scale;
-use std::{u32, usize, mem};
+use std::{usize, mem};
+use crate::image_tiling;
+use crate::segment::EdgeAaSegmentMask;
 use crate::clip::{ClipStore, ClipChainStack};
 use crate::composite::CompositeState;
 use crate::spatial_tree::{ROOT_SPATIAL_NODE_INDEX, SpatialTree, SpatialNodeIndex};
@@ -75,14 +76,6 @@ impl<'a> FrameVisibilityState<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-pub struct PrimitiveVisibilityIndex(pub u32);
-
-impl PrimitiveVisibilityIndex {
-    pub const INVALID: PrimitiveVisibilityIndex = PrimitiveVisibilityIndex(u32::MAX);
-}
-
 /// A bit mask describing which dirty regions a primitive is visible in.
 /// A value of 0 means not visible in any region, while a mask of 0xffff
 /// would be considered visible in all regions.
@@ -144,18 +137,40 @@ bitflags! {
     }
 }
 
+/// Contains the current state of the primitive's visibility.
+#[derive(Debug)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+pub enum VisibilityState {
+    /// Uninitialized - this should never be encountered after prim reset
+    Unset,
+    /// Culled for being off-screen, or not possible to render (e.g. missing image resource)
+    Culled,
+    /// During picture cache dependency update, was found to be intersecting with one
+    /// or more visible tiles. The rect in picture cache space is stored here to allow
+    /// the detailed calculations below.
+    Coarse {
+        rect_in_pic_space: PictureRect,
+    },
+    /// Once coarse visibility is resolved, this provides a bitmask of which dirty tiles
+    /// this primitive should be rasterized into.
+    Detailed {
+        /// A mask defining which of the dirty regions this primitive is visible in.
+        visibility_mask: PrimitiveVisibilityMask,
+    },
+}
+
 /// Information stored for a visible primitive about the visible
 /// rect and associated clip information.
+#[derive(Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct PrimitiveVisibility {
     /// The clip chain instance that was built for this primitive.
     pub clip_chain: ClipChainInstance,
 
-    /// The current world rect, clipped to screen / dirty rect boundaries.
-    // TODO(gw): This is only used by a small number of primitives.
-    //           It's probably faster to not store this and recalculate
-    //           on demand in those cases?
-    pub clipped_world_rect: WorldRect,
+    /// Current visibility state of the primitive.
+    // TODO(gw): Move more of the fields from this struct into
+    //           the state enum.
+    pub state: VisibilityState,
 
     /// An index into the clip task instances array in the primitive
     /// store. If this is ClipTaskIndex::INVALID, then the primitive
@@ -168,12 +183,27 @@ pub struct PrimitiveVisibility {
     /// during batching of visibile primitives.
     pub flags: PrimitiveVisibilityFlags,
 
-    /// A mask defining which of the dirty regions this primitive is visible in.
-    pub visibility_mask: PrimitiveVisibilityMask,
-
     /// The current combined local clip for this primitive, from
     /// the primitive local clip above and the current clip chain.
     pub combined_local_clip_rect: LayoutRect,
+}
+
+impl PrimitiveVisibility {
+    pub fn new() -> Self {
+        PrimitiveVisibility {
+            state: VisibilityState::Unset,
+            clip_chain: ClipChainInstance::empty(),
+            clip_task_index: ClipTaskIndex::INVALID,
+            flags: PrimitiveVisibilityFlags::empty(),
+            combined_local_clip_rect: LayoutRect::zero(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.state = VisibilityState::Culled;
+        self.clip_task_index = ClipTaskIndex::INVALID;
+        self.flags = PrimitiveVisibilityFlags::empty();
+    }
 }
 
 /// Update visibility pass - update each primitive visibility struct, and
@@ -290,14 +320,21 @@ pub fn update_primitive_visibility(
 
             let (is_passthrough, prim_local_rect, prim_shadowed_rect) = match prim_instance.kind {
                 PrimitiveInstanceKind::Picture { pic_index, .. } => {
-                    if !store.pictures[pic_index.0].is_visible() {
+                    let (is_visible, is_passthrough) = {
+                        let pic = &store.pictures[pic_index.0];
+                        (pic.is_visible(), pic.raster_config.is_none())
+                    };
+
+                    if !is_visible {
                         continue;
                     }
 
-                    frame_state.clip_chain_stack.push_clip(
-                        prim_instance.clip_chain_id,
-                        frame_state.clip_store,
-                    );
+                    if is_passthrough {
+                        frame_state.clip_chain_stack.push_clip(
+                            prim_instance.clip_set.clip_chain_id,
+                            frame_state.clip_store,
+                        );
+                    }
 
                     let pic_surface_rect = update_primitive_visibility(
                         store,
@@ -309,7 +346,9 @@ pub fn update_primitive_visibility(
                         tile_caches,
                     );
 
-                    frame_state.clip_chain_stack.pop_clip();
+                    if is_passthrough {
+                        frame_state.clip_chain_stack.pop_clip();
+                    }
 
                     let pic = &store.pictures[pic_index.0];
 
@@ -339,7 +378,7 @@ pub fn update_primitive_visibility(
                         }
                     }
 
-                    (pic.raster_config.is_none(), pic.precise_local_rect, shadow_rect)
+                    (is_passthrough, pic.precise_local_rect, shadow_rect)
                 }
                 _ => {
                     let prim_data = &frame_state.data_stores.as_common_data(&prim_instance);
@@ -349,20 +388,10 @@ pub fn update_primitive_visibility(
             };
 
             if is_passthrough {
-                let vis_index = PrimitiveVisibilityIndex(frame_state.scratch.primitive.prim_info.len() as u32);
-
-                frame_state.scratch.primitive.prim_info.push(
-                    PrimitiveVisibility {
-                        clipped_world_rect: WorldRect::max_rect(),
-                        clip_chain: ClipChainInstance::empty(),
-                        clip_task_index: ClipTaskIndex::INVALID,
-                        combined_local_clip_rect: LayoutRect::zero(),
-                        visibility_mask: PrimitiveVisibilityMask::empty(),
-                        flags: PrimitiveVisibilityFlags::empty(),
-                    }
-                );
-
-                prim_instance.visibility_info = vis_index;
+                // Pass through pictures are always considered visible in all dirty tiles.
+                prim_instance.vis.state = VisibilityState::Detailed {
+                    visibility_mask: PrimitiveVisibilityMask::all(),
+                };
             } else {
                 if prim_local_rect.size.width <= 0.0 || prim_local_rect.size.height <= 0.0 {
                     if prim_instance.is_chased() {
@@ -378,13 +407,13 @@ pub fn update_primitive_visibility(
                 let inflation_factor = surface.inflation_factor;
                 let local_rect = prim_shadowed_rect
                     .inflate(inflation_factor, inflation_factor)
-                    .intersection(&prim_instance.local_clip_rect);
+                    .intersection(&prim_instance.clip_set.local_clip_rect);
                 let local_rect = match local_rect {
                     Some(local_rect) => local_rect,
                     None => {
                         if prim_instance.is_chased() {
                             println!("\tculled for being out of the local clip rectangle: {:?}",
-                                     prim_instance.local_clip_rect);
+                                     prim_instance.clip_set.local_clip_rect);
                         }
                         continue;
                     }
@@ -392,12 +421,12 @@ pub fn update_primitive_visibility(
 
                 // Include the clip chain for this primitive in the current stack.
                 frame_state.clip_chain_stack.push_clip(
-                    prim_instance.clip_chain_id,
+                    prim_instance.clip_set.clip_chain_id,
                     frame_state.clip_store,
                 );
 
                 frame_state.clip_store.set_active_clips(
-                    prim_instance.local_clip_rect,
+                    prim_instance.clip_set.local_clip_rect,
                     cluster.spatial_node_index,
                     frame_state.clip_chain_stack.current_clips_array(),
                     &frame_context.spatial_tree,
@@ -423,61 +452,43 @@ pub fn update_primitive_visibility(
                 // Ensure the primitive clip is popped
                 frame_state.clip_chain_stack.pop_clip();
 
-                let clip_chain = match clip_chain {
+                prim_instance.vis.clip_chain = match clip_chain {
                     Some(clip_chain) => clip_chain,
                     None => {
                         if prim_instance.is_chased() {
                             println!("\tunable to build the clip chain, skipping");
                         }
-                        prim_instance.visibility_info = PrimitiveVisibilityIndex::INVALID;
                         continue;
                     }
                 };
 
                 if prim_instance.is_chased() {
                     println!("\teffective clip chain from {:?} {}",
-                             clip_chain.clips_range,
+                             prim_instance.vis.clip_chain.clips_range,
                              if apply_local_clip_rect { "(applied)" } else { "" },
                     );
                     println!("\tpicture rect {:?} @{:?}",
-                             clip_chain.pic_clip_rect,
-                             clip_chain.pic_spatial_node_index,
+                             prim_instance.vis.clip_chain.pic_clip_rect,
+                             prim_instance.vis.clip_chain.pic_spatial_node_index,
                     );
                 }
 
-                // Check if the clip bounding rect (in pic space) is visible on screen
-                // This includes both the prim bounding rect + local prim clip rect!
-                let world_rect = match map_surface_to_world.map(&clip_chain.pic_clip_rect) {
-                    Some(world_rect) => world_rect,
-                    None => {
-                        continue;
-                    }
-                };
-
-                let clipped_world_rect = match world_rect.intersection(&world_culling_rect) {
-                    Some(rect) => rect,
-                    None => {
-                        continue;
-                    }
-                };
-
-                let combined_local_clip_rect = if apply_local_clip_rect {
-                    clip_chain.local_clip_rect
+                prim_instance.vis.combined_local_clip_rect = if apply_local_clip_rect {
+                    prim_instance.vis.clip_chain.local_clip_rect
                 } else {
-                    prim_instance.local_clip_rect
+                    prim_instance.clip_set.local_clip_rect
                 };
 
-                if combined_local_clip_rect.size.is_empty_or_negative() {
+                if prim_instance.vis.combined_local_clip_rect.size.is_empty() {
                     if prim_instance.is_chased() {
                         println!("\tculled for zero local clip rectangle");
                     }
-                    prim_instance.visibility_info = PrimitiveVisibilityIndex::INVALID;
                     continue;
                 }
 
                 // Include the visible area for primitive, including any shadows, in
                 // the area affected by the surface.
-                match combined_local_clip_rect.intersection(&local_rect) {
+                match prim_instance.vis.combined_local_clip_rect.intersection(&local_rect) {
                     Some(visible_rect) => {
                         if let Some(rect) = map_local_to_surface.map(&visible_rect) {
                             surface_rect = surface_rect.union(&rect);
@@ -487,44 +498,55 @@ pub fn update_primitive_visibility(
                         if prim_instance.is_chased() {
                             println!("\tculled for zero visible rectangle");
                         }
-                        prim_instance.visibility_info = PrimitiveVisibilityIndex::INVALID;
                         continue;
                     }
                 }
 
-                // Primitive visibility flags default to empty, but may be supplied
-                // by the `update_prim_dependencies` method below when picture caching
-                // is active.
-                let mut vis_flags = PrimitiveVisibilityFlags::empty();
-
-                if let Some(ref mut tile_cache) = frame_state.tile_cache {
-                    // TODO(gw): Refactor how tile_cache is stored in frame_state
-                    //           so that we can pass frame_state directly to
-                    //           update_prim_dependencies, rather than splitting borrows.
-                    match tile_cache.update_prim_dependencies(
-                        prim_instance,
-                        cluster.spatial_node_index,
-                        &clip_chain,
-                        prim_local_rect,
-                        frame_context,
-                        frame_state.data_stores,
-                        frame_state.clip_store,
-                        &store.pictures,
-                        frame_state.resource_cache,
-                        &store.color_bindings,
-                        &frame_state.surface_stack,
-                        &mut frame_state.composite_state,
-                    ) {
-                        Some(flags) => {
-                            vis_flags = flags;
-                        }
-                        None => {
-                            prim_instance.visibility_info = PrimitiveVisibilityIndex::INVALID;
-                            // Ensure the primitive clip is popped - perhaps we can use
-                            // some kind of scope to do this automatically in future.
-                            continue;
-                        }
+                match frame_state.tile_cache {
+                    Some(ref mut tile_cache) => {
+                        // TODO(gw): Refactor how tile_cache is stored in frame_state
+                        //           so that we can pass frame_state directly to
+                        //           update_prim_dependencies, rather than splitting borrows.
+                        tile_cache.update_prim_dependencies(
+                            prim_instance,
+                            cluster.spatial_node_index,
+                            prim_local_rect,
+                            frame_context,
+                            frame_state.data_stores,
+                            frame_state.clip_store,
+                            &store.pictures,
+                            frame_state.resource_cache,
+                            &store.color_bindings,
+                            &frame_state.surface_stack,
+                            &mut frame_state.composite_state,
+                        );
                     }
+                    None => {
+                        // When picture cache is not in use, cull against the main world culling rect only.
+                        let clipped_world_rect = calculate_prim_clipped_world_rect(
+                            &prim_instance.vis.clip_chain.pic_clip_rect,
+                            &world_culling_rect,
+                            &map_surface_to_world,
+                        );
+
+                        prim_instance.vis.state = match clipped_world_rect {
+                            Some(_) => {
+                                VisibilityState::Detailed {
+                                    visibility_mask: PrimitiveVisibilityMask::all(),
+                                }
+                            }
+                            None => {
+                                VisibilityState::Culled
+                            }
+                        };
+                    }
+                }
+
+                // Skip post visibility prim update if this primitive was culled above.
+                match prim_instance.vis.state {
+                    VisibilityState::Unset => panic!("bug: invalid state"),
+                    VisibilityState::Culled => continue,
+                    VisibilityState::Coarse { .. } | VisibilityState::Detailed { .. } => {}
                 }
 
                 // When the debug display is enabled, paint a colored rectangle around each
@@ -546,8 +568,14 @@ pub fn update_primitive_visibility(
                         PrimitiveInstanceKind::Backdrop { .. } => debug_colors::MEDIUMAQUAMARINE,
                     };
                     if debug_color.a != 0.0 {
-                        let debug_rect = clipped_world_rect * frame_context.global_device_pixel_scale;
-                        frame_state.scratch.primitive.push_debug_rect(debug_rect, debug_color, debug_color.scale_alpha(0.5));
+                        if let Some(rect) = calculate_prim_clipped_world_rect(
+                            &prim_instance.vis.clip_chain.pic_clip_rect,
+                            &world_culling_rect,
+                            &map_surface_to_world,
+                        ) {
+                            let debug_rect = rect * frame_context.global_device_pixel_scale;
+                            frame_state.scratch.primitive.push_debug_rect(debug_rect, debug_color, debug_color.scale_alpha(0.5));
+                        }
                     }
                 } else if frame_context.debug_flags.contains(::api::DebugFlags::OBSCURE_IMAGES) {
                     let is_image = matches!(
@@ -556,36 +584,30 @@ pub fn update_primitive_visibility(
                     );
                     if is_image {
                         // We allow "small" images, since they're generally UI elements.
-                        let rect = clipped_world_rect * frame_context.global_device_pixel_scale;
-                        if rect.size.width > 70.0 && rect.size.height > 70.0 {
-                            frame_state.scratch.primitive.push_debug_rect(rect, debug_colors::PURPLE, debug_colors::PURPLE);
+                        if let Some(rect) = calculate_prim_clipped_world_rect(
+                            &prim_instance.vis.clip_chain.pic_clip_rect,
+                            &world_culling_rect,
+                            &map_surface_to_world,
+                        ) {
+                            let rect = rect * frame_context.global_device_pixel_scale;
+                            if rect.size.width > 70.0 && rect.size.height > 70.0 {
+                                frame_state.scratch.primitive.push_debug_rect(rect, debug_colors::PURPLE, debug_colors::PURPLE);
+                            }
                         }
                     }
                 }
 
-                let vis_index = PrimitiveVisibilityIndex(frame_state.scratch.primitive.prim_info.len() as u32);
                 if prim_instance.is_chased() {
-                    println!("\tvisible {:?} with {:?}", vis_index, combined_local_clip_rect);
+                    println!("\tvisible with {:?}", prim_instance.vis.combined_local_clip_rect);
                 }
 
-                frame_state.scratch.primitive.prim_info.push(
-                    PrimitiveVisibility {
-                        clipped_world_rect,
-                        clip_chain,
-                        clip_task_index: ClipTaskIndex::INVALID,
-                        combined_local_clip_rect,
-                        visibility_mask: PrimitiveVisibilityMask::empty(),
-                        flags: vis_flags,
-                    }
-                );
-
-                prim_instance.visibility_info = vis_index;
-
-                request_resources_for_prim(
+                // TODO(gw): This should probably be an instance method on PrimitiveInstance?
+                update_prim_post_visibility(
                     store,
                     prim_instance,
                     cluster.spatial_node_index,
-                    clipped_world_rect,
+                    world_culling_rect,
+                    &map_surface_to_world,
                     frame_context,
                     frame_state,
                 );
@@ -681,16 +703,30 @@ pub fn update_primitive_visibility(
 }
 
 
-fn request_resources_for_prim(
+fn update_prim_post_visibility(
     store: &mut PrimitiveStore,
     prim_instance: &mut PrimitiveInstance,
     prim_spatial_node_index: SpatialNodeIndex,
-    prim_world_rect: WorldRect,
+    world_culling_rect: WorldRect,
+    map_surface_to_world: &SpaceMapper<PicturePixel, WorldPixel>,
     frame_context: &FrameVisibilityContext,
     frame_state: &mut FrameVisibilityState,
 ) {
-    profile_scope!("request_resources_for_prim");
+    profile_scope!("update_prim_post_visibility");
     match prim_instance.kind {
+        PrimitiveInstanceKind::Picture { pic_index, .. } => {
+            let pic = &mut store.pictures[pic_index.0];
+            // If this picture has a surface, determine the clipped bounding rect for it to
+            // minimize the size of the render target that is required.
+            if let Some(ref mut raster_config) = pic.raster_config {
+                raster_config.clipped_bounding_rect = map_surface_to_world
+                    .map(&prim_instance.vis.clip_chain.pic_clip_rect)
+                    .and_then(|rect| {
+                        rect.intersection(&world_culling_rect)
+                    })
+                    .unwrap_or(WorldRect::zero());
+            }
+        }
         PrimitiveInstanceKind::TextRun { .. } => {
             // Text runs can't request resources early here, as we don't
             // know until TileCache::post_update() whether we are drawing
@@ -732,23 +768,17 @@ fn request_resources_for_prim(
                     // Tighten the clip rect because decomposing the repeated image can
                     // produce primitives that are partially covering the original image
                     // rect and we want to clip these extra parts out.
-                    let prim_info = &frame_state.scratch.primitive.prim_info[prim_instance.visibility_info.0 as usize];
+                    let prim_info = &prim_instance.vis;
                     let tight_clip_rect = prim_info
                         .combined_local_clip_rect
                         .intersection(&common_data.prim_rect).unwrap();
                     image_instance.tight_local_clip_rect = tight_clip_rect;
 
-                    let map_local_to_world = SpaceMapper::new_with_target(
-                        ROOT_SPATIAL_NODE_INDEX,
-                        prim_spatial_node_index,
-                        frame_context.global_screen_world_rect,
-                        frame_context.spatial_tree,
-                    );
-
                     let visible_rect = compute_conservative_visible_rect(
-                        &tight_clip_rect,
-                        prim_world_rect,
-                        &map_local_to_world,
+                        &prim_instance.vis.clip_chain,
+                        world_culling_rect,
+                        prim_spatial_node_index,
+                        frame_context.spatial_tree,
                     );
 
                     let base_edge_flags = edge_flags_for_tile_spacing(&image_data.tile_spacing);
@@ -797,7 +827,7 @@ fn request_resources_for_prim(
 
                     if image_instance.visible_tiles.is_empty() {
                         // Mark as invisible
-                        prim_instance.visibility_info = PrimitiveVisibilityIndex::INVALID;
+                        prim_instance.clear_visibility();
                     }
                 }
                 None => {}
@@ -835,13 +865,59 @@ fn edge_flags_for_tile_spacing(tile_spacing: &LayoutSize) -> EdgeAaSegmentMask {
 }
 
 pub fn compute_conservative_visible_rect(
-    local_clip_rect: &LayoutRect,
+    clip_chain: &ClipChainInstance,
     world_culling_rect: WorldRect,
-    map_local_to_world: &SpaceMapper<LayoutPixel, WorldPixel>,
+    prim_spatial_node_index: SpatialNodeIndex,
+    spatial_tree: &SpatialTree,
 ) -> LayoutRect {
-    if let Some(local_bounds) = map_local_to_world.unmap(&world_culling_rect) {
-        return local_clip_rect.intersection(&local_bounds).unwrap_or_else(LayoutRect::zero)
-    }
+    // Mapping from picture space -> world space
+    let map_pic_to_world: SpaceMapper<PicturePixel, WorldPixel> = SpaceMapper::new_with_target(
+        ROOT_SPATIAL_NODE_INDEX,
+        clip_chain.pic_spatial_node_index,
+        world_culling_rect,
+        spatial_tree,
+    );
 
-    *local_clip_rect
+    // Mapping from local space -> picture space
+    let map_local_to_pic: SpaceMapper<LayoutPixel, PicturePixel> = SpaceMapper::new_with_target(
+        clip_chain.pic_spatial_node_index,
+        prim_spatial_node_index,
+        PictureRect::max_rect(),
+        spatial_tree,
+    );
+
+    // Unmap the world culling rect from world -> picture space. If this mapping fails due
+    // to matrix weirdness, best we can do is use the clip chain's local clip rect.
+    let pic_culling_rect = match map_pic_to_world.unmap(&world_culling_rect) {
+        Some(rect) => rect,
+        None => return clip_chain.local_clip_rect,
+    };
+
+    // Intersect the unmapped world culling rect with the primitive's clip chain rect that
+    // is in picture space (the clip-chain already takes into account the bounds of the
+    // primitive local_rect and local_clip_rect). If there is no intersection here, the
+    // primitive is not visible at all.
+    let pic_culling_rect = match pic_culling_rect.intersection(&clip_chain.pic_clip_rect) {
+        Some(rect) => rect,
+        None => return LayoutRect::zero(),
+    };
+
+    // Unmap the picture culling rect from picture -> local space. If this mapping fails due
+    // to matrix weirdness, best we can do is use the clip chain's local clip rect.
+    match map_local_to_pic.unmap(&pic_culling_rect) {
+        Some(rect) => rect,
+        None => clip_chain.local_clip_rect,
+    }
+}
+
+fn calculate_prim_clipped_world_rect(
+    pic_clip_rect: &PictureRect,
+    world_culling_rect: &WorldRect,
+    map_surface_to_world: &SpaceMapper<PicturePixel, WorldPixel>,
+) -> Option<WorldRect> {
+    map_surface_to_world
+        .map(pic_clip_rect)
+        .and_then(|world_rect| {
+            world_rect.intersection(world_culling_rect)
+        })
 }

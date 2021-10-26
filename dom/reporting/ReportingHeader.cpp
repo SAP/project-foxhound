@@ -11,6 +11,7 @@
 #include "mozilla/dom/ReportingBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -225,8 +226,7 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
 
   JSContext* cx = jsapi.cx();
   JS::Rooted<JS::Value> jsonValue(cx);
-  bool ok = JS_ParseJSON(cx, PromiseFlatString(json).get(), json.Length(),
-                         &jsonValue);
+  bool ok = JS_ParseJSON(cx, json.BeginReading(), json.Length(), &jsonValue);
   if (!ok) {
     LogToConsoleInvalidJSON(aChannel, aURI);
     return nullptr;

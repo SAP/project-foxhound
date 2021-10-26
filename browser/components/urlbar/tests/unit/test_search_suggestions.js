@@ -20,6 +20,7 @@ const PRIVATE_SEARCH_PREF = "browser.search.separatePrivateDefault.ui.enabled";
 const MAX_RICH_RESULTS_PREF = "browser.urlbar.maxRichResults";
 const MAX_FORM_HISTORY_PREF = "browser.urlbar.maxHistoricalSearchSuggestions";
 const SEARCH_STRING = "hello";
+const MATCH_BUCKETS_VALUE = "general:5,suggestion:Infinity";
 
 var suggestionsFn;
 var previousSuggestionsFn;
@@ -106,7 +107,7 @@ function makeExpectedSuggestionResults(
 add_task(async function setup() {
   Services.prefs.setCharPref(
     "browser.urlbar.matchBuckets",
-    "general:5,suggestion:Infinity"
+    MATCH_BUCKETS_VALUE
   );
 
   let engine = await addTestSuggestionsEngine(searchStr => {
@@ -128,9 +129,11 @@ add_task(async function setup() {
 
   // Add some form history.
   let context = createContext(SEARCH_STRING, { isPrivate: false });
-  for (let result of makeExpectedFormHistoryResults(context, 2)) {
-    await updateSearchHistory("bump", result.payload.suggestion);
-  }
+  let entries = makeExpectedFormHistoryResults(context, 2).map(r => ({
+    value: r.payload.suggestion,
+    source: ENGINE_NAME,
+  }));
+  await UrlbarTestUtils.formHistory.add(entries);
 });
 
 add_task(async function disabled_urlbarSuggestions() {
@@ -185,6 +188,9 @@ add_task(async function disabled_urlbarSuggestions_withRestrictionToken() {
     matches: [
       makeSearchResult(context, {
         query: SEARCH_STRING,
+        alias: UrlbarPrefs.get("update2")
+          ? UrlbarTokenizer.RESTRICT.SEARCH
+          : undefined,
         engineName: ENGINE_NAME,
         heuristic: true,
       }),
@@ -210,6 +216,9 @@ add_task(
       matches: [
         makeSearchResult(context, {
           query: SEARCH_STRING,
+          alias: UrlbarPrefs.get("update2")
+            ? UrlbarTokenizer.RESTRICT.SEARCH
+            : undefined,
           engineName: ENGINE_NAME,
           heuristic: true,
         }),
@@ -233,6 +242,9 @@ add_task(
       matches: [
         makeSearchResult(context, {
           query: SEARCH_STRING,
+          alias: UrlbarPrefs.get("update2")
+            ? UrlbarTokenizer.RESTRICT.SEARCH
+            : undefined,
           engineName: ENGINE_NAME,
           heuristic: true,
         }),
@@ -407,6 +419,9 @@ add_task(async function restrictToken() {
     matches: [
       makeSearchResult(context, {
         engineName: ENGINE_NAME,
+        alias: UrlbarPrefs.get("update2")
+          ? UrlbarTokenizer.RESTRICT.SEARCH
+          : undefined,
         query: SEARCH_STRING,
         heuristic: true,
       }),
@@ -417,8 +432,8 @@ add_task(async function restrictToken() {
     ],
   });
 
-  // Typing the search restriction char shows only the Search Engine entry with
-  // no query.
+  // Typing the search restriction char shows the Search Engine entry and local
+  // results.
   context = createContext(UrlbarTokenizer.RESTRICT.SEARCH, {
     isPrivate: false,
   });
@@ -430,8 +445,10 @@ add_task(async function restrictToken() {
         query: "",
         heuristic: true,
       }),
+      ...makeExpectedFormHistoryResults(context),
     ],
   });
+
   // Also if followed by multiple spaces.
   context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH}  `, {
     isPrivate: false,
@@ -441,13 +458,19 @@ add_task(async function restrictToken() {
     matches: [
       makeSearchResult(context, {
         engineName: ENGINE_NAME,
+        alias: UrlbarPrefs.get("update2")
+          ? UrlbarTokenizer.RESTRICT.SEARCH
+          : undefined,
         query: "",
         heuristic: true,
       }),
+      ...makeExpectedFormHistoryResults(context),
     ],
   });
-  // Also if followed by a single char.
-  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH}a`, {
+
+  // If followed by any char we should fetch suggestions.
+  // Note this uses "h" to match form history.
+  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH}h`, {
     isPrivate: false,
   });
   await check_results({
@@ -455,13 +478,18 @@ add_task(async function restrictToken() {
     matches: [
       makeSearchResult(context, {
         engineName: ENGINE_NAME,
-        query: "a",
+        query: "h",
         heuristic: true,
+      }),
+      ...makeExpectedSuggestionResults(context, {
+        suggestionPrefix: "h",
+        query: "h",
       }),
     ],
   });
+
   // Also if followed by a space and single char.
-  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH} a`, {
+  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH} h`, {
     isPrivate: false,
   });
   await check_results({
@@ -469,12 +497,21 @@ add_task(async function restrictToken() {
     matches: [
       makeSearchResult(context, {
         engineName: ENGINE_NAME,
-        query: "a",
+        alias: UrlbarPrefs.get("update2")
+          ? UrlbarTokenizer.RESTRICT.SEARCH
+          : undefined,
+        query: "h",
         heuristic: true,
+      }),
+      ...makeExpectedSuggestionResults(context, {
+        suggestionPrefix: "h",
+        query: "h",
       }),
     ],
   });
-  // Any other restriction char allows to search for it.
+
+  // With update2 disabled, any other restriction char allows to search for it.
+  Services.prefs.setBoolPref("browser.urlbar.update2", false);
   context = createContext(UrlbarTokenizer.RESTRICT.OPENPAGE, {
     isPrivate: false,
   });
@@ -484,6 +521,53 @@ add_task(async function restrictToken() {
       makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
     ],
   });
+  Services.prefs.clearUserPref("browser.urlbar.update2");
+
+  // Leading search-mode restriction tokens are removed.
+  Services.prefs.setBoolPref("browser.urlbar.update2", true);
+  context = createContext(
+    `${UrlbarTokenizer.RESTRICT.BOOKMARK} ${SEARCH_STRING}`,
+    { isPrivate: false }
+  );
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        heuristic: true,
+        query: SEARCH_STRING,
+        alias: UrlbarTokenizer.RESTRICT.BOOKMARK,
+      }),
+      makeBookmarkResult(context, {
+        uri: `http://example.com/${SEARCH_STRING}-bookmark`,
+        title: `${SEARCH_STRING} bookmark`,
+      }),
+    ],
+  });
+
+  // Non-search-mode restriction tokens remain in the query and heuristic search
+  // result.
+  let token;
+  for (let t of Object.values(UrlbarTokenizer.RESTRICT)) {
+    if (!UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(t)) {
+      token = t;
+      break;
+    }
+  }
+  Assert.ok(
+    token,
+    "Non-search-mode restrict token exists -- if not, you can probably remove me!"
+  );
+  context = createContext(token, {
+    isPrivate: false,
+  });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+    ],
+  });
+  Services.prefs.clearUserPref("browser.urlbar.update2");
 
   await cleanUpSuggestions();
 });
@@ -708,7 +792,7 @@ add_task(async function mixup_frecency() {
 
   Services.prefs.setCharPref(
     "browser.urlbar.matchBuckets",
-    "general:5,suggestion:Infinity"
+    MATCH_BUCKETS_VALUE
   );
   Services.prefs.clearUserPref("browser.urlbar.matchBucketsSearch");
   Services.prefs.clearUserPref(MAX_RICH_RESULTS_PREF);
@@ -746,6 +830,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${SEARCH_STRING}/`,
         title: `http://${SEARCH_STRING}/`,
         iconUri: "",
@@ -786,6 +871,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${SEARCH_STRING}/`,
         title: `http://${SEARCH_STRING}/`,
         iconUri: "",
@@ -804,6 +890,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://somethingelse/",
         title: "http://somethingelse/",
         iconUri: "",
@@ -834,8 +921,10 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://1.2.3.4/",
         title: "http://1.2.3.4/",
+        iconUri: "page-icon:http://1.2.3.4/",
         heuristic: true,
       }),
     ],
@@ -846,6 +935,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://[2001::1]:30/",
         title: "http://[2001::1]:30/",
         iconUri: "",
@@ -859,6 +949,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://user:pass@test/",
         title: "http://user:pass@test/",
         iconUri: "",
@@ -872,6 +963,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "data:text/plain,Content",
         title: "data:text/plain,Content",
         iconUri: "",
@@ -902,6 +994,7 @@ add_task(async function uri_like_queries() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         title: `http://${query}/`,
         uri: `http://${query}/`,
         iconUri: "",
@@ -958,7 +1051,7 @@ add_task(async function avoid_remote_url_suggestions_1() {
 
   const query = "test";
 
-  await updateSearchHistory("bump", `${query}.com`);
+  await UrlbarTestUtils.formHistory.add([`${query}.com`]);
 
   let context = createContext(query, { isPrivate: false });
   await check_results({
@@ -1121,6 +1214,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "ftp://test/",
         title: "ftp://test/",
         iconUri: "",
@@ -1160,6 +1254,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "ftp://test/",
         title: "ftp://test/",
         iconUri: "",
@@ -1205,6 +1300,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://www/",
         title: "http://www/",
         iconUri: "",
@@ -1218,6 +1314,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "https://www/",
         title: "https://www/",
         iconUri: "",
@@ -1231,6 +1328,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://test/",
         title: "http://test/",
         iconUri: "",
@@ -1244,6 +1342,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "https://test/",
         title: "https://test/",
         iconUri: "",
@@ -1257,6 +1356,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://www.test/",
         title: "http://www.test/",
         iconUri: "",
@@ -1270,6 +1370,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://www.test.com/",
         title: "http://www.test.com/",
         iconUri: "",
@@ -1307,6 +1408,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         uri: "file:///Users",
         title: "file:///Users",
         iconUri: "",
@@ -1410,6 +1512,11 @@ add_task(async function formHistory() {
   Services.prefs.setBoolPref(SUGGEST_PREF, true);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
 
+  // Setting maxHistoricalSearchSuggestions = 0 is special and indicates that
+  // the user has opted out of form history, so we should include form history
+  // neither before the expected remote results nor after, unlike the other
+  // checks below, where remaining form history is included after the expected
+  // remote results.
   Services.prefs.setIntPref(MAX_FORM_HISTORY_PREF, 0);
   let context = createContext(SEARCH_STRING, { isPrivate: false });
   await check_results({
@@ -1426,8 +1533,9 @@ add_task(async function formHistory() {
     context,
     matches: [
       makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
-      ...makeExpectedFormHistoryResults(context).slice(0, 1),
+      ...makeExpectedFormHistoryResults(context, 2).slice(0, 1),
       ...makeExpectedRemoteSuggestionResults(context),
+      ...makeExpectedFormHistoryResults(context, 2).slice(1),
     ],
   });
 
@@ -1437,7 +1545,7 @@ add_task(async function formHistory() {
     context,
     matches: [
       makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
-      ...makeExpectedFormHistoryResults(context).slice(0, 2),
+      ...makeExpectedFormHistoryResults(context, 2),
       ...makeExpectedRemoteSuggestionResults(context),
     ],
   });
@@ -1477,12 +1585,16 @@ add_task(async function formHistory() {
         suggestion: "foobar",
         engineName: ENGINE_NAME,
       }),
+      ...makeExpectedRemoteSuggestionResults(context, {
+        suggestionPrefix: "foo",
+      }),
+      // Note that the second form history result appears after the remote
+      // suggestions.  This isn't ideal because it should appear right after the
+      // first form history result, but it doesn't because the actual first form
+      // history result duped the heuristic, so the muxer discarded it.
       makeFormHistoryResult(context, {
         suggestion: "fooquux",
         engineName: ENGINE_NAME,
-      }),
-      ...makeExpectedRemoteSuggestionResults(context, {
-        suggestionPrefix: "foo",
       }),
     ],
   });
@@ -1496,6 +1608,7 @@ add_task(async function formHistory() {
     context,
     matches: [
       makeVisitResult(context, {
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         uri: "http://foo.example.com/",
         title: "foo.example.com",
         heuristic: true,
@@ -1511,19 +1624,29 @@ add_task(async function formHistory() {
       ...makeExpectedRemoteSuggestionResults(context, {
         suggestionPrefix: "foo",
       }),
+      makeFormHistoryResult(context, {
+        suggestion: "fooquux",
+        engineName: ENGINE_NAME,
+      }),
     ],
   });
   await PlacesUtils.history.clear();
 
   // Add SERPs for "foobar" and "food" and search for "foo".  The "foo" form
   // history should be excluded since it dupes the heuristic; the "foobar" and
-  // "fooquux" form history should be included; the "foobar" SERP visit should
-  // be excluded since it dupes the "foobar" form history; the "food" SERP
-  // should be included.
+  // "fooquux" form history should be included; the "food" SERP should be
+  // included since it doesn't dupe either form history result; and the "foobar"
+  // SERP depends on the match buckets, see below.
   let engine = await Services.search.getDefault();
   let [serpURL1] = UrlbarUtils.getSearchQueryUrl(engine, "foobar");
   let [serpURL2] = UrlbarUtils.getSearchQueryUrl(engine, "food");
   await PlacesTestUtils.addVisits([serpURL1, serpURL2]);
+
+  // First, use the MATCH_BUCKETS_VALUE that the test set above.  General
+  // results appear before suggestions, which means that the muxer visits the
+  // "foobar" SERP before visiting the "foobar" form history, and so it doesn't
+  // see that the SERP dupes the form history.  The "foobar" SERP is therefore
+  // included.
   context = createContext("foo", { isPrivate: false });
   await check_results({
     context,
@@ -1533,19 +1656,62 @@ add_task(async function formHistory() {
         uri: "http://localhost:9000/search?terms=food",
         title: "test visit for http://localhost:9000/search?terms=food",
       }),
-      makeFormHistoryResult(context, {
-        suggestion: "foobar",
-        engineName: ENGINE_NAME,
+      makeVisitResult(context, {
+        uri: "http://localhost:9000/search?terms=foobar",
+        title: "test visit for http://localhost:9000/search?terms=foobar",
       }),
       makeFormHistoryResult(context, {
-        suggestion: "fooquux",
+        suggestion: "foobar",
         engineName: ENGINE_NAME,
       }),
       ...makeExpectedRemoteSuggestionResults(context, {
         suggestionPrefix: "foo",
       }),
+      makeFormHistoryResult(context, {
+        suggestion: "fooquux",
+        engineName: ENGINE_NAME,
+      }),
     ],
   });
+
+  // Now use Firefox's default match buckets, where suggestions appear before
+  // general results.  Now the muxer will see that the "foobar" SERP dupes the
+  // "foobar" form history, so it will exclude the SERP.
+  Services.prefs.setCharPref(
+    "browser.urlbar.matchBuckets",
+    "suggestion:4,general:Infinity"
+  );
+  context = createContext("foo", { isPrivate: false });
+  await check_results({
+    context,
+    matches: [
+      makeSearchResult(context, { engineName: ENGINE_NAME, heuristic: true }),
+      // Note that the remote suggestions appear in between the two form history
+      // results.  Ideally the form history would appear together before the
+      // remote suggestions, but they don't because the actual first form
+      // history result duped the heuristic, so the muxer discarded it.
+      makeFormHistoryResult(context, {
+        suggestion: "foobar",
+        engineName: ENGINE_NAME,
+      }),
+      ...makeExpectedRemoteSuggestionResults(context, {
+        suggestionPrefix: "foo",
+      }),
+      makeFormHistoryResult(context, {
+        suggestion: "fooquux",
+        engineName: ENGINE_NAME,
+      }),
+      makeVisitResult(context, {
+        uri: "http://localhost:9000/search?terms=food",
+        title: "test visit for http://localhost:9000/search?terms=food",
+      }),
+    ],
+  });
+  Services.prefs.setCharPref(
+    "browser.urlbar.matchBuckets",
+    MATCH_BUCKETS_VALUE
+  );
+
   await PlacesUtils.history.clear();
 
   await UrlbarTestUtils.formHistory.remove(formHistoryStrings);
@@ -1554,24 +1720,3 @@ add_task(async function formHistory() {
   await PlacesUtils.history.clear();
   Services.prefs.clearUserPref(MAX_FORM_HISTORY_PREF);
 });
-
-function updateSearchHistory(op, value) {
-  return new Promise((resolve, reject) => {
-    FormHistory.update(
-      { op, fieldname: "searchbar-history", value },
-      {
-        handleError(error) {
-          do_throw("Error occurred updating form history: " + error);
-          reject(error);
-        },
-        handleCompletion(reason) {
-          if (reason) {
-            reject(reason);
-          } else {
-            resolve();
-          }
-        },
-      }
-    );
-  });
-}

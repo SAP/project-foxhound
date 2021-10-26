@@ -18,7 +18,6 @@
 #include "mozilla/layers/CompositorVsyncSchedulerOwner.h"
 #include "mozilla/layers/PWebRenderBridgeParent.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
-#include "mozilla/layers/WebRenderCompositionRecorder.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
@@ -113,7 +112,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                         TimeDuration aVsyncRate);
 
   static WebRenderBridgeParent* CreateDestroyed(
-      const wr::PipelineId& aPipelineId);
+      const wr::PipelineId& aPipelineId, nsCString&& aError);
 
   wr::PipelineId PipelineId() { return mPipelineId; }
   already_AddRefed<wr::WebRenderAPI> GetWebRenderAPI() {
@@ -131,10 +130,11 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   void UpdateDebugFlags();
   void UpdateMultithreading();
   void UpdateBatchingParameters();
+  void UpdateProfilerUI();
 
   mozilla::ipc::IPCResult RecvEnsureConnected(
       TextureFactoryIdentifier* aTextureFactoryIdentifier,
-      MaybeIdNamespace* aMaybeIdNamespace) override;
+      MaybeIdNamespace* aMaybeIdNamespace, nsCString* aError) override;
 
   mozilla::ipc::IPCResult RecvNewCompositable(
       const CompositableHandle& aHandle, const TextureInfo& aInfo) override;
@@ -170,7 +170,8 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       const FocusTarget& aFocusTarget) override;
   mozilla::ipc::IPCResult RecvParentCommands(
       nsTArray<WebRenderParentCommand>&& commands) override;
-  mozilla::ipc::IPCResult RecvGetSnapshot(PTextureParent* aTexture) override;
+  mozilla::ipc::IPCResult RecvGetSnapshot(PTextureParent* aTexture,
+                                          bool* aNeedsYFlip) override;
 
   mozilla::ipc::IPCResult RecvSetLayersObserverEpoch(
       const LayersObserverEpoch& aChildEpoch) override;
@@ -199,8 +200,12 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       const float& aZoom) override;
   mozilla::ipc::IPCResult RecvFlushApzRepaints() override;
   mozilla::ipc::IPCResult RecvGetAPZTestData(APZTestData* data) override;
+  mozilla::ipc::IPCResult RecvGetFrameUniformity(
+      FrameUniformityData* aOutData) override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
+
+  void SetClearColor(const gfx::DeviceColor& aColor);
 
   void Pause();
   bool Resume();
@@ -295,11 +300,10 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   bool IsRootWebRenderBridgeParent() const;
   LayersId GetLayersId() const;
 
-  void SetCompositionRecorder(
-      UniquePtr<layers::WebRenderCompositionRecorder> aRecorder);
+  void BeginRecording(const TimeStamp& aRecordingStart);
 
   /**
-   * Write the frames collected by the |WebRenderCompositionRecorder| to disk.
+   * Write the frames collected since the call to BeginRecording to disk.
    *
    * If there is not currently a recorder, this is a no-op.
    */
@@ -313,7 +317,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   void MaybeCaptureScreenPixels();
 #endif
   /**
-   * Return the frames collected by the |WebRenderCompositionRecorder| encoded
+   * Return the frames collected since the call to BeginRecording encoded
    * as data URIs.
    *
    * If there is not currently a recorder, this is a no-op and the promise will
@@ -332,7 +336,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
  private:
   class ScheduleSharedSurfaceRelease;
 
-  explicit WebRenderBridgeParent(const wr::PipelineId& aPipelineId);
+  WebRenderBridgeParent(const wr::PipelineId& aPipelineId, nsCString&& aError);
   virtual ~WebRenderBridgeParent();
 
   bool ProcessEmptyTransactionUpdates(TransactionData& aData,
@@ -343,8 +347,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                               bool aValidTransaction,
                               bool aObserveLayersUpdate);
 
-  bool SetDisplayList(const LayoutDeviceRect& aRect,
-                      const wr::LayoutSize& aContentSize, ipc::ByteBuf&& aDL,
+  bool SetDisplayList(const LayoutDeviceRect& aRect, ipc::ByteBuf&& aDL,
                       const wr::BuiltDisplayListDescriptor& aDLDesc,
                       const nsTArray<OpUpdateResource>& aResourceUpdates,
                       const nsTArray<RefCountedShmem>& aSmallShmems,
@@ -505,8 +508,8 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   wr::Epoch mWrEpoch;
   wr::IdNamespace mIdNamespace;
   CompositionOpportunityId mCompositionOpportunityId;
+  nsCString mInitError;
 
-  VsyncId mSkippedCompositeId;
   TimeStamp mMostRecentComposite;
 
 #if defined(MOZ_WIDGET_ANDROID)

@@ -7,16 +7,11 @@
 
 /* globals EventEmitter */
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+});
+
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "containersEnabled",
@@ -112,10 +107,12 @@ class TabBase {
   }
 
   /**
-   * Capture the visible area of this tab, and return the result as a data: URL.
+   * Capture the visible area of this tab, and return the result as a data: URI.
    *
    * @param {BaseContext} context
    *        The extension context for which to perform the capture.
+   * @param {number} zoom
+   *        The current zoom for the page.
    * @param {Object} [options]
    *        The options with which to perform the capture.
    * @param {string} [options.format = "png"]
@@ -124,27 +121,31 @@ class TabBase {
    * @param {integer} [options.quality = 92]
    *        The quality at which to encode the captured image data, ranging from
    *        0 to 100. Has no effect for the "png" format.
-   *
+   * @param {DOMRectInit} [options.rect]
+   *        Area of the document to render, in CSS pixels, relative to the page.
+   *        If null, the currently visible viewport is rendered.
+   * @param {number} [options.scale]
+   *        The scale to render at, defaults to devicePixelRatio.
    * @returns {Promise<string>}
    */
-  capture(context, options = null) {
-    if (!options) {
-      options = {};
-    }
-    if (options.format == null) {
-      options.format = "png";
-    }
-    if (options.quality == null) {
-      options.quality = 92;
-    }
+  async capture(context, zoom, options) {
+    let win = this.browser.ownerGlobal;
+    let scale = options?.scale || win.devicePixelRatio;
+    let rect = options?.rect && win.DOMRect.fromRect(options.rect);
 
-    let message = {
-      options,
-      width: this.width,
-      height: this.height,
-    };
+    let wgp = this.browsingContext.currentWindowGlobal;
+    let image = await wgp.drawSnapshot(rect, scale * zoom, "white");
 
-    return this.sendMessage(context, "Extension:Capture", message);
+    let doc = Services.appShell.hiddenDOMWindow.document;
+    let canvas = doc.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+
+    let ctx = canvas.getContext("2d", { alpha: false });
+    ctx.drawImage(image, 0, 0);
+    image.close();
+
+    return canvas.toDataURL(`image/${options?.format}`, options?.quality / 100);
   }
 
   /**
@@ -654,6 +655,7 @@ class TabBase {
       isInReaderMode: this.isInReaderMode,
       sharingState: this.sharingState,
       successorTabId: this.successorTabId,
+      cookieStoreId: this.cookieStoreId,
     };
 
     // If the tab has not been fully layed-out yet, fallback to the geometry
@@ -666,10 +668,6 @@ class TabBase {
     let opener = this.openerTabId;
     if (opener) {
       result.openerTabId = opener;
-    }
-
-    if (this.extension.hasPermission("cookies")) {
-      result.cookieStoreId = this.cookieStoreId;
     }
 
     if (this.hasTabPermission) {
@@ -1455,7 +1453,7 @@ class WindowTrackerBase extends EventEmitter {
     });
 
     this._windowIds = new DefaultWeakMap(window => {
-      return window.windowUtils.outerWindowID;
+      return window.docShell.outerWindowID;
     });
   }
 

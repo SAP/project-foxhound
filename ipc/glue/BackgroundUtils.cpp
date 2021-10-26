@@ -506,16 +506,19 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       sandboxedLoadingPrincipalInfo, topLevelPrincipalInfo,
       topLevelStorageAreaPrincipalInfo, optionalResultPrincipalURI,
       aLoadInfo->GetSecurityFlags(), aLoadInfo->GetSandboxFlags(),
+      aLoadInfo->GetTriggeringSandboxFlags(),
       aLoadInfo->InternalContentPolicyType(),
       static_cast<uint32_t>(aLoadInfo->GetTainting()),
       aLoadInfo->GetBlockAllMixedContent(),
       aLoadInfo->GetUpgradeInsecureRequests(),
       aLoadInfo->GetBrowserUpgradeInsecureRequests(),
+      aLoadInfo->GetBrowserDidUpgradeInsecureRequests(),
       aLoadInfo->GetBrowserWouldUpgradeInsecureRequests(),
       aLoadInfo->GetForceAllowDataURI(),
       aLoadInfo->GetAllowInsecureRedirectToDataURI(),
       aLoadInfo->GetBypassCORSChecks(),
       aLoadInfo->GetSkipContentPolicyCheckForWebRequest(),
+      aLoadInfo->GetOriginalFrameSrcLoad(),
       aLoadInfo->GetForceInheritPrincipalDropped(),
       aLoadInfo->GetInnerWindowID(), aLoadInfo->GetBrowsingContextID(),
       aLoadInfo->GetFrameBrowsingContextID(),
@@ -530,7 +533,6 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetLoadTriggeredFromExternal(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
-      aLoadInfo->GetDocumentHasLoaded(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
       cspNonce, aLoadInfo->GetSkipContentSniffing(),
       aLoadInfo->GetHttpsOnlyStatus(),
@@ -596,13 +598,41 @@ nsresult LoadInfoArgsToLoadInfo(
       triggeringPrincipalOrErr.unwrap();
 
   nsCOMPtr<nsIPrincipal> principalToInherit;
+  nsCOMPtr<nsIPrincipal> flattenedPrincipalToInherit;
   if (loadInfoArgs.principalToInheritInfo().isSome()) {
     auto principalToInheritOrErr =
         PrincipalInfoToPrincipal(loadInfoArgs.principalToInheritInfo().ref());
     if (NS_WARN_IF(principalToInheritOrErr.isErr())) {
       return principalToInheritOrErr.unwrapErr();
     }
-    principalToInherit = principalToInheritOrErr.unwrap();
+    flattenedPrincipalToInherit = principalToInheritOrErr.unwrap();
+  }
+
+  if (XRE_IsContentProcess()) {
+    auto targetBrowsingContextId = loadInfoArgs.frameBrowsingContextID()
+                                       ? loadInfoArgs.frameBrowsingContextID()
+                                       : loadInfoArgs.browsingContextID();
+    if (RefPtr<BrowsingContext> bc =
+            BrowsingContext::Get(targetBrowsingContextId)) {
+      nsCOMPtr<nsIPrincipal> originalTriggeringPrincipal;
+      nsCOMPtr<nsIPrincipal> originalPrincipalToInherit;
+      Tie(originalTriggeringPrincipal, originalPrincipalToInherit) =
+          bc->GetTriggeringAndInheritPrincipalsForCurrentLoad();
+
+      if (originalTriggeringPrincipal &&
+          originalTriggeringPrincipal->Equals(triggeringPrincipal)) {
+        triggeringPrincipal = originalTriggeringPrincipal;
+      }
+      if (originalPrincipalToInherit &&
+          (loadInfoArgs.securityFlags() &
+           nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL) &&
+          originalPrincipalToInherit->Equals(flattenedPrincipalToInherit)) {
+        principalToInherit = originalPrincipalToInherit;
+      }
+    }
+  }
+  if (!principalToInherit && loadInfoArgs.principalToInheritInfo().isSome()) {
+    principalToInherit = flattenedPrincipalToInherit;
   }
 
   nsCOMPtr<nsIPrincipal> sandboxedLoadingPrincipal;
@@ -735,29 +765,32 @@ nsresult LoadInfoArgsToLoadInfo(
       topLevelStorageAreaPrincipal, resultPrincipalURI, cookieJarSettings,
       cspToInherit, clientInfo, reservedClientInfo, initialClientInfo,
       controller, loadInfoArgs.securityFlags(), loadInfoArgs.sandboxFlags(),
-      loadInfoArgs.contentPolicyType(),
+      loadInfoArgs.triggeringSandboxFlags(), loadInfoArgs.contentPolicyType(),
       static_cast<LoadTainting>(loadInfoArgs.tainting()),
       loadInfoArgs.blockAllMixedContent(),
       loadInfoArgs.upgradeInsecureRequests(),
       loadInfoArgs.browserUpgradeInsecureRequests(),
+      loadInfoArgs.browserDidUpgradeInsecureRequests(),
       loadInfoArgs.browserWouldUpgradeInsecureRequests(),
       loadInfoArgs.forceAllowDataURI(),
       loadInfoArgs.allowInsecureRedirectToDataURI(),
       loadInfoArgs.bypassCORSChecks(),
       loadInfoArgs.skipContentPolicyCheckForWebRequest(),
+      loadInfoArgs.originalFrameSrcLoad(),
       loadInfoArgs.forceInheritPrincipalDropped(), loadInfoArgs.innerWindowID(),
       loadInfoArgs.browsingContextID(), loadInfoArgs.frameBrowsingContextID(),
       loadInfoArgs.initialSecurityCheckDone(),
       loadInfoArgs.isInThirdPartyContext(),
       loadInfoArgs.isThirdPartyContextToTopWindow(),
       loadInfoArgs.isFormSubmission(), loadInfoArgs.sendCSPViolationEvents(),
-      loadInfoArgs.originAttributes(), redirectChainIncludingInternalRedirects,
-      redirectChain, std::move(ancestorPrincipals), ancestorBrowsingContextIDs,
-      loadInfoArgs.corsUnsafeHeaders(), loadInfoArgs.forcePreflight(),
-      loadInfoArgs.isPreflight(), loadInfoArgs.loadTriggeredFromExternal(),
+      loadInfoArgs.originAttributes(),
+      std::move(redirectChainIncludingInternalRedirects),
+      std::move(redirectChain), std::move(ancestorPrincipals),
+      ancestorBrowsingContextIDs, loadInfoArgs.corsUnsafeHeaders(),
+      loadInfoArgs.forcePreflight(), loadInfoArgs.isPreflight(),
+      loadInfoArgs.loadTriggeredFromExternal(),
       loadInfoArgs.serviceWorkerTaintingSynthesized(),
       loadInfoArgs.documentHasUserInteracted(),
-      loadInfoArgs.documentHasLoaded(),
       loadInfoArgs.allowListFutureDocumentsCreatedFromThisRedirectChain(),
       loadInfoArgs.cspNonce(), loadInfoArgs.skipContentSniffing(),
       loadInfoArgs.httpsOnlyStatus(),
@@ -806,9 +839,9 @@ void LoadInfoToParentLoadInfoForwarder(
       aLoadInfo->GetHasValidUserGestureActivation(),
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
+      aLoadInfo->GetTriggeringSandboxFlags(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
-      aLoadInfo->GetDocumentHasLoaded(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
       cookieJarSettingsArgs, aLoadInfo->GetRequestBlockingReason(),
       aLoadInfo->GetHasStoragePermission(),
@@ -846,6 +879,10 @@ nsresult MergeParentLoadInfoForwarder(
   rv = aLoadInfo->SetHttpsOnlyStatus(aForwarderArgs.httpsOnlyStatus());
   NS_ENSURE_SUCCESS(rv, rv);
 
+  rv = aLoadInfo->SetTriggeringSandboxFlags(
+      aForwarderArgs.triggeringSandboxFlags());
+  NS_ENSURE_SUCCESS(rv, rv);
+
   rv = aLoadInfo->SetHasValidUserGestureActivation(
       aForwarderArgs.hasValidUserGestureActivation());
   NS_ENSURE_SUCCESS(rv, rv);
@@ -862,8 +899,6 @@ nsresult MergeParentLoadInfoForwarder(
 
   MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetDocumentHasUserInteracted(
       aForwarderArgs.documentHasUserInteracted()));
-  MOZ_ALWAYS_SUCCEEDS(
-      aLoadInfo->SetDocumentHasLoaded(aForwarderArgs.documentHasLoaded()));
   MOZ_ALWAYS_SUCCEEDS(
       aLoadInfo->SetAllowListFutureDocumentsCreatedFromThisRedirectChain(
           aForwarderArgs

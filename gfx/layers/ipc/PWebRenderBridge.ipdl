@@ -15,6 +15,7 @@ include protocol PCompositorBridge;
 include protocol PTexture;
 
 using mozilla::layers::APZTestData from "mozilla/layers/APZTestData.h";
+using mozilla::layers::FrameUniformityData from "mozilla/layers/FrameUniformityData.h";
 using mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
 using struct mozilla::layers::TextureInfo from "mozilla/layers/CompositorTypes.h";
@@ -40,7 +41,7 @@ sync protocol PWebRenderBridge
 
 parent:
   sync EnsureConnected()
-    returns (TextureFactoryIdentifier textureFactoryIdentifier, MaybeIdNamespace maybeIdNamespace);
+    returns (TextureFactoryIdentifier textureFactoryIdentifier, MaybeIdNamespace maybeIdNamespace, nsCString error);
 
   async NewCompositable(CompositableHandle handle, TextureInfo info);
   async ReleaseCompositable(CompositableHandle compositable);
@@ -63,7 +64,7 @@ parent:
   async UpdateResources(OpUpdateResource[] aResourceUpdates,
                         RefCountedShmem[] aSmallShmems, Shmem[] aLargeShmems);
   async ParentCommands(WebRenderParentCommand[] commands);
-  sync GetSnapshot(PTexture texture);
+  sync GetSnapshot(PTexture texture) returns (bool aNeedsYFlip);
   async SetLayersObserverEpoch(LayersObserverEpoch childEpoch);
   async ClearCachedResources();
   // Invalidate rendered frame
@@ -91,6 +92,7 @@ parent:
   sync SetAsyncZoom(ViewID scrollId, float zoom);
   async FlushApzRepaints();
   sync GetAPZTestData() returns (APZTestData data);
+  sync GetFrameUniformity() returns (FrameUniformityData data);
 
   async Shutdown();
   sync ShutdownSync();

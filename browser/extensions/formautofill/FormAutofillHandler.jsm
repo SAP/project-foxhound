@@ -42,10 +42,6 @@ const formFillController = Cc[
   "@mozilla.org/satchel/form-fill-controller;1"
 ].getService(Ci.nsIFormFillController);
 
-const formFillControllerInput = Cc[
-  "@mozilla.org/satchel/form-fill-controller;1"
-].getService(Ci.nsIAutoCompleteInput);
-
 XPCOMUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
   const brandShortName = FormAutofillUtils.brandBundle.GetStringFromName(
     "brandShortName"
@@ -375,7 +371,8 @@ class FormAutofillSection {
           (element != focusedInput && !element.value) ||
           fieldDetail.state == FIELD_STATES.AUTO_FILLED
         ) {
-          this._focusAndSetTextValue(element, value);
+          element.focus({ preventScroll: true });
+          element.setUserInput(value);
           this._changeFieldState(fieldDetail, FIELD_STATES.AUTO_FILLED);
         }
       } else if (ChromeUtils.getClassName(element) === "HTMLSelectElement") {
@@ -673,15 +670,6 @@ class FormAutofillSection {
       }
     }
   }
-
-  _focusAndSetTextValue(
-    element,
-    value,
-    reason = Ci.nsIAutoCompletePopup.TEXTVALUE_REASON_COMPLETESELECTED
-  ) {
-    element.focus({ preventScroll: true });
-    formFillControllerInput.setTextValueWithReason(value, reason);
-  }
 }
 
 class FormAutofillAddressSection extends FormAutofillSection {
@@ -928,6 +916,10 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
     this.flowId = gUUIDGenerator.generateUUID().toString();
     log.debug("Creating new credit card section with flowId =", this.flowId);
 
+    if (!this.isValidSection()) {
+      return;
+    }
+
     // Record which fields could be identified
     let identified = new Set();
     fieldDetails.forEach(detail => identified.add(detail.fieldName));
@@ -951,21 +943,17 @@ class FormAutofillCreditCardSection extends FormAutofillSection {
       1
     );
 
-    // For valid sections, check whether the section is in an
-    // <iframe>; and, if so, watch for the <iframe> to pagehide.
-    // If the section is invalid, then the superclass constructor
-    // will have cleared out `this.fieldDetails`.
-    if (this.fieldDetails.length) {
-      if (handler.window.location != handler.window.parent?.location) {
-        log.debug(
-          "Credit card form is in an iframe -- watching for pagehide",
-          fieldDetails
-        );
-        handler.window.addEventListener(
-          "pagehide",
-          this._handlePageHide.bind(this)
-        );
-      }
+    // Check whether the section is in an <iframe>; and, if so,
+    // watch for the <iframe> to pagehide.
+    if (handler.window.location != handler.window.parent?.location) {
+      log.debug(
+        "Credit card form is in an iframe -- watching for pagehide",
+        fieldDetails
+      );
+      handler.window.addEventListener(
+        "pagehide",
+        this._handlePageHide.bind(this)
+      );
     }
   }
 

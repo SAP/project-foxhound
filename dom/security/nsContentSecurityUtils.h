@@ -9,8 +9,15 @@
 #ifndef nsContentSecurityUtils_h___
 #define nsContentSecurityUtils_h___
 
+#include <utility>
+#include "mozilla/Maybe.h"
+#include "nsStringFwd.h"
+
+struct JSContext;
 class nsIChannel;
 class nsIHttpChannel;
+class nsIPrincipal;
+class NS_ConvertUTF8toUTF16;
 
 namespace mozilla {
 namespace dom {
@@ -51,10 +58,8 @@ class nsContentSecurityUtils {
   static void PerformCSPFrameAncestorAndXFOCheck(nsIChannel* aChannel);
 
   // Helper function to Check if a Download is allowed;
-  static bool IsDownloadAllowed(nsIChannel* aChannel,
-                                const nsAutoCString& aMimeTypeGuess);
-  // Logs an Error Message to the Console
-  static void LogMessageToConsole(nsIHttpChannel* aChannel, const char* aMsg);
+  static long ClassifyDownload(nsIChannel* aChannel,
+                               const nsAutoCString& aMimeTypeGuess);
 
 #if defined(DEBUG)
   static void AssertAboutPageHasCSP(mozilla::dom::Document* aDocument);
@@ -62,6 +67,8 @@ class nsContentSecurityUtils {
 
   static bool ValidateScriptFilename(const char* aFilename,
                                      bool aIsSystemRealm);
+  // Helper Function to Post a message to the corresponding JS-Console
+  static void LogMessageToConsole(nsIHttpChannel* aChannel, const char* aMsg);
 };
 
 #endif /* nsContentSecurityUtils_h___ */

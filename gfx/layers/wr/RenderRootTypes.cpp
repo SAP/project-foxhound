@@ -16,7 +16,6 @@ void IPDLParamTraits<mozilla::layers::DisplayListData>::Write(
   WriteIPDLParam(aMsg, aActor, aParam.mIdNamespace);
   WriteIPDLParam(aMsg, aActor, aParam.mRect);
   WriteIPDLParam(aMsg, aActor, aParam.mCommands);
-  WriteIPDLParam(aMsg, aActor, aParam.mContentSize);
   WriteIPDLParam(aMsg, aActor, std::move(aParam.mDL));
   WriteIPDLParam(aMsg, aActor, aParam.mDLDesc);
   WriteIPDLParam(aMsg, aActor, aParam.mRemotePipelineIds);
@@ -32,7 +31,6 @@ bool IPDLParamTraits<mozilla::layers::DisplayListData>::Read(
   if (ReadIPDLParam(aMsg, aIter, aActor, &aResult->mIdNamespace) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mRect) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mCommands) &&
-      ReadIPDLParam(aMsg, aIter, aActor, &aResult->mContentSize) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mDL) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mDLDesc) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mRemotePipelineIds) &&
@@ -67,12 +65,12 @@ bool ReadScrollUpdates(const IPC::Message* aMsg, PickleIterator* aIter,
   layers::ScrollUpdatesMap map(count);
   for (size_t i = 0; i < count; ++i) {
     layers::ScrollableLayerGuid::ViewID key;
-    layers::ScrollUpdateInfo data;
+    nsTArray<mozilla::ScrollPositionUpdate> data;
     if (!ReadIPDLParam(aMsg, aIter, aActor, &key) ||
         !ReadIPDLParam(aMsg, aIter, aActor, &data)) {
       return false;
     }
-    map.Put(key, data);
+    map.Put(key, std::move(data));
   }
 
   MOZ_RELEASE_ASSERT(map.Count() == count);

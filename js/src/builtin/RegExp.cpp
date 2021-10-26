@@ -15,6 +15,7 @@
 #include "frontend/TokenStream.h"
 #include "irregexp/RegExpAPI.h"
 #include "jit/InlinableNatives.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_NEWREGEXP_FLAGGED
 #include "js/PropertySpec.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "util/StringBuffer.h"
@@ -46,6 +47,7 @@ using JS::RegExpFlags;
 bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
                                  HandleString input, const MatchPairs& matches,
                                  MutableHandleValue rval) {
+  MOZ_ASSERT(re);
   MOZ_ASSERT(input);
 
   /*
@@ -339,7 +341,7 @@ static bool RegExpInitializeIgnoringLastIndex(JSContext* cx,
   /* Steps 9-12. */
   obj->initIgnoringLastIndex(pattern, flags);
 
-  obj->setShared(*shared);
+  obj->setShared(shared);
 
   return true;
 }
@@ -589,7 +591,7 @@ bool js::regexp_construct(JSContext* cx, unsigned argc, Value* vp) {
     regexp->initAndZeroLastIndex(sourceAtom, flags, cx);
 
     if (shared) {
-      regexp->setShared(*shared);
+      regexp->setShared(shared);
     }
 
     args.rval().setObject(*regexp);
@@ -1099,8 +1101,7 @@ static bool RegExpMatcherImpl(JSContext* cx, HandleObject regexp,
   }
 
   /* Steps 16-25 */
-  Handle<RegExpObject*> reobj = regexp.as<RegExpObject>();
-  RootedRegExpShared shared(cx, RegExpObject::getShared(cx, reobj));
+  RootedRegExpShared shared(cx, regexp->as<RegExpObject>().getShared());
   return CreateRegExpMatchResult(cx, shared, string, matches, rval);
 }
 
@@ -1135,8 +1136,7 @@ bool js::RegExpMatcherRaw(JSContext* cx, HandleObject regexp,
   // RegExp execution was successful only if the pairs have actually been
   // filled in. Note that IC code always passes a nullptr maybeMatches.
   if (maybeMatches && maybeMatches->pairsRaw()[0] > MatchPair::NoMatch) {
-    Handle<RegExpObject*> reobj = regexp.as<RegExpObject>();
-    RootedRegExpShared shared(cx, RegExpObject::getShared(cx, reobj));
+    RootedRegExpShared shared(cx, regexp->as<RegExpObject>().getShared());
     return CreateRegExpMatchResult(cx, shared, input, *maybeMatches, output);
   }
 
@@ -1369,7 +1369,6 @@ static bool InterpretDollar(JSLinearString* matched, JSLinearString* string,
   if (c == '<') {
     // Step 1.
     if (namedCaptures.length() == 0) {
-      *skip = 2;
       return false;
     }
 
@@ -1379,7 +1378,6 @@ static bool InterpretDollar(JSLinearString* matched, JSLinearString* string,
 
     // Step 2.c
     if (!nameEnd) {
-      *skip = 2;
       return false;
     }
 
@@ -1389,13 +1387,13 @@ static bool InterpretDollar(JSLinearString* matched, JSLinearString* string,
     // we can just take the next one in the list.
     size_t nameLength = nameEnd - nameStart;
     *skip = nameLength + 3;  // $<...>
+
     // Steps 2.d.iii-iv
     GetParen(matched, namedCaptures[*currentNamedCapture], out);
     *currentNamedCapture += 1;
     return true;
   }
 
-  *skip = 2;
   switch (c) {
     default:
       return false;
@@ -1420,6 +1418,8 @@ static bool InterpretDollar(JSLinearString* matched, JSLinearString* string,
       out->init(string, tailPos, string->length() - tailPos);
       break;
   }
+
+  *skip = 2;
   return true;
 }
 
@@ -1550,10 +1550,12 @@ static bool CollectNames(JSContext* cx, HandleLinearString replacement,
       // Step 2.b
       const CharT* nameStart = currentDollar + 2;
       const CharT* nameEnd = js_strchr_limit(nameStart, '>', replacementEnd);
+
       // Step 2.c
       if (!nameEnd) {
         return true;
       }
+
       // Step 2.d.i
       size_t nameLength = nameEnd - nameStart;
       JSAtom* atom = AtomizeChars(cx, nameStart, nameLength);
@@ -1601,14 +1603,15 @@ static bool InitNamedCaptures(JSContext* cx, HandleLinearString replacement,
   // https://tc39.es/ecma262/#table-45, "$<" section
   RootedId id(cx);
   RootedValue capture(cx);
-  RootedLinearString linear(cx);
   for (uint32_t i = 0; i < names.length(); i++) {
     // Step 2.d.i
     id = names[i];
+
     // Step 2.d.ii
     if (!GetProperty(cx, groups, groups, id, &capture)) {
       return false;
     }
+
     // Step 2.d.iii
     if (capture.isUndefined()) {
       if (!namedCaptures.append(capture)) {
@@ -1620,7 +1623,7 @@ static bool InitNamedCaptures(JSContext* cx, HandleLinearString replacement,
       if (!str) {
         return false;
       }
-      linear = str->ensureLinear(cx);
+      JSLinearString* linear = str->ensureLinear(cx);
       if (!linear) {
         return false;
       }
@@ -1648,8 +1651,7 @@ static bool NeedTwoBytes(HandleLinearString string,
     return true;
   }
 
-  for (size_t i = 0, len = captures.length(); i < len; i++) {
-    const Value& capture = captures[i];
+  for (const Value& capture : captures) {
     if (capture.isUndefined()) {
       continue;
     }
@@ -1658,8 +1660,7 @@ static bool NeedTwoBytes(HandleLinearString string,
     }
   }
 
-  for (size_t i = 0, len = namedCaptures.length(); i < len; i++) {
-    const Value& capture = namedCaptures[i];
+  for (const Value& capture : namedCaptures) {
     if (capture.isUndefined()) {
       continue;
     }

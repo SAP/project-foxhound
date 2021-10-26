@@ -19,6 +19,8 @@
 #include "nsContentUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsNetUtil.h"
+#include "nsIProtocolHandler.h"
+#include "nsQueryObject.h"
 #include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/net/DocumentChannel.h"
 
@@ -358,11 +360,11 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
       preloadCsp->ShouldLoad(
           policyType,  // load type per nsIContentPolicy (uint32_t)
           cspEventListener,
-          aNewURI,         // nsIURI
-          EmptyCString(),  // ACString - MIME guess
-          aOriginalURI,    // Original nsIURI
-          true,            // aSendViolationReports
-          cspNonce,        // nonce
+          aNewURI,       // nsIURI
+          ""_ns,         // ACString - MIME guess
+          aOriginalURI,  // Original nsIURI
+          true,          // aSendViolationReports
+          cspNonce,      // nonce
           parserCreatedScript, &decision);
 
       // if the preload policy already denied the load, then there
@@ -380,11 +382,11 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
     // Pass  originalURI to indicate the redirect
     csp->ShouldLoad(policyType,  // load type per nsIContentPolicy (uint32_t)
                     cspEventListener,
-                    aNewURI,         // nsIURI
-                    EmptyCString(),  // ACString - MIME guess
-                    aOriginalURI,    // Original nsIURI
-                    true,            // aSendViolationReports
-                    cspNonce,        // nonce
+                    aNewURI,       // nsIURI
+                    ""_ns,         // ACString - MIME guess
+                    aOriginalURI,  // Original nsIURI
+                    true,          // aSendViolationReports
+                    cspNonce,      // nonce
                     parserCreatedScript, &decision);
     if (NS_CP_REJECTED(decision)) {
       aCancelCode = Some(NS_ERROR_DOM_BAD_URI);

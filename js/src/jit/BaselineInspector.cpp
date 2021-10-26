@@ -240,13 +240,14 @@ static void SkipBinaryGuards(CacheIRReader& reader, bool* sawStringOperand) {
     // Two skip opcodes
     if (reader.matchOp(CacheOp::GuardNonDoubleType) ||
         reader.matchOp(CacheOp::TruncateDoubleToUInt32) ||
-        reader.matchOp(CacheOp::GuardBooleanToInt32)) {
+        reader.matchOp(CacheOp::GuardBooleanToInt32) ||
+        reader.matchOp(CacheOp::LoadInt32Constant)) {
       reader.skip();  // Skip over operandId
       reader.skip();  // Skip over result/type.
       continue;
     }
-    if (reader.matchOp(CacheOp::GuardAndGetNumberFromString) ||
-        reader.matchOp(CacheOp::GuardAndGetInt32FromString)) {
+    if (reader.matchOp(CacheOp::GuardStringToNumber) ||
+        reader.matchOp(CacheOp::GuardStringToInt32)) {
       if (sawStringOperand) {
         *sawStringOperand = true;
       }
@@ -261,7 +262,8 @@ static void SkipBinaryGuards(CacheIRReader& reader, bool* sawStringOperand) {
         reader.matchOp(CacheOp::GuardToString) ||
         reader.matchOp(CacheOp::GuardToObject) ||
         reader.matchOp(CacheOp::GuardToBigInt) ||
-        reader.matchOp(CacheOp::GuardToBoolean)) {
+        reader.matchOp(CacheOp::GuardToBoolean) ||
+        reader.matchOp(CacheOp::GuardIsNullOrUndefined)) {
       reader.skip();  // Skip over operandId
       continue;
     }
@@ -677,7 +679,7 @@ static bool MaybeArgumentReader(ICStub* stub, CacheOp targetOp,
   CacheIRReader stubReader(stub->cacheIRStubInfo());
   while (stubReader.more()) {
     CacheOp op = stubReader.readOp();
-    uint32_t argLength = CacheIROpArgLengths[size_t(op)];
+    uint32_t argLength = CacheIROpInfos[size_t(op)].argLength;
 
     if (op == targetOp) {
       MOZ_ASSERT(argReader.isNothing(),
@@ -955,8 +957,8 @@ static bool GuardSpecificAtomOrSymbol(CacheIRReader& reader, ICStub* stub,
     if (!reader.matchOp(CacheOp::GuardSpecificSymbol, keyId)) {
       return false;
     }
-    Symbol* sym =
-        stubInfo->getStubField<Symbol*>(stub, reader.stubOffset()).get();
+    JS::Symbol* sym =
+        stubInfo->getStubField<JS::Symbol*>(stub, reader.stubOffset()).get();
     if (SYMBOL_TO_JSID(sym) != id) {
       return false;
     }
@@ -1600,7 +1602,7 @@ bool BaselineInspector::instanceOfData(jsbytecode* pc, Shape** shape,
     return false;
   }
 
-  if (!reader.matchOp(CacheOp::GuardFunctionPrototype, rhsId)) {
+  if (!reader.matchOp(CacheOp::GuardDynamicSlotIsSpecificObject, rhsId)) {
     return false;
   }
 

@@ -11,17 +11,16 @@
 #include "nsIClassInfoImpl.h"
 #include "nsTArray.h"
 #include "nsXULAppAPI.h"
-#include "MainThreadQueue.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventQueue.h"
+#include "mozilla/InputTaskManager.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/ThreadLocal.h"
-#include "PrioritizedEventQueue.h"
 #include "TaskController.h"
 #ifdef MOZ_CANARY
 #  include <fcntl.h>
@@ -375,10 +374,20 @@ nsresult nsThreadManager::Init() {
 
   TaskController::Initialize();
 
+  // Initialize idle handling.
   nsCOMPtr<nsIIdlePeriod> idlePeriod = new MainThreadIdlePeriod();
+  TaskController::Get()->SetIdleTaskManager(
+      new IdleTaskManager(idlePeriod.forget()));
+
+  // Create main thread queue that forwards events to TaskController and
+  // construct main thread.
+  UniquePtr<EventQueue> queue = MakeUnique<EventQueue>(true);
+
+  RefPtr<ThreadEventQueue> synchronizedQueue =
+      new ThreadEventQueue(std::move(queue), true);
 
   mMainThread =
-      CreateMainThread<ThreadEventQueue<PrioritizedEventQueue>>(idlePeriod);
+      new nsThread(WrapNotNull(synchronizedQueue), nsThread::MAIN_THREAD, 0);
 
   nsresult rv = mMainThread->InitCurrentThread();
   if (NS_FAILED(rv)) {
@@ -621,8 +630,10 @@ nsThreadManager::NewNamedThread(const nsACString& aName, uint32_t aStackSize,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  RefPtr<ThreadEventQueue<EventQueue>> queue =
-      new ThreadEventQueue<EventQueue>(MakeUnique<EventQueue>());
+  TimeStamp startTime = TimeStamp::Now();
+
+  RefPtr<ThreadEventQueue> queue =
+      new ThreadEventQueue(MakeUnique<EventQueue>());
   RefPtr<nsThread> thr =
       new nsThread(WrapNotNull(queue), nsThread::NOT_MAIN_THREAD, aStackSize);
   nsresult rv =
@@ -641,6 +652,19 @@ nsThreadManager::NewNamedThread(const nsACString& aName, uint32_t aStackSize,
       thr->Shutdown();  // ok if it happens multiple times
     }
     return NS_ERROR_NOT_INITIALIZED;
+  }
+
+  PROFILER_MARKER_TEXT(
+      "NewThread", OTHER,
+      MarkerOptions(MarkerStack::Capture(),
+                    MarkerTiming::IntervalUntilNowFrom(startTime)),
+      aName);
+  if (!NS_IsMainThread()) {
+    PROFILER_MARKER_TEXT(
+        "NewThread (non-main thread)", OTHER,
+        MarkerOptions(MarkerStack::Capture(), MarkerThreadId::MainThread(),
+                      MarkerTiming::IntervalUntilNowFrom(startTime)),
+        aName);
   }
 
   thr.forget(aResult);
@@ -770,22 +794,22 @@ nsThreadManager::DispatchToMainThread(nsIRunnable* aEvent, uint32_t aPriority,
 void nsThreadManager::EnableMainThreadEventPrioritization() {
   MOZ_ASSERT(NS_IsMainThread());
   InputEventStatistics::Get().SetEnable(true);
-  mMainThread->EnableInputEventPrioritization();
+  InputTaskManager::Get()->EnableInputEventPrioritization();
 }
 
 void nsThreadManager::FlushInputEventPrioritization() {
   MOZ_ASSERT(NS_IsMainThread());
-  mMainThread->FlushInputEventPrioritization();
+  InputTaskManager::Get()->FlushInputEventPrioritization();
 }
 
 void nsThreadManager::SuspendInputEventPrioritization() {
   MOZ_ASSERT(NS_IsMainThread());
-  mMainThread->SuspendInputEventPrioritization();
+  InputTaskManager::Get()->SuspendInputEventPrioritization();
 }
 
 void nsThreadManager::ResumeInputEventPrioritization() {
   MOZ_ASSERT(NS_IsMainThread());
-  mMainThread->ResumeInputEventPrioritization();
+  InputTaskManager::Get()->ResumeInputEventPrioritization();
 }
 
 // static

@@ -385,6 +385,8 @@ fn tweak_when_ignoring_colors(
     declaration: &mut Cow<PropertyDeclaration>,
     declarations_to_apply_unless_overriden: &mut DeclarationsToApplyUnlessOverriden,
 ) {
+    use crate::values::specified::Color;
+
     if !longhand_id.ignored_when_document_colors_disabled() {
         return;
     }
@@ -401,21 +403,53 @@ fn tweak_when_ignoring_colors(
         return;
     }
 
+    fn alpha_channel(color: &Color) -> u8 {
+        match *color {
+            // Seems safe enough to assume that the default color and system
+            // colors are opaque in HCM, though maybe we shouldn't asume the
+            // later?
+            #[cfg(feature = "gecko")]
+            Color::InheritFromBodyQuirk | Color::System(..) => 255,
+            // We don't have the actual color here, but since except for color:
+            // transparent we force opaque text colors, it seems sane to do
+            // this. You can technically fool this bit of code with:
+            //
+            //   color: transparent; background-color: currentcolor;
+            //
+            // but this is best-effort, and that seems unlikely to happen in
+            // practice.
+            Color::CurrentColor => 255,
+            // Complex colors are results of interpolation only and probably
+            // shouldn't show up around here in HCM, but we've always treated
+            // them as opaque effectively so keep doing it.
+            Color::Complex { .. } => 255,
+            Color::Numeric { ref parsed, .. } => parsed.alpha,
+        }
+    }
+
     // A few special-cases ahead.
     match **declaration {
-        // We honor color and background-color: transparent, and
-        // "revert-or-initial" otherwise.
         PropertyDeclaration::BackgroundColor(ref color) => {
-            if !color.is_transparent() {
-                let color = builder.device.default_background_color();
+            // For background-color, we revert or initial-with-preserved-alpha
+            // otherwise, this is needed to preserve semi-transparent
+            // backgrounds.
+            //
+            // FIXME(emilio, bug 1666059): We revert for alpha == 0, but maybe
+            // should consider not doing that even if it causes some issues like
+            // bug 1625036, or finding a performant way to preserve the original
+            // widget background color's rgb channels but not alpha...
+            let alpha = alpha_channel(color);
+            if alpha != 0 {
+                let mut color = builder.device.default_background_color();
+                color.alpha = alpha;
                 declarations_to_apply_unless_overriden.push(
                     PropertyDeclaration::BackgroundColor(color.into())
                 )
             }
         }
         PropertyDeclaration::Color(ref color) => {
-            // otherwise.
-            if color.0.is_transparent() {
+            // We honor color: transparent, and "revert-or-initial" otherwise.
+            if alpha_channel(&color.0) == 0 {
                 return;
             }
             // If the inherited color would be transparent, but we would
@@ -478,6 +512,25 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 .rule_cache_conditions
                 .borrow_mut()
                 .set_uncacheable();
+
+            // NOTE(emilio): We only really need to add the `display` /
+            // `content` flag if the CSS variable has not been specified on our
+            // declarations, but we don't have that information at this point,
+            // and it doesn't seem like an important enough optimization to
+            // warrant it.
+            match declaration.id {
+                LonghandId::Display => {
+                    self.context
+                        .builder
+                        .add_flags(ComputedValueFlags::DISPLAY_DEPENDS_ON_INHERITED_STYLE);
+                },
+                LonghandId::Content => {
+                    self.context
+                        .builder
+                        .add_flags(ComputedValueFlags::CONTENT_DEPENDS_ON_INHERITED_STYLE);
+                },
+                _ => {},
+            }
         }
 
         Cow::Owned(declaration.value.substitute_variables(
@@ -944,7 +997,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn handle_mathml_scriptlevel_if_needed(&mut self) {
         use crate::values::generics::NonNegative;
 
-        if !self.seen.contains(LonghandId::MozScriptLevel) &&
+        if !self.seen.contains(LonghandId::MathDepth) &&
            !self.seen.contains(LonghandId::MozScriptMinSize) &&
            !self.seen.contains(LonghandId::MozScriptSizeMultiplier) {
             return;
@@ -961,7 +1014,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             let parent_font = builder.get_parent_font().gecko();
 
             let delta =
-                font.mScriptLevel.saturating_sub(parent_font.mScriptLevel);
+                font.mMathDepth.saturating_sub(parent_font.mMathDepth);
 
             if delta == 0 {
                 return;

@@ -52,7 +52,8 @@ class WebRenderLayerManager final : public LayerManager {
  public:
   explicit WebRenderLayerManager(nsIWidget* aWidget);
   bool Initialize(PCompositorBridgeChild* aCBChild, wr::PipelineId aLayersId,
-                  TextureFactoryIdentifier* aTextureFactoryIdentifier);
+                  TextureFactoryIdentifier* aTextureFactoryIdentifier,
+                  nsCString& aError);
 
   void Destroy() override;
 
@@ -81,9 +82,7 @@ class WebRenderLayerManager final : public LayerManager {
                       EndTransactionFlags aFlags = END_DEFAULT) override;
 
   LayersBackend GetBackendType() override { return LayersBackend::LAYERS_WR; }
-  void GetBackendName(nsAString& name) override {
-    name.AssignLiteral("WebRender");
-  }
+  void GetBackendName(nsAString& name) override;
   const char* Name() const override { return "WebRender"; }
 
   void SetRoot(Layer* aLayer) override;
@@ -182,6 +181,8 @@ class WebRenderLayerManager final : public LayerManager {
   virtual void PayloadPresented() override;
 
   void TakeCompositionPayloads(nsTArray<CompositionPayload>& aPayloads);
+
+  void GetFrameUniformity(FrameUniformityData* aOutData) override;
 
  private:
   /**

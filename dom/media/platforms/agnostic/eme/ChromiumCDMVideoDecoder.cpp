@@ -19,7 +19,7 @@ ChromiumCDMVideoDecoder::ChromiumCDMVideoDecoder(
     : mCDMParent(aCDMProxy->AsChromiumCDMProxy()->GetCDMParent()),
       mConfig(aParams.mConfig),
       mCrashHelper(aParams.mCrashHelper),
-      mGMPThread(GetGMPAbstractThread()),
+      mGMPThread(GetGMPThread()),
       mImageContainer(aParams.mImageContainer) {}
 
 ChromiumCDMVideoDecoder::~ChromiumCDMVideoDecoder() = default;
@@ -71,6 +71,20 @@ RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
   }
   config.mImageWidth() = mConfig.mImage.width;
   config.mImageHeight() = mConfig.mImage.height;
+  config.mEncryptionScheme() = cdm::EncryptionScheme::kUnencrypted;
+  switch (mConfig.mCrypto.mCryptoScheme) {
+    case CryptoScheme::None:
+      break;
+    case CryptoScheme::Cenc:
+      config.mEncryptionScheme() = cdm::EncryptionScheme::kCenc;
+      break;
+    case CryptoScheme::Cbcs:
+      config.mEncryptionScheme() = cdm::EncryptionScheme::kCbcs;
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Should not have unrecognized encryption type");
+      break;
+  }
 
   RefPtr<gmp::ChromiumCDMParent> cdm = mCDMParent;
   VideoInfo info = mConfig;

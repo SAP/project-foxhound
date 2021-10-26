@@ -8,7 +8,6 @@ package org.mozilla.geckoview.test.rule;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONTokener;
-import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.geckoview.Autofill;
 import org.mozilla.geckoview.ContentBlocking;
@@ -17,6 +16,7 @@ import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
+import org.mozilla.geckoview.MediaSession;
 import org.mozilla.geckoview.RuntimeTelemetry;
 import org.mozilla.geckoview.SessionTextInput;
 import org.mozilla.geckoview.WebExtension;
@@ -28,7 +28,6 @@ import org.mozilla.geckoview.test.util.UiThreadUtils;
 import org.mozilla.geckoview.test.util.Callbacks;
 
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
@@ -44,10 +43,9 @@ import org.junit.runners.model.Statement;
 import android.app.Instrumentation;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
-import android.os.Parcel;
 import android.os.SystemClock;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.test.platform.app.InstrumentationRegistry;
 import android.util.Log;
 import android.util.Pair;
@@ -75,7 +73,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
@@ -115,6 +112,34 @@ public class GeckoSessionTestRule implements TestRule {
         } catch (final NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public void addDisplay(final GeckoSession session, final int x, final int y) {
+        final GeckoDisplay display = session.acquireDisplay();
+
+        final SurfaceTexture displayTexture = new SurfaceTexture(0);
+        displayTexture.setDefaultBufferSize(x, y);
+
+        final Surface displaySurface = new Surface(displayTexture);
+        display.surfaceChanged(displaySurface, x, y);
+
+        mDisplays.put(session, display);
+        mDisplayTextures.put(session, displayTexture);
+        mDisplaySurfaces.put(session, displaySurface);
+    }
+
+    public void releaseDisplay(final GeckoSession session) {
+        if (!mDisplays.containsKey(session)) {
+            // No display to release
+            return;
+        }
+        final GeckoDisplay display = mDisplays.remove(session);
+        display.surfaceDestroyed();
+        session.releaseDisplay(display);
+        final Surface displaySurface = mDisplaySurfaces.remove(session);
+        displaySurface.release();
+        final SurfaceTexture displayTexture = mDisplayTextures.remove(session);
+        displayTexture.release();
     }
 
     /**
@@ -751,9 +776,9 @@ public class GeckoSessionTestRule implements TestRule {
     protected MethodCall mCurrentMethodCall;
     protected long mTimeoutMillis;
     protected Point mDisplaySize;
-    protected SurfaceTexture mDisplayTexture;
-    protected Surface mDisplaySurface;
-    protected GeckoDisplay mDisplay;
+    protected Map<GeckoSession, SurfaceTexture> mDisplayTextures = new HashMap<>();
+    protected Map<GeckoSession, Surface> mDisplaySurfaces = new HashMap<>();
+    protected Map<GeckoSession, GeckoDisplay> mDisplays = new HashMap<>();
     protected boolean mClosedSession;
     protected boolean mIgnoreCrash;
 
@@ -860,7 +885,7 @@ public class GeckoSessionTestRule implements TestRule {
     }
 
     public @Nullable GeckoDisplay getDisplay() {
-        return mDisplay;
+        return mDisplays.get(mMainSession);
     }
 
     protected static Object setDelegate(final @NonNull Class<?> cls,
@@ -877,6 +902,10 @@ public class GeckoSessionTestRule implements TestRule {
         }
         if (cls == Autofill.Delegate.class) {
             return GeckoSession.class.getMethod("setAutofillDelegate", cls)
+                   .invoke(session, delegate);
+        }
+        if (cls == MediaSession.Delegate.class) {
+            return GeckoSession.class.getMethod("setMediaSessionDelegate", cls)
                    .invoke(session, delegate);
         }
         return GeckoSession.class.getMethod("set" + cls.getSimpleName(), cls)
@@ -896,6 +925,10 @@ public class GeckoSessionTestRule implements TestRule {
         }
         if (cls == Autofill.Delegate.class) {
             return GeckoSession.class.getMethod("getAutofillDelegate")
+                   .invoke(session);
+        }
+        if (cls == MediaSession.Delegate.class) {
+            return GeckoSession.class.getMethod("getMediaSessionDelegate")
                    .invoke(session);
         }
         return GeckoSession.class.getMethod("get" + cls.getSimpleName())
@@ -1079,11 +1112,7 @@ public class GeckoSessionTestRule implements TestRule {
         prepareSession(mMainSession);
 
         if (mDisplaySize != null) {
-            mDisplay = mMainSession.acquireDisplay();
-            mDisplayTexture = new SurfaceTexture(0);
-            mDisplayTexture.setDefaultBufferSize(mDisplaySize.x, mDisplaySize.y);
-            mDisplaySurface = new Surface(mDisplayTexture);
-            mDisplay.surfaceChanged(mDisplaySurface, mDisplaySize.x, mDisplaySize.y);
+            addDisplay(mMainSession, mDisplaySize.x, mDisplaySize.y);
         }
 
         if (!mClosedSession) {
@@ -1188,6 +1217,7 @@ public class GeckoSessionTestRule implements TestRule {
         if (session.isOpen()) {
             session.close();
         }
+        releaseDisplay(session);
     }
 
     protected boolean isUsingSession(final GeckoSession session) {
@@ -1234,16 +1264,6 @@ public class GeckoSessionTestRule implements TestRule {
 
         if (mIgnoreCrash) {
             deleteCrashDumps();
-        }
-
-        if (mDisplay != null) {
-            mDisplay.surfaceDestroyed();
-            mMainSession.releaseDisplay(mDisplay);
-            mDisplay = null;
-            mDisplaySurface.release();
-            mDisplaySurface = null;
-            mDisplayTexture.release();
-            mDisplayTexture = null;
         }
 
         mMainSession = null;
@@ -1891,6 +1911,12 @@ public class GeckoSessionTestRule implements TestRule {
         return dblPid.intValue();
     }
 
+    public boolean getActive(final @NonNull GeckoSession session) {
+        final Boolean isActive = (Boolean)
+                webExtensionApiCall(session, "GetActive", null);
+        return isActive;
+    }
+
     private Object waitForMessage(String id) {
         UiThreadUtils.waitForCondition(() -> mPendingMessages.containsKey(id),
                 mTimeoutMillis);
@@ -1943,27 +1969,6 @@ public class GeckoSessionTestRule implements TestRule {
             openSession(session);
         }
         return session;
-    }
-
-    public GeckoSession createFromParcel(Parcel source) {
-        final GeckoSession session = new GeckoSession(mMainSession.getSettings());
-        session.readFromParcel(source);
-        return wrapSession(session);
-    }
-
-    /**
-     * This method is a temporary hack to ensure that sessions reconstituted from parcels
-     * have their WebExtension.Port transferred over to the reconstituted session.
-     *
-     * This will be removed when we remove the ability of GeckoSession to be Parcelable.
-     */
-    public void transferPort(@NonNull final GeckoSession fromSession, @NonNull final GeckoSession toSession) {
-        final WebExtension.Port port = mPorts.remove(fromSession);
-        if (port == null) {
-            throw new NullPointerException("Expected a valid port, got null instead");
-        }
-
-        mPorts.put(toSession, port);
     }
 
     /**
@@ -2134,6 +2139,13 @@ public class GeckoSessionTestRule implements TestRule {
         webExtensionApiCall("SetResolutionAndScaleTo", args -> {
             args.put("resolution", resolution);
         });
+    }
+
+    /**
+     * Invokes nsIDOMWindowUtils.flushApzRepaints.
+     */
+    public void flushApzRepaints(final GeckoSession session) {
+        webExtensionApiCall(session, "FlushApzRepaints", null);
     }
 
     private Object webExtensionApiCall(final @NonNull String apiName, final @NonNull SetArgs argsSetter) {

@@ -23,8 +23,7 @@
 
 #define NS_DispatchToMainThread(...) CompileError_UseAbstractMainThreadInstead
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 using namespace eme;
 
@@ -68,7 +67,7 @@ RefPtr<ChromiumCDMParent::InitPromise> ChromiumCDMParent::Init(
   RefPtr<ChromiumCDMParent> self = this;
   SendInit(aAllowDistinctiveIdentifier, aAllowPersistentState)
       ->Then(
-          AbstractThread::GetCurrent(), __func__,
+          GetCurrentSerialEventTarget(), __func__,
           [self, aCDMCallback](bool aSuccess) {
             if (!aSuccess) {
               GMP_LOG_DEBUG(
@@ -284,16 +283,15 @@ bool ChromiumCDMParent::InitCDMInputBuffer(gmp::CDMInputBuffer& aBuffer,
     return false;
   }
   memcpy(shmem.get<uint8_t>(), aSample->Data(), aSample->Size());
-  GMPEncryptionScheme encryptionScheme =
-      GMPEncryptionScheme::kGMPEncryptionNone;
+  cdm::EncryptionScheme encryptionScheme = cdm::EncryptionScheme::kUnencrypted;
   switch (crypto.mCryptoScheme) {
     case CryptoScheme::None:
       break;  // Default to none
     case CryptoScheme::Cenc:
-      encryptionScheme = GMPEncryptionScheme::kGMPEncryptionCenc;
+      encryptionScheme = cdm::EncryptionScheme::kCenc;
       break;
     case CryptoScheme::Cbcs:
-      encryptionScheme = GMPEncryptionScheme::kGMPEncryptionCbcs;
+      encryptionScheme = cdm::EncryptionScheme::kCbcs;
       break;
     default:
       GMP_LOG_DEBUG(
@@ -304,23 +302,14 @@ bool ChromiumCDMParent::InitCDMInputBuffer(gmp::CDMInputBuffer& aBuffer,
       break;
   }
 
-  const nsTArray<uint8_t>& iv =
-      encryptionScheme != GMPEncryptionScheme::kGMPEncryptionCbcs
-          ? crypto.mIV
-          : crypto.mConstantIV;
+  const nsTArray<uint8_t>& iv = encryptionScheme != cdm::EncryptionScheme::kCbcs
+                                    ? crypto.mIV
+                                    : crypto.mConstantIV;
   aBuffer = gmp::CDMInputBuffer(
       std::move(shmem), crypto.mKeyId, iv, aSample->mTime.ToMicroseconds(),
       aSample->mDuration.ToMicroseconds(), crypto.mPlainSizes,
       crypto.mEncryptedSizes, crypto.mCryptByteBlock, crypto.mSkipByteBlock,
       encryptionScheme);
-  MOZ_ASSERT(
-      aBuffer.mEncryptionScheme() == GMPEncryptionScheme::kGMPEncryptionNone ||
-          aBuffer.mEncryptionScheme() ==
-              GMPEncryptionScheme::kGMPEncryptionCenc ||
-          aBuffer.mEncryptionScheme() ==
-              GMPEncryptionScheme::kGMPEncryptionCbcs,
-      "aBuffer should use no encryption, cenc, or cbcs, other kinds are not "
-      "yet supported");
   return true;
 }
 
@@ -608,9 +597,9 @@ ipc::IPCResult ChromiumCDMParent::RecvDecrypted(const uint32_t& aId,
   }
   for (size_t i = 0; i < mDecrypts.Length(); i++) {
     if (mDecrypts[i]->mId == aId) {
-      mDecrypts[i]->PostResult(ToDecryptStatus(aStatus),
-                               MakeSpan<const uint8_t>(aShmem.get<uint8_t>(),
-                                                       aShmem.Size<uint8_t>()));
+      mDecrypts[i]->PostResult(
+          ToDecryptStatus(aStatus),
+          Span<const uint8_t>(aShmem.get<uint8_t>(), aShmem.Size<uint8_t>()));
       mDecrypts.RemoveElementAt(i);
       break;
     }
@@ -768,7 +757,7 @@ ipc::IPCResult ChromiumCDMParent::RecvDecodedShmem(const CDMVideoFrame& aFrame,
   }
 
   RefPtr<VideoData> v = CreateVideoFrame(
-      aFrame, MakeSpan<uint8_t>(aShmem.get<uint8_t>(), aShmem.Size<uint8_t>()));
+      aFrame, Span<uint8_t>(aShmem.get<uint8_t>(), aShmem.Size<uint8_t>()));
   if (!v) {
     mDecodePromise.RejectIfExists(
         MediaResult(NS_ERROR_OUT_OF_MEMORY,
@@ -1165,7 +1154,6 @@ void ChromiumCDMParent::Shutdown() {
   }
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp
 
 #undef NS_DispatchToMainThread

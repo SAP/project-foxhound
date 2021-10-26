@@ -11,7 +11,9 @@
 #include "js/BuildId.h"  // JS::BuildIdCharVector
 #include "js/HeapAPI.h"
 #include "js/GCAPI.h"
+#include "js/Object.h"  // JS::GetCompartment
 #include "js/Proxy.h"
+#include "js/String.h"  // JS::IsExternalString
 #include "js/Wrapper.h"
 
 #include "nsAtom.h"
@@ -182,7 +184,7 @@ inline JSObject* xpc_FastGetCachedWrapper(JSContext* cx, nsWrapperCache* cache,
   if (cache) {
     JSObject* wrapper = cache->GetWrapper();
     if (wrapper &&
-        js::GetObjectCompartment(wrapper) == js::GetContextCompartment(cx)) {
+        JS::GetCompartment(wrapper) == js::GetContextCompartment(cx)) {
       vp.setObject(*wrapper);
       return wrapper;
     }
@@ -276,7 +278,7 @@ class XPCStringConvert {
       JSString* str, const JSExternalStringCallbacks* desiredCallbacks,
       const char16_t** chars) {
     const JSExternalStringCallbacks* callbacks;
-    return js::IsExternalString(str, &callbacks, chars) &&
+    return JS::IsExternalString(str, &callbacks, chars) &&
            callbacks == desiredCallbacks;
   }
 
@@ -676,7 +678,11 @@ void AddGCCallback(xpcGCCallback cb);
 void RemoveGCCallback(xpcGCCallback cb);
 
 // We need an exact page size only if we run the binary in automation.
+#if defined(XP_DARWIN) && defined(__aarch64__)
+const size_t kAutomationPageSize = 16384;
+#else
 const size_t kAutomationPageSize = 4096;
+#endif
 
 struct alignas(kAutomationPageSize) ReadOnlyPage final {
   bool mNonLocalConnectionsDisabled = false;

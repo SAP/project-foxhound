@@ -53,6 +53,7 @@ var gSmallTests = [
     width: 320,
     height: 240,
     duration: 0.266,
+    contentDuration: 0.133,
   },
   {
     name: "seek-short.webm",
@@ -881,9 +882,7 @@ if (
   manifestNavigator().userAgent.includes("Mobile") ||
   manifestNavigator().userAgent.includes("Tablet")
 ) {
-  androidVersion = SpecialPowers.Cc["@mozilla.org/system-info;1"]
-    .getService(SpecialPowers.Ci.nsIPropertyBag2)
-    .getProperty("version");
+  androidVersion = SpecialPowers.Services.sysinfo.getProperty("version");
 }
 
 function getAndroidVersion() {

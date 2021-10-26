@@ -12,16 +12,21 @@
 #include "jit/AliasAnalysis.h"
 #include "jit/BaselineInspector.h"
 #include "jit/BaselineJIT.h"
+#include "jit/CompileInfo.h"
+#include "jit/InlineScriptTree.h"
 #include "jit/Ion.h"
 #include "jit/IonBuilder.h"
 #include "jit/IonOptimizationLevels.h"
 #include "jit/LIR.h"
 #include "jit/Lowering.h"
 #include "jit/MIRGraph.h"
+#include "jit/WarpBuilder.h"
+#include "jit/WarpOracle.h"
 #include "util/CheckedArithmetic.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
 #include "vm/SelfHosting.h"
+#include "vm/TypeInference.h"
 
 #include "jit/shared/Lowering-shared-inl.h"
 #include "vm/BytecodeUtil-inl.h"
@@ -1704,6 +1709,13 @@ static MIRType GuessPhiType(MPhi* phi, bool* hasInputsWithEmptyTypes) {
     // See ShouldSpecializeOsrPhis comment. This is the first step mentioned
     // there.
     if (ShouldSpecializeOsrPhis() && in->isOsrValue()) {
+      // TODO(post-Warp): simplify float32 handling in this function or (better)
+      // make the float32 analysis a stand-alone optimization pass instead of
+      // complicating type analysis. See bug 1655773.
+      convertibleToFloat32 = false;
+      if (type == MIRType::Float32) {
+        type = MIRType::Double;
+      }
       continue;
     }
 
@@ -3308,7 +3320,13 @@ static bool MonotoneSub(int32_t lhs, int32_t rhs) {
 
 // Extract a linear sum from ins, if possible (otherwise giving the
 // sum 'ins + 0').
-SimpleLinearSum jit::ExtractLinearSum(MDefinition* ins, MathSpace space) {
+SimpleLinearSum jit::ExtractLinearSum(MDefinition* ins, MathSpace space,
+                                      int32_t recursionDepth) {
+  const int32_t SAFE_RECURSION_LIMIT = 100;
+  if (recursionDepth > SAFE_RECURSION_LIMIT) {
+    return SimpleLinearSum(ins, 0);
+  }
+
   if (ins->isBeta()) {
     ins = ins->getOperand(0);
   }
@@ -3341,8 +3359,8 @@ SimpleLinearSum jit::ExtractLinearSum(MDefinition* ins, MathSpace space) {
   }
 
   // Extract linear sums of each operand.
-  SimpleLinearSum lsum = ExtractLinearSum(lhs, space);
-  SimpleLinearSum rsum = ExtractLinearSum(rhs, space);
+  SimpleLinearSum lsum = ExtractLinearSum(lhs, space, recursionDepth + 1);
+  SimpleLinearSum rsum = ExtractLinearSum(rhs, space, recursionDepth + 1);
 
   // LinearSum only considers a single term operand, if both sides have
   // terms, then ignore extracted linear sums.
@@ -3846,11 +3864,14 @@ static bool NeedsKeepAlive(MInstruction* slotsOrElements, MInstruction* use) {
       case MDefinition::Opcode::LoadFixedSlot:
       case MDefinition::Opcode::StoreFixedSlot:
       case MDefinition::Opcode::LoadElement:
+      case MDefinition::Opcode::LoadElementAndUnbox:
       case MDefinition::Opcode::StoreElement:
       case MDefinition::Opcode::StoreHoleValueElement:
       case MDefinition::Opcode::InitializedLength:
       case MDefinition::Opcode::ArrayLength:
       case MDefinition::Opcode::BoundsCheck:
+      case MDefinition::Opcode::GuardElementNotHole:
+      case MDefinition::Opcode::SpectreMaskIndex:
         iter++;
         break;
       default:
@@ -4079,7 +4100,7 @@ void LinearSum::dump() const {
 }
 
 MDefinition* jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
-                                   const LinearSum& sum, bool convertConstant) {
+                                   const LinearSum& sum) {
   MDefinition* def = nullptr;
 
   for (size_t i = 0; i < sum.numTerms(); i++) {
@@ -4119,19 +4140,6 @@ MDefinition* jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
     }
   }
 
-  if (convertConstant && sum.constant()) {
-    MConstant* constant = MConstant::New(alloc, Int32Value(sum.constant()));
-    block->insertAtEnd(constant);
-    constant->computeRange(alloc);
-    if (def) {
-      def = MAdd::New(alloc, def, constant, MIRType::Int32);
-      block->insertAtEnd(def->toInstruction());
-      def->computeRange(alloc);
-    } else {
-      def = constant;
-    }
-  }
-
   if (!def) {
     def = MConstant::New(alloc, Int32Value(0));
     block->insertAtEnd(def->toInstruction());
@@ -4139,75 +4147,6 @@ MDefinition* jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
   }
 
   return def;
-}
-
-MCompare* jit::ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
-                                       const LinearSum& sum) {
-  LinearSum lhs(sum);
-
-  // Look for a term with a -1 scale which we can use for the rhs.
-  MDefinition* rhsDef = nullptr;
-  for (size_t i = 0; i < lhs.numTerms(); i++) {
-    if (lhs.term(i).scale == -1) {
-      AutoEnterOOMUnsafeRegion oomUnsafe;
-      rhsDef = lhs.term(i).term;
-      if (!lhs.add(rhsDef, 1)) {
-        oomUnsafe.crash("ConvertLinearInequality");
-      }
-      break;
-    }
-  }
-
-  MDefinition* lhsDef = nullptr;
-  JSOp op = JSOp::Ge;
-
-  do {
-    if (!lhs.numTerms()) {
-      lhsDef = MConstant::New(alloc, Int32Value(lhs.constant()));
-      block->insertAtEnd(lhsDef->toInstruction());
-      lhsDef->computeRange(alloc);
-      break;
-    }
-
-    lhsDef = ConvertLinearSum(alloc, block, lhs);
-    if (lhs.constant() == 0) {
-      break;
-    }
-
-    if (lhs.constant() == -1) {
-      op = JSOp::Gt;
-      break;
-    }
-
-    if (!rhsDef) {
-      int32_t constant = lhs.constant();
-      if (SafeMul(constant, -1, &constant)) {
-        rhsDef = MConstant::New(alloc, Int32Value(constant));
-        block->insertAtEnd(rhsDef->toInstruction());
-        rhsDef->computeRange(alloc);
-        break;
-      }
-    }
-
-    MDefinition* constant = MConstant::New(alloc, Int32Value(lhs.constant()));
-    block->insertAtEnd(constant->toInstruction());
-    constant->computeRange(alloc);
-    lhsDef = MAdd::New(alloc, lhsDef, constant, MIRType::Int32);
-    block->insertAtEnd(lhsDef->toInstruction());
-    lhsDef->computeRange(alloc);
-  } while (false);
-
-  if (!rhsDef) {
-    rhsDef = MConstant::New(alloc, Int32Value(0));
-    block->insertAtEnd(rhsDef->toInstruction());
-    rhsDef->computeRange(alloc);
-  }
-
-  MCompare* compare = MCompare::New(alloc, lhsDef, rhsDef, op);
-  block->insertAtEnd(compare);
-  compare->setCompareType(MCompare::Compare_Int32);
-
-  return compare;
 }
 
 static bool AnalyzePoppedThis(JSContext* cx, DPAConstraintInfo& constraintInfo,
@@ -4582,9 +4521,18 @@ static bool ArgumentsUseCanBeLazy(JSContext* cx, JSScript* script,
   }
 
   // arguments[i] can read fp->unaliasedActual(i) directly.
-  if (ins->isCallGetElement() && index == 0) {
-    *argumentsContentsObserved = true;
-    return true;
+  if (JitOptions.warpBuilder) {
+    if (ins->isGetPropertyCache() && index == 0 &&
+        IsGetElemPC(ins->resumePoint()->pc())) {
+      script->setUninlineable();
+      *argumentsContentsObserved = true;
+      return true;
+    }
+  } else {
+    if (ins->isCallGetElement() && index == 0) {
+      *argumentsContentsObserved = true;
+      return true;
+    }
   }
 
   // MGetArgumentsObjectArg needs to be considered as a use that allows
@@ -4596,11 +4544,29 @@ static bool ArgumentsUseCanBeLazy(JSContext* cx, JSScript* script,
   // arguments.length length can read fp->numActualArgs() directly.
   // arguments.callee can read fp->callee() directly if the arguments object
   // is mapped.
-  if (ins->isCallGetProperty() && index == 0 &&
-      (ins->toCallGetProperty()->name() == cx->names().length ||
-       (script->hasMappedArgsObj() &&
-        ins->toCallGetProperty()->name() == cx->names().callee))) {
-    return true;
+  auto getPropCanBeLazy = [cx, script](JSString* name) {
+    if (name == cx->names().length) {
+      return true;
+    }
+    if (script->hasMappedArgsObj() && name == cx->names().callee) {
+      return true;
+    }
+    return false;
+  };
+
+  if (JitOptions.warpBuilder) {
+    if (ins->isGetPropertyCache() && index == 0) {
+      MDefinition* id = ins->toGetPropertyCache()->idval();
+      if (id->isConstant() && id->type() == MIRType::String &&
+          getPropCanBeLazy(id->toConstant()->toString())) {
+        return true;
+      }
+    }
+  } else {
+    if (ins->isCallGetProperty() && index == 0 &&
+        getPropCanBeLazy(ins->toCallGetProperty()->name())) {
+      return true;
+    }
   }
 
   return false;
@@ -4630,11 +4596,6 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   }
 
   if (!jit::IsIonEnabled(cx)) {
-    return true;
-  }
-
-  if (JitOptions.warpBuilder) {
-    // TODO: support using WarpBuilder for arguments analysis.
     return true;
   }
 
@@ -4683,32 +4644,58 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   const OptimizationInfo* optimizationInfo =
       IonOptimizations.get(OptimizationLevel::Normal);
 
-  CompilerConstraintList* constraints = NewCompilerConstraintList(temp);
-  if (!constraints) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  BaselineInspector inspector(script);
   const JitCompileOptions options(cx);
 
   MIRGenerator mirGen(CompileRealm::get(cx->realm()), options, &temp, &graph,
                       &info, optimizationInfo);
-  IonBuilder builder(nullptr, mirGen, &info, constraints, &inspector,
-                     /* baselineFrame = */ nullptr);
 
-  AbortReasonOr<Ok> buildResult = builder.build();
-  if (buildResult.isErr()) {
-    AbortReason reason = buildResult.unwrapErr();
-    if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
-      return false;
+  if (JitOptions.warpBuilder) {
+    WarpOracle oracle(cx, mirGen, script);
+
+    AbortReasonOr<WarpSnapshot*> result = oracle.createSnapshot();
+    if (result.isErr()) {
+      AbortReason reason = result.unwrapErr();
+      if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
+        return false;
+      }
+      if (reason == AbortReason::Alloc) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+      MOZ_ASSERT(!cx->isExceptionPending());
+      return true;
     }
-    if (reason == AbortReason::Alloc) {
+
+    WarpCompilation comp(temp);
+    WarpBuilder builder(*result.unwrap(), mirGen, &comp);
+    if (!builder.build()) {
       ReportOutOfMemory(cx);
       return false;
     }
-    MOZ_ASSERT(!cx->isExceptionPending());
-    return true;
+  } else {
+    CompilerConstraintList* constraints = NewCompilerConstraintList(temp);
+    if (!constraints) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+
+    BaselineInspector inspector(script);
+    IonBuilder builder(nullptr, mirGen, &info, constraints, &inspector,
+                       /* baselineFrame = */ nullptr);
+
+    AbortReasonOr<Ok> buildResult = builder.build();
+    if (buildResult.isErr()) {
+      AbortReason reason = buildResult.unwrapErr();
+      if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
+        return false;
+      }
+      if (reason == AbortReason::Alloc) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+      MOZ_ASSERT(!cx->isExceptionPending());
+      return true;
+    }
   }
 
   if (!SplitCriticalEdges(graph)) {
@@ -5078,77 +5065,6 @@ bool jit::MakeLoopsContiguous(MIRGraph& graph) {
   }
 
   return true;
-}
-
-KnownClass jit::GetObjectKnownClass(const MDefinition* def) {
-  MOZ_ASSERT(def->type() == MIRType::Object);
-
-  switch (def->op()) {
-    case MDefinition::Opcode::NewArray:
-    case MDefinition::Opcode::NewArrayCopyOnWrite:
-      return KnownClass::Array;
-
-    case MDefinition::Opcode::NewObject:
-    case MDefinition::Opcode::CreateThis:
-    case MDefinition::Opcode::CreateThisWithTemplate:
-      return KnownClass::PlainObject;
-
-    case MDefinition::Opcode::Lambda:
-    case MDefinition::Opcode::LambdaArrow:
-    case MDefinition::Opcode::FunctionWithProto:
-      return KnownClass::Function;
-
-    case MDefinition::Opcode::RegExp:
-      return KnownClass::RegExp;
-
-    case MDefinition::Opcode::Phi: {
-      if (def->numOperands() == 0) {
-        return KnownClass::None;
-      }
-
-      MDefinition* op = def->getOperand(0);
-      // Check for Phis to avoid recursion for now.
-      if (op->isPhi()) {
-        return KnownClass::None;
-      }
-
-      KnownClass known = GetObjectKnownClass(op);
-      if (known == KnownClass::None) {
-        return KnownClass::None;
-      }
-
-      for (size_t i = 1; i < def->numOperands(); i++) {
-        op = def->getOperand(i);
-        if (op->isPhi() || GetObjectKnownClass(op) != known) {
-          return KnownClass::None;
-        }
-      }
-
-      return known;
-    }
-
-    default:
-      break;
-  }
-
-  return KnownClass::None;
-}
-
-const JSClass* jit::GetObjectKnownJSClass(const MDefinition* def) {
-  switch (GetObjectKnownClass(def)) {
-    case KnownClass::PlainObject:
-      return &PlainObject::class_;
-    case KnownClass::Array:
-      return &ArrayObject::class_;
-    case KnownClass::Function:
-      return &JSFunction::class_;
-    case KnownClass::RegExp:
-      return &RegExpObject::class_;
-    case KnownClass::None:
-      break;
-  }
-
-  return nullptr;
 }
 
 MRootList::MRootList(TempAllocator& alloc) {

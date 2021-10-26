@@ -444,6 +444,16 @@ ImageTestCase StackCheckAVIFTestCase() {
       .WithSurfaceFlags(SurfaceFlags::TO_SRGB_COLORSPACE);
 }
 
+// Forcing sRGB is required until nsAVIFDecoder supports ICC profiles
+// See bug 1634741
+// Add TEST_CASE_IGNORE_OUTPUT since this isn't a solid green image and we just
+// want to test that it decodes correctly.
+ImageTestCase MultiLayerAVIFTestCase() {
+  return ImageTestCase("multilayer.avif", "image/avif", IntSize(1280, 720),
+                       TEST_CASE_IGNORE_OUTPUT)
+      .WithSurfaceFlags(SurfaceFlags::TO_SRGB_COLORSPACE);
+}
+
 ImageTestCase LargeWebPTestCase() {
   return ImageTestCase("large.webp", "image/webp", IntSize(1200, 660),
                        TEST_CASE_IGNORE_OUTPUT);
@@ -521,6 +531,11 @@ ImageTestCase CorruptICOWithBadBppTestCase() {
   // the BMP BPP is available and thus correctly decode the image.
   return ImageTestCase("corrupt-with-bad-ico-bpp.ico", "image/x-icon",
                        IntSize(100, 100), TEST_CASE_IS_TRANSPARENT);
+}
+
+ImageTestCase CorruptAVIFTestCase() {
+  return ImageTestCase("bug-1655846.avif", "image/avif", IntSize(100, 100),
+                       TEST_CASE_HAS_ERROR);
 }
 
 ImageTestCase TransparentPNGTestCase() {

@@ -59,16 +59,29 @@ var gPermissionManager = {
       this._isObserving = true;
     }
 
+    document.addEventListener("dialogaccept", () => this.onApplyChanges());
+
     this._type = params.permissionType;
     this._list = document.getElementById("permissionsBox");
     this._removeButton = document.getElementById("removePermission");
     this._removeAllButton = document.getElementById("removeAllPermissions");
+
+    this._btnSession = document.getElementById("btnSession");
+    this._btnBlock = document.getElementById("btnBlock");
+    this._btnAllow = document.getElementById("btnAllow");
 
     let permissionsText = document.getElementById("permissionsText");
 
     let l10n = permissionExceptionsL10n[this._type];
     document.l10n.setAttributes(permissionsText, l10n.description);
     document.l10n.setAttributes(document.documentElement, l10n.window);
+
+    let urlFieldVisible =
+      params.blockVisible || params.sessionVisible || params.allowVisible;
+
+    this._urlField = document.getElementById("url");
+    this._urlField.value = params.prefilledHost;
+    this._urlField.hidden = !urlFieldVisible;
 
     await document.l10n.translateElements([
       permissionsText,
@@ -79,14 +92,7 @@ var gPermissionManager = {
     document.getElementById("btnSession").hidden = !params.sessionVisible;
     document.getElementById("btnAllow").hidden = !params.allowVisible;
 
-    let urlFieldVisible =
-      params.blockVisible || params.sessionVisible || params.allowVisible;
-
-    let urlField = document.getElementById("url");
-    urlField.value = params.prefilledHost;
-    urlField.hidden = !urlFieldVisible;
-
-    this.onHostInput(urlField);
+    this.onHostInput(this._urlField);
 
     let urlLabel = document.getElementById("urlLabel");
     urlLabel.hidden = !urlFieldVisible;
@@ -106,7 +112,7 @@ var gPermissionManager = {
     this._loadPermissions();
     this.buildPermissionsList();
 
-    urlField.focus();
+    this._urlField.focus();
   },
 
   uninit() {
@@ -339,8 +345,13 @@ var gPermissionManager = {
   },
 
   onWindowKeyPress(event) {
-    if (event.keyCode == KeyEvent.DOM_VK_ESCAPE) {
-      window.close();
+    // Prevent dialog.js from closing the dialog when the user submits the input
+    // field via the return key.
+    if (
+      event.keyCode == KeyEvent.DOM_VK_RETURN &&
+      document.activeElement == this._urlField
+    ) {
+      event.preventDefault();
     }
   },
 
@@ -361,14 +372,18 @@ var gPermissionManager = {
 
   onHostKeyPress(event) {
     if (event.keyCode == KeyEvent.DOM_VK_RETURN) {
-      document.getElementById("btnAllow").click();
+      if (!document.getElementById("btnAllow").hidden) {
+        document.getElementById("btnAllow").click();
+      } else if (!document.getElementById("btnBlock").hidden) {
+        document.getElementById("btnBlock").click();
+      }
     }
   },
 
   onHostInput(siteField) {
-    document.getElementById("btnSession").disabled = !siteField.value;
-    document.getElementById("btnBlock").disabled = !siteField.value;
-    document.getElementById("btnAllow").disabled = !siteField.value;
+    this._btnSession.disabled = this._btnSession.hidden || !siteField.value;
+    this._btnBlock.disabled = this._btnBlock.hidden || !siteField.value;
+    this._btnAllow.disabled = this._btnAllow.hidden || !siteField.value;
   },
 
   _setRemoveButtonState() {
@@ -417,8 +432,6 @@ var gPermissionManager = {
     for (let p of this._permissionsToAdd.values()) {
       Services.perms.addFromPrincipal(p.principal, p.type, p.capability);
     }
-
-    window.close();
   },
 
   buildPermissionsList(sortCol) {

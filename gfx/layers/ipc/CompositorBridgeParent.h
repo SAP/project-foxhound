@@ -146,9 +146,11 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual void FlushApzRepaints(const LayersId& aLayersId) = 0;
   virtual void GetAPZTestData(const LayersId& aLayersId,
                               APZTestData* aOutData) {}
+  virtual void GetFrameUniformity(const LayersId& aLayersId,
+                                  FrameUniformityData* data) = 0;
   virtual void SetConfirmedTargetAPZC(
       const LayersId& aLayersId, const uint64_t& aInputBlockId,
-      const nsTArray<ScrollableLayerGuid>& aTargets) = 0;
+      nsTArray<ScrollableLayerGuid>&& aTargets) = 0;
   virtual void UpdatePaintTime(LayerTransactionParent* aLayerTree,
                                const TimeDuration& aPaintTime) {}
   virtual void RegisterPayloads(LayerTransactionParent* aLayerTree,
@@ -200,8 +202,8 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
 
   virtual bool IsRemote() const { return false; }
 
-  virtual UniquePtr<SurfaceDescriptor>
-  LookupSurfaceDescriptorForClientDrawTarget(const uintptr_t aDrawTarget) {
+  virtual UniquePtr<SurfaceDescriptor> LookupSurfaceDescriptorForClientTexture(
+      const int64_t aTextureId) {
     MOZ_CRASH("Should only be called on ContentCompositorBridgeParent.");
   }
 
@@ -266,8 +268,6 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
       EndRecordingToMemoryResolver&& aResolve) = 0;
   virtual mozilla::ipc::IPCResult RecvInitialize(
       const LayersId& rootLayerTreeId) = 0;
-  virtual mozilla::ipc::IPCResult RecvGetFrameUniformity(
-      FrameUniformityData* data) = 0;
   virtual mozilla::ipc::IPCResult RecvWillClose() = 0;
   virtual mozilla::ipc::IPCResult RecvPause() = 0;
   virtual mozilla::ipc::IPCResult RecvRequestFxrOutput() = 0;
@@ -345,8 +345,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   mozilla::ipc::IPCResult RecvInitialize(
       const LayersId& aRootLayerTreeId) override;
-  mozilla::ipc::IPCResult RecvGetFrameUniformity(
-      FrameUniformityData* aOutData) override;
   mozilla::ipc::IPCResult RecvWillClose() override;
   mozilla::ipc::IPCResult RecvPause() override;
   mozilla::ipc::IPCResult RecvRequestFxrOutput() override;
@@ -420,9 +418,11 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   void FlushApzRepaints(const LayersId& aLayersId) override;
   void GetAPZTestData(const LayersId& aLayersId,
                       APZTestData* aOutData) override;
+  void GetFrameUniformity(const LayersId& aLayersId,
+                          FrameUniformityData* data) override;
   void SetConfirmedTargetAPZC(
       const LayersId& aLayersId, const uint64_t& aInputBlockId,
-      const nsTArray<ScrollableLayerGuid>& aTargets) override;
+      nsTArray<ScrollableLayerGuid>&& aTargets) override;
   AsyncCompositionManager* GetCompositionManager(
       LayerTransactionParent* aLayerTree) override {
     return mCompositionManager;
@@ -734,6 +734,11 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    * Notify the compositor webrender batching parameters have been updated.
    */
   static void UpdateWebRenderBatchingParameters();
+
+  /**
+   * Notify the compositor webrender profiler UI string has been updated.
+   */
+  static void UpdateWebRenderProfilerUI();
 
   /**
    * Wrap the data structure to be sent over IPC.

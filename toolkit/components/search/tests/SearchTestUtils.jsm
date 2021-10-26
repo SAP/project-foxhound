@@ -14,23 +14,25 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
   ExtensionTestUtils: "resource://testing-common/ExtensionXPCShellUtils.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   SearchUtils: "resource://gre/modules/SearchUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
   sinon: "resource://testing-common/Sinon.jsm",
 });
 
+Cu.importGlobalProperties(["fetch"]);
+
 var EXPORTED_SYMBOLS = ["SearchTestUtils"];
 
-var gTestGlobals;
+var gTestScope;
 
 var SearchTestUtils = Object.freeze({
-  init(Assert, registerCleanupFunction) {
-    gTestGlobals = {
-      Assert,
-      registerCleanupFunction,
-    };
+  init(testScope) {
+    gTestScope = testScope;
+    // This handles xpcshell-tests.
+    if (!("ExtensionTestUtils" in gTestScope)) {
+      gTestScope.ExtensionTestUtils = ExtensionTestUtils;
+    }
   },
 
   /**
@@ -45,7 +47,7 @@ var SearchTestUtils = Object.freeze({
    */
   async promiseNewSearchEngine(url) {
     let engine = await Services.search.addOpenSearchEngine(url, "");
-    gTestGlobals.registerCleanupFunction(async () =>
+    gTestScope.registerCleanupFunction(async () =>
       Services.search.removeEngine(engine)
     );
     return engine;
@@ -72,14 +74,10 @@ var SearchTestUtils = Object.freeze({
         }
 
         Services.obs.removeObserver(observer, topic);
-        resolve(aSubject);
+        // Let the stack unwind.
+        Services.tm.dispatchToMainThread(() => resolve(aSubject));
       }, topic);
     });
-  },
-
-  parseJsonFromStream(aInputStream) {
-    let bytes = NetUtil.readInputStream(aInputStream, aInputStream.available());
-    return JSON.parse(new TextDecoder().decode(bytes));
   },
 
   /**
@@ -91,6 +89,8 @@ var SearchTestUtils = Object.freeze({
    *   The subfolder to use, if any.
    * @param {array} [config]
    *   An array which contains the configuration to set.
+   * @returns {object}
+   *   An object that is a sinon stub for the configuration getter.
    */
   async useTestEngines(folder = "data", subFolder = null, config = null) {
     let url = `resource://test/${folder}/`;
@@ -101,23 +101,31 @@ var SearchTestUtils = Object.freeze({
       .getProtocolHandler("resource")
       .QueryInterface(Ci.nsIResProtocolHandler);
     resProt.setSubstitution("search-extensions", Services.io.newURI(url));
-    if (
-      Services.prefs.getBoolPref(
-        SearchUtils.BROWSER_SEARCH_PREF + "modernConfig"
-      )
-    ) {
-      const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
-      if (config) {
-        sinon.stub(settings, "get").returns(config);
-      } else {
-        let chan = NetUtil.newChannel({
-          uri: "resource://search-extensions/engines.json",
-          loadUsingSystemPrincipal: true,
-        });
-        let json = this.parseJsonFromStream(chan.open());
-        sinon.stub(settings, "get").returns(json.data);
-      }
+
+    const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
+    if (config) {
+      return sinon.stub(settings, "get").returns(config);
     }
+
+    let response = await fetch(`resource://search-extensions/engines.json`);
+    let json = await response.json();
+    return sinon.stub(settings, "get").returns(json.data);
+  },
+
+  async useMochitestEngines(testDir) {
+    // Replace the path we load search engines from with
+    // the path to our test data.
+    let resProt = Services.io
+      .getProtocolHandler("resource")
+      .QueryInterface(Ci.nsIResProtocolHandler);
+    let originalSubstitution = resProt.getSubstitution("search-extensions");
+    resProt.setSubstitution(
+      "search-extensions",
+      Services.io.newURI("file://" + testDir.path)
+    );
+    gTestScope.registerCleanupFunction(() => {
+      resProt.setSubstitution("search-extensions", originalSubstitution);
+    });
   },
 
   /**
@@ -152,17 +160,19 @@ var SearchTestUtils = Object.freeze({
       "extensions.webextensions.background-delayed-startup",
       false
     );
-    ExtensionTestUtils.init(scope);
+    gTestScope.ExtensionTestUtils.init(scope);
     AddonTestUtils.usePrivilegedSignatures = usePrivilegedSignatures;
     AddonTestUtils.overrideCertDB();
   },
 
   /**
-   * Add a search engine as a WebExtension. For xpcshell-tests only.
+   * Add a search engine as a WebExtension.
    *
-   * Note: You should call `initXPCShellAddonManager` before calling this.
+   * Note: If you are in xpcshell-tests, then you should call
+   * `initXPCShellAddonManager` before calling this.
    *
    * @param {object} [options]
+   *   @see createEngineManifest
    */
   async installSearchExtension(options = {}) {
     options.id = (options.id ?? "example") + "@tests.mozilla.org";
@@ -171,7 +181,7 @@ var SearchTestUtils = Object.freeze({
       manifest: this.createEngineManifest(options),
     };
 
-    let extension = ExtensionTestUtils.loadExtension(extensionInfo);
+    let extension = gTestScope.ExtensionTestUtils.loadExtension(extensionInfo);
     await extension.startup();
     await AddonTestUtils.waitForSearchProviderStartup(extension);
     return extension;
@@ -181,9 +191,11 @@ var SearchTestUtils = Object.freeze({
    * Install a search engine as a system extension to simulate
    * Normandy updates. For xpcshell-tests only.
    *
-   * Note: You should call `initXPCShellAddonManager` before calling this.
+   * Note: If you are in xpcshell-tests, then you should call
+   * `initXPCShellAddonManager` before calling this.
    *
    * @param {object} [options]
+   *   @see createEngineManifest
    */
   async installSystemSearchExtension(options = {}) {
     options.id = (options.id ?? "example") + "@search.mozilla.org";
@@ -194,7 +206,7 @@ var SearchTestUtils = Object.freeze({
         browser.test.sendMessage("started");
       },
     });
-    let wrapper = ExtensionTestUtils.expectExtension(options.id);
+    let wrapper = gTestScope.ExtensionTestUtils.expectExtension(options.id);
 
     const install = await AddonManager.getInstallForURL(`file://${xpi.path}`, {
       useSystemLocation: true,
@@ -220,6 +232,14 @@ var SearchTestUtils = Object.freeze({
    *   The version to use for the WebExtension.
    * @param {string} [options.keyword]
    *   The keyword to use for the WebExtension.
+   * @param {string} [options.search_url]
+   *   The search URL to use for the WebExtension.
+   * @param {string} [options.search_url_get_params]
+   *   The search URL parameters to use for the WebExtension.
+   * @param {string} [options.suggest_url]
+   *   The suggestion URL to use for the WebExtension.
+   * @param {string} [options.suggest_url]
+   *   The suggestion URL parameters to use for the WebExtension.
    * @returns {object}
    *   The generated manifest.
    */
@@ -237,14 +257,23 @@ var SearchTestUtils = Object.freeze({
       chrome_settings_overrides: {
         search_provider: {
           name: options.name,
-          search_url: "https://example.com/",
-          search_url_get_params: "?q={searchTerms}",
+          search_url: options.search_url ?? "https://example.com/",
+          search_url_get_params:
+            options.search_url_get_params ?? "?q={searchTerms}",
         },
       },
     };
     if (options.keyword) {
       manifest.chrome_settings_overrides.search_provider.keyword =
         options.keyword;
+    }
+    if (options.suggest_url) {
+      manifest.chrome_settings_overrides.search_provider.suggest_url =
+        options.suggest_url;
+    }
+    if (options.suggest_url) {
+      manifest.chrome_settings_overrides.search_provider.suggest_url_get_params =
+        options.suggest_url_get_params;
     }
     return manifest;
   },
@@ -283,12 +312,12 @@ var SearchTestUtils = Object.freeze({
    *
    * @param {Fun} registerCleanupFunction
    */
-  useMockIdleService(registerCleanupFunction) {
+  useMockIdleService() {
     let fakeIdleService = MockRegistrar.register(
       "@mozilla.org/widget/useridleservice;1",
       SearchTestUtils.idleService
     );
-    registerCleanupFunction(() => {
+    gTestScope.registerCleanupFunction(() => {
       MockRegistrar.unregister(fakeIdleService);
     });
   },
@@ -296,10 +325,14 @@ var SearchTestUtils = Object.freeze({
   /**
    * Simulates an update to the RemoteSettings configuration.
    *
-   * @param {object} config
+   * @param {object} [config]
    *  The new configuration.
    */
   async updateRemoteSettingsConfig(config) {
+    if (!config) {
+      let settings = RemoteSettings(SearchUtils.SETTINGS_KEY);
+      config = await settings.get();
+    }
     const reloadObserved = SearchTestUtils.promiseSearchNotification(
       "engines-reloaded"
     );

@@ -13,9 +13,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
   UrlbarView: "resource:///modules/UrlbarView.jsm",
-  URLBAR_SELECTED_RESULT_TYPES: "resource:///modules/BrowserUsageTelemetry.jsm",
-  URLBAR_SELECTED_RESULT_METHODS:
-    "resource:///modules/BrowserUsageTelemetry.jsm",
 });
 
 const DYNAMIC_TYPE_NAME = "test";
@@ -102,11 +99,11 @@ add_task(async function test() {
     EventUtils.synthesizeKey("KEY_Enter")
   );
 
-  assertHistogramResults(
+  assertTelemetryResults(
     histograms,
     "dynamic",
     0,
-    URLBAR_SELECTED_RESULT_METHODS.enter
+    UrlbarTestUtils.SELECTED_RESULT_METHODS.enter
   );
 
   // Clean up for subsequent tests.
@@ -132,12 +129,12 @@ function snapshotHistograms() {
   };
 }
 
-function assertHistogramResults(histograms, type, index, method) {
+function assertTelemetryResults(histograms, type, index, method) {
   TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
 
   TelemetryTestUtils.assertHistogram(
     histograms.resultTypeHist,
-    URLBAR_SELECTED_RESULT_TYPES[type],
+    UrlbarUtils.SELECTED_RESULT_TYPES[type],
     1
   );
 
@@ -149,4 +146,11 @@ function assertHistogramResults(histograms, type, index, method) {
   );
 
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
+
+  TelemetryTestUtils.assertKeyedScalar(
+    TelemetryTestUtils.getProcessScalars("parent", true, true),
+    `urlbar.picked.${type}`,
+    index,
+    1
+  );
 }

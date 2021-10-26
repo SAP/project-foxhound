@@ -16,8 +16,7 @@
 
 using namespace mozilla::hal;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN(WakeLock)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMEventListener)
@@ -205,7 +204,10 @@ WakeLock::HandleEvent(Event* aEvent) {
     NS_ENSURE_STATE(doc);
 
     bool oldHidden = mHidden;
-    mHidden = doc->Hidden();
+    // If document has a child element being used in the picture in picture
+    // mode, which is always visible to users, then we would consider the
+    // document as visible as well.
+    mHidden = doc->Hidden() && !doc->HasPictureInPictureChildElement();
 
     if (mLocked && oldHidden != mHidden) {
       hal::ModifyWakeLock(
@@ -242,5 +244,4 @@ nsPIDOMWindowInner* WakeLock::GetParentObject() const {
   return window;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

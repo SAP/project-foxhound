@@ -14,6 +14,7 @@
 #include "nsWrapperCache.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
+#include "mozilla/layers/LayersSurfaces.h"
 #include "WebGLFormats.h"
 #include "WebGLStrongTypes.h"
 #include "WebGLTypes.h"
@@ -69,9 +70,7 @@ class WebGLActiveInfoJS final : public RefCounted<WebGLActiveInfoJS> {
   GLint Size() const { return static_cast<GLint>(mInfo.elemCount); }
   GLenum Type() const { return mInfo.elemType; }
 
-  void GetName(nsString& retval) const {
-    retval = NS_ConvertUTF8toUTF16(mInfo.name.c_str());
-  }
+  void GetName(nsString& retval) const { CopyUTF8toUTF16(mInfo.name, retval); }
 
   bool WrapObject(JSContext*, JS::Handle<JSObject*>,
                   JS::MutableHandle<JSObject*>);
@@ -208,7 +207,8 @@ struct NotLostData final {
   UniquePtr<HostWebGLContext> inProcess;
 
   webgl::ContextGenerationInfo state;
-  std::array<RefPtr<ClientWebGLExtensionBase>, EnumValue(WebGLExtensionID::Max)>
+  std::array<RefPtr<ClientWebGLExtensionBase>,
+             UnderlyingValue(WebGLExtensionID::Max)>
       extensions;
 
   explicit NotLostData(ClientWebGLContext& context);
@@ -2076,7 +2076,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
  public:
   bool IsExtensionEnabled(const WebGLExtensionID id) const {
-    return bool(mNotLost->extensions[EnumValue(id)]);
+    return bool(mNotLost->extensions[UnderlyingValue(id)]);
   }
 
   void AddCompressedFormat(GLenum);

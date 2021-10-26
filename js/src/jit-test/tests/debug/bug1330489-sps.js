@@ -1,8 +1,8 @@
-// |jit-test| test-also=--wasm-compiler=ion; error: TestComplete
+// |jit-test| test-also=--wasm-compiler=optimizing; error: TestComplete
 
 load(libdir + "asserts.js");
 
-if (!wasmDebuggingIsSupported())
+if (!wasmDebuggingEnabled())
     throw "TestComplete";
 
 // Single-step profiling currently only works in the ARM simulator

@@ -19,7 +19,6 @@ class LegacyWorkersWatcher {
   constructor(targetList, onTargetAvailable, onTargetDestroyed) {
     this.targetList = targetList;
     this.rootFront = targetList.rootFront;
-    this.target = targetList.targetFront;
 
     this.onTargetAvailable = onTargetAvailable;
     this.onTargetDestroyed = onTargetDestroyed;
@@ -82,6 +81,10 @@ class LegacyWorkersWatcher {
     // windows, and also the window-less ones.
     // TODO: For Content Toolbox, expose SW of the page, maybe optionally?
     const front = targetFront.isParentProcess ? this.rootFront : targetFront;
+    if (!front || front.isDestroyed() || this.targetList.isDestroyed()) {
+      return;
+    }
+
     const { workers } = await front.listWorkers();
 
     // Fetch the list of already existing worker targets for this process target front.
@@ -117,7 +120,8 @@ class LegacyWorkersWatcher {
   async _processNewWorkerTarget(workerTarget, existingTargets) {
     if (
       !this._recordWorkerTarget(workerTarget) ||
-      existingTargets.has(workerTarget)
+      existingTargets.has(workerTarget) ||
+      this.targetList.isDestroyed()
     ) {
       return;
     }
@@ -131,6 +135,9 @@ class LegacyWorkersWatcher {
   }
 
   async listen() {
+    // Listen to the current target front.
+    this.target = this.targetList.targetFront;
+
     if (this.target.isParentProcess) {
       await this.targetList.watchTargets(
         [TargetList.TYPES.PROCESS],
@@ -141,7 +148,16 @@ class LegacyWorkersWatcher {
       // The ParentProcessTarget front is considered to be a FRAME instead of a PROCESS.
       // So process it manually here.
       await this._onProcessAvailable({ targetFront: this.target });
-    } else if (this._isServiceWorkerWatcher) {
+      return;
+    }
+
+    if (this._isSharedWorkerWatcher) {
+      // Here we're not in the browser toolbox, and SharedWorker targets are not supported
+      // in regular toolbox (See Bug 1607778)
+      return;
+    }
+
+    if (this._isServiceWorkerWatcher) {
       this._legacyProcessesWatcher = new LegacyProcessesWatcher(
         this.targetList,
         async targetFront => {
@@ -157,15 +173,17 @@ class LegacyWorkersWatcher {
         }
       );
       await this._legacyProcessesWatcher.listen();
-    } else {
-      this.targetsByProcess.set(this.target, new Set());
-      this._workerListChangedListener = this._workerListChanged.bind(
-        this,
-        this.target
-      );
-      this.target.on("workerListChanged", this._workerListChangedListener);
-      await this._workerListChanged(this.target);
+      return;
     }
+
+    // Here, we're handling Dedicated Workers in content toolbox.
+    this.targetsByProcess.set(this.target, new Set());
+    this._workerListChangedListener = this._workerListChanged.bind(
+      this,
+      this.target
+    );
+    this.target.on("workerListChanged", this._workerListChangedListener);
+    await this._workerListChanged(this.target);
   }
 
   _getProcessTargets() {

@@ -14,17 +14,17 @@
 
 #include <utility>  // std::move
 
-#include "jsfriendapi.h"  // js::GetErrorMessage
-#include "jstypes.h"      // JS_PUBLIC_API
+#include "jstypes.h"  // JS_PUBLIC_API
 
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScript
-#include "frontend/CompilationInfo.h"      // for frontened::CompilationInfo
-#include "frontend/FullParseHandler.h"     // frontend::FullParseHandler
-#include "frontend/ParseContext.h"         // frontend::UsedNameTracker
-#include "frontend/Parser.h"       // frontend::Parser, frontend::ParseGoal
+#include "frontend/CompilationInfo.h"  // for frontened::CompilationInfo, frontened::CompilationGCOutput
+#include "frontend/FullParseHandler.h"  // frontend::FullParseHandler
+#include "frontend/ParseContext.h"      // frontend::UsedNameTracker
+#include "frontend/Parser.h"            // frontend::Parser, frontend::ParseGoal
 #include "js/CharacterEncoding.h"  // JS::UTF8Chars, JS::UTF8CharsToNewTwoByteCharsZ
-#include "js/RootingAPI.h"         // JS::Rooted
-#include "js/SourceText.h"         // JS::SourceText
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/RootingAPI.h"            // JS::Rooted
+#include "js/SourceText.h"            // JS::SourceText
 #include "js/TypeDecls.h"          // JS::HandleObject, JS::MutableHandleScript
 #include "js/Utility.h"            // js::MallocArena, JS::UniqueTwoByteChars
 #include "js/Value.h"              // JS::Value
@@ -67,17 +67,7 @@ static JSScript* CompileSourceBuffer(JSContext* cx,
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
-  LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  frontend::CompilationInfo compilationInfo(cx, allocScope, options);
-  if (!compilationInfo.init(cx)) {
-    return nullptr;
-  }
-
-  SourceExtent extent =
-      SourceExtent::makeGlobalExtent(srcBuf.length(), options);
-  frontend::GlobalSharedContext globalsc(cx, scopeKind, compilationInfo,
-                                         compilationInfo.directives, extent);
-  return frontend::CompileGlobalScript(compilationInfo, globalsc, srcBuf);
+  return frontend::CompileGlobalScript(cx, options, srcBuf, scopeKind);
 }
 
 JSScript* JS::Compile(JSContext* cx, const ReadOnlyCompileOptions& options,
@@ -88,6 +78,68 @@ JSScript* JS::Compile(JSContext* cx, const ReadOnlyCompileOptions& options,
 JSScript* JS::Compile(JSContext* cx, const ReadOnlyCompileOptions& options,
                       SourceText<Utf8Unit>& srcBuf) {
   return CompileSourceBuffer(cx, options, srcBuf);
+}
+
+template <typename Unit>
+static JSScript* CompileSourceBufferAndStartIncrementalEncoding(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    SourceText<Unit>& srcBuf) {
+  ScopeKind scopeKind =
+      options.nonSyntacticScope ? ScopeKind::NonSyntactic : ScopeKind::Global;
+
+  MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+
+  Rooted<frontend::CompilationInfo> compilationInfo(
+      cx, frontend::CompilationInfo(cx, options));
+  if (!compilationInfo.get().input.initForGlobal(cx)) {
+    return nullptr;
+  }
+  if (!frontend::CompileGlobalScriptToStencil(cx, compilationInfo.get(), srcBuf,
+                                              scopeKind)) {
+    return nullptr;
+  }
+
+  Rooted<frontend::CompilationGCOutput> gcOutput(cx);
+  if (!frontend::InstantiateStencils(cx, compilationInfo.get(),
+                                     gcOutput.get())) {
+    return nullptr;
+  }
+
+  RootedScript script(cx, gcOutput.get().script);
+  if (!script) {
+    return nullptr;
+  }
+
+  if (options.useStencilXDR) {
+    UniquePtr<XDRIncrementalEncoderBase> xdrEncoder;
+
+    if (!compilationInfo.get().input.source()->xdrEncodeInitialStencil(
+            cx, compilationInfo.get(), xdrEncoder)) {
+      return nullptr;
+    }
+
+    script->scriptSource()->setIncrementalEncoder(xdrEncoder.release());
+  } else {
+    if (!script->scriptSource()->xdrEncodeTopLevel(cx, script)) {
+      return nullptr;
+    }
+  }
+
+  return script;
+}
+
+JSScript* JS::CompileAndStartIncrementalEncoding(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    SourceText<char16_t>& srcBuf) {
+  return CompileSourceBufferAndStartIncrementalEncoding(cx, options, srcBuf);
+}
+
+JSScript* JS::CompileAndStartIncrementalEncoding(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    SourceText<Utf8Unit>& srcBuf) {
+  return CompileSourceBufferAndStartIncrementalEncoding(cx, options, srcBuf);
 }
 
 JSScript* JS::CompileUtf8File(JSContext* cx,
@@ -120,22 +172,6 @@ JSScript* JS::CompileUtf8Path(JSContext* cx,
   return CompileUtf8File(cx, options, file.fp());
 }
 
-JSScript* JS::CompileForNonSyntacticScope(
-    JSContext* cx, const ReadOnlyCompileOptions& optionsArg,
-    SourceText<char16_t>& srcBuf) {
-  CompileOptions options(cx, optionsArg);
-  options.setNonSyntacticScope(true);
-  return CompileSourceBuffer(cx, options, srcBuf);
-}
-
-JSScript* JS::CompileForNonSyntacticScope(
-    JSContext* cx, const ReadOnlyCompileOptions& optionsArg,
-    SourceText<Utf8Unit>& srcBuf) {
-  CompileOptions options(cx, optionsArg);
-  options.setNonSyntacticScope(true);
-  return CompileSourceBuffer(cx, options, srcBuf);
-}
-
 JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
                                                  HandleObject obj,
                                                  const char* utf8,
@@ -158,22 +194,26 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
   // our caller doesn't try to collect more buffered source.
   bool result = true;
 
-  using frontend::CompilationInfo;
   using frontend::FullParseHandler;
   using frontend::ParseGoal;
   using frontend::Parser;
 
   CompileOptions options(cx);
-  LifoAllocScope allocScope(&cx->tempLifoAlloc());
-  CompilationInfo compilationInfo(cx, allocScope, options);
-  if (!compilationInfo.init(cx)) {
+  Rooted<frontend::CompilationInfo> compilationInfo(
+      cx, frontend::CompilationInfo(cx, options));
+  if (!compilationInfo.get().input.initForGlobal(cx)) {
     return false;
   }
+
+  LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  frontend::CompilationState compilationState(cx, allocScope, options,
+                                              compilationInfo.get().stencil);
 
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   Parser<FullParseHandler, char16_t> parser(cx, options, chars.get(), length,
                                             /* foldConstants = */ true,
-                                            compilationInfo, nullptr, nullptr);
+                                            compilationInfo.get(),
+                                            compilationState, nullptr, nullptr);
   if (!parser.checkOptions() || !parser.parse()) {
     // We ran into an error. If it was because we ran out of source, we
     // return false so our caller knows to try to collect more buffered
@@ -476,22 +516,10 @@ static bool EvaluateSourceBuffer(JSContext* cx, ScopeKind scopeKind,
   options.setNonSyntacticScope(scopeKind == ScopeKind::NonSyntactic);
   options.setIsRunOnce(true);
 
-  RootedScript script(cx);
-  {
-    LifoAllocScope allocScope(&cx->tempLifoAlloc());
-    frontend::CompilationInfo compilationInfo(cx, allocScope, options);
-    if (!compilationInfo.init(cx)) {
-      return false;
-    }
-
-    SourceExtent extent =
-        SourceExtent::makeGlobalExtent(srcBuf.length(), options);
-    frontend::GlobalSharedContext globalsc(cx, scopeKind, compilationInfo,
-                                           compilationInfo.directives, extent);
-    script = frontend::CompileGlobalScript(compilationInfo, globalsc, srcBuf);
-    if (!script) {
-      return false;
-    }
+  RootedScript script(
+      cx, frontend::CompileGlobalScript(cx, options, srcBuf, scopeKind));
+  if (!script) {
+    return false;
   }
 
   return Execute(cx, script, env, rval);

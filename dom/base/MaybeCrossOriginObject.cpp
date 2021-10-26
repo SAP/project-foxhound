@@ -10,6 +10,8 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMJSProxyHandler.h"
 #include "mozilla/dom/RemoteObjectProxy.h"
+#include "js/friend/WindowProxy.h"  // js::IsWindowProxy
+#include "js/Object.h"              // JS::GetClass
 #include "js/Proxy.h"
 #include "js/RootingAPI.h"
 #include "js/Wrapper.h"
@@ -19,12 +21,11 @@
 
 #ifdef DEBUG
 static bool IsLocation(JSObject* obj) {
-  return strcmp(js::GetObjectClass(obj)->name, "Location") == 0;
+  return strcmp(JS::GetClass(obj)->name, "Location") == 0;
 }
 #endif  // DEBUG
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 bool MaybeCrossOriginObjectMixins::IsPlatformObjectSameOrigin(JSContext* cx,
@@ -510,5 +511,4 @@ bool MaybeCrossOriginObject<Base>::hasInstance(JSContext* cx,
 template class MaybeCrossOriginObject<js::Wrapper>;
 template class MaybeCrossOriginObject<DOMProxyHandler>;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -21,7 +21,8 @@
 namespace mozilla {
 
 // Class Methods
-SMILCSSProperty::SMILCSSProperty(nsCSSPropertyID aPropID, Element* aElement,
+SMILCSSProperty::SMILCSSProperty(nsCSSPropertyID aPropID,
+                                 dom::Element* aElement,
                                  ComputedStyle* aBaseComputedStyle)
     : mPropID(aPropID),
       mElement(aElement),
@@ -74,7 +75,7 @@ SMILValue SMILCSSProperty::GetBaseValue() const {
 }
 
 nsresult SMILCSSProperty::ValueFromString(
-    const nsAString& aStr, const SVGAnimationElement* aSrcElement,
+    const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
     SMILValue& aValue, bool& aPreventCachingOfSandwich) const {
   NS_ENSURE_TRUE(IsPropertyAnimatable(mPropID), NS_ERROR_FAILURE);
 
@@ -101,8 +102,8 @@ nsresult SMILCSSProperty::SetAnimValue(const SMILValue& aValue) {
 
 void SMILCSSProperty::ClearAnimValue() {
   // Put empty string in override style for our property
-  mElement->SMILOverrideStyle()->SetPropertyValue(mPropID, EmptyCString(),
-                                                  nullptr, IgnoreErrors());
+  mElement->SMILOverrideStyle()->SetPropertyValue(mPropID, ""_ns, nullptr,
+                                                  IgnoreErrors());
 }
 
 // Based on http://www.w3.org/TR/SVG/propidx.html

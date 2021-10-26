@@ -117,6 +117,7 @@ https://untrusted.example.com:443      privileged,cert=untrusted
 https://expired.example.com:443        privileged,cert=expired
 https://requestclientcert.example.com:443         privileged,clientauth=request
 https://requireclientcert.example.com:443         privileged,clientauth=require
+https://requireclientcert-2.example.com:443         privileged,clientauth=require
 https://mismatch.expired.example.com:443	privileged,cert=expired
 https://mismatch.untrusted.example.com:443	privileged,cert=untrusted
 https://untrusted-expired.example.com:443	privileged,cert=untrustedandexpired
@@ -127,6 +128,7 @@ https://no-subject-alt-name.example.com:443   cert=noSubjectAltName
 # Used for secure contexts on ip addresses, see bug 1616675. Note that
 # 127.0.0.1 prompts ssltunnel.cpp to do special-cases, so we use .2
 https://127.0.0.2:443                  privileged,ipV4Address
+https://secureonly.example.com:443
 
 # Prevent safebrowsing tests from hitting the network for its-a-trap.html and
 # its-an-attack.html.

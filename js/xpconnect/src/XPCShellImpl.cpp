@@ -42,7 +42,9 @@
 #include "nsJSUtils.h"
 
 #include "nsIXULRuntime.h"
+#include "nsIAppStartup.h"
 #include "GeckoProfiler.h"
+#include "Components.h"
 
 #ifdef ANDROID
 #  include <android/log.h>
@@ -1021,7 +1023,7 @@ static bool GetCurrentWorkingDirectory(nsAString& workingDirectory) {
   // size back down to the actual string length
   cwd.SetLength(strlen(result) + 1);
   cwd.Replace(cwd.Length() - 1, 1, '/');
-  workingDirectory = NS_ConvertUTF8toUTF16(cwd);
+  CopyUTF8toUTF16(cwd, workingDirectory);
 #endif
   return true;
 }
@@ -1050,6 +1052,8 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
 
 #ifdef MOZ_GECKO_PROFILER
   char aLocal;
+  // The baseprofiler must be nested outside of the Gecko Profiler.
+  mozilla::baseprofiler::profiler_init(&aLocal);
   profiler_init(&aLocal);
 #endif
 
@@ -1302,6 +1306,12 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
         return 1;
       }
 
+      nsCOMPtr<nsIAppStartup> appStartup(components::AppStartup::Service());
+      if (!appStartup) {
+        return 1;
+      }
+      appStartup->DoneStartingUp();
+
       backstagePass->SetGlobalObject(glob);
 
       JSAutoRealm ar(cx, glob);
@@ -1346,6 +1356,12 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
         }
       }
 
+      // Signal that we're now shutting down.
+      nsCOMPtr<nsIObserver> obs = do_QueryInterface(appStartup);
+      if (obs) {
+        obs->Observe(nullptr, "quit-application-forced", nullptr);
+      }
+
       JS_DropPrincipals(cx, gJSPrincipals);
       JS_SetAllNonReservedSlotsToUndefined(glob);
       JS::RootedObject lexicalEnv(cx, JS_GlobalLexicalEnvironment(glob));
@@ -1378,6 +1394,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
   // This must precede NS_LogTerm(), otherwise xpcshell return non-zero
   // during some tests, which causes failures.
   profiler_shutdown();
+  mozilla::baseprofiler::profiler_shutdown();
 #endif
 
   NS_LogTerm();

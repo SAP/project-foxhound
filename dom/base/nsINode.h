@@ -365,7 +365,6 @@ class nsINode : public mozilla::dom::EventTarget {
   // always safe to call no matter which object it was invoked on.
   void AddSizeOfIncludingThis(nsWindowSizes& aSizes, size_t* aNodeSize) const;
 
-  friend class mozilla::dom::MutationObservers;
   friend class nsNodeWeakReference;
   friend class nsNodeSupportsWeakRefTearoff;
   friend class AttrArray;
@@ -382,11 +381,9 @@ class nsINode : public mozilla::dom::EventTarget {
   enum {
     /** form control elements */
     eHTML_FORM_CONTROL = 1 << 6,
-    /** animation elements */
-    eANIMATION = 1 << 10,
-    /** filter elements that implement SVGFilterPrimitiveStandardAttributes */
-    eFILTER = 1 << 11,
-    /** SVGGeometryElement */
+    /** SVG use targets */
+    eUSE_TARGET = 1 << 9,
+    /** SVG shapes such as lines and polygons, but not images */
     eSHAPE = 1 << 12
   };
 
@@ -523,6 +520,11 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   inline mozilla::dom::Element* AsElement();
   inline const mozilla::dom::Element* AsElement() const;
+
+  /**
+   * Return whether the node is an nsStyledElement instance or not.
+   */
+  virtual bool IsStyledElement() const { return false; }
 
   /**
    * Return this node as nsIContent.  Should only be used for nodes for which
@@ -1106,6 +1108,10 @@ class nsINode : public mozilla::dom::EventTarget {
     }
   }
 
+  nsAutoTObserverArray<nsIMutationObserver*, 1>* GetMutationObservers() {
+    return HasSlots() ? &GetExistingSlots()->mMutationObservers : nullptr;
+  }
+
   /**
    * Helper methods to access ancestor node(s) of type T.
    * The implementations of the methods are in mozilla/dom/AncestorIterator.h.
@@ -1360,6 +1366,7 @@ class nsINode : public mozilla::dom::EventTarget {
   bool HasBeenInUAWidget() const { return HasFlag(NODE_HAS_BEEN_IN_UA_WIDGET); }
 
   // True for native anonymous content and for content in UA widgets.
+  // Only nsIContent can fulfill this condition.
   bool ChromeOnlyAccess() const {
     return HasFlag(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE |
                    NODE_HAS_BEEN_IN_UA_WIDGET);
@@ -1423,11 +1430,16 @@ class nsINode : public mozilla::dom::EventTarget {
   bool IsSelected(uint32_t aStartOffset, uint32_t aEndOffset) const;
 
   /**
-   * Get the root content of an editor. So, this node must be a descendant of
-   * an editor. Note that this should be only used for getting input or textarea
-   * editor's root content. This method doesn't support HTML editors.
+   * Get the root element of the text editor associated with this node or the
+   * root element of the text editor of the ancestor 'TextControlElement' if
+   * this is in its native anonymous subtree.  I.e., this returns anonymous
+   * `<div>` element of a `TextEditor`. Note that this can be used only for
+   * getting root content of `<input>` or `<textarea>`.  I.e., this method
+   * doesn't support HTML editors. Note that this may create a `TextEditor`
+   * instance, and it means that the `TextEditor` may modify its native
+   * anonymous subtree and may run selection listeners.
    */
-  nsIContent* GetTextEditorRootContent(
+  MOZ_CAN_RUN_SCRIPT mozilla::dom::Element* GetAnonymousRootElementOfTextEditor(
       mozilla::TextEditor** aTextEditor = nullptr);
 
   /**
@@ -1438,7 +1450,8 @@ class nsINode : public mozilla::dom::EventTarget {
    * node. Be aware that if this node and the computed selection limiter are
    * not in same subtree, this returns the root content of the closeset subtree.
    */
-  nsIContent* GetSelectionRootContent(mozilla::PresShell* aPresShell);
+  MOZ_CAN_RUN_SCRIPT nsIContent* GetSelectionRootContent(
+      mozilla::PresShell* aPresShell);
 
   nsINodeList* ChildNodes();
 
@@ -1517,7 +1530,7 @@ class nsINode : public mozilla::dom::EventTarget {
   void LookupPrefix(const nsAString& aNamespace, nsAString& aResult);
   bool IsDefaultNamespace(const nsAString& aNamespaceURI) {
     nsAutoString defaultNamespace;
-    LookupNamespaceURI(EmptyString(), defaultNamespace);
+    LookupNamespaceURI(u""_ns, defaultNamespace);
     return aNamespaceURI.Equals(defaultNamespace);
   }
   void LookupNamespaceURI(const nsAString& aNamespacePrefix,
@@ -2111,10 +2124,6 @@ class nsINode : public mozilla::dom::EventTarget {
       MOZ_ASSERT(mSlots);
     }
     return GetExistingSlots();
-  }
-
-  nsAutoTObserverArray<nsIMutationObserver*, 1>* GetMutationObservers() {
-    return HasSlots() ? &GetExistingSlots()->mMutationObservers : nullptr;
   }
 
   /**

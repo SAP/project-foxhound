@@ -14,6 +14,7 @@
 #include "nsIDOMXULSelectCntrlItemEl.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
@@ -484,7 +485,7 @@ bool nsXULElement::PerformAccesskey(bool aKeyCausesActivation,
   if (elm) {
     // Define behavior for each type of XUL element.
     if (!content->IsXULElement(nsGkAtoms::toolbarbutton)) {
-      nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+      nsFocusManager* fm = nsFocusManager::GetFocusManager();
       if (fm) {
         nsCOMPtr<Element> elementToFocus;
         // for radio buttons, focus the radiogroup instead
@@ -972,14 +973,6 @@ nsChangeHint nsXULElement::GetAttributeChangeHint(const nsAtom* aAttribute,
       IsAnyOfXULElements(nsGkAtoms::toolbarbutton, nsGkAtoms::button)) {
     // type=menu switches from a button frame to a menu frame.
     return nsChangeHint_ReconstructFrame;
-  }
-
-  // if left or top changes we reflow. This will happen in xul
-  // containers that manage positioned children such as a stack.
-  if (nsGkAtoms::left == aAttribute || nsGkAtoms::top == aAttribute ||
-      nsGkAtoms::right == aAttribute || nsGkAtoms::bottom == aAttribute ||
-      nsGkAtoms::start == aAttribute || nsGkAtoms::end == aAttribute) {
-    return NS_STYLE_HINT_REFLOW;
   }
 
   return nsChangeHint(0);
@@ -1506,13 +1499,12 @@ nsresult nsXULPrototypeElement::SetAttrAt(uint32_t aPos,
     // as has been discussed, the CSP should be checked here to see if
     // inline styles are allowed to be applied.
     // XXX No specific specs talk about xul and referrer policy, pass Unset
-    nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        new ReferrerInfo(aDocumentURI, ReferrerPolicy::_empty);
-
-    RefPtr<URLExtraData> data =
-        new URLExtraData(aDocumentURI, referrerInfo, principal);
+    auto referrerInfo =
+        MakeRefPtr<ReferrerInfo>(aDocumentURI, ReferrerPolicy::_empty);
+    auto data = MakeRefPtr<URLExtraData>(aDocumentURI, referrerInfo, principal);
     RefPtr<DeclarationBlock> declaration = DeclarationBlock::FromCssText(
-        aValue, data, eCompatibility_FullStandards, nullptr);
+        aValue, data, eCompatibility_FullStandards, nullptr,
+        CSSRule_Binding::STYLE_RULE);
     if (declaration) {
       mAttributes[aPos].mValue.SetTo(declaration.forget(), &aValue);
 
@@ -1626,6 +1618,13 @@ nsresult nsXULPrototypeScript::SerializeOutOfLine(
   return rv;
 }
 
+void nsXULPrototypeScript::FillCompileOptions(JS::CompileOptions& options) {
+  // If the script was inline, tell the JS parser to save source for
+  // Function.prototype.toSource(). If it's out of line, we retrieve the
+  // source from the files on demand.
+  options.setSourceIsLazy(mOutOfLine);
+}
+
 nsresult nsXULPrototypeScript::Deserialize(
     nsIObjectInputStream* aStream, nsXULPrototypeDocument* aProtoDoc,
     nsIURI* aDocumentURI,
@@ -1647,8 +1646,11 @@ nsresult nsXULPrototypeScript::Deserialize(
   }
   JSContext* cx = jsapi.cx();
 
+  JS::CompileOptions options(cx);
+  FillCompileOptions(options);
+
   JS::Rooted<JSScript*> newScriptObject(cx);
-  rv = nsContentUtils::XPConnect()->ReadScript(aStream, cx,
+  rv = nsContentUtils::XPConnect()->ReadScript(aStream, cx, options,
                                                newScriptObject.address());
   NS_ENSURE_SUCCESS(rv, rv);
   Set(newScriptObject);
@@ -1831,12 +1833,10 @@ nsresult nsXULPrototypeScript::Compile(
 
   // Ok, compile it to create a prototype script object!
   JS::CompileOptions options(cx);
+  FillCompileOptions(options);
   options.setIntroductionType(mOutOfLine ? "srcScript" : "inlineScript")
       .setFileAndLine(urlspec.get(), mOutOfLine ? 1 : aLineNo);
-  // If the script was inline, tell the JS parser to save source for
-  // Function.prototype.toSource(). If it's out of line, we retrieve the
-  // source from the files on demand.
-  options.setSourceIsLazy(mOutOfLine);
+
   JS::Rooted<JSObject*> scope(cx, JS::CurrentGlobalOrNull(cx));
 
   if (aOffThreadReceiver && JS::CanCompileOffThread(cx, options, aTextLength)) {

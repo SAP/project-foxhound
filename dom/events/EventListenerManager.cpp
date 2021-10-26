@@ -39,6 +39,7 @@
 #include "nsContentUtils.h"
 #include "nsDOMCID.h"
 #include "nsError.h"
+#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsIContentSecurityPolicy.h"
@@ -382,13 +383,9 @@ void EventListenerManager::AddEventListenerInternal(
         doc->SetUseCounter(eUseCounter_custom_onfinish);
       }
     }
-  } else if (aTypeAtom == nsGkAtoms::ontext) {
-    // Ignore event listeners in the system group since editor needs to
-    // listen "text" events in the system group.
-    if (!aFlags.mInSystemGroup) {
-      if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-        window->SetHasTextEventListenerInDefaultGroup();
-      }
+  } else if (aTypeAtom == nsGkAtoms::onbeforeinput) {
+    if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
+      window->SetHasBeforeInputEventListenersForTelemetry();
     }
   }
 
@@ -817,8 +814,8 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
       bool allowsInlineScript = true;
       rv = csp->GetAllowsInline(
           nsIContentPolicy::TYPE_SCRIPT,
-          EmptyString(),  // aNonce
-          true,  // aParserCreated (true because attribute event handler)
+          u""_ns,  // aNonce
+          true,    // aParserCreated (true because attribute event handler)
           aElement,
           nullptr,  // nsICSPEventListener
           aBody, lineNum, columnNum, &allowsInlineScript);
@@ -923,14 +920,8 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   if (!aBody) {
     if (aListener->mTypeAtom == nsGkAtoms::onSVGLoad) {
       attrName = nsGkAtoms::onload;
-    } else if (aListener->mTypeAtom == nsGkAtoms::onSVGUnload) {
-      attrName = nsGkAtoms::onunload;
-    } else if (aListener->mTypeAtom == nsGkAtoms::onSVGResize) {
-      attrName = nsGkAtoms::onresize;
     } else if (aListener->mTypeAtom == nsGkAtoms::onSVGScroll) {
       attrName = nsGkAtoms::onscroll;
-    } else if (aListener->mTypeAtom == nsGkAtoms::onSVGZoom) {
-      attrName = nsGkAtoms::onzoom;
     } else if (aListener->mTypeAtom == nsGkAtoms::onbeginEvent) {
       attrName = nsGkAtoms::onbegin;
     } else if (aListener->mTypeAtom == nsGkAtoms::onrepeatEvent) {
@@ -1218,8 +1209,8 @@ void EventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
             // This is tiny bit slow, but happens only once per event.
             // Similar code also in EventDispatcher.
             nsCOMPtr<EventTarget> et = aEvent->mOriginalTarget;
-            RefPtr<Event> event = EventDispatcher::CreateEvent(
-                et, aPresContext, aEvent, EmptyString());
+            RefPtr<Event> event =
+                EventDispatcher::CreateEvent(et, aPresContext, aEvent, u""_ns);
             event.forget(aDOMEvent);
           }
           if (*aDOMEvent) {
@@ -1476,6 +1467,16 @@ bool EventListenerManager::HasListenersFor(const nsAString& aEventName) const {
 }
 
 bool EventListenerManager::HasListenersFor(nsAtom* aEventNameWithOn) const {
+  return HasListenersForInternal(aEventNameWithOn, false);
+}
+
+bool EventListenerManager::HasNonSystemGroupListenersFor(
+    nsAtom* aEventNameWithOn) const {
+  return HasListenersForInternal(aEventNameWithOn, true);
+}
+
+bool EventListenerManager::HasListenersForInternal(
+    nsAtom* aEventNameWithOn, bool aIgnoreSystemGroup) const {
 #ifdef DEBUG
   nsAutoString name;
   aEventNameWithOn->ToString(name);
@@ -1486,6 +1487,9 @@ bool EventListenerManager::HasListenersFor(nsAtom* aEventNameWithOn) const {
   for (uint32_t i = 0; i < count; ++i) {
     const Listener* listener = &mListeners.ElementAt(i);
     if (listener->mTypeAtom == aEventNameWithOn) {
+      if (aIgnoreSystemGroup && listener->mFlags.mInSystemGroup) {
+        continue;
+      }
       return true;
     }
   }

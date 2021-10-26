@@ -12,9 +12,6 @@ const SCALAR_URLBAR = "browser.engagement.navigation.urlbar";
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
-  URLBAR_SELECTED_RESULT_TYPES: "resource:///modules/BrowserUsageTelemetry.jsm",
-  URLBAR_SELECTED_RESULT_METHODS:
-    "resource:///modules/BrowserUsageTelemetry.jsm",
 });
 
 function assertSearchTelemetryEmpty(search_hist) {
@@ -71,12 +68,12 @@ function snapshotHistograms() {
   };
 }
 
-function assertHistogramResults(histograms, type, index, method) {
+function assertTelemetryResults(histograms, type, index, method) {
   TelemetryTestUtils.assertHistogram(histograms.resultIndexHist, index, 1);
 
   TelemetryTestUtils.assertHistogram(
     histograms.resultTypeHist,
-    URLBAR_SELECTED_RESULT_TYPES[type],
+    UrlbarUtils.SELECTED_RESULT_TYPES[type],
     1
   );
 
@@ -88,6 +85,13 @@ function assertHistogramResults(histograms, type, index, method) {
   );
 
   TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
+
+  TelemetryTestUtils.assertKeyedScalar(
+    TelemetryTestUtils.getProcessScalars("parent", true, true),
+    `urlbar.picked.${type}`,
+    index,
+    1
+  );
 }
 
 add_task(async function setup() {
@@ -165,11 +169,11 @@ add_task(async function test_extension() {
   EventUtils.synthesizeKey("KEY_Enter");
 
   assertSearchTelemetryEmpty(histograms.search_hist);
-  assertHistogramResults(
+  assertTelemetryResults(
     histograms,
     "extension",
     0,
-    URLBAR_SELECTED_RESULT_METHODS.enter
+    UrlbarTestUtils.SELECTED_RESULT_METHODS.enter
   );
 
   await extension.unload();

@@ -19,6 +19,7 @@
 #include "nsGkAtoms.h"
 #include "nsITheme.h"
 #include "nsBoxLayout.h"
+#include "nsLayoutUtils.h"
 #include "FrameLayerBuilder.h"
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/Element.h"
@@ -52,8 +53,6 @@ nsresult nsIFrame::BeginXULLayout(nsBoxLayoutState& aState) {
 nsresult nsIFrame::EndXULLayout(nsBoxLayoutState& aState) {
   return SyncXULLayout(aState);
 }
-
-nsresult nsIFrame::XULRelayoutChildAtOrdinal(nsIFrame* aChild) { return NS_OK; }
 
 nsresult nsIFrame::GetXULClientRect(nsRect& aClientRect) {
   aClientRect = mRect;
@@ -255,13 +254,10 @@ nsresult nsIFrame::XULLayout(nsBoxLayoutState& aState) {
   return NS_OK;
 }
 
-bool nsIFrame::DoesClipChildren() {
+bool nsIFrame::DoesClipChildrenInBothAxes() {
   const nsStyleDisplay* display = StyleDisplay();
-  NS_ASSERTION(
-      (display->mOverflowY == StyleOverflow::MozHiddenUnscrollable) ==
-          (display->mOverflowX == StyleOverflow::MozHiddenUnscrollable),
-      "If one overflow is -moz-hidden-unscrollable, the other should be too");
-  return display->mOverflowX == StyleOverflow::MozHiddenUnscrollable;
+  return display->mOverflowX == StyleOverflow::Clip &&
+         display->mOverflowY == StyleOverflow::Clip;
 }
 
 nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
@@ -290,7 +286,7 @@ nsresult nsIFrame::SyncXULLayout(nsBoxLayoutState& aBoxLayoutState) {
   } else {
     nsRect rect(nsPoint(0, 0), GetSize());
     nsOverflowAreas overflowAreas(rect, rect);
-    if (!DoesClipChildren() && !IsXULCollapsed()) {
+    if (!DoesClipChildrenInBothAxes() && !IsXULCollapsed()) {
       // See if our child frames caused us to overflow after being laid
       // out. If so, store the overflow area.  This normally can't happen
       // in XUL, but it can happen with the CSS 'outline' property and

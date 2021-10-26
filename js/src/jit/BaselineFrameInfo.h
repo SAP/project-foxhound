@@ -21,6 +21,7 @@ namespace js {
 namespace jit {
 
 struct BytecodeInfo;
+class MacroAssembler;
 
 // [SMDOC] Baseline FrameInfo overview.
 //

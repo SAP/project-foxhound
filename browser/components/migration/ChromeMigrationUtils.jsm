@@ -20,6 +20,9 @@ const S100NS_FROM1601TO1970 = 0x19db1ded53e8000;
 const S100NS_PER_MS = 10;
 
 var ChromeMigrationUtils = {
+  // Supported browsers with importable logins.
+  CONTEXTUAL_LOGIN_IMPORT_BROWSERS: ["chrome", "chromium-edge", "chromium"],
+
   _extensionVersionDirectoryNames: {},
 
   // The cache for the locale strings.
@@ -33,6 +36,10 @@ var ChromeMigrationUtils = {
   //   },
   // }
   _extensionLocaleStrings: {},
+
+  get supportsLoginsForPlatform() {
+    return ["macosx", "win"].includes(AppConstants.platform);
+  },
 
   /**
    * Get all extensions installed in a specific profile.
@@ -366,12 +373,17 @@ var ChromeMigrationUtils = {
    */
   _importableLoginsCache: null,
   async getImportableLogins(formOrigin) {
+    // Only provide importable if we actually support importing.
+    if (!this.supportsLoginsForPlatform) {
+      return undefined;
+    }
+
     // Lazily fill the cache with all importable login browsers.
     if (!this._importableLoginsCache) {
       this._importableLoginsCache = new Map();
 
       // Just handle these chromium-based browsers for now.
-      for (const browserId of ["chrome", "chromium-edge", "chromium"]) {
+      for (const browserId of this.CONTEXTUAL_LOGIN_IMPORT_BROWSERS) {
         // Skip if there's no profile data.
         const migrator = await MigrationUtils.getMigrator(browserId);
         if (!migrator) {

@@ -45,7 +45,7 @@ jobs:
             files-changed:
                 - 'gfx/wr/**'
 
-    linux-release:
+    linux64-release:
         description: Runs release-mode WebRender CI tests on a Linux worker
         worker-type: b-linux
         worker:
@@ -57,7 +57,7 @@ jobs:
         run:
             using: run-task
             command: >-
-                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin &&
+                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:${MOZ_FETCHES_DIR}/wrench-deps/meson &&
                 cd $HOME/checkouts/gecko/gfx/wr &&
                 mv $MOZ_FETCHES_DIR/wrench-deps/{vendor,.cargo} ./ &&
                 CARGOFLAGS="--verbose --frozen" ci-scripts/linux-release-tests.sh
@@ -69,7 +69,7 @@ jobs:
             files-changed:
                 - 'gfx/wr/**'
 
-    linux-debug:
+    linux64-debug:
         description: Runs debug-mode WebRender CI tests on a Linux worker
         worker-type: b-linux
         worker:
@@ -81,7 +81,7 @@ jobs:
         run:
             using: run-task
             command: >-
-                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin &&
+                export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:${MOZ_FETCHES_DIR}/wrench-deps/meson &&
                 cd $HOME/checkouts/gecko/gfx/wr &&
                 mv $MOZ_FETCHES_DIR/wrench-deps/{vendor,.cargo} ./ &&
                 CARGOFLAGS="--verbose --frozen" ci-scripts/linux-debug-tests.sh
@@ -112,7 +112,7 @@ jobs:
             toolchain:
                 - linux64-rust-macos
                 - linux64-cctools-port
-                - linux64-clang
+                - linux64-clang-11-macosx-cross
                 - linux64-llvm-dsymutil
                 - wrench-deps
         run:
@@ -208,7 +208,7 @@ jobs:
             command: >-
                 mv cargo-test-binaries target &&
                 cd target &&
-                for i in debug/*; do $i; done
+                for i in debug/deps/*; do $i; done
         treeherder:
             platform: macosx1014-64-qr/debug
             symbol: WR(cargotest)
@@ -429,7 +429,8 @@ jobs:
                 - 'reftests.tar.gz'
                 - 'mozdevice.tar.gz'
             android-build:
-                - 'mozharness.zip'
+                - artifact: 'mozharness.zip'
+                  dest: 'mozharness'
         run:
             using: run-task
             checkout: false
@@ -472,7 +473,8 @@ jobs:
                 - 'reftests.tar.gz'
                 - 'mozdevice.tar.gz'
             android-build:
-                - 'mozharness.zip'
+                - artifact: 'mozharness.zip'
+                  dest: 'mozharness'
         run:
             using: run-task
             checkout: false

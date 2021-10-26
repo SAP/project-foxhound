@@ -8,7 +8,9 @@ const Services = require("Services");
 const promise = require("promise");
 const Rule = require("devtools/client/inspector/rules/models/rule");
 const UserProperties = require("devtools/client/inspector/rules/models/user-properties");
-const { ELEMENT_STYLE } = require("devtools/shared/specs/styles");
+const {
+  style: { ELEMENT_STYLE },
+} = require("devtools/shared/constants");
 
 loader.lazyRequireGetter(
   this,
@@ -18,19 +20,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "parseDeclarations",
-  "devtools/shared/css/parsing-utils",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "parseNamedDeclarations",
-  "devtools/shared/css/parsing-utils",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "parseSingleValue",
+  ["parseDeclarations", "parseNamedDeclarations", "parseSingleValue"],
   "devtools/shared/css/parsing-utils",
   true
 );
@@ -231,6 +221,10 @@ class ElementStyle {
   getUsedFontFamilies() {
     return new Promise((resolve, reject) => {
       this.ruleView.styleWindow.requestIdleCallback(async () => {
+        if (this.element.isDestroyed()) {
+          resolve([]);
+          return;
+        }
         try {
           const fonts = await this.pageStyle.getUsedFontFaces(this.element, {
             includePreviews: false,

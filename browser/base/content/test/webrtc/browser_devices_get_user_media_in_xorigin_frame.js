@@ -243,7 +243,7 @@ var gTests = [
         noWindowOrScreenItem,
         "'Select Window or Screen' is the selected item"
       );
-      is(menulist.value, -1, "no window or screen is selected by default");
+      is(menulist.value, "-1", "no window or screen is selected by default");
       ok(
         noWindowOrScreenItem.disabled,
         "'Select Window or Screen' item is disabled"
@@ -782,7 +782,6 @@ add_task(async function test() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["permissions.delegation.enabled", true],
-      ["dom.security.featurePolicy.enabled", true],
       ["dom.security.featurePolicy.header.enabled", true],
       ["dom.security.featurePolicy.webidl.enabled", true],
     ],

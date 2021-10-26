@@ -57,11 +57,7 @@ struct DefaultJitOptions {
   bool baselineInterpreter;
   bool baselineJit;
   bool ion;
-#ifdef NIGHTLY_BUILD
-  bool typeInference;
-#endif
   bool warpBuilder;
-  bool warpTrialInlining;
   bool jitForTrustedPrincipals;
   bool nativeRegExp;
   bool forceInlineCaches;
@@ -87,6 +83,7 @@ struct DefaultJitOptions {
   uint32_t baselineInterpreterWarmUpThreshold;
   uint32_t baselineJitWarmUpThreshold;
   uint32_t trialInliningWarmUpThreshold;
+  uint32_t trialInliningInitialWarmUpCount;
   uint32_t normalIonWarmUpThreshold;
   uint32_t fullIonWarmUpThreshold;
   uint32_t regexpWarmUpThreshold;
@@ -94,7 +91,8 @@ struct DefaultJitOptions {
   uint32_t frequentBailoutThreshold;
   uint32_t maxStackArgs;
   uint32_t osrPcMismatchesBeforeRecompile;
-  uint32_t smallFunctionMaxBytecodeLength_;
+  uint32_t smallFunctionMaxBytecodeLength;
+  uint32_t inliningEntryThreshold;
   uint32_t jumpThreshold;
   uint32_t branchPruningHitCountFactor;
   uint32_t branchPruningInstFactor;
@@ -132,6 +130,8 @@ struct DefaultJitOptions {
   void resetNormalIonWarmUpThreshold();
   void resetFullIonWarmUpThreshold();
   void enableGvn(bool val);
+  void setFastWarmUp();
+  void setWarpEnabled(bool enable);
 
   bool eagerIonCompilation() const { return normalIonWarmUpThreshold == 0; }
 };
@@ -148,14 +148,7 @@ inline bool IsBaselineInterpreterEnabled() {
 
 }  // namespace jit
 
-inline bool IsTypeInferenceEnabled() {
-#ifdef NIGHTLY_BUILD
-  return jit::JitOptions.typeInference;
-#else
-  // Always enable TI on non-Nightly for now to avoid performance overhead.
-  return true;
-#endif
-}
+inline bool IsTypeInferenceEnabled() { return !jit::JitOptions.warpBuilder; }
 
 }  // namespace js
 

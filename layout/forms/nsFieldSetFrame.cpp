@@ -13,6 +13,7 @@
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/webrender/WebRenderAPI.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSRendering.h"
@@ -340,8 +341,8 @@ image::ImgDrawResult nsFieldSetFrame::PaintBorder(
   return result;
 }
 
-nscoord nsFieldSetFrame::GetIntrinsicISize(
-    gfxContext* aRenderingContext, nsLayoutUtils::IntrinsicISizeType aType) {
+nscoord nsFieldSetFrame::GetIntrinsicISize(gfxContext* aRenderingContext,
+                                           IntrinsicISizeType aType) {
   nscoord legendWidth = 0;
   nscoord contentWidth = 0;
   if (!StyleDisplay()->IsContainSize()) {
@@ -368,7 +369,7 @@ nscoord nsFieldSetFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord result = 0;
   DISPLAY_MIN_INLINE_SIZE(this, result);
 
-  result = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::MIN_ISIZE);
+  result = GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::MinISize);
   return result;
 }
 
@@ -376,7 +377,7 @@ nscoord nsFieldSetFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result = 0;
   DISPLAY_PREF_INLINE_SIZE(this, result);
 
-  result = GetIntrinsicISize(aRenderingContext, nsLayoutUtils::PREF_ISIZE);
+  result = GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::PrefISize);
   return result;
 }
 
@@ -431,8 +432,8 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
   // @note |this| frame applies borders but not any padding.  Our anonymous
   // inner frame applies the padding (but not borders).
   const auto wm = GetWritingMode();
-  LogicalMargin border = aReflowInput.ComputedLogicalBorderPadding() -
-                         aReflowInput.ComputedLogicalPadding();
+  LogicalMargin border = aReflowInput.ComputedLogicalBorderPadding(wm) -
+                         aReflowInput.ComputedLogicalPadding(wm);
   auto skipSides = PreReflowBlockLevelLogicalSkipSides();
   border.ApplySkipSides(skipSides);
   LogicalSize availSize(wm, aReflowInput.ComputedSize().ISize(wm),
@@ -543,7 +544,8 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
       (LogicalSize(wm, 0, mLegendSpace) + border.Size(wm)).GetPhysicalSize(wm);
   if (reflowInner) {
     LogicalSize innerAvailSize = availSize;
-    innerAvailSize.ISize(wm) = aReflowInput.ComputedSizeWithPadding().ISize(wm);
+    innerAvailSize.ISize(wm) =
+        aReflowInput.ComputedSizeWithPadding(wm).ISize(wm);
     nscoord remainingComputedBSize = aReflowInput.ComputedBSize();
     if (prevInFlow && remainingComputedBSize != NS_UNCONSTRAINEDSIZE) {
       // Subtract the consumed BSize associated with the legend.
@@ -560,7 +562,8 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
               StyleBoxDecorationBreak::Clone &&
           (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE ||
            remainingComputedBSize +
-                   aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm) >=
+                   aReflowInput.ComputedLogicalBorderPadding(wm).BStartEnd(
+                       wm) >=
                availSize.BSize(wm))) {
         innerAvailSize.BSize(wm) -= border.BEnd(wm);
       }
@@ -568,10 +571,11 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     }
     ReflowInput kidReflowInput(aPresContext, aReflowInput, inner,
                                innerAvailSize, Nothing(),
-                               ReflowInput::CALLER_WILL_INIT);
+                               ReflowInput::InitFlag::CallerWillInit);
     // Override computed padding, in case it's percentage padding
-    kidReflowInput.Init(aPresContext, Nothing(), nullptr,
-                        &aReflowInput.ComputedPhysicalPadding());
+    kidReflowInput.Init(
+        aPresContext, Nothing(), Nothing(),
+        Some(aReflowInput.ComputedLogicalPadding(inner->GetWritingMode())));
     if (kidReflowInput.mFlags.mIsTopOfPage) {
       // Prevent break-before from |inner| if we have a legend.
       kidReflowInput.mFlags.mIsTopOfPage = !legend;
@@ -665,7 +669,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     // The legend is positioned inline-wards within the inner's content rect
     // (so that padding on the fieldset affects the legend position).
     LogicalRect innerContentRect = contentRect;
-    innerContentRect.Deflate(wm, aReflowInput.ComputedLogicalPadding());
+    innerContentRect.Deflate(wm, aReflowInput.ComputedLogicalPadding(wm));
     // If the inner content rect is larger than the legend, we can align the
     // legend.
     if (innerContentRect.ISize(wm) > mLegendRect.ISize(wm)) {
@@ -704,9 +708,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
 
     // Note that legend's writing mode may be different from the fieldset's,
     // so we need to convert offsets before applying them to it (bug 1134534).
-    LogicalMargin offsets =
-        legendReflowInput->ComputedLogicalOffsets().ConvertTo(
-            wm, legendReflowInput->GetWritingMode());
+    LogicalMargin offsets = legendReflowInput->ComputedLogicalOffsets(wm);
     ReflowInput::ApplyRelativePositioning(legend, wm, offsets, &actualLegendPos,
                                           containerSize);
 
@@ -739,7 +741,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
             : aReflowInput.ComputedBSize();
     finalSize.BSize(wm) =
         contentBoxBSize +
-        aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm);
+        aReflowInput.ComputedLogicalBorderPadding(wm).BStartEnd(wm);
   }
 
   if (aStatus.IsComplete() &&
@@ -914,18 +916,16 @@ void nsFieldSetFrame::EnsureChildContinuation(nsIFrame* aChild,
       }
     }
     if (aStatus.IsOverflowIncomplete()) {
-      if (nsFrameList* eoc =
-              GetPropTableFrames(ExcessOverflowContainersProperty())) {
+      if (nsFrameList* eoc = GetExcessOverflowContainers()) {
         eoc->AppendFrames(nullptr, nifs);
       } else {
-        SetPropTableFrames(new (PresShell()) nsFrameList(nifs),
-                           ExcessOverflowContainersProperty());
+        SetExcessOverflowContainers(std::move(nifs));
       }
     } else {
       if (nsFrameList* oc = GetOverflowFrames()) {
         oc->AppendFrames(nullptr, nifs);
       } else {
-        SetOverflowFrames(nifs);
+        SetOverflowFrames(std::move(nifs));
       }
     }
   }

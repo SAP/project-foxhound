@@ -10,10 +10,14 @@
 
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
-#include "jit/JitRealm.h"
+#include "jit/JitFrames.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
+#include "jit/JSJitFrameIter.h"
+#include "jit/SafepointIndex.h"
 #include "jit/Snapshots.h"
 #include "vm/JSContext.h"
+#include "vm/Stack.h"
 #include "vm/TraceLogging.h"
 
 #include "jit/JSJitFrameIter-inl.h"
@@ -38,6 +42,7 @@ static_assert(!(FAKE_EXITFP_FOR_BAILOUT_ADDR & wasm::ExitOrJitEntryFPTag),
 bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   JSContext* cx = TlsContext.get();
   MOZ_ASSERT(bailoutInfo);
+  MOZ_ASSERT(!cx->hasIonReturnOverride());
 
   // We don't have an exit frame.
   MOZ_ASSERT(IsInRange(FAKE_EXITFP_FOR_BAILOUT, 0, 0x1000) &&
@@ -63,8 +68,7 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
 
   *bailoutInfo = nullptr;
   bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
-                                      false, bailoutInfo,
-                                      /* excInfo = */ nullptr);
+                                      bailoutInfo, /*exceptionInfo=*/nullptr);
   MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
 
   if (!success) {
@@ -139,9 +143,8 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
   MOZ_ASSERT(IsBaselineJitEnabled(cx));
 
   *bailoutInfo = nullptr;
-  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame, true,
-                                      bailoutInfo,
-                                      /* excInfo = */ nullptr);
+  bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frame,
+                                      bailoutInfo, /*exceptionInfo=*/nullptr);
   MOZ_ASSERT_IF(success, *bailoutInfo != nullptr);
 
   if (!success) {
@@ -221,7 +224,7 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
 
   BaselineBailoutInfo* bailoutInfo = nullptr;
   bool success = BailoutIonToBaseline(cx, bailoutData.activation(), frameView,
-                                      true, &bailoutInfo, &excInfo);
+                                      &bailoutInfo, &excInfo);
   if (success) {
     MOZ_ASSERT(bailoutInfo);
 

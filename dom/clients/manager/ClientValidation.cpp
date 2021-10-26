@@ -6,11 +6,11 @@
 
 #include "ClientValidation.h"
 
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/net/MozURL.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::ContentPrincipalInfo;
 using mozilla::ipc::PrincipalInfo;
@@ -109,13 +109,6 @@ bool ClientIsValidCreationURL(const PrincipalInfo& aPrincipalInfo,
         return true;
       }
 
-      // We have some tests that use data: URL windows without an opaque
-      // origin.  This should only happen when a pref is set.
-      if (!StaticPrefs::security_data_uri_unique_opaque_origin() &&
-          scheme.LowerCaseEqualsLiteral("data")) {
-        return true;
-      }
-
       // Otherwise don't support this URL type in the clients sub-system for
       // now.  This will exclude a variety of internal browser clients, but
       // currently we don't need to support those.  This function can be
@@ -133,10 +126,7 @@ bool ClientIsValidCreationURL(const PrincipalInfo& aPrincipalInfo,
              scheme.LowerCaseEqualsLiteral("resource") ||
              scheme.LowerCaseEqualsLiteral("blob") ||
              scheme.LowerCaseEqualsLiteral("javascript") ||
-             scheme.LowerCaseEqualsLiteral("view-source") ||
-
-             (!StaticPrefs::security_data_uri_unique_opaque_origin() &&
-              scheme.LowerCaseEqualsLiteral("data"));
+             scheme.LowerCaseEqualsLiteral("view-source");
     }
     case PrincipalInfo::TNullPrincipalInfo: {
       // A wide variety of clients can have a null principal.  For example,
@@ -155,5 +145,4 @@ bool ClientIsValidCreationURL(const PrincipalInfo& aPrincipalInfo,
   return false;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

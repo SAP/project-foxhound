@@ -424,13 +424,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * This is the mixed audio output of this MediaTrackGraph. */
   void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
                         TrackRate aRate, uint32_t aChannels) override;
-  /* Called on the graph thread before the first Notify*Data after an
-   * AudioCallbackDriver starts. */
-  void NotifyStarted() override;
+  /* Called on the graph thread after an AudioCallbackDriver with an input
+   * stream has stopped. */
+  void NotifyInputStopped() override;
   /* Called on the graph thread when there is new input data for listeners. This
    * is the raw audio input for this MediaTrackGraph. */
   void NotifyInputData(const AudioDataValue* aBuffer, size_t aFrames,
-                       TrackRate aRate, uint32_t aChannels) override;
+                       TrackRate aRate, uint32_t aChannels,
+                       uint32_t aAlreadyBuffered) override;
   /* Called every time there are changes to input/output audio devices like
    * plug/unplug etc. This can be called on any thread, and posts a message to
    * the main thread so that it can post a message to the graph thread. */
@@ -761,10 +762,13 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * If `mInputDeviceUsers.Count() != 0`, this MediaTrackGraph wants audio
    * input.
    *
+   * All mInputDeviceID access is on the graph thread except for reads via
+   * InputDeviceID(), which are racy but used only for comparison.
+   *
    * In any case, the number of channels to use can be queried (on the graph
    * thread) by AudioInputChannelCount() and AudioOutputChannelCount().
    */
-  CubebUtils::AudioDeviceID mInputDeviceID;
+  std::atomic<CubebUtils::AudioDeviceID> mInputDeviceID;
   CubebUtils::AudioDeviceID mOutputDeviceID;
   // Maps AudioDeviceID to an array of their users (that are listeners). This is
   // used to deliver audio input frames and to notify the listeners that the

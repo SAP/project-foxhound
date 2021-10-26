@@ -129,7 +129,7 @@ class LRUCache final {
           MOZ_LOG(gResistFingerprintingLog, LogLevel::Verbose,
                   ("LRU Cache HIT-MISS with %lli != %lli and %lli != %lli",
                    aKeyPart1, tmp_keyPart1, aKeyPart2, tmp_keyPart2));
-          return EmptyCString();
+          return ""_ns;
         }
 
         cacheEntry.accessTime = PR_Now();
@@ -139,7 +139,7 @@ class LRUCache final {
       }
     }
 
-    return EmptyCString();
+    return ""_ns;
   }
 
   void Store(long long aKeyPart1, long long aKeyPart2,
@@ -901,12 +901,12 @@ void nsRFPService::MaybeCreateSpoofingKeyCodesForEnUS() {
 
   static const SpoofingKeyboardInfo spoofingKeyboardInfoTable[] = {
 #define KEY(key_, _codeNameIdx, _keyCode, _modifier) \
-  {KEY_NAME_INDEX_USE_STRING,                        \
-   NS_LITERAL_STRING_FROM_CSTRING(key_),             \
+  {NS_LITERAL_STRING_FROM_CSTRING(key_),             \
+   KEY_NAME_INDEX_USE_STRING,                        \
    {CODE_NAME_INDEX_##_codeNameIdx, _keyCode, _modifier}},
 #define CONTROL(keyNameIdx_, _codeNameIdx, _keyCode) \
-  {KEY_NAME_INDEX_##keyNameIdx_,                     \
-   EmptyString(),                                    \
+  {u""_ns,                                           \
+   KEY_NAME_INDEX_##keyNameIdx_,                     \
    {CODE_NAME_INDEX_##_codeNameIdx, _keyCode, MODIFIER_NONE}},
 #include "KeyCodeConsensus_En_US.h"
 #undef CONTROL

@@ -94,5 +94,10 @@ add_task(async function() {
     "getAllTargets(TYPES.ALL_TYPES) returned the expected targets"
   );
 
+  targetList.destroy();
+
+  // Wait for all the targets to be fully attached so we don't have pending requests.
+  await waitForAllTargetsToBeAttached(targetList);
+
   await client.close();
 });

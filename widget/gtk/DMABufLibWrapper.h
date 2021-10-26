@@ -14,9 +14,8 @@
 #  include "mozilla/Logging.h"
 #  include "nsTArray.h"
 #  include "Units.h"
-extern mozilla::LazyLogModule gWaylandDmabufLog;
-#  define LOGDMABUF(args) \
-    MOZ_LOG(gWaylandDmabufLog, mozilla::LogLevel::Debug, args)
+extern mozilla::LazyLogModule gDmabufLog;
+#  define LOGDMABUF(args) MOZ_LOG(gDmabufLog, mozilla::LogLevel::Debug, args)
 #else
 #  define LOGDMABUF(args)
 #endif /* MOZ_LOGGING */
@@ -129,17 +128,18 @@ struct GbmFormat {
 class nsDMABufDevice {
  public:
   nsDMABufDevice();
+  ~nsDMABufDevice();
 
   gbm_device* GetGbmDevice();
   // Returns -1 if we fails to gbm device file descriptor.
   int GetGbmDeviceFd();
 
-  bool IsDMABufEnabled();
-  bool IsDMABufBasicEnabled();
+  // Use dmabuf for WebRender general web content
   bool IsDMABufTexturesEnabled();
-  bool IsDMABufVideoTexturesEnabled();
+  // Use dmabuf for VA-API video playback
+  bool IsDMABufVAAPIEnabled();
+  // Use dmabuf for WebGL content
   bool IsDMABufWebGLEnabled();
-  bool IsDRMVAAPIDisplayEnabled();
 
   GbmFormat* GetGbmFormat(bool aHasAlpha);
   GbmFormat* GetExactGbmFormat(int aFormat);
@@ -148,16 +148,16 @@ class nsDMABufDevice {
                          uint32_t mModifierLo);
 
  private:
+  bool IsDMABufEnabled();
   bool Configure();
+
+  void* mRegistry;
 
   GbmFormat mXRGBFormat;
   GbmFormat mARGBFormat;
 
   gbm_device* mGbmDevice;
   int mGbmFd;
-  bool mGdmConfigured;
-  bool mIsDMABufEnabled;
-  bool mIsDMABufConfigured;
 };
 
 nsDMABufDevice* GetDMABufDevice();

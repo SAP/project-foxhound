@@ -21,7 +21,6 @@ use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Debug, Display, Write};
 use std::iter::Rev;
 use std::slice;
-use thin_slice::ThinBoxedSlice;
 
 /// A trait that represents a pseudo-element.
 pub trait PseudoElement: Sized + ToCss {
@@ -53,9 +52,6 @@ pub trait NonTSPseudoClass: Sized + ToCss {
     /// https://drafts.csswg.org/selectors-4/#useraction-pseudos
     fn is_user_action_state(&self) -> bool;
 
-    /// Whether this pseudo-class has zero specificity.
-    fn has_zero_specificity(&self) -> bool;
-
     fn visit<V>(&self, _visitor: &mut V) -> bool
     where
         V: SelectorVisitor<Impl = Self::Impl>,
@@ -79,9 +75,10 @@ fn to_ascii_lowercase(s: &str) -> Cow<str> {
 bitflags! {
     /// Flags that indicate at which point of parsing a selector are we.
     struct SelectorParsingState: u8 {
-        /// Whether we're inside a negation. If we're inside a negation, we're
-        /// not allowed to add another negation or such, for example.
-        const INSIDE_NEGATION = 1 << 0;
+        /// Whether we should avoid adding default namespaces to selectors that
+        /// aren't type or universal selectors.
+        const SKIP_DEFAULT_NAMESPACE = 1 << 0;
+
         /// Whether we've parsed a ::slotted() pseudo-element already.
         ///
         /// If so, then we can only parse a subset of pseudo-elements, and
@@ -165,7 +162,6 @@ pub enum SelectorParseErrorKind<'i> {
     NoQualifiedNameInAttributeSelector(Token<'i>),
     EmptySelector,
     DanglingCombinator,
-    NonSimpleSelectorInNegation,
     NonCompoundSelector,
     NonPseudoElementAfterSlotted,
     InvalidPseudoElementAfterSlotted,
@@ -183,7 +179,6 @@ pub enum SelectorParseErrorKind<'i> {
     InvalidQualNameInAttr(Token<'i>),
     ExplicitNamespaceUnexpectedToken(Token<'i>),
     ClassNeedsIdent(Token<'i>),
-    EmptyNegation,
 }
 
 macro_rules! with_all_bounds {
@@ -251,6 +246,16 @@ pub trait Parser<'i> {
 
     /// Whether to parse the `:where` pseudo-class.
     fn parse_is_and_where(&self) -> bool {
+        false
+    }
+
+    /// The error recovery that selector lists inside :is() and :where() have.
+    fn is_and_where_error_recovery(&self) -> ParseErrorRecovery {
+        ParseErrorRecovery::IgnoreInvalidSelector
+    }
+
+    /// Whether the given function name is an alias for the `:is()` function.
+    fn is_is_alias(&self, _name: &str) -> bool {
         false
     }
 
@@ -327,6 +332,17 @@ pub struct SelectorList<Impl: SelectorImpl>(
     #[shmem(field_bound)] pub SmallVec<[Selector<Impl>; 1]>,
 );
 
+/// How to treat invalid selectors in a selector list.
+pub enum ParseErrorRecovery {
+    /// Discard the entire selector list, this is the default behavior for
+    /// almost all of CSS.
+    DiscardList,
+    /// Ignore invalid selectors, potentially creating an empty selector list.
+    ///
+    /// This is the error recovery mode of :is() and :where()
+    IgnoreInvalidSelector,
+}
+
 impl<Impl: SelectorImpl> SelectorList<Impl> {
     /// Parse a comma-separated list of Selectors.
     /// <https://drafts.csswg.org/selectors/#grouping>
@@ -339,26 +355,42 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
     where
         P: Parser<'i, Impl = Impl>,
     {
-        Self::parse_with_state(parser, input, SelectorParsingState::empty())
+        Self::parse_with_state(parser, input, SelectorParsingState::empty(), ParseErrorRecovery::DiscardList)
     }
 
+    #[inline]
     fn parse_with_state<'i, 't, P>(
         parser: &P,
         input: &mut CssParser<'i, 't>,
         state: SelectorParsingState,
+        recovery: ParseErrorRecovery,
     ) -> Result<Self, ParseError<'i, P::Error>>
     where
         P: Parser<'i, Impl = Impl>,
     {
         let mut values = SmallVec::new();
         loop {
-            values.push(input.parse_until_before(Delimiter::Comma, |input| {
+            let selector = input.parse_until_before(Delimiter::Comma, |input| {
                 parse_selector(parser, input, state)
-            })?);
-            match input.next() {
-                Err(_) => return Ok(SelectorList(values)),
-                Ok(&Token::Comma) => continue,
-                Ok(_) => unreachable!(),
+            });
+
+            let was_ok = selector.is_ok();
+            match selector {
+                Ok(selector) => values.push(selector),
+                Err(err) => match recovery {
+                    ParseErrorRecovery::DiscardList => return Err(err),
+                    ParseErrorRecovery::IgnoreInvalidSelector => {},
+                },
+            }
+
+            loop {
+                match input.next() {
+                    Err(_) => return Ok(SelectorList(values)),
+                    Ok(&Token::Comma) => break,
+                    Ok(_) => {
+                        debug_assert!(!was_ok, "Shouldn't have got a selector if getting here");
+                    }
+                }
             }
         }
     }
@@ -659,7 +691,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     pub fn iter_from(&self, offset: usize) -> SelectorIter<Impl> {
         let iter = self.0.slice[offset..].iter();
         SelectorIter {
-            iter: iter,
+            iter,
             next_combinator: None,
         }
     }
@@ -1002,16 +1034,7 @@ pub enum Component<Impl: SelectorImpl> {
     AttributeOther(Box<AttrSelectorWithOptionalNamespace<Impl>>),
 
     /// Pseudo-classes
-    ///
-    /// CSS3 Negation only takes a simple simple selector, but we still need to
-    /// treat it as a compound selector because it might be a type selector
-    /// which we represent as a namespace and a localname.
-    ///
-    /// Note: if/when we upgrade this to CSS4, which supports combinators, we
-    /// need to think about how this should interact with
-    /// visit_complex_selector, and what the consumers of those APIs should do
-    /// about the presence of combinators in negation.
-    Negation(ThinBoxedSlice<Component<Impl>>),
+    Negation(Box<[Selector<Impl>]>),
     FirstChild,
     LastChild,
     OnlyChild,
@@ -1087,10 +1110,9 @@ impl<Impl: SelectorImpl> Component<Impl> {
     pub fn maybe_allowed_after_pseudo_element(&self) -> bool {
         match *self {
             Component::NonTSPseudoClass(..) => true,
-            Component::Negation(ref components) => components
-                .iter()
-                .all(|c| c.maybe_allowed_after_pseudo_element()),
-            Component::Is(ref selectors) | Component::Where(ref selectors) => {
+            Component::Negation(ref selectors) |
+            Component::Is(ref selectors) |
+            Component::Where(ref selectors) => {
                 selectors.iter().all(|selector| {
                     selector
                         .iter_raw_match_order()
@@ -1114,9 +1136,13 @@ impl<Impl: SelectorImpl> Component<Impl> {
             *self
         );
         match *self {
-            Component::Negation(ref components) => !components
-                .iter()
-                .all(|c| c.matches_for_stateless_pseudo_element()),
+            Component::Negation(ref selectors) => {
+                !selectors.iter().all(|selector| {
+                    selector
+                        .iter_raw_match_order()
+                        .all(|c| c.matches_for_stateless_pseudo_element())
+                })
+            },
             Component::Is(ref selectors) | Component::Where(ref selectors) => {
                 selectors.iter().any(|selector| {
                     selector
@@ -1148,14 +1174,6 @@ impl<Impl: SelectorImpl> Component<Impl> {
                     return false;
                 }
             },
-            Negation(ref negated) => {
-                for component in negated.iter() {
-                    if !component.visit(visitor) {
-                        return false;
-                    }
-                }
-            },
-
             AttributeInNoNamespaceExists {
                 ref local_name,
                 ref local_name_lower,
@@ -1205,7 +1223,7 @@ impl<Impl: SelectorImpl> Component<Impl> {
                 }
             },
 
-            Is(ref list) | Where(ref list) => {
+            Negation(ref list) | Is(ref list) | Where(ref list) => {
                 if !visitor.visit_selector_list(&list) {
                     return false;
                 }
@@ -1249,18 +1267,18 @@ impl<Impl: SelectorImpl> Debug for LocalName<Impl> {
     }
 }
 
-fn serialize_selector_list<'a, Impl, I, W>(mut iter: I, dest: &mut W) -> fmt::Result
+fn serialize_selector_list<'a, Impl, I, W>(iter: I, dest: &mut W) -> fmt::Result
 where
     Impl: SelectorImpl,
     I: Iterator<Item = &'a Selector<Impl>>,
     W: fmt::Write,
 {
-    let first = iter
-        .next()
-        .expect("Empty SelectorList, should contain at least one selector");
-    first.to_css(dest)?;
+    let mut first = true;
     for selector in iter {
-        dest.write_str(", ")?;
+        if !first {
+            dest.write_str(", ")?;
+        }
+        first = false;
         selector.to_css(dest)?;
     }
     Ok(())
@@ -1959,16 +1977,16 @@ where
                 return Ok(Component::AttributeOther(Box::new(
                     AttrSelectorWithOptionalNamespace {
                         namespace: Some(namespace),
-                        local_name: local_name,
-                        local_name_lower: local_name_lower,
+                        local_name,
+                        local_name_lower,
                         operation: ParsedAttrSelectorOperation::Exists,
                         never_matches: false,
                     },
                 )));
             } else {
                 return Ok(Component::AttributeInNoNamespaceExists {
-                    local_name: local_name,
-                    local_name_lower: local_name_lower,
+                    local_name,
+                    local_name_lower,
                 });
             }
         },
@@ -2032,19 +2050,19 @@ where
                 local_name_lower,
                 never_matches,
                 operation: ParsedAttrSelectorOperation::WithValue {
-                    operator: operator,
-                    case_sensitivity: case_sensitivity,
+                    operator,
+                    case_sensitivity,
                     expected_value: value,
                 },
             },
         )))
     } else {
         Ok(Component::AttributeInNoNamespace {
-            local_name: local_name,
-            operator: operator,
-            value: value,
-            case_sensitivity: case_sensitivity,
-            never_matches: never_matches,
+            local_name,
+            operator,
+            value,
+            case_sensitivity,
+            never_matches,
         })
     }
 }
@@ -2118,44 +2136,14 @@ where
     P: Parser<'i, Impl = Impl>,
     Impl: SelectorImpl,
 {
-    let state = state | SelectorParsingState::INSIDE_NEGATION;
+    let list = SelectorList::parse_with_state(
+        parser,
+        input,
+        state | SelectorParsingState::SKIP_DEFAULT_NAMESPACE | SelectorParsingState::DISALLOW_PSEUDOS,
+        ParseErrorRecovery::DiscardList
+    )?;
 
-    // We use a sequence because a type selector may be represented as two Components.
-    let mut sequence = SmallVec::<[Component<Impl>; 2]>::new();
-
-    input.skip_whitespace();
-
-    // Get exactly one simple selector. The parse logic in the caller will verify
-    // that there are no trailing tokens after we're done.
-    let is_type_sel = match parse_type_selector(parser, input, state, &mut sequence) {
-        Ok(result) => result,
-        Err(ParseError {
-            kind: ParseErrorKind::Basic(BasicParseErrorKind::EndOfInput),
-            ..
-        }) => return Err(input.new_custom_error(SelectorParseErrorKind::EmptyNegation)),
-        Err(e) => return Err(e.into()),
-    };
-    if !is_type_sel {
-        match parse_one_simple_selector(parser, input, state)? {
-            Some(SimpleSelectorParseResult::SimpleSelector(s)) => {
-                sequence.push(s);
-            },
-            None => {
-                return Err(input.new_custom_error(SelectorParseErrorKind::EmptyNegation));
-            },
-            Some(SimpleSelectorParseResult::PseudoElement(_)) |
-            Some(SimpleSelectorParseResult::PartPseudo(_)) |
-            Some(SimpleSelectorParseResult::SlottedPseudo(_)) => {
-                let e = SelectorParseErrorKind::NonSimpleSelectorInNegation;
-                return Err(input.new_custom_error(e));
-            },
-        }
-    }
-
-    // Success.
-    Ok(Component::Negation(
-        sequence.into_vec().into_boxed_slice().into(),
-    ))
+    Ok(Component::Negation(list.0.into_vec().into_boxed_slice()))
 }
 
 /// simple_selector_sequence
@@ -2191,7 +2179,8 @@ where
             if let Some(url) = parser.default_namespace() {
                 // If there was no explicit type selector, but there is a
                 // default namespace, there is an implicit "<defaultns>|*" type
-                // selector. Except for :host, where we ignore it.
+                // selector. Except for :host() or :not() / :is() / :where(),
+                // where we ignore it.
                 //
                 // https://drafts.csswg.org/css-scoping/#host-element-in-tree:
                 //
@@ -2206,10 +2195,22 @@ where
                 //     given selector is allowed to match a featureless element,
                 //     it must do so while ignoring the default namespace.
                 //
-                if !matches!(
-                    result,
-                    SimpleSelectorParseResult::SimpleSelector(Component::Host(..))
-                ) {
+                // https://drafts.csswg.org/selectors-4/#matches
+                //
+                //     Default namespace declarations do not affect the compound
+                //     selector representing the subject of any selector within
+                //     a :is() pseudo-class, unless that compound selector
+                //     contains an explicit universal selector or type selector.
+                //
+                //     (Similar quotes for :where() / :not())
+                //
+                let ignore_default_ns =
+                    state.intersects(SelectorParsingState::SKIP_DEFAULT_NAMESPACE) ||
+                    matches!(
+                        result,
+                        SimpleSelectorParseResult::SimpleSelector(Component::Host(..))
+                    );
+                if !ignore_default_ns {
                     builder.push_simple_selector(Component::DefaultNamespace(url));
                 }
             }
@@ -2263,7 +2264,8 @@ where
     let inner = SelectorList::parse_with_state(
         parser,
         input,
-        state | SelectorParsingState::DISALLOW_PSEUDOS,
+        state | SelectorParsingState::SKIP_DEFAULT_NAMESPACE | SelectorParsingState::DISALLOW_PSEUDOS,
+        parser.is_and_where_error_recovery(),
     )?;
     Ok(component(inner.0.into_vec().into_boxed_slice()))
 }
@@ -2292,14 +2294,13 @@ where
             return Ok(Component::Host(Some(parse_inner_compound_selector(parser, input, state)?)));
         },
         "not" => {
-            if state.intersects(SelectorParsingState::INSIDE_NEGATION) {
-                return Err(input.new_custom_error(
-                    SelectorParseErrorKind::UnexpectedIdent("not".into())
-                ));
-            }
             return parse_negation(parser, input, state)
         },
         _ => {}
+    }
+
+    if parser.parse_is_and_where() && parser.is_is_alias(&name) {
+        return parse_is_or_where(parser, input, state, Component::Is);
     }
 
     if !state.allows_custom_functional_pseudo_classes() {
@@ -2555,11 +2556,6 @@ pub mod tests {
         fn is_user_action_state(&self) -> bool {
             self.is_active_or_hover()
         }
-
-        #[inline]
-        fn has_zero_specificity(&self) -> bool {
-            false
-        }
     }
 
     impl ToCss for PseudoClass {
@@ -2655,6 +2651,10 @@ pub mod tests {
 
         fn parse_is_and_where(&self) -> bool {
             true
+        }
+
+        fn is_and_where_error_recovery(&self) -> ParseErrorRecovery {
+            ParseErrorRecovery::DiscardList
         }
 
         fn parse_part(&self) -> bool {
@@ -3042,9 +3042,13 @@ pub mod tests {
                 vec![
                     Component::DefaultNamespace(MATHML.into()),
                     Component::Negation(
-                        vec![Component::Class(DummyAtom::from("cl"))]
-                            .into_boxed_slice()
-                            .into(),
+                        vec![
+                            Selector::from_vec(
+                                vec![Component::Class(DummyAtom::from("cl"))],
+                                specificity(0, 1, 0),
+                                Default::default(),
+                            )
+                        ].into_boxed_slice()
                     ),
                 ],
                 specificity(0, 1, 0),
@@ -3058,11 +3062,16 @@ pub mod tests {
                     Component::DefaultNamespace(MATHML.into()),
                     Component::Negation(
                         vec![
-                            Component::DefaultNamespace(MATHML.into()),
-                            Component::ExplicitUniversalType,
+                            Selector::from_vec(
+                                vec![
+                                    Component::DefaultNamespace(MATHML.into()),
+                                    Component::ExplicitUniversalType,
+                                ],
+                                specificity(0, 0, 0),
+                                Default::default(),
+                            )
                         ]
-                        .into_boxed_slice()
-                        .into(),
+                        .into_boxed_slice(),
                     ),
                 ],
                 specificity(0, 0, 0),
@@ -3076,14 +3085,19 @@ pub mod tests {
                     Component::DefaultNamespace(MATHML.into()),
                     Component::Negation(
                         vec![
-                            Component::DefaultNamespace(MATHML.into()),
-                            Component::LocalName(LocalName {
-                                name: DummyAtom::from("e"),
-                                lower_name: DummyAtom::from("e"),
-                            }),
+                            Selector::from_vec(
+                                vec![
+                                    Component::DefaultNamespace(MATHML.into()),
+                                    Component::LocalName(LocalName {
+                                        name: DummyAtom::from("e"),
+                                        lower_name: DummyAtom::from("e"),
+                                    }),
+                                ],
+                                specificity(0, 0, 1),
+                                Default::default(),
+                            ),
                         ]
                         .into_boxed_slice()
-                        .into(),
                     ),
                 ],
                 specificity(0, 0, 1),
@@ -3178,47 +3192,23 @@ pub mod tests {
             )]))
         );
         parser.default_ns = None;
-        assert!(parse(":not(#provel.old)").is_err());
-        assert!(parse(":not(#provel > old)").is_err());
+        assert!(parse(":not(#provel.old)").is_ok());
+        assert!(parse(":not(#provel > old)").is_ok());
         assert!(parse("table[rules]:not([rules=\"none\"]):not([rules=\"\"])").is_ok());
-        assert_eq!(
-            parse(":not(#provel)"),
-            Ok(SelectorList::from_vec(vec![Selector::from_vec(
-                vec![Component::Negation(
-                    vec![Component::ID(DummyAtom::from("provel"))]
-                        .into_boxed_slice()
-                        .into(),
-                )],
-                specificity(1, 0, 0),
-                Default::default(),
-            )]))
-        );
-        assert_eq!(
-            parse_ns(":not(svg|circle)", &parser),
-            Ok(SelectorList::from_vec(vec![Selector::from_vec(
-                vec![Component::Negation(
-                    vec![
-                        Component::Namespace(DummyAtom("svg".into()), SVG.into()),
-                        Component::LocalName(LocalName {
-                            name: DummyAtom::from("circle"),
-                            lower_name: DummyAtom::from("circle"),
-                        }),
-                    ]
-                    .into_boxed_slice()
-                    .into(),
-                )],
-                specificity(0, 0, 1),
-                Default::default(),
-            )]))
-        );
         // https://github.com/servo/servo/issues/16017
         assert_eq!(
             parse_ns(":not(*)", &parser),
             Ok(SelectorList::from_vec(vec![Selector::from_vec(
                 vec![Component::Negation(
-                    vec![Component::ExplicitUniversalType]
-                        .into_boxed_slice()
-                        .into(),
+                    vec![
+                        Selector::from_vec(
+                            vec![
+                                Component::ExplicitUniversalType
+                            ],
+                            specificity(0, 0, 0),
+                            Default::default(),
+                        )
+                    ].into_boxed_slice()
                 )],
                 specificity(0, 0, 0),
                 Default::default(),
@@ -3229,11 +3219,16 @@ pub mod tests {
             Ok(SelectorList::from_vec(vec![Selector::from_vec(
                 vec![Component::Negation(
                     vec![
-                        Component::ExplicitNoNamespace,
-                        Component::ExplicitUniversalType,
+                        Selector::from_vec(
+                            vec![
+                                Component::ExplicitNoNamespace,
+                                Component::ExplicitUniversalType,
+                            ],
+                            specificity(0, 0, 0),
+                            Default::default(),
+                        )
                     ]
-                    .into_boxed_slice()
-                    .into(),
+                    .into_boxed_slice(),
                 )],
                 specificity(0, 0, 0),
                 Default::default(),
@@ -3245,25 +3240,15 @@ pub mod tests {
             parse_ns_expected(":not(*|*)", &parser, Some(":not(*)")),
             Ok(SelectorList::from_vec(vec![Selector::from_vec(
                 vec![Component::Negation(
-                    vec![Component::ExplicitUniversalType]
-                        .into_boxed_slice()
-                        .into(),
-                )],
-                specificity(0, 0, 0),
-                Default::default(),
-            )]))
-        );
-
-        assert_eq!(
-            parse_ns(":not(svg|*)", &parser),
-            Ok(SelectorList::from_vec(vec![Selector::from_vec(
-                vec![Component::Negation(
                     vec![
-                        Component::Namespace(DummyAtom("svg".into()), SVG.into()),
-                        Component::ExplicitUniversalType,
-                    ]
-                    .into_boxed_slice()
-                    .into(),
+                        Selector::from_vec(
+                            vec![
+                                Component::ExplicitUniversalType
+                            ],
+                            specificity(0, 0, 0),
+                            Default::default()
+                        )
+                    ].into_boxed_slice()
                 )],
                 specificity(0, 0, 0),
                 Default::default(),

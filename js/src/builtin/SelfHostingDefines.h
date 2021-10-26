@@ -23,7 +23,7 @@
 // NB: keep this in sync with the copy in vm/ArgumentsObject.h.
 #define MAX_ARGS_LENGTH (500 * 1000)
 
-// NB: keep this in sync with js::MaxStringLength in jsfriendapi.h.
+// NB: keep this in sync with JS::MaxStringLength in js/public/String.h.
 #define MAX_STRING_LENGTH ((1 << 30) - 2)
 
 // Spread non-empty argument list of up to 15 elements.
@@ -71,10 +71,6 @@
 // name for self-hosted builtins is stored.
 #define LAZY_FUNCTION_NAME_SLOT 0
 
-// Stores the length for bound functions, so the .length property doesn't need
-// to be resolved eagerly.
-#define BOUND_FUN_LENGTH_SLOT 1
-
 #define ITERATOR_SLOT_TARGET 0
 // Used for collection iterators.
 #define ITERATOR_SLOT_RANGE 1
@@ -104,6 +100,10 @@
 
 #define REGEXP_STRING_ITERATOR_LASTINDEX_DONE -1
 #define REGEXP_STRING_ITERATOR_LASTINDEX_SLOW -2
+
+#define DATE_METHOD_LOCALE_TIME_STRING 0
+#define DATE_METHOD_LOCALE_DATE_STRING 1
+#define DATE_METHOD_LOCALE_STRING 2
 
 #define MODULE_OBJECT_ENVIRONMENT_SLOT 1
 #define MODULE_OBJECT_STATUS_SLOT 3

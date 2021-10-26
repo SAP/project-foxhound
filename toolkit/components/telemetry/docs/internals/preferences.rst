@@ -1,5 +1,5 @@
-Preferences
-===========
+Preferences and Defines
+=======================
 
 Telemetry behaviour is controlled through the mozconfig defines and preferences listed here.
 
@@ -138,21 +138,6 @@ Preferences
 
   Enable the :doc:`../data/update-ping` on browser updates.
 
-``toolkit.telemetry.maxEventSummaryKeys``
-
-  Set the maximum number of keys per process of the :ref:`Event Summary <events.event-summary>`
-  :ref:`keyed scalars <scalars.keyed-scalars>`. Default is 500. Change requires restart.
-
-``toolkit.telemetry.eventping.enabled``
-
-  Whether the :doc:`../data/event-ping` is enabled.
-  Default is true except for GeckoView where it defaults to false. Change requires restart.
-
-``toolkit.telemetry.eventping.eventLimit``
-
-  The maximum number of event records permitted in the :doc:`../data/event-ping`.
-  Default is 1000.
-
 ``toolkit.telemetry.eventping.minimumFrequency``
 
   The minimum frequency at which an :doc:`../data/event-ping` will be sent.
@@ -166,6 +151,15 @@ Preferences
 ``toolkit.telemetry.ecosystemtelemetry.enabled``
 
   Whether :doc:`../data/ecosystem-telemetry` is enabled.
+  Default is false. Change requires restart.
+
+``toolkit.telemetry.ecosystemtelemetry.allowForNonProductionFx``
+
+  Whether :doc:`../data/ecosystem-telemetry` will be submitted if Firefox is
+  configured to use non-production FxA servers. Non-production servers includes
+  servers run by Mozilla (eg, the "staging" or "dev" instances) and servers run
+  externally (eg, self-hosted users). The expectation is that this will
+  primarily be used for QA.
   Default is false. Change requires restart.
 
 ``toolkit.telemetry.overrideUpdateChannel``

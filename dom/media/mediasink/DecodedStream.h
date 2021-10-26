@@ -7,6 +7,7 @@
 #ifndef DecodedStream_h_
 #define DecodedStream_h_
 
+#include "AudibilityMonitor.h"
 #include "MediaEventSource.h"
 #include "MediaInfo.h"
 #include "MediaSegment.h"
@@ -111,6 +112,7 @@ class DecodedStream : public MediaSink {
   MediaInfo mInfo;
   // True when stream is producing audible sound, false when stream is silent.
   bool mIsAudioDataAudible = false;
+  Maybe<AudibilityMonitor> mAudibilityMonitor;
   MediaEventProducer<bool> mAudibleEvent;
 
   MediaQueue<AudioData>& mAudioQueue;

@@ -11,13 +11,14 @@
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint64_t, uint32_t, uint8_t
 #include "gfxTypes.h"
-#include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"         // for override
-#include "mozilla/RefPtr.h"             // for RefPtr, already_AddRefed, etc
-#include "mozilla/gfx/2D.h"             // for DataSourceSurface
-#include "mozilla/gfx/Point.h"          // for IntSize, IntPoint
-#include "mozilla/gfx/Types.h"          // for SurfaceFormat, etc
-#include "mozilla/layers/Compositor.h"  // for Compositor
+#include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
+#include "mozilla/Attributes.h"  // for override
+#include "mozilla/RefPtr.h"      // for RefPtr, already_AddRefed, etc
+#include "mozilla/gfx/2D.h"      // for DataSourceSurface
+#include "mozilla/gfx/Point.h"   // for IntSize, IntPoint
+#include "mozilla/gfx/Types.h"   // for SurfaceFormat, etc
+#include "mozilla/ipc/FileDescriptor.h"
+#include "mozilla/layers/Compositor.h"       // for Compositor
 #include "mozilla/layers/CompositorTypes.h"  // for TextureFlags, etc
 #include "mozilla/layers/LayersTypes.h"      // for LayerRenderState, etc
 #include "mozilla/layers/LayersSurfaces.h"
@@ -47,6 +48,8 @@ class TransactionBuilder;
 
 namespace layers {
 
+class AndroidHardwareBuffer;
+class AndroidHardwareBufferTextureHost;
 class BufferDescriptor;
 class BufferTextureHost;
 class Compositor;
@@ -484,6 +487,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
    */
   virtual void UnbindTextureSource();
 
+  virtual bool IsValid() { return true; }
+
   /**
    * Is called before compositing if the shared data has changed since last
    * composition.
@@ -646,6 +651,10 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   }
   virtual WebRenderTextureHost* AsWebRenderTextureHost() { return nullptr; }
   virtual SurfaceTextureHost* AsSurfaceTextureHost() { return nullptr; }
+  virtual AndroidHardwareBufferTextureHost*
+  AsAndroidHardwareBufferTextureHost() {
+    return nullptr;
+  }
 
   // Create the corresponding RenderTextureHost type of this texture, and
   // register the RenderTextureHost into render thread.
@@ -681,6 +690,17 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     MOZ_ASSERT_UNREACHABLE("Unimplemented");
   }
 
+  enum class PushDisplayItemFlag {
+    // Passed if the caller wants these display items to be promoted
+    // to compositor surfaces if possible.
+    PREFER_COMPOSITOR_SURFACE,
+
+    // Passed in the RenderCompositor supports BufferTextureHosts
+    // being used directly as external compositor surfaces.
+    SUPPORTS_EXTERNAL_BUFFER_TEXTURES,
+  };
+  using PushDisplayItemFlagSet = EnumSet<PushDisplayItemFlag>;
+
   // Put all necessary WR commands into DisplayListBuilder for this textureHost
   // rendering.
   virtual void PushDisplayItems(wr::DisplayListBuilder& aBuilder,
@@ -688,7 +708,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
                                 const wr::LayoutRect& aClip,
                                 wr::ImageRendering aFilter,
                                 const Range<wr::ImageKey>& aKeys,
-                                const bool aPreferCompositorSurface) {
+                                PushDisplayItemFlagSet aFlags) {
     MOZ_ASSERT_UNREACHABLE(
         "No PushDisplayItems() implementation for this TextureHost type.");
   }
@@ -701,6 +721,20 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   virtual bool IsDirectMap() { return false; }
 
   virtual bool NeedsYFlip() const;
+
+  TextureSourceProvider* GetProvider() const { return mProvider; }
+
+  virtual void SetAcquireFence(mozilla::ipc::FileDescriptor&& aFenceFd) {}
+
+  virtual void SetReleaseFence(mozilla::ipc::FileDescriptor&& aFenceFd) {}
+
+  virtual mozilla::ipc::FileDescriptor GetAndResetReleaseFence() {
+    return mozilla::ipc::FileDescriptor();
+  }
+
+  virtual AndroidHardwareBuffer* GetAndroidHardwareBuffer() const {
+    return nullptr;
+  }
 
  protected:
   virtual void ReadUnlock();
@@ -822,7 +856,7 @@ class BufferTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys,
-                        const bool aPreferCompositorSurface) override;
+                        PushDisplayItemFlagSet aFlags) override;
 
   void ReadUnlock() override;
   bool IsDirectMap() override {

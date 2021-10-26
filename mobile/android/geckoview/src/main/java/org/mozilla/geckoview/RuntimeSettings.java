@@ -12,10 +12,10 @@ import java.util.Map;
 
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.v4.util.ArrayMap;
-import android.support.annotation.AnyThread;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.collection.ArrayMap;
+import androidx.annotation.AnyThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.GeckoBundle;
@@ -202,7 +202,6 @@ public abstract class RuntimeSettings implements Parcelable {
         mPrefs.add(pref);
     }
 
-
     /**
      * Return a mapping of the prefs managed in this settings, including child
      * settings.
@@ -211,36 +210,35 @@ public abstract class RuntimeSettings implements Parcelable {
      */
     /* package */ @NonNull Map<String, Object> getPrefsMap() {
         final ArrayMap<String, Object> prefs = new ArrayMap<>();
-
-        for (final Pref<?> pref : mPrefs) {
-            prefs.put(pref.name, pref.get());
-        }
-
-        for (final RuntimeSettings child : mChildren) {
-            prefs.putAll(child.getPrefsMap());
-        }
+        forAllPrefs(pref -> prefs.put(pref.name, pref.get()));
 
         return Collections.unmodifiableMap(prefs);
     }
 
     /**
+     * Iterates through all prefs in this RuntimeSettings instance and
+     * in all children, grandchildren, etc.
+     */
+    private void forAllPrefs(final GeckoResult.Consumer<Pref<?>> visitor) {
+        for (final RuntimeSettings child : mChildren) {
+            child.forAllPrefs(visitor);
+        }
+
+        for (final Pref<?> pref : mPrefs) {
+            visitor.accept(pref);
+        }
+    }
+
+    /**
      * Reset the prefs managed by this settings and its children.
      *
-     * The actual prefs values are set via {@link getPrefsMap} during
-     * initialization and via {@link Pref.commit} during runtime for individual
+     * The actual prefs values are set via {@link #getPrefsMap} during
+     * initialization and via {@link Pref#commit} during runtime for individual
      * prefs.
      */
     /* package */ void commitResetPrefs() {
         final ArrayList<String> names = new ArrayList<String>();
-
-        for (final Pref<?> pref : mPrefs) {
-            names.add(pref.name);
-        }
-        for (final RuntimeSettings child : mChildren) {
-            for (final Pref<?> pref : child.mPrefs) {
-                names.add(pref.name);
-            }
-        }
+        forAllPrefs(pref -> names.add(pref.name));
 
         final GeckoBundle data = new GeckoBundle(1);
         data.putStringArray("names", names);

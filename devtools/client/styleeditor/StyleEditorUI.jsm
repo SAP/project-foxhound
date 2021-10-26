@@ -10,6 +10,7 @@ const { loader, require } = ChromeUtils.import(
   "resource://devtools/shared/Loader.jsm"
 );
 const Services = require("Services");
+const { FileUtils } = require("resource://gre/modules/FileUtils.jsm");
 const { NetUtil } = require("resource://gre/modules/NetUtil.jsm");
 const { OS } = require("resource://gre/modules/osfile.jsm");
 const EventEmitter = require("devtools/shared/event-emitter");
@@ -100,6 +101,7 @@ function StyleEditorUI(toolbox, panelDoc, cssProperties) {
   this._copyUrl = this._copyUrl.bind(this);
   this._onTargetAvailable = this._onTargetAvailable.bind(this);
   this._onResourceAvailable = this._onResourceAvailable.bind(this);
+  this._onResourceUpdated = this._onResourceUpdated.bind(this);
 
   this._prefObserver = new PrefObserver("devtools.styleeditor.");
   this._prefObserver.on(PREF_MEDIA_SIDEBAR, this._onMediaPrefChanged);
@@ -149,7 +151,10 @@ StyleEditorUI.prototype = {
     this._startLoadingStyleSheets();
     await this._toolbox.resourceWatcher.watchResources(
       [this._toolbox.resourceWatcher.TYPES.STYLESHEET],
-      { onAvailable: this._onResourceAvailable }
+      {
+        onAvailable: this._onResourceAvailable,
+        onUpdated: this._onResourceUpdated,
+      }
     );
     await this._waitForLoadingStyleSheets();
   },
@@ -301,20 +306,17 @@ StyleEditorUI.prototype = {
    * Add an editor for this stylesheet. Add editors for its original sources
    * instead (e.g. Sass sources), if applicable.
    *
-   * @param  {StyleSheetFront} styleSheet
-   *         Style sheet to add to style editor
-   * @param {Boolean} isNew
-   *        True if this style sheet was created by a call to the
-   *        style sheets actor's @see addStyleSheet method.
+   * @param  {Resource} resource
+   *         The STYLESHEET resource which is received from resource watcher.
    * @return {Promise}
    *         A promise that resolves to the style sheet's editor when the style sheet has
    *         been fully loaded.  If the style sheet has a source map, and source mapping
    *         is enabled, then the promise resolves to null.
    */
-  _addStyleSheet: function(styleSheet, isNew) {
-    if (!this._seenSheets.has(styleSheet)) {
+  _addStyleSheet: function(resource) {
+    if (!this._seenSheets.has(resource)) {
       const promise = (async () => {
-        let editor = await this._addStyleSheetEditor(styleSheet, isNew);
+        let editor = await this._addStyleSheetEditor(resource);
 
         const sourceMapService = this._toolbox.sourceMapService;
 
@@ -328,10 +330,10 @@ StyleEditorUI.prototype = {
         const {
           href,
           nodeHref,
-          actorID: id,
+          resourceId: id,
           sourceMapURL,
           sourceMapBaseURL,
-        } = styleSheet;
+        } = resource;
         const sources = await sourceMapService.getOriginalURLs({
           id,
           url: href || nodeHref,
@@ -353,18 +355,21 @@ StyleEditorUI.prototype = {
             );
 
             // set so the first sheet will be selected, even if it's a source
-            original.styleSheetIndex = styleSheet.styleSheetIndex;
-            original.relatedStyleSheet = styleSheet;
+            original.styleSheetIndex = resource.styleSheetIndex;
+            original.relatedStyleSheet = resource;
             original.relatedEditorName = parentEditorName;
+            original.resourceId = resource.resourceId;
+            original.targetFront = resource.targetFront;
+            original.mediaRules = resource.mediaRules;
             await this._addStyleSheetEditor(original);
           }
         }
 
         return editor;
       })();
-      this._seenSheets.set(styleSheet, promise);
+      this._seenSheets.set(resource, promise);
     }
-    return this._seenSheets.get(styleSheet);
+    return this._seenSheets.get(resource);
   },
 
   _getInlineStyleSheetsCount() {
@@ -381,18 +386,16 @@ StyleEditorUI.prototype = {
    *
    * @param {StyleSheet}  styleSheet
    *        Object representing stylesheet
-   * @param {Boolean} isNew
-   *         Optional if stylesheet is a new sheet created by user
    * @return {(Number|undefined)}
    *         Optional Integer representing the index of the current stylesheet
    *         among all stylesheets of its type (inline or user-created)
    */
-  _getNextFriendlyIndex: function(styleSheet, isNew) {
+  _getNextFriendlyIndex: function(styleSheet) {
     if (styleSheet.href) {
       return undefined;
     }
 
-    return isNew
+    return styleSheet.isNew
       ? this._getNewStyleSheetsCount()
       : this._getInlineStyleSheetsCount();
   },
@@ -400,30 +403,18 @@ StyleEditorUI.prototype = {
   /**
    * Add a new editor to the UI for a source.
    *
-   * @param {StyleSheet|OriginalSource}  styleSheet
-   *        Object representing stylesheet
-   * @param {Boolean} isNew
-   *         Optional if stylesheet is a new sheet created by user
+   * @param  {Resource} resource
+   *         The resource which is received from resource watcher.
    * @return {Promise} that is resolved with the created StyleSheetEditor when
    *                   the editor is fully initialized or rejected on error.
    */
-  async _addStyleSheetEditor(styleSheet, isNew) {
-    // recall location of saved file for this sheet after page reload
-    let file = null;
-    const identifier = this.getStyleSheetIdentifier(styleSheet);
-    const savedFile = this.savedLocations[identifier];
-    if (savedFile) {
-      file = savedFile;
-    }
-
+  async _addStyleSheetEditor(resource) {
     const editor = new StyleSheetEditor(
-      styleSheet,
+      resource,
       this._window,
-      file,
-      isNew,
       this._walker,
       this._highlighter,
-      this._getNextFriendlyIndex(styleSheet, isNew)
+      this._getNextFriendlyIndex(resource)
     );
 
     editor.on("property-change", this._summaryChange.bind(this, editor));
@@ -432,10 +423,18 @@ StyleEditorUI.prototype = {
     editor.on("linked-css-file-error", this._summaryChange.bind(this, editor));
     editor.on("error", this._onError);
 
+    // onMediaRulesChanged fires media-rules-changed, so call the function after
+    // registering the listener in order to ensure to get media-rules-changed event.
+    editor.onMediaRulesChanged(resource.mediaRules);
+
     this.editors.push(editor);
 
     await editor.fetchSource();
     this._sourceLoaded(editor);
+
+    if (resource.fileName) {
+      this.emit("test:editor-updated", editor);
+    }
 
     return editor;
   },
@@ -478,13 +477,21 @@ StyleEditorUI.prototype = {
           const stylesheetsFront = await this.currentTarget.getFront(
             "stylesheets"
           );
-          const styleSheet = await stylesheetsFront.addStyleSheet(source);
-          const editor = await this._addStyleSheet(styleSheet, true);
-          if (editor) {
-            editor.savedFile = selectedFile;
+
+          const traits = await stylesheetsFront.getTraits();
+          if (traits.isFileNameSupported) {
+            // FF81+ addStyleSheet of StyleSheetsFront supports file name parameter.
+            stylesheetsFront.addStyleSheet(source, selectedFile.path);
+          } else {
+            const styleSheet = await stylesheetsFront.addStyleSheet(source);
+            styleSheet.isNew = true;
+            const editor = await this._addStyleSheet({ styleSheet });
+            if (editor) {
+              editor.savedFile = selectedFile;
+            }
+            // Just for testing purposes.
+            this.emit("test:editor-updated", editor);
           }
-          // Just for testing purposes.
-          this.emit("test:editor-updated", editor);
         }
       );
     };
@@ -1171,45 +1178,94 @@ StyleEditorUI.prototype = {
     this._root.classList.remove("loading");
   },
 
-  async _handleStyleSheetResource({ styleSheet, isNew }) {
+  async _handleStyleSheetResource(resource) {
     try {
-      await this._addStyleSheet(styleSheet, isNew);
+      // The fileName is in resource means this stylesheet was imported from file by user.
+      const { fileName } = resource;
+      let file = fileName ? new FileUtils.File(fileName) : null;
+
+      // recall location of saved file for this sheet after page reload
+      if (!file) {
+        const identifier = this.getStyleSheetIdentifier(resource);
+        const savedFile = this.savedLocations[identifier];
+        if (savedFile) {
+          file = savedFile;
+        }
+      }
+      resource.file = file;
+
+      await this._addStyleSheet(resource);
     } catch (e) {
       console.error(e);
       this.emit("error", { key: LOAD_ERROR, level: "warning" });
     }
   },
 
-  async _onResourceAvailable({ targetFront, resource }) {
-    if (
-      resource.resourceType === this._toolbox.resourceWatcher.TYPES.STYLESHEET
-    ) {
-      const onStyleSheetHandled = this._handleStyleSheetResource(resource);
+  async _onResourceAvailable(resources) {
+    for (const resource of resources) {
+      if (
+        resource.resourceType === this._toolbox.resourceWatcher.TYPES.STYLESHEET
+      ) {
+        const onStyleSheetHandled = this._handleStyleSheetResource(resource);
 
-      if (this._loadingStyleSheets) {
-        // In case of reloading/navigating and panel's opening
-        this._loadingStyleSheets.push(onStyleSheetHandled);
+        if (this._loadingStyleSheets) {
+          // In case of reloading/navigating and panel's opening
+          this._loadingStyleSheets.push(onStyleSheetHandled);
+        }
+
+        await onStyleSheetHandled;
+        continue;
       }
 
-      await onStyleSheetHandled;
-      return;
-    }
+      if (!resource.targetFront.isTopLevel) {
+        continue;
+      }
 
-    if (!resource.targetFront.isTopLevel) {
-      return;
+      if (resource.name === "dom-loading") {
+        // will-navigate doesn't work when we navigate to a new process,
+        // and for now, onTargetAvailable/onTargetDestroyed doesn't fire on navigation and
+        // only when navigating to another process.
+        // So we fallback on DOCUMENT_EVENTS to be notified when we navigates. When we
+        // navigate within the same process as well as when we navigate to a new process.
+        // (We would probably revisit that in bug 1632141)
+        this._startLoadingStyleSheets();
+        this._clear();
+      } else if (resource.name === "dom-complete") {
+        await this._waitForLoadingStyleSheets();
+      }
     }
+  },
 
-    if (resource.name === "dom-loading") {
-      // will-navigate doesn't work when we navigate to a new process,
-      // and for now, onTargetAvailable/onTargetDestroyed doesn't fire on navigation and
-      // only when navigating to another process.
-      // So we fallback on DOCUMENT_EVENTS to be notified when we navigates. When we
-      // navigate within the same process as well as when we navigate to a new process.
-      // (We would probably revisit that in bug 1632141)
-      this._startLoadingStyleSheets();
-      this._clear();
-    } else if (resource.name === "dom-complete") {
-      await this._waitForLoadingStyleSheets();
+  async _onResourceUpdated(updates) {
+    for (const { resource, update } of updates) {
+      if (
+        update.resourceType === this._toolbox.resourceWatcher.TYPES.STYLESHEET
+      ) {
+        const editor = this.editors.find(
+          e => e.resourceId === update.resourceId
+        );
+
+        switch (update.updateType) {
+          case "style-applied": {
+            editor.onStyleApplied();
+            break;
+          }
+          case "property-change": {
+            for (const [property, value] of Object.entries(
+              update.resourceUpdates
+            )) {
+              editor.onPropertyChange(property, value);
+            }
+            break;
+          }
+          case "media-rules-changed":
+          case "matches-change": {
+            const { mediaRules } = resource;
+            editor.onMediaRulesChanged(mediaRules);
+            break;
+          }
+        }
+      }
     }
   },
 
@@ -1230,7 +1286,10 @@ StyleEditorUI.prototype = {
         this._toolbox.resourceWatcher.TYPES.DOCUMENT_EVENT,
         this._toolbox.resourceWatcher.TYPES.STYLESHEET,
       ],
-      { onAvailable: this._onResourceAvailable }
+      {
+        onAvailable: this._onResourceAvailable,
+        onUpdated: this._onResourceUpdated,
+      }
     );
 
     this._clearStyleSheetEditors();

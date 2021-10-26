@@ -167,7 +167,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
 
   // Start wall of code for speculative loading and line numbers
 
-  if (mSpeculativeLoadStage) {
+  if (mSpeculativeLoadStage && mode != IN_TEMPLATE) {
     switch (aNamespace) {
       case kNameSpaceID_XHTML:
         if (nsGkAtoms::img == aName) {
@@ -379,7 +379,10 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
       case kNameSpaceID_SVG:
         if (nsGkAtoms::image == aName) {
           nsHtml5String url =
-              aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
+              aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
+          if (!url) {
+            url = aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
+          }
           if (url) {
             mSpeculativeLoadQueue.AppendElement()->InitImage(
                 url, nullptr, nullptr, nullptr, nullptr, false);
@@ -397,7 +400,10 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
           treeOp->Init(mozilla::AsVariant(operation));
 
           nsHtml5String url =
-              aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
+              aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
+          if (!url) {
+            url = aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
+          }
           if (url) {
             nsHtml5String type =
                 aAttributes->getValue(nsHtml5AttributeName::ATTR_TYPE);
@@ -469,7 +475,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
           opProcessOfflineManifest operation(ToNewUnicode(urlString));
           treeOp->Init(mozilla::AsVariant(operation));
         } else {
-          opProcessOfflineManifest operation(ToNewUnicode(EmptyString()));
+          opProcessOfflineManifest operation(ToNewUnicode(u""_ns));
           treeOp->Init(mozilla::AsVariant(operation));
         }
       } else if (nsGkAtoms::base == aName && mViewSource) {
@@ -741,8 +747,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
   memcpy(bufferCopy.get(), aBuffer, aLength * sizeof(char16_t));
 
   if (mImportScanner.ShouldScan()) {
-    nsTArray<nsString> imports =
-        mImportScanner.Scan(MakeSpan(aBuffer, aLength));
+    nsTArray<nsString> imports = mImportScanner.Scan(Span(aBuffer, aLength));
     for (nsString& url : imports) {
       mSpeculativeLoadQueue.AppendElement()->InitImportStyle(std::move(url));
     }
@@ -1076,6 +1081,9 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
   }
   if (aNamespace == kNameSpaceID_SVG) {
     if (aName == nsGkAtoms::svg) {
+      if (!scriptingEnabled || mPreventScriptExecution) {
+        return;
+      }
       if (mBuilder) {
         nsHtml5TreeOperation::SvgLoad(static_cast<nsIContent*>(aElement));
         return;
@@ -1090,17 +1098,7 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
     }
     return;
   }
-  // we now have only HTML
-  if (aName == nsGkAtoms::meta && !fragment && !mBuilder) {
-    nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement(mozilla::fallible);
-    if (MOZ_UNLIKELY(!treeOp)) {
-      MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
-    opProcessMeta operation(aElement);
-    treeOp->Init(mozilla::AsVariant(operation));
-    return;
-  }
+
   if (mSpeculativeLoadStage && aName == nsGkAtoms::picture) {
     // mSpeculativeLoadStage is non-null only in the off-the-main-thread
     // tree builder, which handles the network stream
@@ -1578,9 +1576,9 @@ void nsHtml5TreeBuilder::errStartTagWithSelectOpen(nsAtom* aName) {
   }
 }
 
-void nsHtml5TreeBuilder::errBadStartTagInHead(nsAtom* aName) {
+void nsHtml5TreeBuilder::errBadStartTagInNoscriptInHead(nsAtom* aName) {
   if (MOZ_UNLIKELY(mViewSource)) {
-    mViewSource->AddErrorToCurrentRun("errBadStartTagInHead2", aName);
+    mViewSource->AddErrorToCurrentRun("errBadStartTagInNoscriptInHead", aName);
   }
 }
 
@@ -1598,7 +1596,7 @@ void nsHtml5TreeBuilder::errIsindex() {
 
 void nsHtml5TreeBuilder::errFooSeenWhenFooOpen(nsAtom* aName) {
   if (MOZ_UNLIKELY(mViewSource)) {
-    mViewSource->AddErrorToCurrentRun("errFooSeenWhenFooOpen", aName);
+    mViewSource->AddErrorToCurrentRun("errFooSeenWhenFooOpen2", aName);
   }
 }
 
@@ -1684,12 +1682,6 @@ void nsHtml5TreeBuilder::errNoElementToCloseButEndTagSeen(nsAtom* aName) {
 void nsHtml5TreeBuilder::errHtmlStartTagInForeignContext(nsAtom* aName) {
   if (MOZ_UNLIKELY(mViewSource)) {
     mViewSource->AddErrorToCurrentRun("errHtmlStartTagInForeignContext", aName);
-  }
-}
-
-void nsHtml5TreeBuilder::errTableClosedWhileCaptionOpen() {
-  if (MOZ_UNLIKELY(mViewSource)) {
-    mViewSource->AddErrorToCurrentRun("errTableClosedWhileCaptionOpen");
   }
 }
 

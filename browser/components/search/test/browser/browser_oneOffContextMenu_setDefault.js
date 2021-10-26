@@ -114,6 +114,14 @@ async function testUrlBarChangeEngine(win, testPrivate, isPrivateWindow) {
     `Testing urlbar with testPrivate: ${testPrivate} isPrivateWindow: ${isPrivateWindow}`
   );
 
+  // This function and the subtests that call it can be removed with the update2
+  // pref.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", false],
+      ["browser.urlbar.update2.oneOffsRefresh", false],
+    ],
+  });
   // Ensure the engine is reset.
   await resetEngines();
 
@@ -166,12 +174,14 @@ async function testUrlBarChangeEngine(win, testPrivate, isPrivateWindow) {
   await EventUtils.synthesizeNativeMouseMove(urlbar);
 }
 
-add_task(async function test_urlBarChangeEngine_normal() {
+// This subtest can be removed with the update2 pref.
+add_task(async function test_urlBarChangeEngine_normal_legacy() {
   await testUrlBarChangeEngine(window, false, false);
   await testUrlBarChangeEngine(window, true, false);
 });
 
-add_task(async function test_urlBarChangeEngine_private() {
+// This subtest can be removed with the update2 pref.
+add_task(async function test_urlBarChangeEngine_private_legacy() {
   const win = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
@@ -322,12 +332,27 @@ async function openPopupAndGetEngineButton(
       "One-off should have the tooltip set to the engine name"
     );
   } else {
-    let aliases = UrlbarSearchUtils.aliasesForEngine(oneOffButton.engine);
-    Assert.equal(
-      oneOffButton.getAttribute("tooltiptext"),
-      engineName + (aliases.length ? ` (${aliases[0]})` : ""),
-      "One-off should have the tooltip set to the engine name"
-    );
+    let aliases = oneOffButton.engine.aliases;
+    if (!aliases.length) {
+      Assert.equal(
+        oneOffButton.getAttribute("tooltiptext"),
+        engineName,
+        "One-off without alias should have the tooltip set to the engine name"
+      );
+    } else {
+      let l10n = {
+        id: "search-one-offs-engine-with-alias",
+        args: {
+          engineName,
+          alias: aliases[0],
+        },
+      };
+      Assert.deepEqual(
+        win.document.l10n.getAttributes(oneOffButton),
+        l10n,
+        "One-off with alias has expected tooltip l10n values"
+      );
+    }
   }
   Assert.equal(
     oneOffButton.id,

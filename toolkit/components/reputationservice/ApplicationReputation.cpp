@@ -197,8 +197,8 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".caction",    // Automator action
     ".cdr",        // Mac disk image
     //".cer", exec // Signed certificate file
-    ".cfg",        // Windows
-    ".chi",        // Windows Help
+    ".cfg",  // Windows
+    ".chi",  // Windows Help
     //".chm", exec // Windows Help
     ".class",  // Java
     //".cmd", exec // Windows executable
@@ -1433,7 +1433,7 @@ nsresult PendingLookup::DoLookupInternal() {
     nsAutoCString errorName;
     mozilla::GetErrorName(rv, errorName);
     LOG(("No suggested filename [rv = %s, this = %p]", errorName.get(), this));
-    mFileName = EmptyCString();
+    mFileName.Truncate();
   }
 
   // We can skip parsing certificate for non-binary files because we only

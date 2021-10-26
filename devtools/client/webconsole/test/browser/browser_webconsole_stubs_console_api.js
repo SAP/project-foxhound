@@ -40,9 +40,10 @@ add_task(async function() {
 
   let failed = false;
   for (const [key, packet] of generatedStubs) {
-    const packetStr = getSerializedPacket(packet);
+    const packetStr = getSerializedPacket(packet, { sortKeys: true });
     const existingPacketStr = getSerializedPacket(
-      existingStubs.rawPackets.get(key)
+      existingStubs.rawPackets.get(key),
+      { sortKeys: true }
     );
 
     is(packetStr, existingPacketStr, `"${key}" packet has expected value`);
@@ -69,8 +70,10 @@ async function generateConsoleApiStubs() {
   // resource to `handleConsoleMessage`, dynamically updated for each command.
   let handleConsoleMessage = function() {};
 
-  const onConsoleMessage = ({ resource }) => {
-    handleConsoleMessage(resource);
+  const onConsoleMessage = resources => {
+    for (const resource of resources) {
+      handleConsoleMessage(resource);
+    }
   };
   await resourceWatcher.watchResources(
     [resourceWatcher.TYPES.CONSOLE_MESSAGE],

@@ -151,9 +151,7 @@ void TextComposition::DispatchEvent(
     const WidgetCompositionEvent* aOriginalEvent) {
   nsPluginInstanceOwner::GeneratePluginEvent(aOriginalEvent, aDispatchEvent);
 
-  if (aDispatchEvent->mMessage == eCompositionChange &&
-      StaticPrefs::
-          dom_compositionevent_text_dispatch_only_system_group_in_content()) {
+  if (aDispatchEvent->mMessage == eCompositionChange) {
     aDispatchEvent->mFlags.mOnlySystemGroupDispatchInContent = true;
   }
   EventDispatcher::Dispatch(mNode, mPresContext, aDispatchEvent, nullptr,
@@ -565,7 +563,7 @@ nsresult TextComposition::RequestToCommit(nsIWidget* aWidget, bool aDiscard) {
   RefPtr<TextComposition> kungFuDeathGrip(this);
   const nsAutoString lastData(mLastData);
 
-  {
+  if (IMEStateManager::CanSendNotificationToWidget()) {
     AutoRestore<bool> saveRequestingCancel(mIsRequestingCancel);
     AutoRestore<bool> saveRequestingCommit(mIsRequestingCommit);
     if (aDiscard) {
@@ -595,8 +593,7 @@ nsresult TextComposition::RequestToCommit(nsIWidget* aWidget, bool aDiscard) {
   // Otherwise, synthesize the commit in content.
   nsAutoString data(aDiscard ? EmptyString() : lastData);
   if (data == mLastData) {
-    DispatchCompositionEventRunnable(eCompositionCommitAsIs, EmptyString(),
-                                     true);
+    DispatchCompositionEventRunnable(eCompositionCommitAsIs, u""_ns, true);
   } else {
     DispatchCompositionEventRunnable(eCompositionCommit, data, true);
   }
@@ -685,7 +682,7 @@ RawRangeBoundary TextComposition::GetStartRef() const {
       SelectionType::eIMERawClause, SelectionType::eIMESelectedRawClause,
       SelectionType::eIMEConvertedClause, SelectionType::eIMESelectedClause};
   for (auto selectionType : kIMESelectionTypes) {
-    Selection* selection =
+    dom::Selection* selection =
         selectionController->GetSelection(ToRawSelectionType(selectionType));
     if (!selection) {
       continue;
@@ -742,7 +739,7 @@ RawRangeBoundary TextComposition::GetEndRef() const {
       SelectionType::eIMERawClause, SelectionType::eIMESelectedRawClause,
       SelectionType::eIMEConvertedClause, SelectionType::eIMESelectedClause};
   for (auto selectionType : kIMESelectionTypes) {
-    Selection* selection =
+    dom::Selection* selection =
         selectionController->GetSelection(ToRawSelectionType(selectionType));
     if (!selection) {
       continue;
@@ -810,6 +807,8 @@ TextComposition::CompositionEventDispatcher::Run() {
   }
 
   RefPtr<nsPresContext> presContext = mTextComposition->mPresContext;
+  nsCOMPtr<nsINode> eventTarget = mEventTarget;
+  RefPtr<BrowserParent> browserParent = mTextComposition->mBrowserParent;
   nsEventStatus status = nsEventStatus_eIgnore;
   switch (mEventMessage) {
     case eCompositionStart: {
@@ -823,8 +822,8 @@ TextComposition::CompositionEventDispatcher::Run() {
       compStart.mFlags.mIsSynthesizedForTests =
           mTextComposition->IsSynthesizedForTests();
       IMEStateManager::DispatchCompositionEvent(
-          mEventTarget, presContext, mTextComposition->mBrowserParent,
-          &compStart, &status, nullptr, mIsSynthesizedEvent);
+          eventTarget, presContext, browserParent, &compStart, &status, nullptr,
+          mIsSynthesizedEvent);
       break;
     }
     case eCompositionChange:
@@ -838,8 +837,8 @@ TextComposition::CompositionEventDispatcher::Run() {
       compEvent.mFlags.mIsSynthesizedForTests =
           mTextComposition->IsSynthesizedForTests();
       IMEStateManager::DispatchCompositionEvent(
-          mEventTarget, presContext, mTextComposition->mBrowserParent,
-          &compEvent, &status, nullptr, mIsSynthesizedEvent);
+          eventTarget, presContext, browserParent, &compEvent, &status, nullptr,
+          mIsSynthesizedEvent);
       break;
     }
     default:

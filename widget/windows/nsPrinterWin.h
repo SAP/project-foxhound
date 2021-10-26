@@ -6,28 +6,37 @@
 #ifndef nsPrinterWin_h_
 #define nsPrinterWin_h_
 
-#include "nsIPrinter.h"
+#include "nsPrinterBase.h"
+#include "mozilla/DataMutex.h"
+#include "nsTArrayForwardDeclare.h"
 
-#include "mozilla/Maybe.h"
-#include "nsIPaper.h"
-#include "nsISupportsImpl.h"
-#include "nsString.h"
-
-class nsPrinterWin final : public nsIPrinter {
+class nsPrinterWin final : public nsPrinterBase {
  public:
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIPRINTER
+  NS_IMETHOD GetName(nsAString& aName) override;
+  NS_IMETHOD GetSystemName(nsAString& aName) override;
+  bool SupportsDuplex() const final;
+  bool SupportsColor() const final;
+  bool SupportsMonochrome() const final;
+  bool SupportsCollation() const final;
+  PrinterInfo CreatePrinterInfo() const final;
+  MarginDouble GetMarginsForPaper(nsString aPaperId) const final;
+
   nsPrinterWin() = delete;
-  explicit nsPrinterWin(const nsAString& aName);
+  static already_AddRefed<nsPrinterWin> Create(
+      const mozilla::CommonPaperInfoArray* aPaperInfoArray,
+      const nsAString& aName);
 
  private:
+  nsPrinterWin(const mozilla::CommonPaperInfoArray* aPaperInfoArray,
+               const nsAString& aName);
   ~nsPrinterWin() = default;
 
-  nsresult EnsurePaperList();
+  nsTArray<uint8_t> CopyDefaultDevmodeW() const;
+  nsTArray<mozilla::PaperInfo> PaperList() const;
+  PrintSettingsInitializer DefaultSettings() const;
 
-  nsString mName;
-  nsTArray<RefPtr<nsIPaper>> mPaperList;
-  Maybe<bool> mSupportsDuplex;
+  const nsString mName;
+  mutable mozilla::DataMutex<nsTArray<uint8_t>> mDefaultDevmodeWStorage;
 };
 
 #endif  // nsPrinterWin_h_

@@ -25,8 +25,7 @@ class FFmpegAudioDecoder<LIBAV_VER>
     : public FFmpegDataDecoder<LIBAV_VER>,
       public DecoderDoctorLifeLogger<FFmpegAudioDecoder<LIBAV_VER>> {
  public:
-  FFmpegAudioDecoder(FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue,
-                     const AudioInfo& aConfig);
+  FFmpegAudioDecoder(FFmpegLibWrapper* aLib, const AudioInfo& aConfig);
   virtual ~FFmpegAudioDecoder();
 
   RefPtr<InitPromise> Init() override;
@@ -39,6 +38,8 @@ class FFmpegAudioDecoder<LIBAV_VER>
  private:
   MediaResult DoDecode(MediaRawData* aSample, uint8_t* aData, int aSize,
                        bool* aGotFrame, DecodedData& aResults) override;
+  uint32_t mEncoderDelay = 0;
+  uint32_t mEncoderPadding = 0;
 };
 
 }  // namespace mozilla

@@ -18,6 +18,17 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/Services.jsm"
 );
 
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "tabChromePromptSubDialog",
+  "prompts.tabChromePromptSubDialog",
+  false
+);
+
 /**
  * @typedef {Object} Prompt
  * @property {Function} resolver
@@ -106,10 +117,14 @@ class PromptParent extends JSWindowActorParent {
 
     switch (message.name) {
       case "Prompt:Open": {
-        if (args.modalType === Ci.nsIPrompt.MODAL_TYPE_WINDOW) {
-          return this.openWindowPrompt(args);
+        if (
+          args.modalType === Ci.nsIPrompt.MODAL_TYPE_CONTENT ||
+          (args.modalType === Ci.nsIPrompt.MODAL_TYPE_TAB &&
+            !tabChromePromptSubDialog)
+        ) {
+          return this.openContentPrompt(args, id);
         }
-        return this.openTabPrompt(args, id);
+        return this.openChromePrompt(args);
       }
     }
 
@@ -131,7 +146,7 @@ class PromptParent extends JSWindowActorParent {
    * @resolves {Object}
    *           The arguments returned from the TabModalPrompt.
    */
-  openTabPrompt(args, id) {
+  openContentPrompt(args, id) {
     let browser = this.browsingContext.top.embedderElement;
     if (!browser) {
       throw new Error("Cannot tab-prompt without a browser!");
@@ -221,7 +236,7 @@ class PromptParent extends JSWindowActorParent {
    * @resolves {Object}
    *           The arguments returned from the window prompt.
    */
-  async openWindowPrompt(args) {
+  async openChromePrompt(args) {
     const COMMON_DIALOG = "chrome://global/content/commonDialog.xhtml";
     const SELECT_DIALOG = "chrome://global/content/selectDialog.xhtml";
     let uri = args.promptType == "select" ? SELECT_DIALOG : COMMON_DIALOG;
@@ -252,20 +267,32 @@ class PromptParent extends JSWindowActorParent {
         PromptUtils.fireDialogEvent(win, "DOMWillOpenModalDialog", browser);
       }
 
+      args.promptAborted = false;
+
       let bag = PromptUtils.objectToPropBag(args);
 
-      Services.ww.openWindow(
-        win,
-        uri,
-        "_blank",
-        "centerscreen,chrome,modal,titlebar",
-        bag
-      );
+      if (args.modalType === Services.prompt.MODAL_TYPE_TAB) {
+        if (!browser) {
+          throw new Error("Cannot tab-prompt without a browser!");
+        }
+        // Tab
+        let dialogBox = win.gBrowser.getTabDialogBox(browser);
+        await dialogBox.open(uri, { features: "resizable=no" }, bag);
+      } else {
+        // Window
+        Services.ww.openWindow(
+          win,
+          uri,
+          "_blank",
+          "centerscreen,chrome,modal,titlebar",
+          bag
+        );
+      }
 
       PromptUtils.propBagToObject(bag, args);
     } finally {
       if (browser) {
-        browser.leaveModalState();
+        browser.maybeLeaveModalState();
         PromptUtils.fireDialogEvent(win, "DOMModalDialogClosed", browser);
       }
     }

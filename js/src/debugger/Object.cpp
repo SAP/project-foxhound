@@ -16,8 +16,7 @@
 #include <type_traits>  // for remove_reference<>::type
 #include <utility>      // for move
 
-#include "jsapi.h"        // for CallArgs, RootedObject, Rooted
-#include "jsfriendapi.h"  // for GetErrorMessage
+#include "jsapi.h"  // for CallArgs, RootedObject, Rooted
 
 #include "builtin/Array.h"       // for NewDenseCopiedArray
 #include "builtin/Promise.h"     // for PromiseReactionRecordBuilder
@@ -31,41 +30,45 @@
 #include "gc/Tracer.h"  // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "js/CompilationAndEvaluation.h"  //  for Compile
 #include "js/Conversions.h"               // for ToObject
-#include "js/HeapAPI.h"                   // for IsInsideNursery
-#include "js/Promise.h"                   // for PromiseState
-#include "js/Proxy.h"                     // for PropertyDescriptor
-#include "js/StableStringChars.h"         // for AutoStableStringChars
-#include "proxy/ScriptedProxyHandler.h"   // for ScriptedProxyHandler
-#include "vm/ArgumentsObject.h"           // for ARGS_LENGTH_MAX
-#include "vm/ArrayObject.h"               // for ArrayObject
-#include "vm/AsyncFunction.h"             // for AsyncGeneratorObject
-#include "vm/AsyncIteration.h"            // for AsyncFunctionGeneratorObject
-#include "vm/BytecodeUtil.h"              // for JSDVG_SEARCH_STACK
-#include "vm/Compartment.h"               // for Compartment
-#include "vm/EnvironmentObject.h"         // for GetDebugEnvironmentForFunction
-#include "vm/ErrorObject.h"               // for JSObject::is, ErrorObject
-#include "vm/GeneratorObject.h"           // for AbstractGeneratorObject
-#include "vm/GlobalObject.h"              // for JSObject::is, GlobalObject
-#include "vm/Instrumentation.h"           // for RealmInstrumentation
-#include "vm/Interpreter.h"               // for Call
-#include "vm/JSAtom.h"                    // for Atomize, js_apply_str
-#include "vm/JSContext.h"                 // for JSContext, ReportValueError
-#include "vm/JSFunction.h"                // for JSFunction
-#include "vm/JSScript.h"                  // for JSScript
-#include "vm/NativeObject.h"              // for NativeObject, JSObject::is
-#include "vm/ObjectGroup.h"               // for GenericObject, NewObjectKind
-#include "vm/ObjectOperations.h"          // for DefineProperty
-#include "vm/PlainObject.h"               // for js::PlainObject
-#include "vm/PromiseObject.h"             // for js::PromiseObject
-#include "vm/Realm.h"                     // for AutoRealm, ErrorCopier, Realm
-#include "vm/Runtime.h"                   // for JSAtomState
-#include "vm/SavedFrame.h"                // for SavedFrame
-#include "vm/Scope.h"                     // for PositionalFormalParameterIter
-#include "vm/SelfHosting.h"               // for GetClonedSelfHostedFunctionName
-#include "vm/Shape.h"                     // for Shape
-#include "vm/Stack.h"                     // for InvokeArgs
-#include "vm/StringType.h"                // for JSAtom, PropertyName
-#include "vm/WrapperObject.h"             // for JSObject::is, WrapperObject
+#include "js/friend/ErrorMessages.h"      // for GetErrorMessage, JSMSG_*
+#include "js/friend/WindowProxy.h"  // for IsWindow, IsWindowProxy, ToWindowIfWindowProxy
+#include "js/HeapAPI.h"             // for IsInsideNursery
+#include "js/Promise.h"             // for PromiseState
+#include "js/Proxy.h"               // for PropertyDescriptor
+#include "js/SourceText.h"               // for SourceText
+#include "js/StableStringChars.h"        // for AutoStableStringChars
+#include "js/String.h"                   // for JS::StringHasLatin1Chars
+#include "proxy/ScriptedProxyHandler.h"  // for ScriptedProxyHandler
+#include "vm/ArgumentsObject.h"          // for ARGS_LENGTH_MAX
+#include "vm/ArrayObject.h"              // for ArrayObject
+#include "vm/AsyncFunction.h"            // for AsyncGeneratorObject
+#include "vm/AsyncIteration.h"           // for AsyncFunctionGeneratorObject
+#include "vm/BytecodeUtil.h"             // for JSDVG_SEARCH_STACK
+#include "vm/Compartment.h"              // for Compartment
+#include "vm/EnvironmentObject.h"        // for GetDebugEnvironmentForFunction
+#include "vm/ErrorObject.h"              // for JSObject::is, ErrorObject
+#include "vm/GeneratorObject.h"          // for AbstractGeneratorObject
+#include "vm/GlobalObject.h"             // for JSObject::is, GlobalObject
+#include "vm/Instrumentation.h"          // for RealmInstrumentation
+#include "vm/Interpreter.h"              // for Call
+#include "vm/JSAtom.h"                   // for Atomize, js_apply_str
+#include "vm/JSContext.h"                // for JSContext, ReportValueError
+#include "vm/JSFunction.h"               // for JSFunction
+#include "vm/JSScript.h"                 // for JSScript
+#include "vm/NativeObject.h"             // for NativeObject, JSObject::is
+#include "vm/ObjectGroup.h"              // for GenericObject, NewObjectKind
+#include "vm/ObjectOperations.h"         // for DefineProperty
+#include "vm/PlainObject.h"              // for js::PlainObject
+#include "vm/PromiseObject.h"            // for js::PromiseObject
+#include "vm/Realm.h"                    // for AutoRealm, ErrorCopier, Realm
+#include "vm/Runtime.h"                  // for JSAtomState
+#include "vm/SavedFrame.h"               // for SavedFrame
+#include "vm/Scope.h"                    // for PositionalFormalParameterIter
+#include "vm/SelfHosting.h"              // for GetClonedSelfHostedFunctionName
+#include "vm/Shape.h"                    // for Shape
+#include "vm/Stack.h"                    // for InvokeArgs
+#include "vm/StringType.h"               // for JSAtom, PropertyName
+#include "vm/WrapperObject.h"            // for JSObject::is, WrapperObject
 
 #include "vm/Compartment-inl.h"  // for Compartment::wrap
 #include "vm/JSObject-inl.h"  // for GetObjectClassName, InitClass, NewObjectWithGivenProtoAndKind, ToPropertyKey
@@ -351,28 +354,14 @@ bool DebuggerObject::CallData::parameterNamesGetter() {
     return true;
   }
 
-  Rooted<StringVector> names(cx, StringVector(cx));
-  if (!DebuggerObject::getParameterNames(cx, object, &names)) {
+  RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+  ArrayObject* arr = GetFunctionParameterNamesArray(cx, referent);
+  if (!arr) {
     return false;
   }
 
-  RootedArrayObject obj(cx, NewDenseFullyAllocatedArray(cx, names.length()));
-  if (!obj) {
-    return false;
-  }
-
-  obj->ensureDenseInitializedLength(cx, 0, names.length());
-  for (size_t i = 0; i < names.length(); ++i) {
-    Value v;
-    if (names[i]) {
-      v = StringValue(names[i]);
-    } else {
-      v = UndefinedValue();
-    }
-    obj->setDenseElement(i, v);
-  }
-
-  args.rval().setObject(*obj);
+  args.rval().setObject(*arr);
   return true;
 }
 
@@ -499,9 +488,9 @@ bool DebuggerObject::CallData::allocationSiteGetter() {
   return true;
 }
 
-// Returns the "name" field (see js.msg), which may be used as a unique
-// identifier, for any error object with a JSErrorReport or undefined
-// if the object has no JSErrorReport.
+// Returns the "name" field (see js/public/friend/ErrorNumbers.msg), which may
+// be used as a unique identifier, for any error object with a JSErrorReport or
+// undefined if the object has no JSErrorReport.
 bool DebuggerObject::CallData::errorMessageNameGetter() {
   RootedString result(cx);
   if (!DebuggerObject::getErrorMessageName(cx, object, &result)) {
@@ -1242,7 +1231,7 @@ bool DebuggerObject::CallData::createSource() {
   JS::CompileOptions compileOptions(cx);
   compileOptions.lineno = startLine;
 
-  if (!JS_StringHasLatin1Chars(url)) {
+  if (!JS::StringHasLatin1Chars(url)) {
     JS_ReportErrorASCII(cx, "URL must be a narrow string");
     return false;
   }
@@ -1762,45 +1751,6 @@ double DebuggerObject::promiseTimeToResolution() const {
   MOZ_ASSERT(promiseState() != JS::PromiseState::Pending);
 
   return promise()->timeToResolution();
-}
-
-/* static */
-bool DebuggerObject::getParameterNames(JSContext* cx,
-                                       HandleDebuggerObject object,
-                                       MutableHandle<StringVector> result) {
-  MOZ_ASSERT(object->isDebuggeeFunction());
-
-  RootedFunction referent(cx, &object->referent()->as<JSFunction>());
-
-  if (!result.growBy(referent->nargs())) {
-    return false;
-  }
-  if (IsInterpretedNonSelfHostedFunction(referent)) {
-    RootedScript script(cx, GetOrCreateFunctionScript(cx, referent));
-    if (!script) {
-      return false;
-    }
-
-    MOZ_ASSERT(referent->nargs() == script->numArgs());
-
-    if (referent->nargs() > 0) {
-      PositionalFormalParameterIter fi(script);
-      for (size_t i = 0; i < referent->nargs(); i++, fi++) {
-        MOZ_ASSERT(fi.argumentSlot() == i);
-        JSAtom* atom = fi.name();
-        if (atom) {
-          cx->markAtom(atom);
-        }
-        result[i].set(atom);
-      }
-    }
-  } else {
-    for (size_t i = 0; i < referent->nargs(); i++) {
-      result[i].set(nullptr);
-    }
-  }
-
-  return true;
 }
 
 /* static */

@@ -24,13 +24,6 @@ add_task(async function() {
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
 
-  info("Test error messages legacy listener");
-  await pushPref("devtools.testing.enableServerWatcherSupport", false);
-  await testErrorMessagesResources();
-  await testErrorMessagesResourcesWithIgnoreExistingResources();
-
-  info("Test error messages server listener");
-  await pushPref("devtools.testing.enableServerWatcherSupport", true);
   await testErrorMessagesResources();
   await testErrorMessagesResourcesWithIgnoreExistingResources();
 });
@@ -39,11 +32,9 @@ async function testErrorMessagesResources() {
   // Open a test tab
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   const receivedMessages = [];
   // The expected messages are the errors, twice (once for cached messages, once for live messages)
@@ -59,29 +50,31 @@ async function testErrorMessagesResources() {
 
   let done;
   const onAllErrorReceived = new Promise(resolve => (done = resolve));
-  const onAvailable = ({ resourceType, targetFront, resource }) => {
-    const { pageError } = resource;
+  const onAvailable = resources => {
+    for (const resource of resources) {
+      const { pageError } = resource;
 
-    is(
-      resource.targetFront,
-      targetList.targetFront,
-      "The targetFront property is the expected one"
-    );
+      is(
+        resource.targetFront,
+        targetList.targetFront,
+        "The targetFront property is the expected one"
+      );
 
-    if (!pageError.sourceName.includes("test_page_errors")) {
-      info(`Ignore error from unknown source: "${pageError.sourceName}"`);
-      return;
-    }
+      if (!pageError.sourceName.includes("test_page_errors")) {
+        info(`Ignore error from unknown source: "${pageError.sourceName}"`);
+        continue;
+      }
 
-    const index = receivedMessages.length;
-    receivedMessages.push(pageError);
+      const index = receivedMessages.length;
+      receivedMessages.push(pageError);
 
-    info(`checking received page error #${index}: ${pageError.errorMessage}`);
-    ok(pageError, "The resource has a pageError attribute");
-    checkObject(pageError, expectedMessages[index]);
+      info(`checking received page error #${index}: ${pageError.errorMessage}`);
+      ok(pageError, "The resource has a pageError attribute");
+      checkPageErrorResource(pageError, expectedMessages[index]);
 
-    if (receivedMessages.length == expectedMessages.length) {
-      done();
+      if (receivedMessages.length == expectedMessages.length) {
+        done();
+      }
     }
   };
 
@@ -103,7 +96,7 @@ async function testErrorMessagesResources() {
   ok(true, "All the expected errors were received");
 
   Services.console.reset();
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 }
 
@@ -111,11 +104,9 @@ async function testErrorMessagesResourcesWithIgnoreExistingResources() {
   info("Test ignoreExistingResources option for ERROR_MESSAGE");
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info(
     "Check whether onAvailable will not be called with existing error messages"
@@ -124,7 +115,7 @@ async function testErrorMessagesResourcesWithIgnoreExistingResources() {
 
   const availableResources = [];
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.ERROR_MESSAGE], {
-    onAvailable: ({ resource }) => availableResources.push(resource),
+    onAvailable: resources => availableResources.push(...resources),
     ignoreExistingResources: true,
   });
   is(
@@ -143,11 +134,11 @@ async function testErrorMessagesResourcesWithIgnoreExistingResources() {
   for (let i = 0; i < expectedMessages.length; i++) {
     const { pageError } = availableResources[i];
     const expected = expectedMessages[i];
-    checkObject(pageError, expected);
+    checkPageErrorResource(pageError, expected);
   }
 
   Services.console.reset();
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 }
 
@@ -167,17 +158,36 @@ async function triggerErrors(tab) {
       expr
     ) {
       const document = content.document;
-      const container = document.createElement("script");
-      document.body.appendChild(container);
-      container.textContent = expr;
-      container.remove();
+      const scriptEl = document.createElement("script");
+      scriptEl.textContent = expr;
+      document.body.appendChild(scriptEl);
     });
-    // Wait a bit between each messages, as uncaught promises errors are not emitted
-    // right away.
 
-    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-    await new Promise(res => setTimeout(res, 10));
+    if (expected.isPromiseRejection) {
+      // Wait a bit after an uncaught promise rejection error, as they are not emitted
+      // right away.
+
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      await new Promise(res => setTimeout(res, 10));
+    }
   }
+}
+
+function checkPageErrorResource(pageErrorResource, expected) {
+  // Let's remove test harness related frames in stacktrace
+  const clonedPageErrorResource = { ...pageErrorResource };
+  if (clonedPageErrorResource.stacktrace) {
+    const index = clonedPageErrorResource.stacktrace.findIndex(frame =>
+      frame.filename.startsWith("resource://testing-common/content-task.js")
+    );
+    if (index > -1) {
+      clonedPageErrorResource.stacktrace = clonedPageErrorResource.stacktrace.slice(
+        0,
+        index
+      );
+    }
+  }
+  checkObject(clonedPageErrorResource, expected);
 }
 
 const noUncaughtException = Symbol();
@@ -185,27 +195,6 @@ const NUMBER_REGEX = /^\d+$/;
 
 const mdnUrl = path =>
   `https://developer.mozilla.org/${path}?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default`;
-const defaultStackFrames = [
-  {
-    filename: /resource:\/\/testing-common\/content-task.js/,
-    lineNumber: NUMBER_REGEX,
-    columnNumber: NUMBER_REGEX,
-    functionName: "frameScript",
-  },
-  {
-    filename: "resource://testing-common/content-task.js",
-    lineNumber: NUMBER_REGEX,
-    columnNumber: NUMBER_REGEX,
-    functionName: null,
-  },
-  {
-    filename: "resource://testing-common/content-task.js",
-    lineNumber: NUMBER_REGEX,
-    columnNumber: NUMBER_REGEX,
-    functionName: null,
-    asyncCause: "MessageListener.receiveMessage",
-  },
-];
 
 const expectedPageErrors = new Map([
   [
@@ -219,7 +208,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -231,12 +219,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 10,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -255,7 +241,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -265,12 +250,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 6,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -289,7 +272,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -299,12 +281,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 23,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -323,7 +303,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -335,12 +314,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 2,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -359,7 +336,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -373,17 +349,15 @@ const expectedPageErrors = new Map([
           filename: "self-hosted",
           sourceId: null,
           lineNumber: NUMBER_REGEX,
-          columnNumber: 1,
+          columnNumber: NUMBER_REGEX,
           functionName: "repeat",
         },
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 7,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -402,7 +376,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -416,17 +389,15 @@ const expectedPageErrors = new Map([
           filename: "self-hosted",
           sourceId: null,
           lineNumber: NUMBER_REGEX,
-          columnNumber: 1,
+          columnNumber: NUMBER_REGEX,
           functionName: "repeat",
         },
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 5,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -445,7 +416,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -457,12 +427,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 9,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -517,7 +485,7 @@ const expectedPageErrors = new Map([
       ),
       innerWindowID: NUMBER_REGEX,
       private: false,
-      stacktrace: defaultStackFrames,
+      stacktrace: [],
       chromeContext: false,
       isPromiseRejection: false,
       isForwardedFromContentProcess: false,
@@ -545,7 +513,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -555,12 +522,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 13,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -579,7 +544,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -589,12 +553,10 @@ const expectedPageErrors = new Map([
       stacktrace: [
         {
           filename: /test_page_errors\.html/,
-          sourceId: null,
           lineNumber: 1,
           columnNumber: 33,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,
@@ -620,7 +582,6 @@ const expectedPageErrors = new Map([
       error: true,
       warning: false,
       info: false,
-      sourceId: null,
       lineText: "",
       lineNumber: NUMBER_REGEX,
       columnNumber: NUMBER_REGEX,
@@ -642,7 +603,6 @@ const expectedPageErrors = new Map([
           columnNumber: 7,
           functionName: null,
         },
-        ...defaultStackFrames,
       ],
       notes: null,
       chromeContext: false,

@@ -8,11 +8,17 @@
 
 #include "jit/BaselineDebugModeOSR.h"
 #include "jit/BaselineIC.h"
+#include "jit/CalleeToken.h"
 #include "jit/IonScript.h"
 #include "jit/JitcodeMap.h"
 #include "jit/JitFrames.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitScript.h"
+#include "jit/SafepointIndex.h"
 #include "jit/Safepoints.h"
+#include "jit/ScriptFromCalleeToken.h"
+#include "jit/VMFunctions.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpObject, js::DumpValue
 
 #include "vm/JSScript-inl.h"
 
@@ -442,9 +448,11 @@ bool JSJitFrameIter::verifyReturnAddressUsingNativeToBytecodeMap() {
 
   JitSpew(JitSpew_Profiling, "Found bytecode location of depth %u:", depth);
   for (size_t i = 0; i < location.length(); i++) {
-    JitSpew(JitSpew_Profiling, "   %s:%u - %zu", location[i].script->filename(),
-            location[i].script->lineno(),
-            size_t(location[i].pc - location[i].script->code()));
+    JitSpew(JitSpew_Profiling, "   %s:%u - %zu",
+            location[i].getDebugOnlyScript()->filename(),
+            location[i].getDebugOnlyScript()->lineno(),
+            size_t(location[i].toRawBytecode() -
+                   location[i].getDebugOnlyScript()->code()));
   }
 
   if (type_ == FrameType::IonJS) {
@@ -459,10 +467,12 @@ bool JSJitFrameIter::verifyReturnAddressUsingNativeToBytecodeMap() {
               (int)idx, inlineFrames.script()->filename(),
               inlineFrames.script()->lineno(),
               size_t(inlineFrames.pc() - inlineFrames.script()->code()),
-              location[idx].script->filename(), location[idx].script->lineno(),
-              size_t(location[idx].pc - location[idx].script->code()));
+              location[idx].getDebugOnlyScript()->filename(),
+              location[idx].getDebugOnlyScript()->lineno(),
+              size_t(location[idx].toRawBytecode() -
+                     location[idx].getDebugOnlyScript()->code()));
 
-      MOZ_ASSERT(inlineFrames.script() == location[idx].script);
+      MOZ_ASSERT(inlineFrames.script() == location[idx].getDebugOnlyScript());
 
       if (inlineFrames.more()) {
         ++inlineFrames;

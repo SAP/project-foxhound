@@ -7,6 +7,7 @@
 const Services = require("Services");
 const promise = require("promise");
 const EventEmitter = require("devtools/shared/event-emitter");
+const flags = require("devtools/shared/flags");
 const { executeSoon } = require("devtools/shared/DevToolsUtils");
 const { Toolbox } = require("devtools/client/framework/toolbox");
 const createStore = require("devtools/client/inspector/store");
@@ -148,7 +149,7 @@ function Inspector(toolbox) {
   this.panelWin = window;
   this.panelWin.inspector = this;
   this.telemetry = toolbox.telemetry;
-  this.store = createStore();
+  this.store = createStore(this);
   this.isReady = false;
 
   // Map [panel id => panel instance]
@@ -172,9 +173,9 @@ function Inspector(toolbox) {
   this.onResourceAvailable = this.onResourceAvailable.bind(this);
   this.onRootNodeAvailable = this.onRootNodeAvailable.bind(this);
   this.onPanelWindowResize = this.onPanelWindowResize.bind(this);
-  this.onShowBoxModelHighlighterForNode = this.onShowBoxModelHighlighterForNode.bind(
-    this
-  );
+  this.onPickerCanceled = this.onPickerCanceled.bind(this);
+  this.onPickerHovered = this.onPickerHovered.bind(this);
+  this.onPickerPicked = this.onPickerPicked.bind(this);
   this.onSidebarHidden = this.onSidebarHidden.bind(this);
   this.onSidebarResized = this.onSidebarResized.bind(this);
   this.onSidebarSelect = this.onSidebarSelect.bind(this);
@@ -201,6 +202,21 @@ Inspector.prototype = {
     // available for the top-level target.
     this._onFirstMarkupLoaded = this.once("markuploaded");
 
+    // If the server-side stylesheet watcher is enabled, we should start to watch
+    // stylesheet resources before instanciating the inspector front since pageStyle
+    // actor should refer the watcher.
+    if (
+      this.toolbox.resourceWatcher.hasWatcherSupport(
+        this.toolbox.resourceWatcher.TYPES.STYLESHEET
+      )
+    ) {
+      this._isServerSideStyleSheetWatcherEnabled = true;
+      await this.toolbox.resourceWatcher.watchResources(
+        [this.toolbox.resourceWatcher.TYPES.STYLESHEET],
+        { onAvailable: this.onResourceAvailable }
+      );
+    }
+
     await this.toolbox.targetList.watchTargets(
       [this.toolbox.targetList.TYPES.FRAME],
       this._onTargetAvailable,
@@ -208,9 +224,14 @@ Inspector.prototype = {
     );
 
     await this.toolbox.resourceWatcher.watchResources(
-      [this.toolbox.resourceWatcher.TYPES.ROOT_NODE],
+      [
+        this.toolbox.resourceWatcher.TYPES.ROOT_NODE,
+        // To observe CSS change before opening changes view.
+        this.toolbox.resourceWatcher.TYPES.CSS_CHANGE,
+      ],
       { onAvailable: this.onResourceAvailable }
     );
+
     // Store the URL of the target page prior to navigation in order to ensure
     // telemetry counts in the Grid Inspector are not double counted on reload.
     this.previousURL = this.currentTarget.url;
@@ -248,8 +269,12 @@ Inspector.prototype = {
 
   async initInspectorFront(targetFront) {
     this.inspectorFront = await targetFront.getFront("inspector");
-    this.highlighter = this.inspectorFront.highlighter;
     this.walker = this.inspectorFront.walker;
+
+    // PageStyle front need the resource watcher when the server-side stylesheet watcher is enabled.
+    if (this._isServerSideStyleSheetWatcherEnabled) {
+      this.inspectorFront.pageStyle.resourceWatcher = this.toolbox.resourceWatcher;
+    }
   },
 
   get toolbox() {
@@ -342,6 +367,13 @@ Inspector.prototype = {
     return this._fluentL10n;
   },
 
+  // Duration in milliseconds after which to hide the highlighter for the picked node.
+  // While testing, disable auto hiding to prevent intermittent test failures.
+  // Some tests are very slow. If the highlighter is hidden after a delay, the test may
+  // find itself midway through without a highlighter to test.
+  // This value is exposed on Inspector so individual tests can restore it when needed.
+  HIGHLIGHTER_AUTOHIDE_TIMER: flags.testing ? 0 : 1000,
+
   /**
    * Handle promise rejections for various asynchronous actions, and only log errors if
    * the inspector panel still exists.
@@ -379,6 +411,9 @@ Inspector.prototype = {
     this.onNewSelection();
 
     this.toolbox.on("host-changed", this.onHostChanged);
+    this.toolbox.nodePicker.on("picker-node-hovered", this.onPickerHovered);
+    this.toolbox.nodePicker.on("picker-node-canceled", this.onPickerCanceled);
+    this.toolbox.nodePicker.on("picker-node-picked", this.onPickerPicked);
     this.selection.on("new-node-front", this.onNewSelection);
     this.selection.on("detached-front", this.onDetached);
 
@@ -399,7 +434,7 @@ Inspector.prototype = {
     this._defaultNode = null;
     this.selection.setNodeFront(null);
     this._destroyMarkup();
-    this._pendingSelection = null;
+    this._pendingSelectionUnique = null;
   },
 
   _getCssProperties: async function() {
@@ -415,71 +450,51 @@ Inspector.prototype = {
 
   /**
    * Return a promise that will resolve to the default node for selection.
+   *
+   * @param {NodeFront} rootNodeFront
+   *        The current root node front for the top walker.
    */
-  _getDefaultNodeForSelection: function() {
+  _getDefaultNodeForSelection: async function(rootNodeFront) {
     if (this._defaultNode) {
       return this._defaultNode;
     }
+
+    // Save the _pendingSelectionUnique on the current inspector instance.
+    const pendingSelectionUnique = Symbol("pending-selection");
+    this._pendingSelectionUnique = pendingSelectionUnique;
+
+    if (this._pendingSelectionUnique !== pendingSelectionUnique) {
+      // If this method was called again while waiting, bail out.
+      return null;
+    }
+
     const walker = this.walker;
-    let rootNode = null;
-    const pendingSelection = this._pendingSelection;
+    const cssSelectors = this.selectionCssSelectors;
+    // Try to find a default node using three strategies:
+    const defaultNodeSelectors = [
+      // - first try to match css selectors for the selection
+      () => (cssSelectors.length ? walker.findNodeFront(cssSelectors) : null),
+      // - otherwise try to get the "body" element
+      () => walker.querySelector(rootNodeFront, "body"),
+      // - finally get the documentElement element if nothing else worked.
+      () => walker.documentElement(),
+    ];
 
-    // A helper to tell if the target has or is about to navigate.
-    // this._pendingSelection changes on "will-navigate" and "new-root" events.
-    const hasNavigated = () => {
-      return pendingSelection !== this._pendingSelection;
-    };
-
-    // If available, set either the previously selected node or the body
-    // as default selected, else set documentElement
-    return walker
-      .getRootNode()
-      .then(node => {
-        if (hasNavigated()) {
-          return promise.reject(
-            "navigated; resolution of _defaultNode aborted"
-          );
-        }
-
-        rootNode = node;
-        if (this.selectionCssSelectors.length) {
-          return walker.findNodeFront(this.selectionCssSelectors);
-        }
+    // Try all default node selectors until a valid node is found.
+    for (const selector of defaultNodeSelectors) {
+      const node = await selector();
+      if (this._pendingSelectionUnique !== pendingSelectionUnique) {
+        // If this method was called again while waiting, bail out.
         return null;
-      })
-      .then(front => {
-        if (hasNavigated()) {
-          return promise.reject(
-            "navigated; resolution of _defaultNode aborted"
-          );
-        }
+      }
 
-        if (front) {
-          return front;
-        }
-        return walker.querySelector(rootNode, "body");
-      })
-      .then(front => {
-        if (hasNavigated()) {
-          return promise.reject(
-            "navigated; resolution of _defaultNode aborted"
-          );
-        }
-
-        if (front) {
-          return front;
-        }
-        return this.walker.documentElement();
-      })
-      .then(node => {
-        if (hasNavigated()) {
-          return promise.reject(
-            "navigated; resolution of _defaultNode aborted"
-          );
-        }
+      if (node) {
         this._defaultNode = node;
         return node;
-      });
+      }
+    }
+
+    return null;
   },
 
   /**
@@ -1295,16 +1310,16 @@ Inspector.prototype = {
     }
   },
 
-  onResourceAvailable: function({ resourceType, targetFront, resource }) {
-    if (resourceType === this.toolbox.resourceWatcher.TYPES.ROOT_NODE) {
-      if (targetFront.isTopLevel) {
-        // Note: the resource (ie the root node here) will be fetched from the
-        // walker later on in _getDefaultNodeForSelection.
-        // We should update the inspector to directly use the node front
-        // provided here. Bug 1635461.
-        this.onRootNodeAvailable();
-      } else {
-        this.emit("frame-root-available", resource);
+  onResourceAvailable: function(resources) {
+    for (const resource of resources) {
+      if (
+        resource.resourceType === this.toolbox.resourceWatcher.TYPES.ROOT_NODE
+      ) {
+        const rootNodeFront = resource;
+        const isTopLevelTarget = !!resource.targetFront.isTopLevel;
+        if (rootNodeFront.isTopLevelDocument && isTopLevelTarget) {
+          this.onRootNodeAvailable(rootNodeFront);
+        }
       }
     }
   },
@@ -1312,7 +1327,7 @@ Inspector.prototype = {
   /**
    * Reset the inspector on new root mutation.
    */
-  onRootNodeAvailable: function() {
+  onRootNodeAvailable: async function(rootNodeFront) {
     // Record new-root timing for telemetry
     this._newRootStart = this.panelWin.performance.now();
 
@@ -1320,13 +1335,12 @@ Inspector.prototype = {
     this.selection.setNodeFront(null);
     this._destroyMarkup();
 
-    const onNodeSelected = defaultNode => {
-      // Cancel this promise resolution as a new one had
-      // been queued up.
-      if (this._pendingSelection != onNodeSelected) {
+    try {
+      const defaultNode = await this._getDefaultNodeForSelection(rootNodeFront);
+      if (!defaultNode) {
         return;
       }
-      this._pendingSelection = null;
+
       this.selection.setNodeFront(defaultNode, {
         reason: "inspector-default-selection",
       });
@@ -1335,12 +1349,9 @@ Inspector.prototype = {
 
       // Setup the toolbar again, since its content may depend on the current document.
       this.setupToolbar();
-    };
-    this._pendingSelection = onNodeSelected;
-    this._getDefaultNodeForSelection().then(
-      onNodeSelected,
-      this._handleRejectionIfNotDestroyed
-    );
+    } catch (e) {
+      this._handleRejectionIfNotDestroyed(e);
+    }
   },
 
   /**
@@ -1653,6 +1664,9 @@ Inspector.prototype = {
     this.sidebar.off("show", this.onSidebarShown);
     this.sidebar.off("hide", this.onSidebarHidden);
     this.sidebar.off("destroy", this.onSidebarHidden);
+    this.toolbox.nodePicker.off("picker-node-canceled", this.onPickerCanceled);
+    this.toolbox.nodePicker.off("picker-node-hovered", this.onPickerHovered);
+    this.toolbox.nodePicker.off("picker-node-picked", this.onPickerPicked);
     this.currentTarget.off("will-navigate", this._onBeforeNavigate);
 
     for (const [, panel] of this._panels) {
@@ -1690,10 +1704,15 @@ Inspector.prototype = {
     this.styleChangeTracker.destroy();
     this.searchboxShortcuts.destroy();
 
-    this.toolbox.targetList.unwatchTargets(
-      [this.toolbox.targetList.TYPES.FRAME],
+    const { targetList, resourceWatcher } = this.toolbox;
+    targetList.unwatchTargets(
+      [targetList.TYPES.FRAME],
       this._onTargetAvailable,
       this._onTargetDestroyed
+    );
+    resourceWatcher.unwatchResources(
+      [resourceWatcher.TYPES.ROOT_NODE, resourceWatcher.TYPES.CSS_CHANGE],
+      { onAvailable: this.onResourceAvailable }
     );
 
     this._is3PaneModeChromeEnabled = null;
@@ -1883,9 +1902,10 @@ Inspector.prototype = {
   async screenshotNode() {
     // Bug 1332936 - it's possible to call `screenshotNode` while the BoxModel highlighter
     // is still visible, therefore showing it in the picture.
-    // To avoid that, we have to hide it before taking the screenshot. The `hideBoxModel`
-    // will do that, calling `hide` for the highlighter only if previously shown.
-    await this.highlighter.hideBoxModel();
+    // Note that other highlighters will still be visible. See Bug 1663881
+    await this.highlighters.hideHighlighterType(
+      this.highlighters.TYPES.BOXMODEL
+    );
 
     const clipboardEnabled = Services.prefs.getBoolPref(
       "devtools.screenshot.clipboard.enabled"
@@ -1901,30 +1921,34 @@ Inspector.prototype = {
   },
 
   /**
-   * Returns an object containing the shared handler functions used in the box
-   * model and grid React components.
+   * Returns an object containing the shared handler functions used in React components.
    */
   getCommonComponentProps() {
     return {
       setSelectedNode: this.selection.setNodeFront,
-      onShowBoxModelHighlighterForNode: this.onShowBoxModelHighlighterForNode,
     };
   },
 
-  /**
-   * Shows the box-model highlighter on the element corresponding to the provided
-   * NodeFront.
-   *
-   * @param  {NodeFront} nodeFront
-   *         The node to highlight.
-   * @param  {Object} options
-   *         Options passed to the highlighter actor.
-   */
-  onShowBoxModelHighlighterForNode(nodeFront, options) {
-    nodeFront.highlighterFront.highlight(nodeFront, options);
+  onPickerCanceled() {
+    this.highlighters.hideHighlighterType(this.highlighters.TYPES.BOXMODEL);
   },
 
-  async inspectNodeActor(nodeActor, inspectFromAnnotation) {
+  onPickerHovered(nodeFront) {
+    this.highlighters.showHighlighterTypeForNode(
+      this.highlighters.TYPES.BOXMODEL,
+      nodeFront
+    );
+  },
+
+  onPickerPicked(nodeFront) {
+    this.highlighters.showHighlighterTypeForNode(
+      this.highlighters.TYPES.BOXMODEL,
+      nodeFront,
+      { duration: this.HIGHLIGHTER_AUTOHIDE_TIMER }
+    );
+  },
+
+  async inspectNodeActor(nodeActor, reason) {
     const nodeFront = await this.inspectorFront.getNodeFrontFromNodeGrip({
       actor: nodeActor,
     });
@@ -1942,9 +1966,7 @@ Inspector.prototype = {
       return false;
     }
 
-    await this.selection.setNodeFront(nodeFront, {
-      reason: inspectFromAnnotation,
-    });
+    await this.selection.setNodeFront(nodeFront, { reason });
     return true;
   },
 };

@@ -127,7 +127,7 @@ class MOZ_STACK_CLASS gfxOTSMessageContext : public gfxOTSContext {
     va_start(va, format);
 
     nsCString msg;
-    msg.AppendPrintf(format, va);
+    msg.AppendVprintf(format, va);
 
     va_end(va);
 
@@ -214,7 +214,7 @@ void gfxUserFontEntry::StoreUserFontData(gfxFontEntry* aFontEntry,
   userFontData->mFormat = src.mFormatFlags;
   userFontData->mRealName = aOriginalName;
   if (aMetadata) {
-    userFontData->mMetadata.SwapElements(*aMetadata);
+    userFontData->mMetadata = std::move(*aMetadata);
     userFontData->mMetaOrigLen = aMetaOrigLen;
     userFontData->mCompression = aCompression;
   }
@@ -1274,8 +1274,7 @@ void gfxUserFontSet::UserFontCache::Entry::ReportMemory(
   path.Append(')');
 
   aHandleReport->Callback(
-      EmptyCString(), path, nsIMemoryReporter::KIND_HEAP,
-      nsIMemoryReporter::UNITS_BYTES,
+      ""_ns, path, nsIMemoryReporter::KIND_HEAP, nsIMemoryReporter::UNITS_BYTES,
       mFontEntry->ComputedSizeOfExcludingThis(UserFontsMallocSizeOf),
       "Memory used by @font-face resource."_ns, aData);
 }

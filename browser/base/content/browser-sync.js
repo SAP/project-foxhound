@@ -171,7 +171,11 @@ var gSync = {
     this._generateNodeGetters();
 
     // Label for the sync buttons.
-    if (!this.appMenuLabel) {
+    const appMenuLabel = PanelMultiView.getViewNode(
+      document,
+      "appMenu-fxa-label"
+    );
+    if (!appMenuLabel) {
       // We are in a window without our elements - just abort now, without
       // setting this._initialized, so we don't attempt to remove observers.
       return;
@@ -489,7 +493,10 @@ var gSync = {
       "defaultLabel"
     );
 
-    const appMenuFxAButtonEl = document.getElementById("appMenu-fxa-label");
+    const appMenuFxAButtonEl = PanelMultiView.getViewNode(
+      document,
+      "appMenu-fxa-label"
+    );
 
     let panelTitle = this.fxaStrings.GetStringFromName("account.title");
 
@@ -617,13 +624,26 @@ var gSync = {
   },
 
   updatePanelPopup(state) {
-    let defaultLabel = this.appMenuStatus.getAttribute("defaultlabel");
+    const appMenuStatus = PanelMultiView.getViewNode(
+      document,
+      "appMenu-fxa-status"
+    );
+    const appMenuLabel = PanelMultiView.getViewNode(
+      document,
+      "appMenu-fxa-label"
+    );
+    const appMenuAvatar = PanelMultiView.getViewNode(
+      document,
+      "appMenu-fxa-avatar"
+    );
+
+    let defaultLabel = appMenuStatus.getAttribute("defaultlabel");
     const status = state.status;
     // Reset the status bar to its original state.
-    this.appMenuLabel.setAttribute("label", defaultLabel);
-    this.appMenuStatus.removeAttribute("fxastatus");
-    this.appMenuAvatar.style.removeProperty("list-style-image");
-    this.appMenuLabel.classList.remove("subviewbutton-nav");
+    appMenuLabel.setAttribute("label", defaultLabel);
+    appMenuStatus.removeAttribute("fxastatus");
+    appMenuAvatar.style.removeProperty("list-style-image");
+    appMenuLabel.classList.remove("subviewbutton-nav");
 
     if (status == UIState.STATUS_NOT_CONFIGURED) {
       return;
@@ -635,28 +655,28 @@ var gSync = {
         "reconnectDescription",
         [state.email]
       );
-      let errorLabel = this.appMenuStatus.getAttribute("errorlabel");
-      this.appMenuStatus.setAttribute("fxastatus", "login-failed");
-      this.appMenuLabel.setAttribute("label", errorLabel);
-      this.appMenuStatus.setAttribute("tooltiptext", tooltipDescription);
+      let errorLabel = appMenuStatus.getAttribute("errorlabel");
+      appMenuStatus.setAttribute("fxastatus", "login-failed");
+      appMenuLabel.setAttribute("label", errorLabel);
+      appMenuStatus.setAttribute("tooltiptext", tooltipDescription);
       return;
     } else if (status == UIState.STATUS_NOT_VERIFIED) {
       let tooltipDescription = this.fxaStrings.formatStringFromName(
         "verifyDescription",
         [state.email]
       );
-      let unverifiedLabel = this.appMenuStatus.getAttribute("unverifiedlabel");
-      this.appMenuStatus.setAttribute("fxastatus", "unverified");
-      this.appMenuLabel.setAttribute("label", unverifiedLabel);
-      this.appMenuStatus.setAttribute("tooltiptext", tooltipDescription);
+      let unverifiedLabel = appMenuStatus.getAttribute("unverifiedlabel");
+      appMenuStatus.setAttribute("fxastatus", "unverified");
+      appMenuLabel.setAttribute("label", unverifiedLabel);
+      appMenuStatus.setAttribute("tooltiptext", tooltipDescription);
       return;
     }
 
     // At this point we consider sync to be logged-in.
-    this.appMenuStatus.setAttribute("fxastatus", "signedin");
-    this.appMenuLabel.setAttribute("label", state.displayName || state.email);
-    this.appMenuLabel.classList.add("subviewbutton-nav");
-    this.appMenuStatus.removeAttribute("tooltiptext");
+    appMenuStatus.setAttribute("fxastatus", "signedin");
+    appMenuLabel.setAttribute("label", state.displayName || state.email);
+    appMenuLabel.classList.add("subviewbutton-nav");
+    appMenuStatus.removeAttribute("tooltiptext");
   },
 
   updateState(state) {
@@ -1021,8 +1041,8 @@ var gSync = {
       addTargetDevice(target.id, target.name, type, lastModified);
     }
 
-    // "Send to All Devices" menu item
     if (targets.length > 1) {
+      // "Send to All Devices" menu item
       const separator = createDeviceNodeFn();
       separator.classList.add("sync-menuitem");
       fragment.appendChild(separator);
@@ -1030,6 +1050,27 @@ var gSync = {
         "sendToAllDevices.menuitem"
       );
       addTargetDevice("", allDevicesLabel, "");
+
+      // "Manage devices" menu item
+      const manageDevicesLabel = this.fxaStrings.GetStringFromName(
+        "manageDevices.menuitem"
+      );
+      // We piggyback on the createDeviceNodeFn implementation,
+      // it's a big disgusting.
+      const targetDevice = createDeviceNodeFn(
+        null,
+        manageDevicesLabel,
+        null,
+        null
+      );
+      targetDevice.addEventListener(
+        "command",
+        () => gSync.openDevicesManagementPage("sendtab"),
+        true
+      );
+      targetDevice.classList.add("sync-menuitem", "sendtab-target");
+      targetDevice.setAttribute("label", manageDevicesLabel);
+      fragment.appendChild(targetDevice);
     }
   },
 
@@ -1301,42 +1342,72 @@ var gSync = {
   // Returns true if the disconnection happened (ie, if the user didn't decline
   // when asked to confirm)
   async disconnect({ confirm = true, disconnectAccount = true } = {}) {
-    if (confirm && !(await this._confirmDisconnect(disconnectAccount))) {
+    if (disconnectAccount) {
+      let deleteLocalData = false;
+      if (confirm) {
+        let options = await this._confirmFxaAndSyncDisconnect();
+        if (!options.userConfirmedDisconnect) {
+          return false;
+        }
+        deleteLocalData = options.deleteLocalData;
+      }
+      return this._disconnectFxaAndSync(deleteLocalData);
+    }
+
+    if (confirm && !(await this._confirmSyncDisconnect())) {
       return false;
     }
-    // Record telemetry.
-    await fxAccounts.telemetry.recordDisconnection(
-      disconnectAccount ? null : "sync",
-      "ui"
+    return this._disconnectSync();
+  },
+
+  // Prompt the user to confirm disconnect from FxA and sync with the option
+  // to delete syncable data from the device.
+  async _confirmFxaAndSyncDisconnect() {
+    let options = {
+      userConfirmedDisconnect: false,
+    };
+
+    window.openDialog(
+      "chrome://browser/content/browser-fxaSignout.xhtml",
+      "_blank",
+      "chrome,modal,centerscreen,resizable=no",
+      { hideDeleteDataOption: !UIState.get().syncEnabled },
+      options
     );
 
-    await Weave.Service.promiseInitialized;
-    await Weave.Service.startOver();
-    if (disconnectAccount) {
-      await fxAccounts.signOut();
-    }
+    return options;
+  },
+
+  async _disconnectFxaAndSync(deleteLocalData) {
+    const { SyncDisconnect } = ChromeUtils.import(
+      "resource://services-sync/SyncDisconnect.jsm"
+    );
+    // Record telemetry.
+    await fxAccounts.telemetry.recordDisconnection(null, "ui");
+
+    await SyncDisconnect.disconnect(deleteLocalData).catch(e => {
+      console.error("Failed to disconnect.", e);
+    });
+
     return true;
   },
 
-  /**
-   * Prompts the user whether or not they want to proceed with
-   * disconnecting from their Firefox Account or Sync.
-   * @param {Boolean} disconnectAccount True if we are disconnecting both Sync and FxA.
-   * @returns {Boolean} True if the user confirmed.
-   */
-  async _confirmDisconnect(disconnectAccount) {
-    const l10nPrefix = `${
-      disconnectAccount ? "fxa" : "sync"
-    }-disconnect-dialog`;
+  // Prompt the user to confirm disconnect from sync. In this case the data
+  // on the device is not deleted.
+  async _confirmSyncDisconnect() {
+    const l10nPrefix = "sync-disconnect-dialog";
+
     const [title, body, button] = await document.l10n.formatValues([
       { id: `${l10nPrefix}-title` },
       { id: `${l10nPrefix}-body` },
       { id: "sync-disconnect-dialog-button" },
     ]);
-    // buttonPressed will be 0 for disconnect, 1 for cancel.
+
     const flags =
       Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
       Services.prompt.BUTTON_TITLE_CANCEL * Services.prompt.BUTTON_POS_1;
+
+    // buttonPressed will be 0 for disconnect, 1 for cancel.
     const buttonPressed = Services.prompt.confirmEx(
       window,
       title,
@@ -1349,6 +1420,15 @@ var gSync = {
       {}
     );
     return buttonPressed == 0;
+  },
+
+  async _disconnectSync() {
+    await fxAccounts.telemetry.recordDisconnection("sync", "ui");
+
+    await Weave.Service.promiseInitialized;
+    await Weave.Service.startOver();
+
+    return true;
   },
 
   // doSync forces a sync - it *does not* return a promise as it is called
@@ -1514,6 +1594,8 @@ var gSync = {
   },
 
   onFxaDisabled() {
+    document.documentElement.setAttribute("fxadisabled", true);
+
     const toHide = [...document.querySelectorAll(".sync-ui-item")];
     for (const item of toHide) {
       item.hidden = true;

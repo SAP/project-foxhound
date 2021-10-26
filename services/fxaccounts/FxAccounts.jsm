@@ -41,6 +41,7 @@ const {
   ON_ACCOUNT_STATE_CHANGE_NOTIFICATION,
   ONLOGIN_NOTIFICATION,
   ONLOGOUT_NOTIFICATION,
+  ON_PRELOGOUT_NOTIFICATION,
   ONVERIFIED_NOTIFICATION,
   ON_DEVICE_DISCONNECTED_NOTIFICATION,
   POLL_SESSION,
@@ -175,7 +176,7 @@ AccountState.prototype = {
     }
     if (this.whenKeysReadyDeferred) {
       this.whenKeysReadyDeferred.reject(
-        new Error("Verification aborted; Another user signing in")
+        new Error("Key fetching aborted; Another user signing in")
       );
       this.whenKeysReadyDeferred = null;
     }
@@ -214,7 +215,19 @@ AccountState.prototype = {
     });
   },
 
-  updateUserAccountData(updatedFields) {
+  async updateUserAccountData(updatedFields) {
+    if ("uid" in updatedFields) {
+      const existing = await this.getUserAccountData(["uid"]);
+      if (existing.uid != updatedFields.uid) {
+        throw new Error(
+          "The specified credentials aren't for the current user"
+        );
+      }
+      // We need to nuke uid as storage will complain if we try and
+      // update it (even when the value is the same)
+      updatedFields = Cu.cloneInto(updatedFields, {}); // clone it first
+      delete updatedFields.uid;
+    }
     if (!this.isCurrent) {
       return Promise.reject(new Error("Another user has signed in"));
     }
@@ -480,56 +493,14 @@ class FxAccounts {
   }
 
   /**
-   * Retrieves an OAuth authorization code.
-   *
-   * @param {Object} options
-   * @param options.client_id
-   * @param options.state
-   * @param options.scope
-   * @param options.access_type
-   * @param options.code_challenge_method
-   * @param options.code_challenge
-   * @param [options.keys_jwe]
-   * @returns {Promise<Object>} Object containing "code" and "state" properties.
-   */
-  authorizeOAuthCode(options) {
-    return this._withVerifiedAccountState(async state => {
-      const { sessionToken } = await state.getUserAccountData(["sessionToken"]);
-      const params = { ...options };
-      if (params.keys_jwk) {
-        const jwk = JSON.parse(
-          new TextDecoder().decode(
-            ChromeUtils.base64URLDecode(params.keys_jwk, { padding: "reject" })
-          )
-        );
-        params.keys_jwe = await this._internal.createKeysJWE(
-          params.client_id,
-          params.scope,
-          jwk
-        );
-        delete params.keys_jwk;
-      }
-      try {
-        return await this._internal.fxAccountsClient.oauthAuthorize(
-          sessionToken,
-          params
-        );
-      } catch (err) {
-        throw this._internal._errorToErrorClass(err);
-      }
-    });
-  }
-
-  /**
    * Get an OAuth token for the user.
-   * If you need a corresponding scoped key to go along with this
-   * token, consider using the new 'getAccessToken' method instead.
    *
    * @param options
    *        {
    *          scope: (string/array) the oauth scope(s) being requested. As a
    *                 convenience, you may pass a string if only one scope is
    *                 required, or an array of strings if multiple are needed.
+   *          ttl: (number) OAuth token TTL in seconds.
    *        }
    *
    * @return Promise.<string | Error>
@@ -548,48 +519,6 @@ class FxAccounts {
     } catch (err) {
       throw this._internal._errorToErrorClass(err);
     }
-  }
-
-  /**
-   * Fetches an OAuth token based on the given scope
-   * and its key in a single operation.
-   *
-   * @param scope {String} the requested OAuth scope
-   * @param ttl {Number} OAuth token TTL
-   * @returns {Promise<Object>} Object containing "scope", "token"
-   *  and "key" properties.
-   */
-  async getAccessToken(scope, ttl) {
-    log.debug("getAccessToken enter");
-    const token = await this._internal.getOAuthToken({ scope, ttl });
-    const ACCT_DATA_FIELDS = ["scopedKeys"];
-
-    return this._withCurrentAccountState(async currentState => {
-      const data = await currentState.getUserAccountData(ACCT_DATA_FIELDS);
-      const scopedKeys = data.scopedKeys || {};
-      let key;
-
-      if (!scopedKeys.hasOwnProperty(scope)) {
-        log.debug(`Fetching scopedKeys data for ${scope}`);
-        const newKeyData = await this._internal.keys.getScopedKeys(
-          scope,
-          FX_OAUTH_CLIENT_ID
-        );
-
-        scopedKeys[scope] = newKeyData[scope] || null;
-        await currentState.updateUserAccountData({ scopedKeys });
-      } else {
-        log.debug(`Using cached scopedKeys data for ${scope}`);
-      }
-
-      key = scopedKeys[scope];
-
-      return {
-        scope,
-        token,
-        key,
-      };
-    });
   }
 
   /**
@@ -833,6 +762,14 @@ FxAccountsInternal.prototype = {
           let scope = {};
           ChromeUtils.import("resource://services-sync/main.js", scope);
           return scope.Weave.Service.promiseInitialized;
+        },
+        // Telemetry, so ecosystem telemetry doesn't miss logouts.
+        async () => {
+          const { EcosystemTelemetry } = ChromeUtils.import(
+            "resource://gre/modules/EcosystemTelemetry.jsm",
+            {}
+          );
+          await EcosystemTelemetry.prepareForFxANotification();
         },
       ];
     }
@@ -1090,22 +1027,12 @@ FxAccountsInternal.prototype = {
       log.debug("updateUserAccountData called with data", credentials);
     }
     let currentAccountState = this.currentAccountState;
-    return currentAccountState.promiseInitialized
-      .then(() => {
-        return currentAccountState.getUserAccountData(["uid"]);
-      })
-      .then(existing => {
-        if (existing.uid != credentials.uid) {
-          throw new Error(
-            "The specified credentials aren't for the current user"
-          );
-        }
-        // We need to nuke uid as storage will complain if we try and
-        // update it (even when the value is the same)
-        credentials = Cu.cloneInto(credentials, {}); // clone it first
-        delete credentials.uid;
-        return currentAccountState.updateUserAccountData(credentials);
-      });
+    return currentAccountState.promiseInitialized.then(() => {
+      if (!credentials.uid) {
+        throw new Error("The specified credentials have no uid");
+      }
+      return currentAccountState.updateUserAccountData(credentials);
+    });
   },
 
   /**
@@ -1201,6 +1128,7 @@ FxAccountsInternal.prototype = {
       sessionToken = data.sessionToken;
       tokensToRevoke = data.oauthTokens;
     }
+    await this.notifyObservers(ON_PRELOGOUT_NOTIFICATION);
     await this._signOutLocal();
     if (!localOnly) {
       // Do this in the background so *any* slow request won't
@@ -1758,18 +1686,6 @@ FxAccountsInternal.prototype = {
     return this.withCurrentAccountState(async currentState => {
       await currentState.updateUserAccountData({ cert: null });
     });
-  },
-
-  /**
-   *
-   * @param {String} clientId
-   * @param {String} scope Space separated requested scopes
-   * @param {Object} jwk
-   */
-  async createKeysJWE(clientId, scope, jwk) {
-    let scopedKeys = await this.keys.getScopedKeys(scope, clientId);
-    scopedKeys = new TextEncoder().encode(JSON.stringify(scopedKeys));
-    return jwcrypto.generateJWE(jwk, scopedKeys);
   },
 
   async _getVerifiedAccountOrReject() {

@@ -68,6 +68,9 @@ class BaseMatrix {
 
   friend std::ostream& operator<<(std::ostream& aStream,
                                   const BaseMatrix& aMatrix) {
+    if (aMatrix.IsIdentity()) {
+      return aStream << "[ I ]";
+    }
     return aStream << "[ " << aMatrix._11 << " " << aMatrix._12 << "; "
                    << aMatrix._21 << " " << aMatrix._22 << "; " << aMatrix._31
                    << " " << aMatrix._32 << "; ]";
@@ -586,18 +589,19 @@ class Matrix4x4Typed {
 
   friend std::ostream& operator<<(std::ostream& aStream,
                                   const Matrix4x4Typed& aMatrix) {
+    if (aMatrix.Is2D()) {
+      BaseMatrix<T> matrix = aMatrix.As2D();
+      return aStream << matrix;
+    }
     const T* f = &aMatrix._11;
-    aStream << "[ " << f[0] << " " << f[1] << " " << f[2] << " " << f[3] << " ;"
-            << std::endl;
+    aStream << "[ " << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
     f += 4;
-    aStream << "  " << f[0] << " " << f[1] << " " << f[2] << " " << f[3] << " ;"
-            << std::endl;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
     f += 4;
-    aStream << "  " << f[0] << " " << f[1] << " " << f[2] << " " << f[3] << " ;"
-            << std::endl;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
     f += 4;
-    aStream << "  " << f[0] << " " << f[1] << " " << f[2] << " " << f[3] << " ]"
-            << std::endl;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3]
+            << "; ]";
     return aStream;
   }
 
@@ -1837,6 +1841,22 @@ class Matrix5x4 {
   Matrix5x4& operator*=(const Matrix5x4& aMatrix) {
     *this = *this * aMatrix;
     return *this;
+  }
+
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const Matrix5x4& aMatrix) {
+    const Float* f = &aMatrix._11;
+    aStream << "[ " << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
+    f += 4;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
+    f += 4;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
+    f += 4;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ';';
+    f += 4;
+    aStream << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3]
+            << "; ]";
+    return aStream;
   }
 
   union {

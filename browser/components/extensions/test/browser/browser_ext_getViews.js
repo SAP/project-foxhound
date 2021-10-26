@@ -39,16 +39,11 @@ function genericChecker() {
           background = view;
         }
 
-        // FIXME(bug 1646817): Extension documents loaded outside of tabs don't
-        // perform process switches using DocumentLoadListener, meaning that
-        // they may have the wrong BrowsingContextGroup.
-        if (kind == "tab" && view.kind == "tab") {
-          browser.test.assertEq(
-            bcGroupId,
-            SpecialPowers.wrap(view).browsingContext.group.id,
-            "browsing context group is correct"
-          );
-        }
+        browser.test.assertEq(
+          bcGroupId,
+          SpecialPowers.wrap(view).browsingContext.group.id,
+          "browsing context group is correct"
+        );
       }
       if (background) {
         browser.runtime.getBackgroundPage().then(view => {
@@ -102,7 +97,7 @@ async function promiseBrowserContentUnloaded(browser) {
     browser,
     MSG_WINDOW_DESTROYED,
     MSG_WINDOW_DESTROYED => {
-      let innerWindowId = this.content.windowUtils.currentInnerWindowID;
+      let innerWindowId = this.content.windowGlobalChild.innerWindowId;
       let observer = subject => {
         if (
           innerWindowId === subject.QueryInterface(Ci.nsISupportsPRUint64).data

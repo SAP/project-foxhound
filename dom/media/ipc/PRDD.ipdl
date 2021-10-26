@@ -37,13 +37,15 @@ parent:
   async RequestMemoryReport(uint32_t generation,
                             bool anonymize,
                             bool minimizeMemoryUsage,
-                            FileDescriptor? DMDFile);
+                            FileDescriptor? DMDFile)
+      returns (uint32_t aGeneration);
 
   async PreferenceUpdate(Pref pref);
 
   async UpdateVar(GfxVarUpdate var);
 
-  async InitVideoBridge(Endpoint<PVideoBridgeChild> endpoint);
+  async InitVideoBridge(Endpoint<PVideoBridgeChild> endpoint,
+                        ContentDeviceData contentDeviceData);
 
   async GetUntrustedModulesData() returns (UntrustedModulesData? data);
 
@@ -52,7 +54,6 @@ child:
   async InitCrashReporter(NativeThreadId threadId);
 
   async AddMemoryReport(MemoryReport aReport);
-  async FinishMemoryReport(uint32_t aGeneration);
 
   async GetModulesTrust(ModulePaths aModPaths, bool aRunAtNormalPriority)
       returns (ModulesMapResult? modMapResult);

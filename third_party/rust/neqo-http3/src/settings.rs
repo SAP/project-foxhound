@@ -4,6 +4,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(clippy::module_name_repetitions)]
+
 use crate::{Error, Res};
 use neqo_common::{Decoder, Encoder};
 use neqo_crypto::{ZeroRttCheckResult, ZeroRttChecker};
@@ -20,8 +22,10 @@ const SETTINGS_MAX_HEADER_LIST_SIZE: SettingsType = 0x6;
 const SETTINGS_QPACK_MAX_TABLE_CAPACITY: SettingsType = 0x1;
 const SETTINGS_QPACK_BLOCKED_STREAMS: SettingsType = 0x7;
 
+pub const H3_RESERVED_SETTINGS: &[SettingsType] = &[0x2, 0x3, 0x4, 0x5];
+
 #[derive(Clone, PartialEq, Debug, Copy)]
-pub(crate) enum HSettingType {
+pub enum HSettingType {
     MaxHeaderListSize,
     MaxTableCapacity,
     BlockedStreams,
@@ -35,7 +39,7 @@ fn hsetting_default(setting_type: HSettingType) -> u64 {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct HSetting {
+pub struct HSetting {
     pub setting_type: HSettingType,
     pub value: u64,
 }
@@ -50,7 +54,7 @@ impl HSetting {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct HSettings {
+pub struct HSettings {
     settings: Vec<HSetting>,
 }
 
@@ -94,6 +98,11 @@ impl HSettings {
             let t = dec.decode_varint();
             let v = dec.decode_varint();
 
+            if let Some(settings_type) = t {
+                if H3_RESERVED_SETTINGS.contains(&settings_type) {
+                    return Err(Error::HttpSettings);
+                }
+            }
             match (t, v) {
                 (Some(SETTINGS_MAX_HEADER_LIST_SIZE), Some(value)) => self
                     .settings
@@ -166,7 +175,7 @@ impl ZeroRttChecker for HttpZeroRttChecker {
                 u64::from(self.settings.max_blocked_streams) >= setting.value
             }
             HSettingType::MaxTableCapacity => self.settings.max_table_size_decoder >= setting.value,
-            _ => true,
+            HSettingType::MaxHeaderListSize => true,
         }) {
             ZeroRttCheckResult::Accept
         } else {

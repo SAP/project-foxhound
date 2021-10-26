@@ -2,7 +2,6 @@
 % License, v. 2.0. If a copy of the MPL was not distributed with this
 % file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-%include shared.inc
 %include ../../shared/global.inc.css
 
 :root {
@@ -16,6 +15,7 @@
   --arrowpanel-border-color: var(--default-arrowpanel-border-color);
   --arrowpanel-border-radius: 3.5px;
   --panel-disabled-color: GrayText;
+  --panel-description-color: hsl(0,0%,50%);
 
   --focus-ring-box-shadow: 0 0 0 1px -moz-mac-focusring inset, 0 0 0 1px -moz-mac-focusring;
   /* ::::: Styles ::::: */
@@ -158,37 +158,6 @@ xul|label[disabled="true"] {
 
 html|input {
   margin: 4px;
-}
-
-xul|notification > xul|hbox > xul|button {
-  margin: 0 3px;
-  padding: 1px 10px;
-  min-width: 60px;
-  min-height: 16px;
-  appearance: none;
-  border-radius: 10000px;
-  border: @roundButtonBorderWidth@ @roundButtonBorderStyle@ @roundButtonBorderColor@;
-  color: @roundButtonColor@;
-  background: @roundButtonBackgroundImage@;
-  box-shadow: @roundButtonShadow@;
-}
-
-xul|notification > xul|hbox > xul|button:active:hover {
-  color: @roundButtonColor@;
-  background: @roundButtonPressedBackgroundImage@;
-  box-shadow: @roundButtonPressedShadow@;
-}
-
-xul|notification > xul|hbox > xul|button:-moz-focusring {
-  box-shadow: var(--focus-ring-box-shadow), @roundButtonShadow@;
-}
-
-xul|notification > xul|hbox > xul|button:active:hover:-moz-focusring {
-  box-shadow: var(--focus-ring-box-shadow), @roundButtonPressedShadow@;
-}
-
-xul|notification > xul|hbox > xul|button > .button-box > .button-text {
-  margin: 0 !important;
 }
 
 xul|popupnotificationcontent {

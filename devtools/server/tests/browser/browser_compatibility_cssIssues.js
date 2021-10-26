@@ -5,7 +5,7 @@
 
 // Check the output of getNodeCssIssues
 
-const MDNCompatibility = require("devtools/shared/compatibility/MDNCompatibility");
+const { COMPATIBILITY_ISSUE_TYPE } = require("devtools/shared/constants");
 const URL = MAIN_DOMAIN + "doc_compatibility.html";
 
 const CHROME_81 = {
@@ -66,12 +66,13 @@ const TARGET_BROWSERS = [
 ];
 
 const ISSUE_USER_SELECT = {
-  type: MDNCompatibility.ISSUE_TYPE.CSS_PROPERTY_ALIASES,
+  type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY_ALIASES,
   property: "user-select",
   aliases: ["-moz-user-select"],
   url: "https://developer.mozilla.org/docs/Web/CSS/user-select",
   deprecated: false,
   experimental: false,
+  prefixNeeded: true,
   unsupportedBrowsers: [
     CHROME_81,
     CHROME_ANDROID,
@@ -82,7 +83,7 @@ const ISSUE_USER_SELECT = {
 };
 
 const ISSUE_CLIP = {
-  type: MDNCompatibility.ISSUE_TYPE.CSS_PROPERTY,
+  type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
   property: "clip",
   url: "https://developer.mozilla.org/docs/Web/CSS/clip",
   deprecated: true,

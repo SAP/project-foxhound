@@ -45,6 +45,13 @@ const watcherSpecPrototype = {
       },
       oneway: true,
     },
+
+    getNetworkActor: {
+      request: {},
+      response: {
+        network: RetVal("network"),
+      },
+    },
   },
 
   events: {
@@ -63,6 +70,10 @@ const watcherSpecPrototype = {
     },
     "resource-destroyed-form": {
       type: "resource-destroyed-form",
+      resources: Arg(0, "array:json"),
+    },
+    "resource-updated-form": {
+      type: "resource-updated-form",
       resources: Arg(0, "array:json"),
     },
   },

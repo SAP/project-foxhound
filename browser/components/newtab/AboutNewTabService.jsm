@@ -41,6 +41,10 @@ const { E10SUtils } = ChromeUtils.import(
   "resource://gre/modules/E10SUtils.jsm"
 );
 
+const { ExperimentAPI } = ChromeUtils.import(
+  "resource://messaging-system/experiments/ExperimentAPI.jsm"
+);
+
 /**
  * BEWARE: Do not add variables for holding state in the global scope.
  * Any state variables should be properties of the appropriate class
@@ -54,8 +58,8 @@ const PREF_ABOUT_HOME_CACHE_ENABLED =
   "browser.startup.homepage.abouthome_cache.enabled";
 const PREF_ABOUT_HOME_CACHE_TESTING =
   "browser.startup.homepage.abouthome_cache.testing";
-const PREF_SEPARATE_ABOUT_WELCOME = "browser.aboutwelcome.enabled";
-const SEPARATE_ABOUT_WELCOME_URL =
+const PREF_ABOUT_WELCOME_ENABLED = "browser.aboutwelcome.enabled";
+const ABOUT_WELCOME_URL =
   "resource://activity-stream/aboutwelcome/aboutwelcome.html";
 
 ChromeUtils.defineModuleGetter(
@@ -102,7 +106,10 @@ const AboutHomeStartupCacheChild = {
    *   The stream for the cached script to run on the page.
    */
   init(pageInputStream, scriptInputStream) {
-    if (!IS_PRIVILEGED_PROCESS) {
+    if (
+      !IS_PRIVILEGED_PROCESS &&
+      !Services.prefs.getBoolPref(PREF_ABOUT_HOME_CACHE_TESTING, false)
+    ) {
       throw new Error(
         "Can only instantiate in the privileged about content processes."
       );
@@ -116,6 +123,7 @@ const AboutHomeStartupCacheChild = {
       throw new Error("AboutHomeStartupCacheChild already initted.");
     }
 
+    Services.obs.addObserver(this, "memory-pressure");
     Services.cpmm.addMessageListener(this.CACHE_REQUEST_MESSAGE, this);
 
     this._pageInputStream = pageInputStream;
@@ -134,6 +142,18 @@ const AboutHomeStartupCacheChild = {
       throw new Error(
         "Cannot uninit AboutHomeStartupCacheChild unless testing."
       );
+    }
+
+    if (!this._initted) {
+      return;
+    }
+
+    Services.obs.removeObserver(this, "memory-pressure");
+    Services.cpmm.removeMessageListener(this.CACHE_REQUEST_MESSAGE, this);
+
+    if (this._cacheWorker) {
+      this._cacheWorker.terminate();
+      this._cacheWorker = null;
     }
 
     this._pageInputStream = null;
@@ -276,6 +296,13 @@ const AboutHomeStartupCacheChild = {
       success,
     });
   },
+
+  observe(subject, topic, data) {
+    if (topic === "memory-pressure" && this._cacheWorker) {
+      this._cacheWorker.terminate();
+      this._cacheWorker = null;
+    }
+  },
 };
 
 /**
@@ -297,8 +324,8 @@ class BaseAboutNewTabService {
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
-      "isSeparateAboutWelcome",
-      PREF_SEPARATE_ABOUT_WELCOME,
+      "isAboutWelcomePrefEnabled",
+      PREF_ABOUT_WELCOME_ENABLED,
       false
     );
 
@@ -339,14 +366,19 @@ class BaseAboutNewTabService {
     ].join("");
   }
 
-  /*
-   * Returns the about:welcome URL
-   *
-   * This is calculated in the same way the default URL is.
-   */
   get welcomeURL() {
-    if (this.isSeparateAboutWelcome) {
-      return SEPARATE_ABOUT_WELCOME_URL;
+    /*
+     * Returns the about:welcome URL
+     *
+     * This is calculated in the same way the default URL is.
+     */
+
+    if (
+      this.isAboutWelcomePrefEnabled &&
+      // about:welcome should be enabled by default if no experiment exists.
+      ExperimentAPI.isFeatureEnabled("aboutwelcome", true)
+    ) {
+      return ABOUT_WELCOME_URL;
     }
     return this.defaultURL;
   }

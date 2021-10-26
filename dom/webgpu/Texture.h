@@ -33,14 +33,13 @@ class Texture final : public ObjectBase, public ChildOf<Device> {
           const dom::GPUTextureDescriptor& aDesc);
   Device* GetParentDevice() { return mParent; }
   const RawId mId;
+  const Maybe<uint8_t> mBytesPerBlock;
 
   WeakPtr<dom::HTMLCanvasElement> mTargetCanvasElement;
 
  private:
   virtual ~Texture();
   void Cleanup();
-
-  const UniquePtr<ffi::WGPUTextureViewDescriptor> mDefaultViewDescriptor;
 
  public:
   already_AddRefed<TextureView> CreateView(

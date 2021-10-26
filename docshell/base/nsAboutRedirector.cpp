@@ -132,6 +132,10 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::MAKE_LINKABLE | nsIAboutModule::URI_CAN_LOAD_IN_CHILD},
     {"support", "chrome://global/content/aboutSupport.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},
+#ifdef MOZ_GLEAN
+    {"glean", "chrome://global/content/aboutGlean.html",
+     nsIAboutModule::HIDE_FROM_ABOUTABOUT | nsIAboutModule::ALLOW_SCRIPT},
+#endif
     {"telemetry", "chrome://global/content/aboutTelemetry.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},
     {"url-classifier", "chrome://global/content/aboutUrlClassifier.xhtml",
@@ -230,6 +234,24 @@ nsAboutRedirector::GetURIFlags(nsIURI* aURI, uint32_t* aResult) {
     if (name.EqualsASCII(kRedirMap[i].id)) {
       *aResult = kRedirMap[i].flags;
       return NS_OK;
+    }
+  }
+
+  NS_ERROR("nsAboutRedirector called for unknown case");
+  return NS_ERROR_ILLEGAL_VALUE;
+}
+
+NS_IMETHODIMP
+nsAboutRedirector::GetChromeURI(nsIURI* aURI, nsIURI** chromeURI) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
+  nsAutoCString name;
+  nsresult rv = NS_GetAboutModuleName(aURI, name);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  for (const auto& redir : kRedirMap) {
+    if (name.EqualsASCII(redir.id)) {
+      return NS_NewURI(chromeURI, redir.url);
     }
   }
 

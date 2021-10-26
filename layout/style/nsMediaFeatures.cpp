@@ -19,6 +19,7 @@
 #include "nsIPrintSettings.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/BrowsingContextBinding.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
 #include "mozilla/RelativeLuminanceUtils.h"
@@ -198,21 +199,21 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
     }
   }
 
-  static_assert(nsIDocShell::DISPLAY_MODE_BROWSER ==
+  static_assert(static_cast<int32_t>(DisplayMode::Browser) ==
                         static_cast<int32_t>(StyleDisplayMode::Browser) &&
-                    nsIDocShell::DISPLAY_MODE_MINIMAL_UI ==
+                    static_cast<int32_t>(DisplayMode::Minimal_ui) ==
                         static_cast<int32_t>(StyleDisplayMode::MinimalUi) &&
-                    nsIDocShell::DISPLAY_MODE_STANDALONE ==
+                    static_cast<int32_t>(DisplayMode::Standalone) ==
                         static_cast<int32_t>(StyleDisplayMode::Standalone) &&
-                    nsIDocShell::DISPLAY_MODE_FULLSCREEN ==
+                    static_cast<int32_t>(DisplayMode::Fullscreen) ==
                         static_cast<int32_t>(StyleDisplayMode::Fullscreen),
-                "nsIDocShell display modes must mach nsStyleConsts.h");
+                "DisplayMode must mach nsStyleConsts.h");
 
-  nsIDocShell* docShell = rootDocument->GetDocShell();
-  if (!docShell) {
+  BrowsingContext* browsingContext = aDocument->GetBrowsingContext();
+  if (!browsingContext) {
     return StyleDisplayMode::Browser;
   }
-  return static_cast<StyleDisplayMode>(docShell->GetDisplayMode());
+  return static_cast<StyleDisplayMode>(browsingContext->DisplayMode());
 }
 
 bool Gecko_MediaFeatures_HasSystemMetric(const Document* aDocument,
@@ -281,7 +282,7 @@ StyleContrastPref Gecko_MediaFeatures_PrefersContrast(
   // https://github.com/w3c/csswg-drafts/issues/3856#issuecomment-642313572
   // https://github.com/w3c/csswg-drafts/issues/2943
   if (!!LookAndFeel::GetInt(LookAndFeel::IntID::UseAccessibilityTheme, 0)) {
-    return StyleContrastPref::High;
+    return StyleContrastPref::More;
   }
   return StyleContrastPref::NoPreference;
 }
@@ -292,11 +293,11 @@ static PointerCapabilities GetPointerCapabilities(const Document* aDocument,
              aID == LookAndFeel::IntID::AllPointerCapabilities);
   MOZ_ASSERT(aDocument);
 
-  if (nsIDocShell* docShell = aDocument->GetDocShell()) {
+  if (BrowsingContext* bc = aDocument->GetBrowsingContext()) {
     // The touch-events-override happens only for the Responsive Design Mode so
     // that we don't need to care about ResistFingerprinting.
-    if (docShell->GetTouchEventsOverride() ==
-        nsIDocShell::TOUCHEVENTS_OVERRIDE_ENABLED) {
+    if (bc->TouchEventsOverride() ==
+        mozilla::dom::TouchEventsOverride::Enabled) {
       return PointerCapabilities::Coarse;
     }
   }
@@ -396,10 +397,10 @@ void nsMediaFeatures::InitSystemMetrics() {
         (nsStaticAtom*)nsGkAtoms::_moz_mac_graphite_theme);
   }
 
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::MacYosemiteTheme, &metricResult);
+  rv = LookAndFeel::GetInt(LookAndFeel::IntID::MacBigSurTheme, &metricResult);
   if (NS_SUCCEEDED(rv) && metricResult) {
     sSystemMetrics->AppendElement(
-        (nsStaticAtom*)nsGkAtoms::_moz_mac_yosemite_theme);
+        (nsStaticAtom*)nsGkAtoms::_moz_mac_big_sur_theme);
   }
 
   rv = LookAndFeel::GetInt(LookAndFeel::IntID::WindowsAccentColorInTitlebar,
@@ -424,11 +425,6 @@ void nsMediaFeatures::InitSystemMetrics() {
   if (NS_SUCCEEDED(rv) && metricResult) {
     sSystemMetrics->AppendElement(
         (nsStaticAtom*)nsGkAtoms::_moz_windows_classic);
-  }
-
-  rv = LookAndFeel::GetInt(LookAndFeel::IntID::TouchEnabled, &metricResult);
-  if (NS_SUCCEEDED(rv) && metricResult) {
-    sSystemMetrics->AppendElement((nsStaticAtom*)nsGkAtoms::_moz_touch_enabled);
   }
 
   rv = LookAndFeel::GetInt(LookAndFeel::IntID::SwipeAnimationEnabled,

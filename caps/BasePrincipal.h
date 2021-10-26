@@ -131,6 +131,7 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetOriginAttributes(JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aVal) final;
   NS_IMETHOD GetAsciiSpec(nsACString& aSpec) override;
+  NS_IMETHOD GetSpec(nsACString& aSpec) override;
   NS_IMETHOD GetExposablePrePath(nsACString& aResult) override;
   NS_IMETHOD GetExposableSpec(nsACString& aSpec) override;
   NS_IMETHOD GetHostPort(nsACString& aRes) override;
@@ -139,6 +140,7 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetFilePath(nsACString& aResult) override;
   NS_IMETHOD GetOriginSuffix(nsACString& aOriginSuffix) final;
   NS_IMETHOD GetIsIpAddress(bool* aIsIpAddress) override;
+  NS_IMETHOD GetIsLocalIpAddress(bool* aIsIpAddress) override;
   NS_IMETHOD GetIsOnion(bool* aIsOnion) override;
   NS_IMETHOD GetIsInIsolatedMozBrowserElement(
       bool* aIsInIsolatedMozBrowserElement) final;
@@ -152,6 +154,7 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD IsSameOrigin(nsIURI* aURI, bool aIsPrivateWin,
                           bool* aRes) override;
   NS_IMETHOD GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
+                                  const OriginAttributes& aOriginAttributes,
                                   nsACString& _retval) override;
   NS_IMETHOD HasFirstpartyStorageAccess(mozIDOMWindow* aCheckWindow,
                                         uint32_t* aRejectedReason,

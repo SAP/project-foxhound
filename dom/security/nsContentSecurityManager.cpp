@@ -18,6 +18,7 @@
 #include "nsIOService.h"
 #include "nsContentUtils.h"
 #include "nsCORSListenerProxy.h"
+#include "nsIParentChannel.h"
 #include "nsIStreamListener.h"
 #include "nsIRedirectHistoryEntry.h"
 #include "nsReadableUtils.h"
@@ -31,6 +32,7 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -38,18 +40,21 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryComms.h"
 #include "xpcpublic.h"
+#include "nsMimeTypes.h"
 
 #include "jsapi.h"
 #include "js/RegExp.h"
 
+using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::Telemetry;
 
 NS_IMPL_ISUPPORTS(nsContentSecurityManager, nsIContentSecurityManager,
                   nsIChannelEventSink)
 
-static mozilla::LazyLogModule sCSMLog("CSMLog");
+mozilla::LazyLogModule sCSMLog("CSMLog");
 
-static Atomic<bool, mozilla::Relaxed> sTelemetryEventEnabled(false);
+Atomic<bool, mozilla::Relaxed> sTelemetryEventEnabled(false);
 
 /* static */
 bool nsContentSecurityManager::AllowTopLevelNavigationToDataURI(
@@ -96,9 +101,10 @@ bool nsContentSecurityManager::AllowTopLevelNavigationToDataURI(
       !contentType.EqualsLiteral("image/svg+xml")) {
     return true;
   }
-  // Allow all plain text types as well as data: PDFs.
-  if (nsContentUtils::IsPlainTextType(contentType) ||
-      contentType.EqualsLiteral("application/pdf")) {
+  // Allow all data: PDFs. or JSON documents
+  if (contentType.EqualsLiteral(APPLICATION_JSON) ||
+      contentType.EqualsLiteral(TEXT_JSON) ||
+      contentType.EqualsLiteral(APPLICATION_PDF)) {
     return true;
   }
   // Redirecting to a toplevel data: URI is not allowed, hence we make
@@ -390,7 +396,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
 
   switch (contentPolicyType) {
     case nsIContentPolicy::TYPE_OTHER: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -400,7 +406,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_IMAGE: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -410,12 +416,12 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_OBJECT: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
     case nsIContentPolicy::TYPE_DOCUMENT: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -430,7 +436,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_PING: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -448,7 +454,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
       if (internalContentPolicyType ==
               nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST ||
           internalContentPolicyType == nsIContentPolicy::TYPE_XMLHTTPREQUEST) {
-        mimeTypeGuess = EmptyCString();
+        mimeTypeGuess.Truncate();
       } else {
         MOZ_ASSERT(internalContentPolicyType ==
                        nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE,
@@ -459,7 +465,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_OBJECT_SUBREQUEST: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
 #ifdef DEBUG
       {
         nsCOMPtr<nsINode> node = aLoadInfo->LoadingNode();
@@ -472,7 +478,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_DTD: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
 #ifdef DEBUG
       {
         nsCOMPtr<nsINode> node = aLoadInfo->LoadingNode();
@@ -484,7 +490,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_FONT: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -492,7 +498,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
       if (internalContentPolicyType == nsIContentPolicy::TYPE_INTERNAL_TRACK) {
         mimeTypeGuess = "text/vtt"_ns;
       } else {
-        mimeTypeGuess = EmptyCString();
+        mimeTypeGuess.Truncate();
       }
 #ifdef DEBUG
       {
@@ -514,12 +520,12 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
         rv = httpChannelInternal->GetProxyURI(getter_AddRefs(uri));
         MOZ_ASSERT(NS_SUCCEEDED(rv));
       }
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
     case nsIContentPolicy::TYPE_CSP_REPORT: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -536,7 +542,7 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_BEACON: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
 #ifdef DEBUG
       {
         nsCOMPtr<nsINode> node = aLoadInfo->LoadingNode();
@@ -548,12 +554,12 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_FETCH: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
     case nsIContentPolicy::TYPE_IMAGESET: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -563,12 +569,12 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     }
 
     case nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
     case nsIContentPolicy::TYPE_SPECULATIVE: {
-      mimeTypeGuess = EmptyCString();
+      mimeTypeGuess.Truncate();
       break;
     }
 
@@ -586,11 +592,16 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
     NS_SetRequestBlockingReasonIfNull(
         aLoadInfo, nsILoadInfo::BLOCKING_REASON_CONTENT_POLICY_GENERAL);
 
-    if ((NS_SUCCEEDED(rv) && shouldLoad == nsIContentPolicy::REJECT_TYPE) &&
+    if (NS_SUCCEEDED(rv) &&
         (contentPolicyType == nsIContentPolicy::TYPE_DOCUMENT ||
          contentPolicyType == nsIContentPolicy::TYPE_SUBDOCUMENT)) {
-      // for docshell loads we might have to return SHOW_ALT.
-      return NS_ERROR_CONTENT_BLOCKED_SHOW_ALT;
+      if (shouldLoad == nsIContentPolicy::REJECT_TYPE) {
+        // for docshell loads we might have to return SHOW_ALT.
+        return NS_ERROR_CONTENT_BLOCKED_SHOW_ALT;
+      }
+      if (shouldLoad == nsIContentPolicy::REJECT_POLICY) {
+        return NS_ERROR_BLOCKED_BY_POLICY;
+      }
     }
     return NS_ERROR_CONTENT_BLOCKED;
   }
@@ -641,7 +652,7 @@ static void LogPrincipal(nsIPrincipal* aPrincipal,
     nsAutoCString principalSpec;
     aPrincipal->GetAsciiSpec(principalSpec);
     MOZ_LOG(sCSMLog, LogLevel::Debug,
-            ("%s%s %s\n", aIndentationString.get(),
+            ("%s%s: %s\n", aIndentationString.get(),
              NS_ConvertUTF16toUTF8(aPrincipalName).get(), principalSpec.get()));
     return;
   }
@@ -746,7 +757,7 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
             ("  - upgradeInsecureRequests: %s\n",
              aLoadInfo->GetUpgradeInsecureRequests() ? "true" : "false"));
     MOZ_LOG(sCSMLog, LogLevel::Verbose,
-            ("  - initalSecurityChecksDone: %s\n",
+            ("  - initialSecurityChecksDone: %s\n",
              aLoadInfo->GetInitialSecurityCheckDone() ? "true" : "false"));
     MOZ_LOG(sCSMLog, LogLevel::Verbose,
             ("  - allowDeprecatedSystemRequests: %s\n",
@@ -761,8 +772,13 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
       csp->GetPolicyCount(&count);
       for (uint32_t i = 0; i < count; ++i) {
         csp->GetPolicyString(i, parsedPolicyStr);
-        MOZ_LOG(sCSMLog, LogLevel::Debug,
-                ("    - %s\n", NS_ConvertUTF16toUTF8(parsedPolicyStr).get()));
+        // we need to add quotation marks, as otherwise yaml parsers may fail
+        // with CSP directives
+        // no need to escape quote marks in the parsed policy string, as URLs in
+        // there are already encoded
+        MOZ_LOG(
+            sCSMLog, LogLevel::Debug,
+            ("    - \"%s\"\n", NS_ConvertUTF16toUTF8(parsedPolicyStr).get()));
       }
     }
 
@@ -1069,7 +1085,7 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
   rv = CheckFTPSubresourceLoad(aChannel);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // now lets set the initalSecurityFlag for subsequent calls
+  // now lets set the initialSecurityFlag for subsequent calls
   loadInfo->SetInitialSecurityCheckDone(true);
 
   // all security checks passed - lets allow the load

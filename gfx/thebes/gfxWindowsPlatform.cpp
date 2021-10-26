@@ -80,6 +80,7 @@
 #include "DriverCrashGuard.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/DisplayConfigWindows.h"
 #include "mozilla/layers/DeviceAttachmentsD3D11.h"
 #include "D3D11Checks.h"
 
@@ -309,7 +310,8 @@ gfxWindowsPlatform::~gfxWindowsPlatform() {
 static void UpdateANGLEConfig() {
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     gfxConfig::Disable(Feature::D3D11_HW_ANGLE, FeatureStatus::Disabled,
-                       "D3D11 compositing is disabled");
+                       "D3D11 compositing is disabled",
+                       "FEATURE_FAILURE_HW_ANGLE_D3D11_DISABLED"_ns);
   }
 }
 
@@ -319,6 +321,7 @@ void gfxWindowsPlatform::InitAcceleration() {
   DeviceManagerDx::Init();
 
   InitializeConfig();
+  InitGPUProcessSupport();
   // Ensure devices initialization. SharedSurfaceANGLE and
   // SharedSurfaceD3D11Interop use them. The devices are lazily initialized
   // with WebRender to reduce memory usage.
@@ -439,6 +442,7 @@ bool gfxWindowsPlatform::HandleDeviceReset() {
   // XXX Add InitWebRenderConfig() calling.
   InitializeAdvancedLayersConfig();
   if (mInitializedDevices) {
+    InitGPUProcessSupport();
     InitializeDevices();
   }
   UpdateANGLEConfig();
@@ -663,17 +667,11 @@ static const char kFontUtsaah[] = "Utsaah";
 static const char kFontYuGothic[] = "Yu Gothic";
 
 void gfxWindowsPlatform::GetCommonFallbackFonts(
-    uint32_t aCh, uint32_t aNextCh, Script aRunScript,
+    uint32_t aCh, Script aRunScript, eFontPresentation aPresentation,
     nsTArray<const char*>& aFontList) {
-  EmojiPresentation emoji = GetEmojiPresentation(aCh);
-  if (emoji != EmojiPresentation::TextOnly) {
-    if (aNextCh == kVariationSelector16 ||
-        (aNextCh != kVariationSelector15 &&
-         emoji == EmojiPresentation::EmojiDefault)) {
-      // if char is followed by VS16, try for a color emoji glyph
-      aFontList.AppendElement(kFontSegoeUIEmoji);
-      aFontList.AppendElement(kFontTwemojiMozilla);
-    }
+  if (PrefersColor(aPresentation)) {
+    aFontList.AppendElement(kFontSegoeUIEmoji);
+    aFontList.AppendElement(kFontTwemojiMozilla);
   }
 
   // Arial is used as the default fallback for system fallback
@@ -1155,20 +1153,25 @@ void gfxWindowsPlatform::SetupClearTypeParams() {
     }
 
     RefPtr<IDWriteRenderingParams> defaultRenderingParams;
-    Factory::GetDWriteFactory()->CreateRenderingParams(
+    HRESULT hr = Factory::GetDWriteFactory()->CreateRenderingParams(
         getter_AddRefs(defaultRenderingParams));
+    if (FAILED(hr)) {
+      gfxWarning() << "Failed to create default rendering params";
+    }
     // For EnhancedContrast, we override the default if the user has not set it
     // in the registry (by using the ClearType Tuner).
     if (contrast < 0.0 || contrast > 10.0) {
-      HKEY hKey;
-      LONG res = RegOpenKeyExW(DISPLAY1_REGISTRY_KEY, 0, KEY_READ, &hKey);
-      if (res == ERROR_SUCCESS) {
-        res = RegQueryValueExW(hKey, ENHANCED_CONTRAST_VALUE_NAME, nullptr,
-                               nullptr, nullptr, nullptr);
+      if (defaultRenderingParams) {
+        HKEY hKey;
+        LONG res = RegOpenKeyExW(DISPLAY1_REGISTRY_KEY, 0, KEY_READ, &hKey);
         if (res == ERROR_SUCCESS) {
-          contrast = defaultRenderingParams->GetEnhancedContrast();
+          res = RegQueryValueExW(hKey, ENHANCED_CONTRAST_VALUE_NAME, nullptr,
+                                 nullptr, nullptr, nullptr);
+          if (res == ERROR_SUCCESS) {
+            contrast = defaultRenderingParams->GetEnhancedContrast();
+          }
+          RegCloseKey(hKey);
         }
-        RegCloseKey(hKey);
       }
 
       if (contrast < 0.0 || contrast > 10.0) {
@@ -1179,11 +1182,13 @@ void gfxWindowsPlatform::SetupClearTypeParams() {
     // For parameters that have not been explicitly set,
     // we copy values from default params (or our overridden value for contrast)
     if (gamma < 1.0 || gamma > 2.2) {
-      gamma = defaultRenderingParams->GetGamma();
+      gamma = defaultRenderingParams ? defaultRenderingParams->GetGamma() : 2.2;
     }
 
     if (level < 0.0 || level > 1.0) {
-      level = defaultRenderingParams->GetClearTypeLevel();
+      level = defaultRenderingParams
+                  ? defaultRenderingParams->GetClearTypeLevel()
+                  : 1.0;
     }
 
     DWRITE_PIXEL_GEOMETRY dwriteGeometry =
@@ -1192,19 +1197,23 @@ void gfxWindowsPlatform::SetupClearTypeParams() {
 
     if (dwriteGeometry < DWRITE_PIXEL_GEOMETRY_FLAT ||
         dwriteGeometry > DWRITE_PIXEL_GEOMETRY_BGR) {
-      dwriteGeometry = defaultRenderingParams->GetPixelGeometry();
+      dwriteGeometry = defaultRenderingParams
+                           ? defaultRenderingParams->GetPixelGeometry()
+                           : DWRITE_PIXEL_GEOMETRY_FLAT;
     }
 
     Factory::SetBGRSubpixelOrder(dwriteGeometry == DWRITE_PIXEL_GEOMETRY_BGR);
 
     if (renderMode < DWRITE_RENDERING_MODE_DEFAULT ||
         renderMode > DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC) {
-      renderMode = defaultRenderingParams->GetRenderingMode();
+      renderMode = defaultRenderingParams
+                       ? defaultRenderingParams->GetRenderingMode()
+                       : DWRITE_RENDERING_MODE_DEFAULT;
     }
 
     mRenderingParams[TEXT_RENDERING_NO_CLEARTYPE] = defaultRenderingParams;
 
-    HRESULT hr = Factory::GetDWriteFactory()->CreateCustomRenderingParams(
+    hr = Factory::GetDWriteFactory()->CreateCustomRenderingParams(
         gamma, contrast, level, dwriteGeometry, renderMode,
         getter_AddRefs(mRenderingParams[TEXT_RENDERING_NORMAL]));
     if (FAILED(hr) || !mRenderingParams[TEXT_RENDERING_NORMAL]) {
@@ -1259,7 +1268,7 @@ static void InitializeANGLEConfig() {
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     d3d11ANGLE.DisableByDefault(FeatureStatus::Unavailable,
                                 "D3D11 compositing is disabled",
-                                "FEATURE_FAILURE_D3D11_DISABLED"_ns);
+                                "FEATURE_FAILURE_HW_ANGLE_D3D11_DISABLED"_ns);
     return;
   }
 
@@ -1434,7 +1443,7 @@ void gfxWindowsPlatform::InitializeDevices() {
     // initialize any DirectX devices. We do leave them enabled in gfxConfig
     // though. If the GPU process fails to create these devices it will send
     // a message back and we'll update their status.
-    if (InitGPUProcessSupport()) {
+    if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
       return;
     }
 
@@ -1591,11 +1600,11 @@ void gfxWindowsPlatform::InitializeD2D() {
   d2d1_1.SetSuccessful();
 }
 
-bool gfxWindowsPlatform::InitGPUProcessSupport() {
+void gfxWindowsPlatform::InitGPUProcessSupport() {
   FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
 
   if (!gpuProc.IsEnabled()) {
-    return false;
+    return;
   }
 
   nsCString message;
@@ -1603,14 +1612,14 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
   if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_GPU_PROCESS,
                                         &message, failureId)) {
     gpuProc.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
-    return false;
+    return;
   }
 
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     // Don't use the GPU process if not using D3D11, unless software
     // compositor is allowed
     if (StaticPrefs::layers_gpu_process_allow_software_AtStartup()) {
-      return gpuProc.IsEnabled();
+      return;
     }
     gpuProc.Disable(FeatureStatus::Unavailable,
                     "Not using GPU Process since D3D11 is unavailable",
@@ -1636,7 +1645,6 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
   }
 
   // If we're still enabled at this point, the user set the force-enabled pref.
-  return gpuProc.IsEnabled();
 }
 
 bool gfxWindowsPlatform::DwmCompositionEnabled() {
@@ -2040,4 +2048,31 @@ void gfxWindowsPlatform::BuildContentDeviceData(ContentDeviceData* aOut) {
 bool gfxWindowsPlatform::CheckVariationFontSupport() {
   // Variation font support is only available on Fall Creators Update or later.
   return IsWin10FallCreatorsUpdateOrLater();
+}
+
+void gfxWindowsPlatform::GetPlatformDisplayInfo(
+    mozilla::widget::InfoObject& aObj) {
+  HwStretchingSupport stretch;
+  DeviceManagerDx::Get()->CheckHardwareStretchingSupport(stretch);
+
+  nsPrintfCString stretchValue(
+      "both=%u window-only=%u full-screen-only=%u none=%u error=%u",
+      stretch.mBoth, stretch.mWindowOnly, stretch.mFullScreenOnly,
+      stretch.mNone, stretch.mError);
+  aObj.DefineProperty("HardwareStretching", stretchValue.get());
+
+  ScaledResolutionSet scaled;
+  GetScaledResolutions(scaled);
+  if (scaled.IsEmpty()) {
+    return;
+  }
+
+  aObj.DefineProperty("ScaledResolutionCount", scaled.Length());
+  for (size_t i = 0; i < scaled.Length(); ++i) {
+    auto& s = scaled[i];
+    nsPrintfCString name("ScaledResolution%zu", i);
+    nsPrintfCString value("source %dx%d, target %dx%d", s.first.width,
+                          s.first.height, s.second.width, s.second.height);
+    aObj.DefineProperty(name.get(), value.get());
+  }
 }

@@ -2,7 +2,6 @@
 ac_add_options --disable-debug
 ac_add_options --enable-optimize="-O2 -gline-tables-only"
 
-. $topsrcdir/build/mozconfig.stylo
 . $topsrcdir/build/mozconfig.wasm-sandboxing
 
 . $topsrcdir/build/unix/mozconfig.tsan
@@ -18,9 +17,6 @@ export MOZ_PKG_SPECIAL=tsan
 
 # Disable telemetry
 ac_add_options MOZ_TELEMETRY_REPORTING=
-
-# Ensure Rust also gets the necessary instrumentation
-export RUSTFLAGS="-Zsanitizer=thread"
 
 # rustfmt is currently missing in Rust nightly
 unset RUSTFMT

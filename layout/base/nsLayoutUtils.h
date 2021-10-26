@@ -15,6 +15,7 @@
 #include "mozilla/ReflowOutput.h"
 #include "mozilla/RelativeTo.h"
 #include "mozilla/StaticPrefs_nglayout.h"
+#include "mozilla/SurfaceFromElementResult.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/ToString.h"
 #include "mozilla/TypedEnumBits.h"
@@ -22,6 +23,7 @@
 #include "mozilla/layout/FrameChildList.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/gfx/2D.h"
+
 #include "gfx2DGlue.h"
 #include "gfxPoint.h"
 #include "nsBoundingMetrics.h"
@@ -31,6 +33,7 @@
 #include "nsThreadUtils.h"
 #include "ImageContainer.h"  // for layers::Image
 #include "Units.h"
+#include "mozilla/layers/LayersTypes.h"
 #include <limits>
 #include <algorithm>
 // If you're thinking of adding a new include here, please try hard to not.
@@ -71,6 +74,7 @@ struct nsOverflowAreas;
 namespace mozilla {
 struct AspectRatio;
 class ComputedStyle;
+class DisplayPortUtils;
 class PresShell;
 enum class PseudoStyleType : uint8_t;
 class EventListenerManager;
@@ -106,33 +110,9 @@ struct ScrollMetadata;
 class Image;
 class StackingContextHelper;
 class Layer;
+
 }  // namespace layers
 }  // namespace mozilla
-
-namespace mozilla {
-
-struct DisplayPortPropertyData {
-  DisplayPortPropertyData(const nsRect& aRect, uint32_t aPriority,
-                          bool aPainted)
-      : mRect(aRect), mPriority(aPriority), mPainted(aPainted) {}
-  nsRect mRect;
-  uint32_t mPriority;
-  bool mPainted;
-};
-
-struct DisplayPortMarginsPropertyData {
-  DisplayPortMarginsPropertyData(const ScreenMargin& aMargins,
-                                 uint32_t aPriority, bool aPainted)
-      : mMargins(aMargins), mPriority(aPriority), mPainted(aPainted) {}
-  ScreenMargin mMargins;
-  uint32_t mPriority;
-  bool mPainted;
-};
-
-}  // namespace mozilla
-
-// For GetDisplayPort
-enum class DisplayportRelativeTo { ScrollPort, ScrollFrame };
 
 // Flags to customize the behavior of nsLayoutUtils::DrawString.
 enum class DrawStringFlags {
@@ -140,6 +120,15 @@ enum class DrawStringFlags {
   ForceHorizontal = 0x1  // Forces the text to be drawn horizontally.
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(DrawStringFlags)
+
+namespace mozilla {
+
+class RectCallback {
+ public:
+  virtual void AddRect(const nsRect& aRect) = 0;
+};
+
+}  // namespace mozilla
 
 /**
  * nsLayoutUtils is a namespace class used for various helper
@@ -219,133 +208,15 @@ class nsLayoutUtils {
   static nsIScrollableFrame* FindScrollableFrameFor(ViewID aId);
 
   /**
+   * Helper for FindScrollableFrameFor(), also used in DisplayPortUtils.
+   * Most clients should use FindScrollableFrameFor().
+   */
+  static nsIFrame* GetScrollFrameFromContent(nsIContent* aContent);
+
+  /**
    * Find the ID for a given scrollable frame.
    */
   static ViewID FindIDForScrollableFrame(nsIScrollableFrame* aScrollable);
-
-  /**
-   * Get display port for the given element, relative to the specified entity,
-   * defaulting to the scrollport.
-   */
-  static bool GetDisplayPort(
-      nsIContent* aContent, nsRect* aResult,
-      DisplayportRelativeTo aRelativeTo = DisplayportRelativeTo::ScrollPort,
-      bool* aOutPainted = nullptr);
-
-  /**
-   * Check whether the given element has a displayport.
-   */
-  static bool HasDisplayPort(nsIContent* aContent);
-
-  /**
-   * Check whether the given element has a displayport that has already
-   * been sent to the compositor via a layers or WR transaction.
-   */
-  static bool HasPaintedDisplayPort(nsIContent* aContent);
-
-  /**
-   * Mark the displayport of a given element as having been sent to
-   * the compositor via a layers or WR transaction.
-   */
-  static void MarkDisplayPortAsPainted(nsIContent* aContent);
-
-  /**
-   * Check whether the given frame has a displayport. It returns false
-   * for scrolled frames and true for the corresponding scroll frame.
-   * Optionally pass the child, and it only returns true if the child is the
-   * scrolled frame for the displayport.
-   */
-  static bool FrameHasDisplayPort(nsIFrame* aFrame,
-                                  const nsIFrame* aScrolledFrame = nullptr);
-
-  /**
-   * Check if the given element has a margins based displayport but is missing a
-   * displayport base rect that it needs to properly compute a displayport rect.
-   */
-  static bool IsMissingDisplayPortBaseRect(nsIContent* aContent);
-
-  /**
-   * Go through the IPC Channel and update displayport margins for content
-   * elements based on UpdateFrame messages. The messages are left in the
-   * queue and will be fully processed when dequeued. The aim is to paint
-   * the most up-to-date displayport without waiting for these message to
-   * go through the message queue.
-   */
-  static void UpdateDisplayPortMarginsFromPendingMessages();
-
-  /**
-   * @return the display port for the given element which should be used for
-   * visibility testing purposes.
-   *
-   * If low-precision buffers are enabled, this is the critical display port;
-   * otherwise, it's the same display port returned by GetDisplayPort().
-   */
-  static bool GetDisplayPortForVisibilityTesting(
-      nsIContent* aContent, nsRect* aResult,
-      DisplayportRelativeTo aRelativeTo = DisplayportRelativeTo::ScrollPort);
-
-  enum class RepaintMode : uint8_t { Repaint, DoNotRepaint };
-
-  /**
-   * Invalidate for displayport change.
-   */
-  static void InvalidateForDisplayPortChange(
-      nsIContent* aContent, bool aHadDisplayPort, const nsRect& aOldDisplayPort,
-      const nsRect& aNewDisplayPort,
-      RepaintMode aRepaintMode = RepaintMode::Repaint);
-
-  /**
-   * Set the display port margins for a content element to be used with a
-   * display port base (see SetDisplayPortBase()).
-   * See also nsIDOMWindowUtils.setDisplayPortMargins.
-   * @param aContent the content element for which to set the margins
-   * @param aPresShell the pres shell for the document containing the element
-   * @param aMargins the margins to set
-   * @param aAlignmentX, alignmentY the amount of pixels to which to align the
-   *                                displayport built by combining the base
-   *                                rect with the margins, in either direction
-   * @param aPriority a priority value to determine which margins take effect
-   *                  when multiple callers specify margins
-   * @param aRepaintMode whether to schedule a paint after setting the margins
-   * @return true if the new margins were applied.
-   */
-  static bool SetDisplayPortMargins(
-      nsIContent* aContent, PresShell* aPresShell, const ScreenMargin& aMargins,
-      uint32_t aPriority = 0, RepaintMode aRepaintMode = RepaintMode::Repaint);
-
-  /**
-   * Set the display port base rect for given element to be used with display
-   * port margins.
-   * SetDisplayPortBaseIfNotSet is like SetDisplayPortBase except it only sets
-   * the display port base to aBase if no display port base is currently set.
-   */
-  static void SetDisplayPortBase(nsIContent* aContent, const nsRect& aBase);
-  static void SetDisplayPortBaseIfNotSet(nsIContent* aContent,
-                                         const nsRect& aBase);
-
-  /**
-   * Get the critical display port for the given element.
-   */
-  static bool GetCriticalDisplayPort(nsIContent* aContent, nsRect* aResult,
-                                     bool* aOutPainted = nullptr);
-
-  /**
-   * Check whether the given element has a critical display port.
-   */
-  static bool HasCriticalDisplayPort(nsIContent* aContent);
-
-  /**
-   * If low-precision painting is turned on, delegates to
-   * GetCriticalDisplayPort. Otherwise, delegates to GetDisplayPort.
-   */
-  static bool GetHighResolutionDisplayPort(nsIContent* aContent,
-                                           nsRect* aResult,
-                                           bool* aOutPainted = nullptr);
-
-  /**
-   * Remove the displayport for the given element.
-   */
-  static void RemoveDisplayPort(nsIContent* aContent);
 
   /**
    * Notify the scroll frame with the given scroll id that its scroll offset
@@ -643,19 +514,6 @@ class nsLayoutUtils {
   static ViewID ScrollIdForRootScrollFrame(nsPresContext* aPresContext);
 
   /**
-   * Return true if aPresContext's viewport has a displayport.
-   */
-  static bool ViewportHasDisplayPort(nsPresContext* aPresContext);
-
-  /**
-   * Return true if aFrame is a fixed-pos frame and is a child of a viewport
-   * which has a displayport. These frames get special treatment from the
-   * compositor. aDisplayPort, if non-null, is set to the display port rectangle
-   * (relative to the viewport).
-   */
-  static bool IsFixedPosFrameInDisplayPort(const nsIFrame* aFrame);
-
-  /**
    * GetScrollableFrameFor returns the scrollable frame for a scrolled frame
    */
   static nsIScrollableFrame* GetScrollableFrameFor(
@@ -673,9 +531,8 @@ class nsLayoutUtils {
    * @param  aDirection Whether it's for horizontal or vertical scrolling.
    * @return the nearest scrollable frame or nullptr if not found
    */
-  enum Direction { eHorizontal, eVertical };
   static nsIScrollableFrame* GetNearestScrollableFrameForDirection(
-      nsIFrame* aFrame, Direction aDirection);
+      nsIFrame* aFrame, mozilla::layers::ScrollDirections aDirections);
 
   enum {
     /**
@@ -1194,9 +1051,6 @@ class nsLayoutUtils {
                                         const nscoord aRadii[8],
                                         const nsRect& aTestRect);
 
-  static bool MaybeCreateDisplayPortInFirstScrollFrameEncountered(
-      nsIFrame* aFrame, nsDisplayListBuilder* aBuilder);
-
   enum class PaintFrameFlags : uint32_t {
     InTransform = 0x01,
     SyncDecodeImages = 0x02,
@@ -1310,12 +1164,7 @@ class nsLayoutUtils {
    */
   static nsIFrame* GetFirstNonAnonymousFrame(nsIFrame* aFrame);
 
-  class RectCallback {
-   public:
-    virtual void AddRect(const nsRect& aRect) = 0;
-  };
-
-  struct RectAccumulator : public RectCallback {
+  struct RectAccumulator : public mozilla::RectCallback {
     nsRect mResultRect;
     nsRect mFirstRect;
     bool mSeenFirstRect;
@@ -1325,7 +1174,7 @@ class nsLayoutUtils {
     virtual void AddRect(const nsRect& aRect) override;
   };
 
-  struct RectListBuilder : public RectCallback {
+  struct RectListBuilder : public mozilla::RectCallback {
     DOMRectList* mRectList;
 
     explicit RectListBuilder(DOMRectList* aList);
@@ -1359,10 +1208,12 @@ class nsLayoutUtils {
    * Otherwise (by default), the border box is used.
    */
   static void GetAllInFlowRects(nsIFrame* aFrame, const nsIFrame* aRelativeTo,
-                                RectCallback* aCallback, uint32_t aFlags = 0);
+                                mozilla::RectCallback* aCallback,
+                                uint32_t aFlags = 0);
 
   static void GetAllInFlowRectsAndTexts(
-      nsIFrame* aFrame, const nsIFrame* aRelativeTo, RectCallback* aCallback,
+      nsIFrame* aFrame, const nsIFrame* aRelativeTo,
+      mozilla::RectCallback* aCallback,
       mozilla::dom::Sequence<nsString>* aTextList, uint32_t aFlags = 0);
 
   /**
@@ -1554,9 +1405,6 @@ class nsLayoutUtils {
    * size by reducing the *content size* (flooring at zero).  This is used for:
    * https://drafts.csswg.org/css-grid/#min-size-auto
    */
-  enum class IntrinsicISizeType { MinISize, PrefISize };
-  static const auto MIN_ISIZE = IntrinsicISizeType::MinISize;
-  static const auto PREF_ISIZE = IntrinsicISizeType::PrefISize;
   enum {
     IGNORE_PADDING = 0x01,
     BAIL_IF_REFLOW_NEEDED = 0x02,  // returns NS_INTRINSIC_ISIZE_UNKNOWN if so
@@ -1564,7 +1412,7 @@ class nsLayoutUtils {
   };
   static nscoord IntrinsicForAxis(
       mozilla::PhysicalAxis aAxis, gfxContext* aRenderingContext,
-      nsIFrame* aFrame, IntrinsicISizeType aType,
+      nsIFrame* aFrame, mozilla::IntrinsicISizeType aType,
       const mozilla::Maybe<LogicalSize>& aPercentageBasis = mozilla::Nothing(),
       uint32_t aFlags = 0, nscoord aMarginBoxMinSizeClamp = NS_MAXSIZE);
   /**
@@ -1572,7 +1420,7 @@ class nsLayoutUtils {
    */
   static nscoord IntrinsicForContainer(gfxContext* aRenderingContext,
                                        nsIFrame* aFrame,
-                                       IntrinsicISizeType aType,
+                                       mozilla::IntrinsicISizeType aType,
                                        uint32_t aFlags = 0);
 
   /**
@@ -1596,7 +1444,7 @@ class nsLayoutUtils {
    */
   static nscoord MinSizeContributionForAxis(mozilla::PhysicalAxis aAxis,
                                             gfxContext* aRC, nsIFrame* aFrame,
-                                            IntrinsicISizeType aType,
+                                            mozilla::IntrinsicISizeType aType,
                                             const LogicalSize& aPercentageBasis,
                                             uint32_t aFlags = 0);
 
@@ -2119,6 +1967,7 @@ class nsLayoutUtils {
    * popup frame or the root prescontext's root frame.
    */
   static nsIFrame* GetDisplayRootFrame(nsIFrame* aFrame);
+  static const nsIFrame* GetDisplayRootFrame(const nsIFrame* aFrame);
 
   /**
    * Get the reference frame that would be used when constructing a
@@ -2228,87 +2077,21 @@ class nsLayoutUtils {
     SFE_USE_ELEMENT_SIZE_IF_VECTOR = 1 << 5
   };
 
-  struct DirectDrawInfo {
-    /* imgIContainer to directly draw to a context */
-    nsCOMPtr<imgIContainer> mImgContainer;
-    /* which frame to draw */
-    uint32_t mWhichFrame;
-    /* imgIContainer flags to use when drawing */
-    uint32_t mDrawingFlags;
-  };
-
-  struct SurfaceFromElementResult {
-    friend class mozilla::dom::CanvasRenderingContext2D;
-    friend class nsLayoutUtils;
-
-    /* If SFEResult contains a valid surface, it either mLayersImage or
-     * mSourceSurface will be non-null, and GetSourceSurface() will not be null.
-     *
-     * For valid surfaces, mSourceSurface may be null if mLayersImage is
-     * non-null, but GetSourceSurface() will create mSourceSurface from
-     * mLayersImage when called.
-     */
-
-    /* Video elements (at least) often are already decoded as layers::Images. */
-    RefPtr<mozilla::layers::Image> mLayersImage;
-
-   protected:
-    /* GetSourceSurface() fills this and returns its non-null value if this
-     * SFEResult was successful. */
-    RefPtr<mozilla::gfx::SourceSurface> mSourceSurface;
-
-   public:
-    /* Contains info for drawing when there is no mSourceSurface. */
-    DirectDrawInfo mDrawInfo;
-
-    /* The size of the surface */
-    mozilla::gfx::IntSize mSize;
-    /* The size the surface is intended to be rendered at */
-    mozilla::gfx::IntSize mIntrinsicSize;
-    /* The principal associated with the element whose surface was returned.
-       If there is a surface, this will never be null. */
-    nsCOMPtr<nsIPrincipal> mPrincipal;
-    /* The image request, if the element is an nsIImageLoadingContent */
-    nsCOMPtr<imgIRequest> mImageRequest;
-    /* True if cross-origins redirects have been done in order to load this
-     * resource */
-    bool mHadCrossOriginRedirects;
-    /* Whether the element was "write only", that is, the bits should not be
-     * exposed to content */
-    bool mIsWriteOnly;
-    /* Whether the element was still loading.  Some consumers need to handle
-       this case specially. */
-    bool mIsStillLoading;
-    /* Whether the element has a valid size. */
-    bool mHasSize;
-    /* Whether the element used CORS when loading. */
-    bool mCORSUsed;
-
-    gfxAlphaType mAlphaType;
-
-    // Methods:
-
-    SurfaceFromElementResult();
-
-    // Gets mSourceSurface, or makes a SourceSurface from mLayersImage.
-    const RefPtr<mozilla::gfx::SourceSurface>& GetSourceSurface();
-  };
-
   // This function can be called on any thread.
-  static SurfaceFromElementResult SurfaceFromOffscreenCanvas(
+  static mozilla::SurfaceFromElementResult SurfaceFromOffscreenCanvas(
       mozilla::dom::OffscreenCanvas* aOffscreenCanvas, uint32_t aSurfaceFlags,
       RefPtr<DrawTarget>& aTarget);
-  static SurfaceFromElementResult SurfaceFromOffscreenCanvas(
+  static mozilla::SurfaceFromElementResult SurfaceFromOffscreenCanvas(
       mozilla::dom::OffscreenCanvas* aOffscreenCanvas,
       uint32_t aSurfaceFlags = 0) {
     RefPtr<DrawTarget> target = nullptr;
     return SurfaceFromOffscreenCanvas(aOffscreenCanvas, aSurfaceFlags, target);
   }
 
-  static SurfaceFromElementResult SurfaceFromElement(
+  static mozilla::SurfaceFromElementResult SurfaceFromElement(
       mozilla::dom::Element* aElement, uint32_t aSurfaceFlags,
       RefPtr<DrawTarget>& aTarget);
-  static SurfaceFromElementResult SurfaceFromElement(
+  static mozilla::SurfaceFromElementResult SurfaceFromElement(
       mozilla::dom::Element* aElement, uint32_t aSurfaceFlags = 0) {
     RefPtr<DrawTarget> target = nullptr;
     return SurfaceFromElement(aElement, aSurfaceFlags, target);
@@ -2316,19 +2099,19 @@ class nsLayoutUtils {
 
   // There are a bunch of callers of SurfaceFromElement.  Just mark it as
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  static SurfaceFromElementResult SurfaceFromElement(
+  static mozilla::SurfaceFromElementResult SurfaceFromElement(
       nsIImageLoadingContent* aElement, uint32_t aSurfaceFlags,
       RefPtr<DrawTarget>& aTarget);
   // Need an HTMLImageElement overload, because otherwise the
   // nsIImageLoadingContent and mozilla::dom::Element overloads are ambiguous
   // for HTMLImageElement.
-  static SurfaceFromElementResult SurfaceFromElement(
+  static mozilla::SurfaceFromElementResult SurfaceFromElement(
       mozilla::dom::HTMLImageElement* aElement, uint32_t aSurfaceFlags,
       RefPtr<DrawTarget>& aTarget);
-  static SurfaceFromElementResult SurfaceFromElement(
+  static mozilla::SurfaceFromElementResult SurfaceFromElement(
       mozilla::dom::HTMLCanvasElement* aElement, uint32_t aSurfaceFlags,
       RefPtr<DrawTarget>& aTarget);
-  static SurfaceFromElementResult SurfaceFromElement(
+  static mozilla::SurfaceFromElementResult SurfaceFromElement(
       mozilla::dom::HTMLVideoElement* aElement, uint32_t aSurfaceFlags,
       RefPtr<DrawTarget>& aTarget);
 
@@ -2763,7 +2546,7 @@ class nsLayoutUtils {
    * Returns true if the widget owning the given frame has builtin APZ support
    * enabled.
    */
-  static bool AsyncPanZoomEnabled(nsIFrame* aFrame);
+  static bool AsyncPanZoomEnabled(const nsIFrame* aFrame);
 
   /**
    * Returns the current APZ Resolution Scale. When Java Pan/Zoom is
@@ -2842,46 +2625,7 @@ class nsLayoutUtils {
   static FrameMetrics CalculateBasicFrameMetrics(
       nsIScrollableFrame* aScrollFrame);
 
-  /**
-   * Calculate a default set of displayport margins for the given scrollframe
-   * and set them on the scrollframe's content element. The margins are set with
-   * the default priority, which may clobber previously set margins. The repaint
-   * mode provided is passed through to the call to SetDisplayPortMargins.
-   * The |aScrollFrame| parameter must be non-null and queryable to an nsIFrame.
-   * @return true iff the call to SetDisplayPortMargins returned true.
-   */
-  static bool CalculateAndSetDisplayPortMargins(
-      nsIScrollableFrame* aScrollFrame, RepaintMode aRepaintMode);
-
-  /**
-   * If |aScrollFrame| WantsAsyncScroll() and we don't have a scrollable
-   * displayport yet (as tracked by |aBuilder|), calculate and set a
-   * displayport.
-   *
-   * If this is called during display list building pass DoNotRepaint in
-   * aRepaintMode.
-   *
-   * Returns true if there is a displayport on an async scrollable scrollframe
-   * after this call, either because one was just added or it already existed.
-   */
-  static bool MaybeCreateDisplayPort(nsDisplayListBuilder* aBuilder,
-                                     nsIFrame* aScrollFrame,
-                                     RepaintMode aRepaintMode);
-
   static nsIScrollableFrame* GetAsyncScrollableAncestorFrame(nsIFrame* aTarget);
-
-  /**
-   * Sets a zero margin display port on all proper ancestors of aFrame that
-   * are async scrollable.
-   */
-  static void SetZeroMarginDisplayPortOnAsyncScrollableAncestors(
-      nsIFrame* aFrame);
-  /**
-   * Finds the closest ancestor async scrollable frame from aFrame that has a
-   * displayport and attempts to trigger the displayport expiry on that
-   * ancestor.
-   */
-  static void ExpireDisplayPortOnAsyncScrollableAncestor(nsIFrame* aFrame);
 
   static void SetBSizeFromFontMetrics(
       const nsIFrame* aFrame, mozilla::ReflowOutput& aMetrics,
@@ -2903,7 +2647,7 @@ class nsLayoutUtils {
       nsIFrame* aForFrame, nsIFrame* aScrollFrame, nsIContent* aContent,
       const nsIFrame* aReferenceFrame,
       mozilla::layers::LayerManager* aLayerManager, ViewID aScrollParentId,
-      const nsRect& aViewport, const mozilla::Maybe<nsRect>& aClipRect,
+      const nsSize& aScrollPortSize, const mozilla::Maybe<nsRect>& aClipRect,
       bool aIsRoot,
       const mozilla::Maybe<ContainerLayerParameters>& aContainerParameters);
 
@@ -3064,7 +2808,8 @@ class nsLayoutUtils {
 
   static void ComputeSystemFont(nsFont* aSystemFont,
                                 mozilla::LookAndFeel::FontID aFontID,
-                                const nsFont* aDefaultVariableFont);
+                                const nsFont* aDefaultVariableFont,
+                                const mozilla::dom::Document* aDocument);
 
   static uint32_t ParseFontLanguageOverride(const nsAString& aLangTag);
 
@@ -3134,6 +2879,12 @@ class nsLayoutUtils {
                                                const CSSSize& aSize);
   static nsSize ExpandHeightForDynamicToolbar(nsPresContext* aPresContext,
                                               const nsSize& aSize);
+
+  /**
+   * Returns the nsIFrame which clips overflow regions of the given |aFrame|.
+   * Note CSS clip or clip-path isn't accounted for.
+   **/
+  static nsIFrame* GetNearestOverflowClipFrame(nsIFrame* aFrame);
 
  private:
   /**

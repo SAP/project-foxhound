@@ -67,8 +67,7 @@ static bool IsPreviousSibling(nsINode* aSubject, nsINode* aNode) {
 }
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Calls LoadSelectedImage on host element unless it has been superseded or
 // canceled -- this is the synchronous section of "update the image data".
@@ -714,15 +713,9 @@ already_AddRefed<HTMLImageElement> HTMLImageElement::Image(
   return img.forget();
 }
 
-uint32_t HTMLImageElement::Height() {
-  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
-  return GetWidthHeightForImage(currentRequest).height;
-}
+uint32_t HTMLImageElement::Height() { return GetWidthHeightForImage().height; }
 
-uint32_t HTMLImageElement::Width() {
-  RefPtr<imgRequestProxy> currentRequest(mCurrentRequest);
-  return GetWidthHeightForImage(currentRequest).width;
-}
+uint32_t HTMLImageElement::Width() { return GetWidthHeightForImage().width; }
 
 uint32_t HTMLImageElement::NaturalHeight() {
   uint32_t height = nsImageLoadingContent::NaturalHeight();
@@ -765,9 +758,9 @@ nsresult HTMLImageElement::CopyInnerTo(HTMLImageElement* aDest) {
     // initaiated by a user interaction.
     mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
-    nsContentUtils::AddScriptRunner(NewRunnableMethod<bool>(
-        "dom::HTMLImageElement::MaybeLoadImage", aDest,
-        &HTMLImageElement::MaybeLoadImage, false));
+    nsContentUtils::AddScriptRunner(
+        NewRunnableMethod<bool>("dom::HTMLImageElement::MaybeLoadImage", aDest,
+                                &HTMLImageElement::MaybeLoadImage, false));
   }
 
   return NS_OK;
@@ -1309,5 +1302,4 @@ void HTMLImageElement::StopLazyLoadingAndStartLoadIfNeeded() {
   StartLoadingIfNeeded();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

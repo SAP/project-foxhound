@@ -4,6 +4,14 @@
 
 "use strict";
 
+/**
+ * NetworkObserver is the main class in DevTools to observe network requests
+ * out of many events fired by the platform code.
+ */
+
+// Enable logging all platform events this module listen to
+const DEBUG_PLATFORM_EVENTS = false;
+
 const { Cc, Ci, Cr, Cu } = require("chrome");
 const Services = require("Services");
 const {
@@ -13,6 +21,12 @@ loader.lazyRequireGetter(
   this,
   "ChannelMap",
   "devtools/server/actors/network-monitor/utils/channel-map",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "getErrorCodeString",
+  "devtools/server/actors/network-monitor/utils/error-codes",
   true
 );
 
@@ -50,7 +64,12 @@ loader.lazyGetter(
   () => Cu.getGlobalForObject(Cu).WebExtensionPolicy
 );
 
-// Network logging
+function logPlatformEvent(eventName, channel, message = "") {
+  if (!DEBUG_PLATFORM_EVENTS) {
+    return;
+  }
+  dump(`[netmonitor] ${channel.channelId} - ${eventName} ${message}\n`);
+}
 
 // The maximum uint32 value.
 const PR_UINT32_MAX = 4294967295;
@@ -74,7 +93,7 @@ const HTTP_TEMPORARY_REDIRECT = 307;
  */
 function matchRequest(channel, filters) {
   // Log everything if no filter is specified
-  if (!filters.browsingContextID && !filters.window) {
+  if (!filters.browserId && !filters.window) {
     return true;
   }
 
@@ -105,10 +124,10 @@ function matchRequest(channel, filters) {
     }
   }
 
-  if (filters.browsingContextID) {
+  if (filters.browserId) {
     const topFrame = NetworkHelper.getTopFrameForRequest(channel);
     // topFrame is typically null for some chrome requests like favicons
-    if (topFrame && topFrame.browsingContext.id == filters.browsingContextID) {
+    if (topFrame && topFrame.browsingContext.browserId == filters.browserId) {
       return true;
     }
 
@@ -116,7 +135,8 @@ function matchRequest(channel, filters) {
     // look for it on channel.loadInfo instead.
     if (
       channel.loadInfo &&
-      channel.loadInfo.browsingContextID == filters.browsingContextID
+      channel.loadInfo.browsingContext &&
+      channel.loadInfo.browsingContext.browserId == filters.browserId
     ) {
       return true;
     }
@@ -137,7 +157,7 @@ exports.matchRequest = matchRequest;
  *        Object with the filters to use for network requests:
  *        - window (nsIDOMWindow): filter network requests by the associated
  *          window object.
- *        - browsingContextID (number): filter requests by their top frame's BrowsingContext.
+ *        - browserId (number): filter requests by their top frame's Browser Element.
  *        Filters are optional. If any of these filters match the request is
  *        logged (OR is applied). If no filter is provided then all requests are
  *        logged.
@@ -291,6 +311,8 @@ NetworkObserver.prototype = {
       return;
     }
 
+    logPlatformEvent(topic, channel);
+
     this.interceptedChannels.add(subject);
 
     // Service workers never fire http-on-examine-cached-response, so fake one.
@@ -315,6 +337,8 @@ NetworkObserver.prototype = {
     if (!matchRequest(channel, this.filters)) {
       return;
     }
+
+    logPlatformEvent(topic, channel);
 
     // Ignore preload requests to avoid duplicity request entries in
     // the Network panel. If a preload fails (for whatever reason)
@@ -348,6 +372,8 @@ NetworkObserver.prototype = {
       return;
     }
 
+    logPlatformEvent(topic, channel);
+
     let id;
     let reason;
 
@@ -370,15 +396,28 @@ NetworkObserver.prototype = {
     if (httpActivity.owner) {
       // Try extracting server timings. Note that they will be sent to the client
       // in the `_onTransactionClose` method together with network event timings.
-      httpActivity.owner.addSeverTimings(serverTimings);
+      httpActivity.owner.addServerTimings(serverTimings);
     } else {
       // If the owner isn't set we need to create the network event and send
-      // it to the client. This happens in case where the request has been
-      // blocked (e.g. CORS) and "http-on-stop-request" is the first notification.
-      this._createNetworkEvent(subject, {
-        blockedReason: reason,
-        blockingExtension: id,
-      });
+      // it to the client. This happens in case where:
+      // - the request has been blocked (e.g. CORS) and "http-on-stop-request" is the first notification.
+      // - the NetworkObserver is start *after* the request started and we only receive the http-stop notification,
+      //   but that doesn't mean the request is blocked, so check for its status.
+      const { status } = channel;
+      if (status == 0) {
+        // Do not pass any blocked reason, as this request is just fine
+        this._createNetworkEvent(subject, {});
+      } else {
+        if (reason == 0) {
+          // If we get there, we have a non-zero status, but no clear blocking reason
+          // This is most likely a request that failed for some reason, so try to pass this reason
+          reason = getErrorCodeString(status);
+        }
+        this._createNetworkEvent(subject, {
+          blockedReason: reason,
+          blockingExtension: id,
+        });
+      }
     }
   },
 
@@ -415,6 +454,14 @@ NetworkObserver.prototype = {
     if (!matchRequest(channel, this.filters)) {
       return;
     }
+
+    logPlatformEvent(
+      topic,
+      subject,
+      blockedOrFailed
+        ? "blockedOrFailed:" + blockedReason
+        : channel.responseStatus
+    );
 
     const response = {
       id: gSequenceId(),
@@ -475,9 +522,9 @@ NetworkObserver.prototype = {
       const fromServiceWorker = this.interceptedChannels.has(channel);
       this.interceptedChannels.delete(channel);
 
-      // If this is a cached response, there never was a request event
-      // so we need to construct one here so the frontend gets all the
-      // expected events.
+      // If this is a cached response (which are also emitted by service worker requests),
+      // there never was a request event so we need to construct one here
+      // so the frontend gets all the expected events.
       let httpActivity = this.createOrGetActivityObject(channel);
       if (!httpActivity.owner) {
         httpActivity = this._createNetworkEvent(channel, {
@@ -485,6 +532,12 @@ NetworkObserver.prototype = {
           fromServiceWorker: fromServiceWorker,
         });
       }
+
+      // We need to send the request body to the frontend for
+      // the faked (cached/service worker request) event.
+      this._onRequestBodySent(httpActivity);
+      this._sendRequestBody(httpActivity);
+
       httpActivity.owner.addResponseStart(
         {
           httpVersion: response.httpVersion,
@@ -528,6 +581,8 @@ NetworkObserver.prototype = {
     if (throttler) {
       const channel = subject.QueryInterface(Ci.nsIHttpChannel);
       if (matchRequest(channel, this.filters)) {
+        logPlatformEvent("http-on-modify-request", channel);
+
         // Read any request body here, before it is throttled.
         const httpActivity = this.createOrGetActivityObject(channel);
         this._onRequestBodySent(httpActivity);
@@ -568,20 +623,7 @@ NetworkObserver.prototype = {
     switch (activitySubtype) {
       case gActivityDistributor.ACTIVITY_SUBTYPE_REQUEST_BODY_SENT:
         this._onRequestBodySent(httpActivity);
-        if (httpActivity.sentBody !== null) {
-          const limit = Services.prefs.getIntPref(
-            "devtools.netmonitor.requestBodyLimit"
-          );
-          const size = httpActivity.sentBody.length;
-          if (size > limit && limit > 0) {
-            httpActivity.sentBody = httpActivity.sentBody.substr(0, limit);
-          }
-          httpActivity.owner.addRequestPostData({
-            text: httpActivity.sentBody,
-            size: size,
-          });
-          httpActivity.sentBody = null;
-        }
+        this._sendRequestBody(httpActivity);
         break;
       case gActivityDistributor.ACTIVITY_SUBTYPE_RESPONSE_HEADER:
         this._onResponseHeader(httpActivity, extraStringData);
@@ -592,6 +634,27 @@ NetworkObserver.prototype = {
       default:
         break;
     }
+  },
+
+  getActivityTypeString(activityType, activitySubtype) {
+    if (
+      activityType === Ci.nsIHttpActivityObserver.ACTIVITY_TYPE_SOCKET_TRANSPORT
+    ) {
+      for (const name in Ci.nsISocketTransport) {
+        if (Ci.nsISocketTransport[name] === activitySubtype) {
+          return "SOCKET_TRANSPORT:" + name;
+        }
+      }
+    } else if (
+      activityType === Ci.nsIHttpActivityObserver.ACTIVITY_TYPE_HTTP_TRANSACTION
+    ) {
+      for (const name in Ci.nsIHttpActivityObserver) {
+        if (Ci.nsIHttpActivityObserver[name] === activitySubtype) {
+          return "HTTP_TRANSACTION:" + name.replace("ACTIVITY_SUBTYPE_", "");
+        }
+      }
+    }
+    return "unexpected-activity-types:" + activityType + ":" + activitySubtype;
   },
 
   /**
@@ -631,6 +694,13 @@ NetworkObserver.prototype = {
 
     channel = channel.QueryInterface(Ci.nsIHttpChannel);
     channel = channel.QueryInterface(Ci.nsIClassifiedChannel);
+
+    if (DEBUG_PLATFORM_EVENTS) {
+      logPlatformEvent(
+        this.getActivityTypeString(activityType, activitySubtype),
+        channel
+      );
+    }
 
     if (
       activitySubtype == gActivityDistributor.ACTIVITY_SUBTYPE_REQUEST_HEADER
@@ -750,8 +820,8 @@ NetworkObserver.prototype = {
     if (channel.loadInfo) {
       causeType = channel.loadInfo.externalContentPolicyType;
       const { loadingPrincipal } = channel.loadInfo;
-      if (loadingPrincipal?.URI) {
-        causeUri = loadingPrincipal.URI.spec;
+      if (loadingPrincipal) {
+        causeUri = loadingPrincipal.spec;
       }
     }
 
@@ -767,6 +837,7 @@ NetworkObserver.prototype = {
       }
       if (wsChannel) {
         event.url = wsChannel.URI.spec;
+        event.serial = wsChannel.serial;
       }
     }
 
@@ -1514,6 +1585,23 @@ NetworkObserver.prototype = {
       total: totalTime,
       offsets: offsets,
     };
+  },
+
+  _sendRequestBody: function(httpActivity) {
+    if (httpActivity.sentBody !== null) {
+      const limit = Services.prefs.getIntPref(
+        "devtools.netmonitor.requestBodyLimit"
+      );
+      const size = httpActivity.sentBody.length;
+      if (size > limit && limit > 0) {
+        httpActivity.sentBody = httpActivity.sentBody.substr(0, limit);
+      }
+      httpActivity.owner.addRequestPostData({
+        text: httpActivity.sentBody,
+        size: size,
+      });
+      httpActivity.sentBody = null;
+    }
   },
 
   /**

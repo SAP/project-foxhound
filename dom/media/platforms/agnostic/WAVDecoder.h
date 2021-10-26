@@ -31,9 +31,8 @@ class WaveDataDecoder : public MediaDataDecoder,
   }
 
  private:
-  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
-  const AudioInfo& mInfo;
-  const RefPtr<TaskQueue> mTaskQueue;
+  const AudioInfo mInfo;
+  nsCOMPtr<nsISerialEventTarget> mThread;
 };
 
 }  // namespace mozilla

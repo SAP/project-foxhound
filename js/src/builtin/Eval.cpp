@@ -13,6 +13,9 @@
 #include "frontend/BytecodeCompilation.h"
 #include "frontend/CompilationInfo.h"
 #include "gc/HashUtil.h"
+#include "js/friend/ErrorMessages.h"   // js::GetErrorMessage, JSMSG_*
+#include "js/friend/JSMEnvironment.h"  // JS::NewJSMEnvironment, JS::ExecuteInJSMEnvironment, JS::GetJSMEnvironmentOfScriptedCaller, JS::IsJSMEnvironment
+#include "js/friend/WindowProxy.h"     // js::IsWindowProxy
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "vm/GlobalObject.h"
@@ -333,25 +336,13 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
       return false;
     }
 
-    LifoAllocScope allocScope(&cx->tempLifoAlloc());
-    frontend::CompilationInfo compilationInfo(cx, allocScope, options,
-                                              enclosing, env);
-    if (!compilationInfo.init(cx)) {
-      return false;
-    }
-    compilationInfo.setEnclosingScope(enclosing);
-
-    uint32_t len = srcBuf.length();
-    SourceExtent extent = SourceExtent::makeGlobalExtent(len);
-    frontend::EvalSharedContext evalsc(cx, compilationInfo,
-                                       compilationInfo.directives, extent);
-    RootedScript compiled(
-        cx, frontend::CompileEvalScript(compilationInfo, evalsc, srcBuf));
-    if (!compiled) {
+    JSScript* script =
+        frontend::CompileEvalScript(cx, options, srcBuf, enclosing, env);
+    if (!script) {
       return false;
     }
 
-    esg.setNewScript(compiled);
+    esg.setNewScript(script);
   }
 
   // If this is a direct eval we need to use the caller's newTarget.
@@ -445,25 +436,13 @@ bool js::DirectEvalStringFromIon(JSContext* cx, HandleObject env,
       return false;
     }
 
-    LifoAllocScope allocScope(&cx->tempLifoAlloc());
-    frontend::CompilationInfo compilationInfo(cx, allocScope, options,
-                                              enclosing, env);
-    if (!compilationInfo.init(cx)) {
-      return false;
-    }
-    compilationInfo.setEnclosingScope(enclosing);
-
-    uint32_t len = srcBuf.length();
-    SourceExtent extent = SourceExtent::makeGlobalExtent(len);
-    frontend::EvalSharedContext evalsc(cx, compilationInfo,
-                                       compilationInfo.directives, extent);
-    JSScript* compiled =
-        frontend::CompileEvalScript(compilationInfo, evalsc, srcBuf);
-    if (!compiled) {
+    JSScript* script =
+        frontend::CompileEvalScript(cx, options, srcBuf, enclosing, env);
+    if (!script) {
       return false;
     }
 
-    esg.setNewScript(compiled);
+    esg.setNewScript(script);
   }
 
   return ExecuteKernel(cx, esg.script(), env, newTargetValue,
@@ -559,7 +538,7 @@ JS_FRIEND_API bool js::ExecuteInFrameScriptEnvironment(
   return true;
 }
 
-JS_FRIEND_API JSObject* js::NewJSMEnvironment(JSContext* cx) {
+JS_FRIEND_API JSObject* JS::NewJSMEnvironment(JSContext* cx) {
   RootedObject varEnv(cx, NonSyntacticVariablesObject::create(cx));
   if (!varEnv) {
     return nullptr;
@@ -575,14 +554,14 @@ JS_FRIEND_API JSObject* js::NewJSMEnvironment(JSContext* cx) {
   return varEnv;
 }
 
-JS_FRIEND_API bool js::ExecuteInJSMEnvironment(JSContext* cx,
+JS_FRIEND_API bool JS::ExecuteInJSMEnvironment(JSContext* cx,
                                                HandleScript scriptArg,
                                                HandleObject varEnv) {
   RootedObjectVector emptyChain(cx);
   return ExecuteInJSMEnvironment(cx, scriptArg, varEnv, emptyChain);
 }
 
-JS_FRIEND_API bool js::ExecuteInJSMEnvironment(JSContext* cx,
+JS_FRIEND_API bool JS::ExecuteInJSMEnvironment(JSContext* cx,
                                                HandleScript scriptArg,
                                                HandleObject varEnv,
                                                HandleObjectVector targetObj) {
@@ -627,7 +606,7 @@ JS_FRIEND_API bool js::ExecuteInJSMEnvironment(JSContext* cx,
   return ExecuteInExtensibleLexicalEnvironment(cx, scriptArg, env);
 }
 
-JS_FRIEND_API JSObject* js::GetJSMEnvironmentOfScriptedCaller(JSContext* cx) {
+JS_FRIEND_API JSObject* JS::GetJSMEnvironmentOfScriptedCaller(JSContext* cx) {
   FrameIter iter(cx);
   if (iter.done()) {
     return nullptr;
@@ -645,7 +624,7 @@ JS_FRIEND_API JSObject* js::GetJSMEnvironmentOfScriptedCaller(JSContext* cx) {
   return env;
 }
 
-JS_FRIEND_API bool js::IsJSMEnvironment(JSObject* obj) {
+JS_FRIEND_API bool JS::IsJSMEnvironment(JSObject* obj) {
   // NOTE: This also returns true if the NonSyntacticVariablesObject was
   // created for reasons other than the JSM loader.
   return obj->is<NonSyntacticVariablesObject>();

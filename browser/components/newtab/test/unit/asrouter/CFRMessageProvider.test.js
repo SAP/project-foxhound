@@ -1,5 +1,4 @@
 import { CFRMessageProvider } from "lib/CFRMessageProvider.jsm";
-const messages = CFRMessageProvider.getMessages();
 
 const REGULAR_IDS = [
   "FACEBOOK_CONTAINER",
@@ -11,8 +10,12 @@ const REGULAR_IDS = [
 ];
 
 describe("CFRMessageProvider", () => {
-  it("should have a total of 12 messages", () => {
-    assert.lengthOf(messages, 12);
+  let messages;
+  beforeEach(async () => {
+    messages = await CFRMessageProvider.getMessages();
+  });
+  it("should have a total of 13 messages", () => {
+    assert.lengthOf(messages, 13);
   });
   it("should have one message each for the three regular addons", () => {
     for (const id of REGULAR_IDS) {

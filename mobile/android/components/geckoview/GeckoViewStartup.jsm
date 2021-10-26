@@ -20,23 +20,24 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
 });
 
-const { debug, warn } = GeckoViewUtils.initLogging("Startup"); // eslint-disable-line no-unused-vars
+const { debug, warn } = GeckoViewUtils.initLogging("Startup");
 
 const JSWINDOWACTORS = {
-  BrowserTab: {
-    parent: {
-      moduleURI: "resource:///actors/BrowserTabParent.jsm",
-    },
-  },
-  GeckoViewContent: {
-    child: {
-      moduleURI: "resource:///actors/GeckoViewContentChild.jsm",
-    },
-  },
   LoadURIDelegate: {
     child: {
       moduleURI: "resource:///actors/LoadURIDelegateChild.jsm",
     },
+  },
+  GeckoViewPrompt: {
+    child: {
+      moduleURI: "resource:///actors/GeckoViewPromptChild.jsm",
+      events: {
+        click: { capture: false, mozSystemGroup: true },
+        contextmenu: { capture: false, mozSystemGroup: true },
+        DOMPopupBlocked: { capture: false, mozSystemGroup: true },
+      },
+    },
+    allFrames: true,
   },
   WebBrowserChrome: {
     child: {
@@ -157,7 +158,6 @@ class GeckoViewStartup {
           Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT
         ) {
           ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
-          ActorManagerParent.flush();
 
           Services.mm.loadFrameScript(
             "chrome://geckoview/content/GeckoViewPromptChild.js",

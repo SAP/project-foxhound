@@ -8,12 +8,12 @@
 
 #include "mozilla/Unused.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 
 #include "nsIObserverService.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserHost)
   NS_INTERFACE_MAP_ENTRY(nsIRemoteTab)
@@ -56,11 +56,9 @@ a11y::DocAccessibleParent* BrowserHost::GetTopLevelDocAccessible() const {
   return mRoot->GetTopLevelDocAccessible();
 }
 
-void BrowserHost::LoadURL(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal) {
-  MOZ_ASSERT(aURI);
-  MOZ_ASSERT(aTriggeringPrincipal);
-
-  mRoot->LoadURL(aURI, aTriggeringPrincipal);
+void BrowserHost::LoadURL(nsDocShellLoadState* aLoadState) {
+  MOZ_ASSERT(aLoadState);
+  mRoot->LoadURL(aLoadState);
 }
 
 void BrowserHost::ResumeLoad(uint64_t aPendingSwitchId) {
@@ -100,28 +98,6 @@ void BrowserHost::UpdateEffects(EffectsInfo aEffects) {
   }
   mEffectsInfo = aEffects;
   Unused << mRoot->SendUpdateEffects(mEffectsInfo);
-}
-
-/* attribute boolean suspendMediaWhenInactive; */
-NS_IMETHODIMP
-BrowserHost::GetSuspendMediaWhenInactive(bool* aSuspendMediaWhenInactive) {
-  if (!mRoot) {
-    *aSuspendMediaWhenInactive = false;
-    return NS_OK;
-  }
-  *aSuspendMediaWhenInactive = mRoot->GetSuspendMediaWhenInactive();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BrowserHost::SetSuspendMediaWhenInactive(bool aSuspendMediaWhenInactive) {
-  if (!mRoot) {
-    return NS_OK;
-  }
-  VisitAll([&](BrowserParent* aBrowserParent) {
-    aBrowserParent->SetSuspendMediaWhenInactive(aSuspendMediaWhenInactive);
-  });
-  return NS_OK;
 }
 
 /* attribute boolean docShellIsActive; */
@@ -261,30 +237,6 @@ BrowserHost::TransmitPermissionsForPrincipal(nsIPrincipal* aPrincipal) {
   return GetContentParent()->TransmitPermissionsForPrincipal(aPrincipal);
 }
 
-/* readonly attribute boolean hasBeforeUnload; */
-NS_IMETHODIMP
-BrowserHost::GetHasBeforeUnload(bool* aHasBeforeUnload) {
-  if (!mRoot || !GetBrowsingContext()) {
-    *aHasBeforeUnload = false;
-    return NS_OK;
-  }
-
-  bool result = false;
-
-  GetBrowsingContext()->PreOrderWalk(
-      [&result](BrowsingContext* aBrowsingContext) {
-        WindowGlobalParent* windowGlobal =
-            aBrowsingContext->Canonical()->GetCurrentWindowGlobal();
-
-        if (windowGlobal) {
-          result |= windowGlobal->HasBeforeUnload();
-        }
-      });
-
-  *aHasBeforeUnload = result;
-  return NS_OK;
-}
-
 /* boolean startApzAutoscroll (in float aAnchorX, in float aAnchorY, in nsViewID
  * aScrollId, in uint32_t aPresShellId); */
 NS_IMETHODIMP
@@ -330,5 +282,4 @@ BrowserHost::MaybeCancelContentJSExecutionFromScript(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

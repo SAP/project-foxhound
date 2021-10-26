@@ -258,17 +258,17 @@ void nsTableRowGroupFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 }
 
 nsIFrame::LogicalSides nsTableRowGroupFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+    const Maybe<SkipSidesDuringReflow>&) const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
     return skip;
   }
 
-  if (nullptr != GetPrevInFlow()) {
+  if (GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
-  if (nullptr != GetNextInFlow()) {
+  if (GetNextInFlow()) {
     skip |= eLogicalSideBitsBEnd;
   }
   return skip;
@@ -306,15 +306,15 @@ void nsTableRowGroupFrame::PlaceChild(
 void nsTableRowGroupFrame::InitChildReflowInput(nsPresContext& aPresContext,
                                                 bool aBorderCollapse,
                                                 ReflowInput& aReflowInput) {
-  nsMargin border;
+  const auto childWM = aReflowInput.GetWritingMode();
+  LogicalMargin border(childWM);
   if (nsTableRowFrame* rowFrame = do_QueryFrame(aReflowInput.mFrame)) {
     if (aBorderCollapse) {
-      WritingMode wm = GetWritingMode();
-      border = rowFrame->GetBCBorderWidth(wm).GetPhysicalMargin(wm);
+      border = rowFrame->GetBCBorderWidth(childWM);
     }
   }
-  const nsMargin padding;
-  aReflowInput.Init(&aPresContext, Nothing(), &border, &padding);
+  const LogicalMargin zeroPadding(childWM);
+  aReflowInput.Init(&aPresContext, Nothing(), Some(border), Some(zeroPadding));
 }
 
 static void CacheRowBSizesForPrinting(nsPresContext* aPresContext,
@@ -388,7 +388,7 @@ void nsTableRowGroupFrame::ReflowChildren(
       kidAvailSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
       ReflowInput kidReflowInput(aPresContext, aReflowInput.reflowInput,
                                  kidFrame, kidAvailSize, Nothing(),
-                                 ReflowInput::CALLER_WILL_INIT);
+                                 ReflowInput::InitFlag::CallerWillInit);
       InitChildReflowInput(*aPresContext, borderCollapse, kidReflowInput);
 
       // This can indicate that columns were resized.
@@ -1008,7 +1008,7 @@ void nsTableRowGroupFrame::SplitSpanningCells(
         ReflowInput rowReflowInput(
             &aPresContext, aReflowInput, row,
             LogicalSize(row->GetWritingMode(), rowAvailSize), Nothing(),
-            ReflowInput::CALLER_WILL_INIT);
+            ReflowInput::InitFlag::CallerWillInit);
         InitChildReflowInput(aPresContext, borderCollapse, rowReflowInput);
         rowReflowInput.mFlags.mIsTopOfPage = isTopOfPage;  // set top of page
 
@@ -1142,7 +1142,7 @@ nsresult nsTableRowGroupFrame::SplitRowGroup(nsPresContext* aPresContext,
         ReflowInput rowReflowInput(
             aPresContext, aReflowInput, rowFrame,
             LogicalSize(rowFrame->GetWritingMode(), availSize), Nothing(),
-            ReflowInput::CALLER_WILL_INIT);
+            ReflowInput::InitFlag::CallerWillInit);
 
         InitChildReflowInput(*aPresContext, borderCollapse, rowReflowInput);
         rowReflowInput.mFlags.mIsTopOfPage = isTopOfPage;  // set top of page
@@ -1396,15 +1396,14 @@ void nsTableRowGroupFrame::Reflow(nsPresContext* aPresContext,
       (aStatus.IsIncomplete() || splitDueToPageBreak ||
        aDesiredSize.Height() > aReflowInput.AvailableHeight())) {
     // Nope, find a place to split the row group
-    bool specialReflow = (bool)aReflowInput.mFlags.mSpecialBSizeReflow;
-    ((ReflowInput::ReflowInputFlags&)aReflowInput.mFlags).mSpecialBSizeReflow =
-        false;
+    auto& mutableRIFlags = const_cast<ReflowInput::Flags&>(aReflowInput.mFlags);
+    const bool savedSpecialBSizeReflow = mutableRIFlags.mSpecialBSizeReflow;
+    mutableRIFlags.mSpecialBSizeReflow = false;
 
     SplitRowGroup(aPresContext, aDesiredSize, aReflowInput, tableFrame, aStatus,
                   splitDueToPageBreak);
 
-    ((ReflowInput::ReflowInputFlags&)aReflowInput.mFlags).mSpecialBSizeReflow =
-        specialReflow;
+    mutableRIFlags.mSpecialBSizeReflow = savedSpecialBSizeReflow;
   }
 
   // XXXmats The following is just bogus.  We leave it here for now because
@@ -1657,21 +1656,19 @@ nsresult nsTableRowGroupFrame::GetFrameName(nsAString& aResult) const {
 
 LogicalMargin nsTableRowGroupFrame::GetBCBorderWidth(WritingMode aWM) {
   LogicalMargin border(aWM);
-  nsTableRowFrame* firstRowFrame = nullptr;
-  nsTableRowFrame* lastRowFrame = nullptr;
-  for (nsTableRowFrame* rowFrame = GetFirstRow(); rowFrame;
+  nsTableRowFrame* firstRowFrame = GetFirstRow();
+  if (!firstRowFrame) {
+    return border;
+  }
+  nsTableRowFrame* lastRowFrame = firstRowFrame;
+  for (nsTableRowFrame* rowFrame = firstRowFrame->GetNextRow(); rowFrame;
        rowFrame = rowFrame->GetNextRow()) {
-    if (!firstRowFrame) {
-      firstRowFrame = rowFrame;
-    }
     lastRowFrame = rowFrame;
   }
-  if (firstRowFrame) {
-    border.BStart(aWM) = PresContext()->DevPixelsToAppUnits(
-        firstRowFrame->GetBStartBCBorderWidth());
-    border.BEnd(aWM) = PresContext()->DevPixelsToAppUnits(
-        lastRowFrame->GetBEndBCBorderWidth());
-  }
+  border.BStart(aWM) = PresContext()->DevPixelsToAppUnits(
+      firstRowFrame->GetBStartBCBorderWidth());
+  border.BEnd(aWM) =
+      PresContext()->DevPixelsToAppUnits(lastRowFrame->GetBEndBCBorderWidth());
   return border;
 }
 

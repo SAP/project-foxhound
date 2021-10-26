@@ -7,18 +7,28 @@
 import { setupCommands, clientCommands } from "./firefox/commands";
 import { setupEvents, clientEvents } from "./firefox/events";
 import { features, prefs } from "../utils/prefs";
+import { prepareSourcePayload } from "./firefox/create";
 
 let actions;
+let targetList;
+let resourceWatcher;
 
 export async function onConnect(
   connection: any,
-  _actions: Object
+  _actions: Object,
+  store: any
 ): Promise<void> {
-  const { devToolsClient, targetList } = connection;
+  const {
+    devToolsClient,
+    targetList: _targetList,
+    resourceWatcher: _resourceWatcher,
+  } = connection;
   actions = _actions;
+  targetList = _targetList;
+  resourceWatcher = _resourceWatcher;
 
   setupCommands({ devToolsClient, targetList });
-  setupEvents({ actions, devToolsClient });
+  setupEvents({ actions, devToolsClient, store, resourceWatcher });
   const { targetFront } = targetList;
   if (targetFront.isBrowsingContext || targetFront.isParentProcess) {
     targetList.listenForWorkers = true;
@@ -34,12 +44,40 @@ export async function onConnect(
     onTargetAvailable,
     onTargetDestroyed
   );
+
+  await resourceWatcher.watchResources([resourceWatcher.TYPES.SOURCE], {
+    onAvailable: onSourceAvailable,
+  });
+}
+
+export function onDisconnect() {
+  targetList.unwatchTargets(
+    targetList.ALL_TYPES,
+    onTargetAvailable,
+    onTargetDestroyed
+  );
+  resourceWatcher.unwatchResources([resourceWatcher.TYPES.SOURCE], {
+    onAvailable: onSourceAvailable,
+  });
 }
 
 async function onTargetAvailable({
   targetFront,
   isTargetSwitching,
 }): Promise<void> {
+  const isBrowserToolbox = targetList.targetFront.isParentProcess;
+  const isNonTopLevelFrameTarget =
+    !targetFront.isTopLevel &&
+    targetFront.targetType === targetList.TYPES.FRAME;
+
+  if (isBrowserToolbox && isNonTopLevelFrameTarget) {
+    // In the BrowserToolbox, non-top-level frame targets are already
+    // debugged via content-process targets.
+    // Do not attach the thread here, as it was already done by the
+    // corresponding content-process target.
+    return;
+  }
+
   if (!targetFront.isTopLevel) {
     await actions.addTarget(targetFront);
     return;
@@ -53,11 +91,10 @@ async function onTargetAvailable({
     actions.willNavigate({ url: targetFront.url });
   }
 
-  // Make sure targetFront.threadFront is availabled and attached.
-  await targetFront.onThreadAttached;
-
+  // At this point, we expect the target and its thread to be attached.
   const { threadFront } = targetFront;
   if (!threadFront) {
+    console.error("The thread for", targetFront, "isn't attached.");
     return;
   }
 
@@ -96,6 +133,17 @@ function onTargetDestroyed({ targetFront }): void {
     targetFront.off("navigate", actions.navigated);
   }
   actions.removeTarget(targetFront);
+}
+
+async function onSourceAvailable(sources) {
+  const frontendSources = await Promise.all(
+    sources.map(async source => {
+      const threadFront = await source.targetFront.getFront("thread");
+      const frontendSource = prepareSourcePayload(threadFront, source);
+      return frontendSource;
+    })
+  );
+  await actions.newGeneratedSources(frontendSources);
 }
 
 export { clientCommands, clientEvents };

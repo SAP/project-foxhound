@@ -109,10 +109,11 @@ add_task(async function testEsniRequest() {
   );
 
   let listenerEsni = new DNSListener();
-  let request = dns.asyncResolveByType(
+  let request = dns.asyncResolve(
     "_esni.example.com",
     dns.RESOLVE_TYPE_TXT,
     0,
+    null, // resolverInfo
     listenerEsni,
     mainThread,
     defaultOriginAttributes
@@ -136,7 +137,9 @@ add_task(async function testEsniPushPart1() {
   let listenerAddr = new DNSListener();
   let request = dns.asyncResolve(
     "_esni_push.example.com",
+    dns.RESOLVE_TYPE_DEFAULT,
     0,
+    null, // resolverInfo
     listenerAddr,
     mainThread,
     defaultOriginAttributes
@@ -145,6 +148,7 @@ add_task(async function testEsniPushPart1() {
   let [inRequest, inRecord, inStatus] = await listenerAddr;
   Assert.equal(inRequest, request, "correct request was used");
   Assert.equal(inStatus, Cr.NS_OK, "status OK");
+  inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
   let answer = inRecord.getNextAddrAsString();
   Assert.equal(answer, test_answer_addr, "got correct answer");
 });
@@ -158,10 +162,11 @@ add_task(async function testEsniPushPart2() {
     "https://foo.example.com:" + h2Port + "/404"
   );
   let listenerEsni = new DNSListener();
-  let request = dns.asyncResolveByType(
+  let request = dns.asyncResolve(
     "_esni_push.example.com",
     dns.RESOLVE_TYPE_TXT,
     0,
+    null, // resolverInfo
     listenerEsni,
     mainThread,
     defaultOriginAttributes
@@ -182,10 +187,11 @@ add_task(async function testEsniHTTPSSVC() {
     "https://foo.example.com:" + h2Port + "/doh"
   );
   let listenerEsni = new DNSListener();
-  let request = dns.asyncResolveByType(
+  let request = dns.asyncResolve(
     "httpssvc_esni.example.com",
     dns.RESOLVE_TYPE_HTTPSSVC,
     0,
+    null, // resolverInfo
     listenerEsni,
     mainThread,
     defaultOriginAttributes
@@ -195,6 +201,6 @@ add_task(async function testEsniHTTPSSVC() {
   Assert.equal(inRequest, request, "correct request was used");
   Assert.equal(inStatus, Cr.NS_OK, "status OK");
   let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
-  let esni = answer[0].values[0].QueryInterface(Ci.nsISVCParamEsniConfig);
-  Assert.equal(esni.esniConfig, "testytestystringstring", "got correct answer");
+  let esni = answer[0].values[0].QueryInterface(Ci.nsISVCParamEchConfig);
+  Assert.equal(esni.echconfig, "testytestystringstring", "got correct answer");
 });

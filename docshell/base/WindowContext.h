@@ -9,12 +9,16 @@
 
 #include "mozilla/PermissionDelegateHandler.h"
 #include "mozilla/Span.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MaybeDiscarded.h"
 #include "mozilla/dom/SyncedContext.h"
+#include "mozilla/dom/UserActivation.h"
 #include "nsILoadInfo.h"
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
+
+class nsGlobalWindowInner;
 
 namespace mozilla {
 class LogModule;
@@ -45,17 +49,31 @@ class BrowsingContextGroup;
    * tracking resource */                                              \
   FIELD(IsThirdPartyTrackingResourceWindow, bool)                      \
   FIELD(IsSecureContext, bool)                                         \
+  FIELD(IsOriginalFrameSource, bool)                                   \
   /* Mixed-Content: If the corresponding documentURI is https,         \
    * then this flag is true. */                                        \
   FIELD(IsSecure, bool)                                                \
   /* Whether the user has overriden the mixed content blocker to allow \
    * mixed content loads to happen */                                  \
   FIELD(AllowMixedContent, bool)                                       \
+  /* Whether this window has registered a "beforeunload" event         \
+   * handler */                                                        \
+  FIELD(HasBeforeUnload, bool)                                         \
+  /* Controls whether the WindowContext is currently considered to be  \
+   * activated by a gesture */                                         \
+  FIELD(UserActivationState, UserActivation::State)                    \
   FIELD(EmbedderPolicy, nsILoadInfo::CrossOriginEmbedderPolicy)        \
-  /* True if this document tree contained an HTMLMediaElement that     \
-   * played audibly. This should only be set on top level context. */  \
-  FIELD(DocTreeHadAudibleMedia, bool)                                  \
+  /* True if this document tree contained at least a HTMLMediaElement. \
+   * This should only be set on top level context. */                  \
+  FIELD(DocTreeHadMedia, bool)                                         \
   FIELD(AutoplayPermission, uint32_t)                                  \
+  FIELD(ShortcutsPermission, uint32_t)                                 \
+  /* Store the Id of the browsing context where active media session   \
+   * exists on the top level window context */                         \
+  FIELD(ActiveMediaSessionContextId, Maybe<uint64_t>)                  \
+  /* ALLOW_ACTION if it is allowed to open popups for the sub-tree     \
+   * starting and including the current WindowContext */               \
+  FIELD(PopupPermission, uint32_t)                                     \
   FIELD(DelegatedPermissions,                                          \
         PermissionDelegateHandler::DelegatedPermissionList)            \
   FIELD(DelegatedExactHostMatchPermissions,                            \
@@ -81,12 +99,20 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   bool IsCached() const;
 
-  bool IsInProcess() { return mInProcess; }
+  bool IsInProcess() const { return mInProcess; }
+
+  bool HasBeforeUnload() const { return GetHasBeforeUnload(); }
+
+  nsGlobalWindowInner* GetInnerWindow() const;
+  Document* GetDocument() const;
+  Document* GetExtantDoc() const;
 
   // Get the parent WindowContext of this WindowContext, taking the BFCache into
   // account. This will not cross chrome/content <browser> boundaries.
   WindowContext* GetParentWindowContext();
   WindowContext* TopWindowContext();
+
+  bool IsTop() const;
 
   Span<RefPtr<BrowsingContext>> Children() { return mChildren; }
 
@@ -110,11 +136,34 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   static void CreateFromIPC(IPCInitializer&& aInit);
 
-  // Add new mixed content security state flags.
-  // These should be some of the four nsIWebProgressListener
-  // 'MIXED' state flags, and should only be called on the
-  // top window context.
-  void AddMixedContentSecurityState(uint32_t aStateFlags);
+  // Add new security state flags.
+  // These should be some of the nsIWebProgressListener 'HTTPS_ONLY_MODE' or
+  // 'MIXED' state flags, and should only be called on the top window context.
+  void AddSecurityState(uint32_t aStateFlags);
+
+  // This function would be called when its corresponding window is activated
+  // by user gesture.
+  void NotifyUserGestureActivation();
+
+  // This function would be called when we want to reset the user gesture
+  // activation flag.
+  void NotifyResetUserGestureActivation();
+
+  // Return true if its corresponding window has been activated by user
+  // gesture.
+  bool HasBeenUserGestureActivated();
+
+  // Return true if its corresponding window has transient user gesture
+  // activation and the transient user gesture activation haven't yet timed
+  // out.
+  bool HasValidTransientUserGestureActivation();
+
+  // Return true if the corresponding window has valid transient user gesture
+  // activation and the transient user gesture activation had been consumed
+  // successfully.
+  bool ConsumeTransientUserGestureActivation();
+
+  bool CanShowPopup();
 
  protected:
   WindowContext(BrowsingContext* aBrowsingContext, uint64_t aInnerWindowId,
@@ -146,6 +195,9 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_AllowMixedContent>, const bool& aAllowMixedContent,
               ContentParent* aSource);
 
+  bool CanSet(FieldIndex<IDX_HasBeforeUnload>, const bool& aHasBeforeUnload,
+              ContentParent* aSource);
+
   bool CanSet(FieldIndex<IDX_CookieBehavior>, const Maybe<uint32_t>& aValue,
               ContentParent* aSource);
 
@@ -164,9 +216,17 @@ class WindowContext : public nsISupports, public nsWrapperCache {
               ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_IsSecureContext>, const bool& aIsSecureContext,
               ContentParent* aSource);
-  bool CanSet(FieldIndex<IDX_DocTreeHadAudibleMedia>, const bool& aValue,
+  bool CanSet(FieldIndex<IDX_IsOriginalFrameSource>,
+              const bool& aIsOriginalFrameSource, ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_DocTreeHadMedia>, const bool& aValue,
               ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_AutoplayPermission>, const uint32_t& aValue,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_ShortcutsPermission>, const uint32_t& aValue,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_ActiveMediaSessionContextId>,
+              const Maybe<uint64_t>& aValue, ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_PopupPermission>, const uint32_t&,
               ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_SHEntryHasUserInteraction>,
               const bool& aSHEntryHasUserInteraction, ContentParent* aSource) {
@@ -178,11 +238,17 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_DelegatedExactHostMatchPermissions>,
               const PermissionDelegateHandler::DelegatedPermissionList& aValue,
               ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_UserActivationState>,
+              const UserActivation::State& aUserActivationState,
+              ContentParent* aSource) {
+    return true;
+  }
 
   bool CanSet(FieldIndex<IDX_HasReportedShadowDOMUsage>, const bool& aValue,
               ContentParent* aSource) {
     return true;
   }
+
   void DidSet(FieldIndex<IDX_HasReportedShadowDOMUsage>, bool aOldValue);
 
   // Overload `DidSet` to get notifications for a particular field being set.
@@ -192,9 +258,10 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   void DidSet(FieldIndex<I>) {}
   template <size_t I, typename T>
   void DidSet(FieldIndex<I>, T&& aOldValue) {}
+  void DidSet(FieldIndex<IDX_UserActivationState>);
 
-  uint64_t mInnerWindowId;
-  uint64_t mOuterWindowId;
+  const uint64_t mInnerWindowId;
+  const uint64_t mOuterWindowId;
   RefPtr<BrowsingContext> mBrowsingContext;
 
   // --- NEVER CHANGE `mChildren` DIRECTLY! ---
@@ -205,6 +272,10 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   bool mIsDiscarded = false;
   bool mInProcess = false;
+
+  // The start time of user gesture, this is only available if the window
+  // context is in process.
+  TimeStamp mUserGestureStart;
 };
 
 using WindowContextTransaction = WindowContext::BaseTransaction;

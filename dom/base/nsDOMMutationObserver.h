@@ -29,6 +29,8 @@
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 
+class nsIPrincipal;
+
 class nsDOMMutationObserver;
 using mozilla::dom::MutationObservingInfo;
 
@@ -461,7 +463,7 @@ class nsDOMMutationObserver final : public nsISupports, public nsWrapperCache {
 
   void Observe(nsINode& aTarget,
                const mozilla::dom::MutationObserverInit& aOptions,
-               mozilla::ErrorResult& aRv);
+               nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aRv);
 
   void Disconnect();
 
@@ -872,5 +874,23 @@ inline nsDOMMutationObserver* nsMutationReceiverBase::Observer() {
   return mParent ? mParent->Observer()
                  : static_cast<nsDOMMutationObserver*>(mObserver);
 }
+
+class MOZ_RAII nsDOMMutationEnterLeave {
+ public:
+  explicit nsDOMMutationEnterLeave(mozilla::dom::Document* aDoc)
+      : mNeeded(aDoc->MayHaveDOMMutationObservers()) {
+    if (mNeeded) {
+      nsDOMMutationObserver::EnterMutationHandling();
+    }
+  }
+  ~nsDOMMutationEnterLeave() {
+    if (mNeeded) {
+      nsDOMMutationObserver::LeaveMutationHandling();
+    }
+  }
+
+ private:
+  const bool mNeeded;
+};
 
 #endif

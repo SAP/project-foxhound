@@ -12,7 +12,6 @@ const TEST_URI = `${URL_ROOT_COM}test-console-evaluation-context-selector.html`;
 const IFRAME_FILE = `test-console-evaluation-context-selector-child.html`;
 
 add_task(async function() {
-  await pushPref("devtools.contenttoolbox.fission", true);
   await pushPref("devtools.contenttoolbox.webconsole.input.context", true);
 
   const tab = await addTab(TEST_URI);
@@ -60,6 +59,10 @@ add_task(async function() {
     ".result"
   );
   ok(true, "Evaluation result is the expected one");
+
+  // Cleanup
+  await clearOutput(hud);
+  setInputValue(hud, "");
 
   info("Resume the debugger");
   await resume(dbg);

@@ -58,9 +58,8 @@ class HttpTransactionChild final : public PHttpTransactionChild,
       const bool& aHasTransactionObserver,
       const Maybe<H2PushedStreamArg>& aPushedStreamArg,
       const mozilla::Maybe<PInputChannelThrottleQueueChild*>& aThrottleQueue,
-      const bool& aIsDocumentLoad);
-  mozilla::ipc::IPCResult RecvUpdateClassOfService(
-      const uint32_t& classOfService);
+      const bool& aIsDocumentLoad, const TimeStamp& aRedirectStart,
+      const TimeStamp& aRedirectEnd);
   mozilla::ipc::IPCResult RecvCancelPump(const nsresult& aStatus);
   mozilla::ipc::IPCResult RecvSuspendPump();
   mozilla::ipc::IPCResult RecvResumePump();
@@ -96,13 +95,19 @@ class HttpTransactionChild final : public PHttpTransactionChild,
   bool CanSendODAToContentProcessDirectly(
       const Maybe<nsHttpResponseHead>& aHead);
 
+  ResourceTimingStructArgs GetTimingAttributes();
+
   // Use Release-Acquire ordering to ensure the OMT ODA is ignored while
   // transaction is canceled on main thread.
   Atomic<bool, ReleaseAcquire> mCanceled;
-  nsresult mStatus;
+  Atomic<nsresult, ReleaseAcquire> mStatus;
   uint64_t mChannelId;
   nsHttpRequestHead mRequestHead;
   bool mIsDocumentLoad;
+  uint64_t mLogicalOffset;
+  TimeStamp mRedirectStart;
+  TimeStamp mRedirectEnd;
+  nsCString mProtocolVersion;
 
   nsCOMPtr<nsIInputStream> mUploadStream;
   RefPtr<nsHttpTransaction> mTransaction;

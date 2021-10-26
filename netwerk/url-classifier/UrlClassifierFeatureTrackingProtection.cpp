@@ -150,14 +150,20 @@ UrlClassifierFeatureTrackingProtection::ProcessChannel(
   nsAutoCString list;
   UrlClassifierCommon::TablesToString(aList, list);
 
-  if (ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list) ==
-      ChannelBlockDecision::Unblocked) {
+  ChannelBlockDecision decision =
+      ChannelClassifierService::OnBeforeBlockChannel(aChannel, mName, list);
+  if (decision != ChannelBlockDecision::Blocked) {
+    if (decision == ChannelBlockDecision::Unblocked) {
+      ContentBlockingNotifier::OnEvent(
+          aChannel, nsIWebProgressListener::STATE_UNBLOCKED_TRACKING_CONTENT,
+          false);
+    }
     *aShouldContinue = true;
     return NS_OK;
   }
 
   UrlClassifierCommon::SetBlockedContent(aChannel, NS_ERROR_TRACKING_URI, list,
-                                         EmptyCString(), EmptyCString());
+                                         ""_ns, ""_ns);
 
   UC_LOG(
       ("UrlClassifierFeatureTrackingProtection::ProcessChannel - "

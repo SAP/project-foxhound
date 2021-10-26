@@ -30,16 +30,19 @@ const ChromeUtils = require("ChromeUtils");
 var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 var { assert } = DevToolsUtils;
-var { TabSources } = require("devtools/server/actors/utils/TabSources");
+var {
+  SourcesManager,
+} = require("devtools/server/actors/utils/sources-manager");
 var makeDebugger = require("devtools/server/actors/utils/make-debugger");
 const InspectorUtils = require("InspectorUtils");
+const Targets = require("devtools/server/actors/targets/index");
 const { TargetActorRegistry } = ChromeUtils.import(
   "resource://devtools/server/actors/targets/target-actor-registry.jsm"
 );
 
 const EXTENSION_CONTENT_JSM = "resource://gre/modules/ExtensionContent.jsm";
 
-const { ActorClassWithSpec, Actor, Pool } = require("devtools/shared/protocol");
+const { Actor, Pool } = require("devtools/shared/protocol");
 const {
   LazyPool,
   createExtraActors,
@@ -48,42 +51,31 @@ const {
   browsingContextTargetSpec,
 } = require("devtools/shared/specs/targets/browsing-context");
 const Resources = require("devtools/server/actors/resources/index");
+const TargetActorMixin = require("devtools/server/actors/targets/target-actor-mixin");
 
 loader.lazyRequireGetter(
   this,
-  "ThreadActor",
+  ["ThreadActor", "unwrapDebuggerObjectGlobal"],
   "devtools/server/actors/thread",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "unwrapDebuggerObjectGlobal",
-  "devtools/server/actors/thread",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "WorkerTargetActorList",
-  "devtools/server/actors/worker/worker-target-actor-list",
+  "WorkerDescriptorActorList",
+  "devtools/server/actors/worker/worker-descriptor-actor-list",
   true
 );
 loader.lazyImporter(this, "ExtensionContent", EXTENSION_CONTENT_JSM);
 
 loader.lazyRequireGetter(
   this,
-  "StyleSheetActor",
-  "devtools/server/actors/stylesheets",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "getSheetText",
-  "devtools/server/actors/stylesheets",
+  ["StyleSheetActor", "getSheetText"],
+  "devtools/server/actors/style-sheet",
   true
 );
 
 function getWindowID(window) {
-  return window.windowUtils.currentInnerWindowID;
+  return window.windowGlobalChild.innerWindowId;
 }
 
 function getDocShellChromeEventHandler(docShell) {
@@ -123,7 +115,7 @@ exports.getChildDocShells = getChildDocShells;
  */
 
 function getInnerId(window) {
-  return window.windowUtils.currentInnerWindowID;
+  return window.windowGlobalChild.innerWindowId;
 }
 
 const browsingContextTargetPrototype = {
@@ -272,7 +264,7 @@ const browsingContextTargetPrototype = {
     // A map of actor names to actor instances provided by extensions.
     this._extraActors = {};
     this._exited = false;
-    this._sources = null;
+    this._sourcesManager = null;
 
     // Map of DOM stylesheets to StyleSheetActors
     this._styleSheetActors = new Map();
@@ -305,45 +297,13 @@ const browsingContextTargetPrototype = {
       navigation: true,
     };
 
-    this._workerTargetActorList = null;
-    this._workerTargetActorPool = null;
-    this._onWorkerTargetActorListChanged = this._onWorkerTargetActorListChanged.bind(
+    this._workerDescriptorActorList = null;
+    this._workerDescriptorActorPool = null;
+    this._onWorkerDescriptorActorListChanged = this._onWorkerDescriptorActorListChanged.bind(
       this
     );
-    this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
 
     TargetActorRegistry.registerTargetActor(this);
-  },
-
-  /**
-   * These two methods will create and destroy resource watchers
-   * for each resource type. This will end up calling `notifyResourceAvailable`
-   * whenever new resources are observed.
-   *
-   * We have these shortcut methods in this module, because this is called from DevToolsFrameChild
-   * which is a JSM and doesn't have a reference to a DevTools Loader.
-   */
-  watchTargetResources(resourceTypes) {
-    return Resources.watchTargetResources(this, resourceTypes);
-  },
-
-  unwatchTargetResources(resourceTypes) {
-    return Resources.unwatchTargetResources(this, resourceTypes);
-  },
-
-  /**
-   * Called by Watchers, when new resources are available.
-   *
-   * @param Array<json> resources
-   *        List of all available resources. A resource is a JSON object piped over to the client.
-   *        It may contain actor IDs, actor forms, to be manually marshalled by the client.
-   */
-  notifyResourceAvailable(resources) {
-    if (!this.actorID) {
-      // Don't try to emit if the actor was destroyed.
-      return;
-    }
-    this.emit("resource-available-form", resources);
   },
 
   traits: null,
@@ -352,7 +312,7 @@ const browsingContextTargetPrototype = {
   // filter console messages by addonID), set to an empty (no options) object by default.
   consoleAPIListenerOptions: {},
 
-  // Optional TabSources filter function (e.g. used by the WebExtensionActor to filter
+  // Optional SourcesManager filter function (e.g. used by the WebExtensionActor to filter
   // sources by addonID), allow all sources by default.
   _allowSource() {
     return true;
@@ -380,7 +340,7 @@ const browsingContextTargetPrototype = {
    * Try to locate the console actor if it exists.
    */
   get _consoleActor() {
-    if (this.exited || !this.actorID) {
+    if (this.exited || this.isDestroyed()) {
       return null;
     }
     const form = this.form();
@@ -388,11 +348,6 @@ const browsingContextTargetPrototype = {
   },
 
   _targetScopedActorPool: null,
-
-  /**
-   * A constant prefix that will be used to form the actor ID by the server.
-   */
-  typeName: "browsingContextTarget",
 
   /**
    * An object on which listen for DOMWindowCreated and pageshow events.
@@ -430,8 +385,8 @@ const browsingContextTargetPrototype = {
   },
 
   get outerWindowID() {
-    if (this.window) {
-      return this.window.windowUtils.outerWindowID;
+    if (this.docShell) {
+      return this.docShell.outerWindowID;
     }
     return null;
   },
@@ -537,11 +492,14 @@ const browsingContextTargetPrototype = {
     return null;
   },
 
-  get sources() {
-    if (!this._sources) {
-      this._sources = new TabSources(this.threadActor, this._allowSource);
+  get sourcesManager() {
+    if (!this._sourcesManager) {
+      this._sourcesManager = new SourcesManager(
+        this.threadActor,
+        this._allowSource
+      );
     }
-    return this._sources;
+    return this._sourcesManager;
   },
 
   _createExtraActors() {
@@ -674,6 +632,8 @@ const browsingContextTargetPrototype = {
     // Save references to the original document we attached to
     this._originalWindow = this.window;
 
+    this._docShellsObserved = false;
+
     // Ensure replying to attach() request first
     // before notifying about new docshells.
     DevToolsUtils.executeSoon(() => this._watchDocshells());
@@ -682,15 +642,40 @@ const browsingContextTargetPrototype = {
   },
 
   _watchDocshells() {
+    // If for some unexpected reason, the actor is immediately destroyed,
+    // avoid registering leaking observer listener.
+    if (this.exited) {
+      return;
+    }
+
     // In child processes, we watch all docshells living in the process.
     Services.obs.addObserver(this, "webnavigation-create");
     Services.obs.addObserver(this, "webnavigation-destroy");
+    this._docShellsObserved = true;
 
     // We watch for all child docshells under the current document,
     this._progressListener.watch(this.docShell);
 
     // And list all already existing ones.
     this._updateChildDocShells();
+  },
+
+  _unwatchDocshells() {
+    if (this._progressListener) {
+      this._progressListener.destroy();
+      this._progressListener = null;
+      this._originalWindow = null;
+    }
+
+    // Removes the observers being set in _watchDocshells, but only
+    // if _watchDocshells has been called. The target actor may be immediately destroyed
+    // and doesn't have time to register them.
+    // (Calling removeObserver without having called addObserver throws)
+    if (this._docShellsObserved) {
+      Services.obs.removeObserver(this, "webnavigation-create");
+      Services.obs.removeObserver(this, "webnavigation-destroy");
+      this._docShellsObserved = true;
+    }
   },
 
   _unwatchDocShell(docShell) {
@@ -728,18 +713,21 @@ const browsingContextTargetPrototype = {
     return { frames: windows };
   },
 
-  ensureWorkerTargetActorList() {
-    if (this._workerTargetActorList === null) {
-      this._workerTargetActorList = new WorkerTargetActorList(this.conn, {
-        type: Ci.nsIWorkerDebugger.TYPE_DEDICATED,
-        window: this.window,
-      });
+  ensureWorkerDescriptorActorList() {
+    if (this._workerDescriptorActorList === null) {
+      this._workerDescriptorActorList = new WorkerDescriptorActorList(
+        this.conn,
+        {
+          type: Ci.nsIWorkerDebugger.TYPE_DEDICATED,
+          window: this.window,
+        }
+      );
     }
-    return this._workerTargetActorList;
+    return this._workerDescriptorActorList;
   },
 
   pauseWorkersUntilAttach(shouldPause) {
-    this.ensureWorkerTargetActorList().workerPauser.setPauseMatching(
+    this.ensureWorkerDescriptorActorList().workerPauser.setPauseMatching(
       shouldPause
     );
   },
@@ -751,7 +739,7 @@ const browsingContextTargetPrototype = {
       };
     }
 
-    return this.ensureWorkerTargetActorList()
+    return this.ensureWorkerDescriptorActorList()
       .getList()
       .then(actors => {
         const pool = new Pool(this.conn, "worker-targets");
@@ -761,12 +749,12 @@ const browsingContextTargetPrototype = {
 
         // Do not destroy the pool before transfering ownership to the newly created
         // pool, so that we do not accidently destroy actors that are still in use.
-        if (this._workerTargetActorPool) {
-          this._workerTargetActorPool.destroy();
+        if (this._workerDescriptorActorPool) {
+          this._workerDescriptorActorPool.destroy();
         }
 
-        this._workerTargetActorPool = pool;
-        this._workerTargetActorList.onListChanged = this._onWorkerTargetActorListChanged;
+        this._workerDescriptorActorPool = pool;
+        this._workerDescriptorActorList.onListChanged = this._onWorkerDescriptorActorListChanged;
 
         return {
           workers: actors,
@@ -792,8 +780,8 @@ const browsingContextTargetPrototype = {
     return {};
   },
 
-  _onWorkerTargetActorListChanged() {
-    this._workerTargetActorList.onListChanged = null;
+  _onWorkerDescriptorActorListChanged() {
+    this._workerDescriptorActorList.onListChanged = null;
     this.emit("workerListChanged");
   },
 
@@ -893,7 +881,7 @@ const browsingContextTargetPrototype = {
       .QueryInterface(Ci.nsIInterfaceRequestor)
       .getInterface(Ci.nsIWebProgress);
     const window = webProgress.DOMWindow;
-    const id = window.windowUtils.outerWindowID;
+    const id = docShell.outerWindowID;
     let parentID = undefined;
     // Ignore the parent of the original document on non-e10s firefox,
     // as we get the xul window as parent and don't care about it.
@@ -905,7 +893,7 @@ const browsingContextTargetPrototype = {
       window.parent != window &&
       window != this._originalWindow
     ) {
-      parentID = window.parent.windowUtils.outerWindowID;
+      parentID = window.parent.docShell.outerWindowID;
     }
 
     return {
@@ -952,7 +940,7 @@ const browsingContextTargetPrototype = {
     }
 
     webProgress = webProgress.QueryInterface(Ci.nsIWebProgress);
-    const id = webProgress.DOMWindow.windowUtils.outerWindowID;
+    const id = webProgress.DOMWindow.docShell.outerWindowID;
     this.emit("frameUpdate", {
       frames: [
         {
@@ -989,12 +977,12 @@ const browsingContextTargetPrototype = {
    * The content window is no longer being debugged after this call.
    */
   _destroyThreadActor() {
-    this.threadActor.exit();
+    this.threadActor.destroy();
     this.threadActor = null;
 
-    if (this._sources) {
-      this._sources.destroy();
-      this._sources = null;
+    if (this._sourcesManager) {
+      this._sourcesManager.destroy();
+      this._sourcesManager = null;
     }
   },
 
@@ -1014,15 +1002,7 @@ const browsingContextTargetPrototype = {
       this._unwatchDocShell(this.docShell);
       this._restoreDocumentSettings();
     }
-    if (this._progressListener) {
-      this._progressListener.destroy();
-      this._progressListener = null;
-      this._originalWindow = null;
-
-      // Removes the observers being set in _watchDocShells
-      Services.obs.removeObserver(this, "webnavigation-create");
-      Services.obs.removeObserver(this, "webnavigation-destroy");
-    }
+    this._unwatchDocshells();
 
     this._destroyThreadActor();
 
@@ -1034,14 +1014,14 @@ const browsingContextTargetPrototype = {
     }
 
     // Make sure that no more workerListChanged notifications are sent.
-    if (this._workerTargetActorList !== null) {
-      this._workerTargetActorList.destroy();
-      this._workerTargetActorList = null;
+    if (this._workerDescriptorActorList !== null) {
+      this._workerDescriptorActorList.destroy();
+      this._workerDescriptorActorList = null;
     }
 
-    if (this._workerTargetActorPool !== null) {
-      this._workerTargetActorPool.destroy();
-      this._workerTargetActorPool = null;
+    if (this._workerDescriptorActorPool !== null) {
+      this._workerDescriptorActorPool.destroy();
+      this._workerDescriptorActorPool = null;
     }
 
     if (this._dbg) {
@@ -1622,7 +1602,8 @@ const browsingContextTargetPrototype = {
 };
 
 exports.browsingContextTargetPrototype = browsingContextTargetPrototype;
-exports.BrowsingContextTargetActor = ActorClassWithSpec(
+exports.BrowsingContextTargetActor = TargetActorMixin(
+  Targets.TYPES.FRAME,
   browsingContextTargetSpec,
   browsingContextTargetPrototype
 );
@@ -1759,6 +1740,12 @@ DebuggerProgressListener.prototype = {
     }
 
     const window = evt.target.defaultView;
+    if (!window) {
+      // Some old UIs might emit unrelated events called pageshow/pagehide on
+      // elements which are not documents. Bail in this case. See Bug 1669666.
+      return;
+    }
+
     const innerID = getWindowID(window);
 
     // This handler is called for two events: "DOMWindowCreated" and "pageshow".
@@ -1799,6 +1786,12 @@ DebuggerProgressListener.prototype = {
     }
 
     const window = evt.target.defaultView;
+    if (!window) {
+      // Some old UIs might emit unrelated events called pageshow/pagehide on
+      // elements which are not documents. Bail in this case. See Bug 1669666.
+      return;
+    }
+
     this._targetActor._windowDestroyed(window, null, true);
     this._knownWindowIDs.delete(getWindowID(window));
   }, "DebuggerProgressListener.prototype.onWindowHidden"),

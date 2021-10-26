@@ -12,8 +12,7 @@
 #include "mozilla/dom/HTMLInputElement.h"
 #include "nsDOMTokenList.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 const double DateTimeInputTypeBase::kMinimumYear = 1;
 const double DateTimeInputTypeBase::kMaximumYear = 275760;
@@ -175,10 +174,6 @@ bool DateTimeInputTypeBase::GetTimeFromMs(double aValue, uint16_t* aHours,
 // input type=date
 
 nsresult DateInputType::GetBadInputMessage(nsAString& aMessage) {
-  if (!StaticPrefs::dom_forms_datetime()) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
   return nsContentUtils::GetMaybeLocalizedString(
       nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidDate",
       mInputElement->OwnerDoc(), aMessage);
@@ -501,5 +496,4 @@ bool DateTimeLocalInputType::ConvertNumberToString(
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

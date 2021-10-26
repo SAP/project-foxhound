@@ -81,7 +81,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-const PLUGIN_ICON_URL = "chrome://global/skin/plugins/pluginGeneric.svg";
+const PLUGIN_ICON_URL = "chrome://global/skin/plugins/plugin.svg";
 const EXTENSION_ICON_URL =
   "chrome://mozapps/skin/extensions/extensionGeneric.svg";
 const BUILTIN_THEME_PREVIEWS = new Map([
@@ -96,6 +96,10 @@ const BUILTIN_THEME_PREVIEWS = new Map([
   [
     "firefox-compact-dark@mozilla.org",
     "chrome://mozapps/content/extensions/firefox-compact-dark.svg",
+  ],
+  [
+    "firefox-alpenglow@mozilla.org",
+    "chrome://mozapps/content/extensions/firefox-alpenglow.svg",
   ],
 ]);
 
@@ -142,6 +146,31 @@ function callListeners(name, args, listeners) {
   }
 }
 
+function getUpdateInstall(addon) {
+  return (
+    // Install object for a pending update.
+    addon.updateInstall ||
+    // Install object for a postponed upgrade (only for extensions,
+    // because is the only addon type that can postpone their own
+    // updates).
+    (addon.type === "extension" &&
+      addon.pendingUpgrade &&
+      addon.pendingUpgrade.install)
+  );
+}
+
+function isManualUpdate(install) {
+  let isManual =
+    install.existingAddon &&
+    !AddonManager.shouldAutoUpdate(install.existingAddon);
+  let isExtension =
+    install.existingAddon && install.existingAddon.type == "extension";
+  return (
+    (isManual && isInState(install, "available")) ||
+    (isExtension && isInState(install, "postponed"))
+  );
+}
+
 const AddonManagerListenerHandler = {
   listeners: new Set(),
 
@@ -168,12 +197,19 @@ const AddonManagerListenerHandler = {
     AddonManager.addAddonListener(this._listener);
     AddonManager.addInstallListener(this._listener);
     AddonManager.addManagerListener(this._listener);
+    this._permissionHandler = (type, data) => {
+      if (type == "change-permissions") {
+        this.delegateEvent("onChangePermissions", [data]);
+      }
+    };
+    ExtensionPermissions.addListener(this._permissionHandler);
   },
 
   shutdown() {
     AddonManager.removeAddonListener(this._listener);
     AddonManager.removeInstallListener(this._listener);
     AddonManager.removeManagerListener(this._listener);
+    ExtensionPermissions.removeListener(this._permissionHandler);
   },
 };
 
@@ -189,18 +225,22 @@ const AddonCardListenerHandler = new Proxy(
     get(_, name) {
       return (...args) => {
         let elements = [];
-        let addon;
+        let addonId;
 
         // We expect args[0] to be of type:
         // - AddonInstall, on AddonManager install events
         // - AddonWrapper, on AddonManager addon events
         // - undefined, on AddonManager manage events
         if (args[0]) {
-          addon = args[0].addon || args[0].existingAddon || args[0];
+          addonId =
+            args[0].addon?.id ||
+            args[0].existingAddon?.id ||
+            args[0].extensionId ||
+            args[0].id;
         }
 
-        if (addon && addon.id) {
-          let cardSelector = `addon-card[addon-id="${addon.id}"]`;
+        if (addonId) {
+          let cardSelector = `addon-card[addon-id="${addonId}"]`;
           elements = document.querySelectorAll(
             `${cardSelector}, ${cardSelector} addon-details`
           );
@@ -338,6 +378,7 @@ function checkForUpdate(addon) {
           attachUpdateHandler(install);
 
           let failed = () => {
+            detachUpdateHandler(install);
             install.removeListener(updateListener);
             resolve({ installed: false, pending: false, found: true });
           };
@@ -346,8 +387,14 @@ function checkForUpdate(addon) {
             onInstallCancelled: failed,
             onInstallFailed: failed,
             onInstallEnded: (...args) => {
+              detachUpdateHandler(install);
               install.removeListener(updateListener);
               resolve({ installed: true, pending: false, found: true });
+            },
+            onInstallPostponed: (...args) => {
+              detachUpdateHandler(install);
+              install.removeListener(updateListener);
+              resolve({ installed: false, pending: true, found: true });
             },
           };
           install.addListener(updateListener);
@@ -502,11 +549,11 @@ function getScreenshotUrlForAddon(addon) {
  *          The url with UTM parameters if it is an AMO URL.
  *          Otherwise the url in unmodified form.
  */
-function formatAmoUrl(contentAttribute, url) {
+function formatUTMParams(contentAttribute, url) {
   let parsedUrl = new URL(url);
   let domain = `.${parsedUrl.hostname}`;
   if (
-    !domain.endsWith(".addons.mozilla.org") &&
+    !domain.endsWith(".mozilla.org") &&
     // For testing: addons-dev.allizom.org and addons.allizom.org
     !domain.endsWith(".allizom.org")
   ) {
@@ -651,7 +698,10 @@ class SupportLink extends HTMLAnchorElement {
   }
 
   setHref() {
-    this.href = SUPPORT_URL + this.getAttribute("support-page");
+    let base = SUPPORT_URL + this.getAttribute("support-page");
+    this.href = this.hasAttribute("utmcontent")
+      ? formatUTMParams(this.getAttribute("utmcontent"), base)
+      : base;
   }
 }
 customElements.define("support-link", SupportLink, { extends: "a" });
@@ -1180,7 +1230,10 @@ class SearchAddons extends HTMLElement {
       return;
     }
 
-    let url = AddonRepository.getSearchURL(query);
+    let url = formatUTMParams(
+      "addons-manager-search",
+      AddonRepository.getSearchURL(query)
+    );
 
     let browser = getBrowserElement();
     let chromewin = browser.ownerGlobal;
@@ -1840,21 +1893,18 @@ class CategoriesBox extends customElements.get("button-group") {
     this.updateAvailableCount();
   }
 
-  onInstallCancelled() {
+  onInstallPostponed() {
     this.updateAvailableCount();
   }
 
-  isManualUpdate(install) {
-    let isManual =
-      install.existingAddon &&
-      !AddonManager.shouldAutoUpdate(install.existingAddon);
-    return isManual && isInState(install, "available");
+  onInstallCancelled() {
+    this.updateAvailableCount();
   }
 
   async updateAvailableCount() {
     let installs = await AddonManager.getAllInstalls();
     var count = installs.filter(install => {
-      return this.isManualUpdate(install, true) && !install.installed;
+      return isManualUpdate(install) && !install.installed;
     }).length;
     let availableButton = this.getButtonByName("available-updates");
     availableButton.hidden = !availableButton.selected && count == 0;
@@ -2265,7 +2315,10 @@ class InlineOptionsBrowser extends HTMLElement {
     let { optionsURL, optionsBrowserStyle } = addon;
     if (addon.isWebExtension) {
       let policy = ExtensionParent.WebExtensionPolicy.getByID(addon.id);
-      browser.sameProcessAsFrameLoader = policy.extension.groupFrameLoader;
+      browser.setAttribute(
+        "initialBrowsingContextGroupId",
+        policy.browsingContextGroupId
+      );
     }
 
     let readyPromise;
@@ -2430,43 +2483,80 @@ class AddonPermissionsList extends HTMLElement {
     this.render();
   }
 
-  render() {
+  async render() {
     let appName = brandBundle.GetStringFromName("brandShortName");
-    let { msgs } = Extension.formatPermissionStrings(
+    let permissions = Extension.formatPermissionStrings(
       {
         permissions: this.addon.userPermissions,
+        optionalPermissions: this.addon.optionalPermissions,
         appName,
       },
       browserBundle
     );
+    let optionalEntries = [
+      ...Object.entries(permissions.optionalPermissions),
+      ...Object.entries(permissions.optionalOrigins),
+    ];
+    let perms = await ExtensionPermissions.get(this.addon.id);
 
     this.textContent = "";
+    let frag = importTemplate("addon-permissions-list");
 
-    if (msgs.length) {
-      // Add a row for each permission message.
-      for (let msg of msgs) {
-        let row = document.createElement("div");
-        row.classList.add("addon-detail-row", "permission-info");
-        row.textContent = msg;
-        this.appendChild(row);
+    if (permissions.msgs.length) {
+      let section = frag.querySelector(".addon-permissions-required");
+      section.hidden = false;
+      let list = section.querySelector(".addon-permissions-list");
+
+      for (let msg of permissions.msgs) {
+        let item = document.createElement("li");
+        item.classList.add("permission-info", "permission-checked");
+        item.appendChild(document.createTextNode(msg));
+        list.appendChild(item);
       }
-    } else {
-      let emptyMessage = document.createElement("div");
-      emptyMessage.classList.add("addon-detail-row");
-      document.l10n.setAttributes(emptyMessage, "addon-permissions-empty");
-      this.appendChild(emptyMessage);
+    }
+    if (optionalEntries.length) {
+      let section = frag.querySelector(".addon-permissions-optional");
+      section.hidden = false;
+      let list = section.querySelector(".addon-permissions-list");
+
+      for (let id = 0; id < optionalEntries.length; id++) {
+        let [perm, msg] = optionalEntries[id];
+
+        let type = "permission";
+        if (permissions.optionalOrigins[perm]) {
+          type = "origin";
+        }
+        let item = document.createElement("li");
+        item.classList.add("permission-info");
+
+        let label = document.createElement("label");
+        label.textContent = msg;
+
+        let toggle = document.createElement("input");
+        toggle.id = `permission-${id}`;
+
+        label.setAttribute("for", toggle.id);
+        item.appendChild(label);
+
+        toggle.setAttribute("permission-type", type);
+        toggle.setAttribute("type", "checkbox");
+        if (perms.permissions.includes(perm) || perms.origins.includes(perm)) {
+          toggle.checked = true;
+          item.classList.add("permission-checked");
+        }
+        toggle.setAttribute("permission-key", perm);
+        toggle.setAttribute("action", "toggle-permission");
+        toggle.classList.add("toggle-button");
+        label.appendChild(toggle);
+        list.appendChild(item);
+      }
+    }
+    if (!permissions.msgs.length && !optionalEntries.length) {
+      let row = frag.querySelector(".addon-permissions-empty");
+      row.hidden = false;
     }
 
-    // Add a learn more link.
-    let learnMoreRow = document.createElement("div");
-    learnMoreRow.classList.add("addon-detail-row");
-    let learnMoreLink = document.createElement("a", { is: "support-link" });
-    learnMoreLink.setAttribute("support-page", "extension-permissions");
-    learnMoreLink.textContent = browserBundle.GetStringFromName(
-      "webextPerms.learnMore"
-    );
-    learnMoreRow.appendChild(learnMoreLink);
-    this.appendChild(learnMoreRow);
+    this.appendChild(frag);
   }
 }
 customElements.define("addon-permissions-list", AddonPermissionsList);
@@ -2543,9 +2633,8 @@ class AddonDetails extends HTMLElement {
   }
 
   get releaseNotesUri() {
-    return this.addon.updateInstall
-      ? this.addon.updateInstall.releaseNotesURI
-      : this.addon.releaseNotesURI;
+    let { releaseNotesURI } = getUpdateInstall(this.addon) || this.addon;
+    return releaseNotesURI;
   }
 
   setAddon(addon) {
@@ -2663,7 +2752,10 @@ class AddonDetails extends HTMLElement {
       if (link.hidden) {
         creatorRow.appendChild(new Text(addon.creator.name));
       } else {
-        link.href = addon.creator.url;
+        link.href = formatUTMParams(
+          "addons-manager-user-profile-link",
+          addon.creator.url
+        );
         link.target = "_blank";
         link.textContent = addon.creator.name;
       }
@@ -2707,7 +2799,10 @@ class AddonDetails extends HTMLElement {
     if (addon.averageRating) {
       ratingRow.querySelector("five-star-rating").rating = addon.averageRating;
       let reviews = ratingRow.querySelector("a");
-      reviews.href = addon.reviewURL;
+      reviews.href = formatUTMParams(
+        "addons-manager-reviews-link",
+        addon.reviewURL
+      );
       document.l10n.setAttributes(reviews, "addon-detail-reviews-link", {
         numberOfReviews: addon.reviewCount,
       });
@@ -2789,8 +2884,11 @@ class AddonCard extends HTMLElement {
    */
   setAddon(addon) {
     this.addon = addon;
-    let install = addon.updateInstall;
-    if (install && install.state == AddonManager.STATE_AVAILABLE) {
+    let install = getUpdateInstall(addon);
+    if (
+      install &&
+      (isInState(install, "available") || isInState(install, "postponed"))
+    ) {
       this.updateInstall = install;
     } else {
       this.updateInstall = null;
@@ -2800,12 +2898,52 @@ class AddonCard extends HTMLElement {
     }
   }
 
+  async setAddonPermission(permission, type, action) {
+    let { addon } = this;
+    let origins = [],
+      permissions = [];
+    if (!["add", "remove"].includes(action)) {
+      throw new Error("invalid action for permission change");
+    }
+    if (type == "permission") {
+      if (
+        action == "add" &&
+        !addon.optionalPermissions.permissions.includes(permission)
+      ) {
+        throw new Error("permission missing from manifest");
+      }
+      permissions = [permission];
+    } else if (type == "origin") {
+      if (
+        action == "add" &&
+        !addon.optionalPermissions.origins.includes(permission)
+      ) {
+        throw new Error("origin missing from manifest");
+      }
+      origins = [permission];
+    } else {
+      throw new Error("unknown permission type changed");
+    }
+    let policy = WebExtensionPolicy.getByID(addon.id);
+    ExtensionPermissions[action](
+      addon.id,
+      { origins, permissions },
+      policy?.extension
+    );
+  }
+
   async handleEvent(e) {
     let { addon } = this;
     let action = e.target.getAttribute("action");
 
     if (e.type == "click") {
       switch (action) {
+        case "toggle-permission":
+          let permission = e.target.getAttribute("permission-key");
+          let type = e.target.getAttribute("permission-type");
+          let fname = e.target.checked ? "add" : "remove";
+          this.setAddonPermission(permission, type, fname);
+          break;
         case "toggle-disabled":
           this.recordActionEvent(addon.userDisabled ? "enable" : "disable");
           // Keep the checked state the same until the add-on's state changes.
@@ -2841,6 +2979,13 @@ class AddonCard extends HTMLElement {
           }
           break;
         }
+        case "install-postponed": {
+          const { updateInstall } = this;
+          if (updateInstall && isInState(updateInstall, "postponed")) {
+            updateInstall.continuePostponedInstall();
+          }
+          break;
+        }
         case "install-update":
           // Make sure that an update handler is attached to the install object
           // before starting the update installation (otherwise the user would
@@ -2849,14 +2994,15 @@ class AddonCard extends HTMLElement {
           // about:addons tab is replaced by the one attached by the currently
           // active about:addons tab.
           attachUpdateHandler(this.updateInstall);
-
           this.updateInstall.install().then(
             () => {
+              detachUpdateHandler(this.updateInstall);
               // The card will update with the new add-on when it gets
               // installed.
               this.sendEvent("update-installed");
             },
             () => {
+              detachUpdateHandler(this.updateInstall);
               // Update our state if the install is cancelled.
               this.update();
               this.sendEvent("update-cancelled");
@@ -3008,6 +3154,10 @@ class AddonCard extends HTMLElement {
     return this.card.querySelector("panel-list");
   }
 
+  get postponedMessageBar() {
+    return this.card.querySelector(".update-postponed-bar");
+  }
+
   registerListeners() {
     this.addEventListener("change", this);
     this.addEventListener("click", this);
@@ -3088,11 +3238,21 @@ class AddonCard extends HTMLElement {
     let moreOptionsButton = card.querySelector(".more-options-button");
     moreOptionsButton.classList.toggle(
       "more-options-button-badged",
-      !!this.updateInstall
+      !!(this.updateInstall && isInState(this.updateInstall, "available"))
     );
+
+    // Postponed update addon card message bar.
+    const hasPostponedInstall =
+      this.updateInstall && isInState(this.updateInstall, "postponed");
+    this.postponedMessageBar.hidden = !hasPostponedInstall;
 
     // Hide the more options button if it's empty.
     moreOptionsButton.hidden = this.options.visibleItems.length === 0;
+
+    // Ensure all badges are initially hidden.
+    for (let node of card.querySelectorAll(".addon-badge")) {
+      node.hidden = true;
+    }
 
     // Set the private browsing badge visibility.
     if (
@@ -3108,10 +3268,15 @@ class AddonCard extends HTMLElement {
       });
     }
 
-    // Show the recommended badge if needed.
-    card.querySelector(
-      ".addon-badge-recommended"
-    ).hidden = !addon.isRecommended;
+    // Show the recommended badges if needed.
+    // Plugins don't have recommendationStates, so ensure a default.
+    let states = addon.recommendationStates || [];
+    for (let badgeName of states) {
+      let badge = card.querySelector(`.addon-badge-${badgeName}`);
+      if (badge) {
+        badge.hidden = false;
+      }
+    }
 
     // Update description.
     card.querySelector(".addon-description").textContent = addon.description;
@@ -3256,6 +3421,11 @@ class AddonCard extends HTMLElement {
     this.setAddon(install.addon);
   }
 
+  onInstallPostponed(install) {
+    this.updateInstall = install;
+    this.sendEvent("update-postponed");
+  }
+
   onDisabled(addon) {
     if (!this.reloading) {
       this.update();
@@ -3289,6 +3459,19 @@ class AddonCard extends HTMLElement {
       this.details.update();
     } else if (addon.type == "plugin" && changed.includes("userDisabled")) {
       this.update();
+    }
+  }
+
+  /* Extension Permission change listener */
+  onChangePermissions(data) {
+    let perms = data.added || data.removed;
+    let fname = data.added ? "add" : "remove";
+    for (let permission of perms.permissions.concat(perms.origins)) {
+      let target = document.querySelector(`[permission-key="${permission}"]`);
+      if (target) {
+        target.parentNode.parentNode.classList[fname]("permission-checked");
+        target.checked = !data.removed;
+      }
     }
   }
 }
@@ -3381,7 +3564,7 @@ class RecommendedAddonCard extends HTMLElement {
       });
       // This is intentionally a link to the add-on listing instead of the
       // author page, because the add-on listing provides more relevant info.
-      authorInfo.querySelector("a").href = formatAmoUrl(
+      authorInfo.querySelector("a").href = formatUTMParams(
         "discopane-entry-link",
         addon.amoListingUrl
       );
@@ -4387,7 +4570,13 @@ class UpdatesView {
       list.setSections([
         {
           headingId: "available-updates-heading",
-          filterFn: addon => addon.updateInstall,
+          filterFn: addon => {
+            // Filter the addons visible in the updates view using the same
+            // criteria that is being used to compute the counter on the
+            // available updates category button badge.
+            const install = getUpdateInstall(addon);
+            return install && isManualUpdate(install) && !install.installed;
+          },
         },
       ]);
     } else if (this.param == "recent") {
@@ -4459,7 +4648,7 @@ function openAmoInTab(el) {
   let amoUrl = Services.urlFormatter.formatURLPref(
     "extensions.getAddons.link.url"
   );
-  amoUrl = formatAmoUrl("find-more-link-bottom", amoUrl);
+  amoUrl = formatUTMParams("find-more-link-bottom", amoUrl);
   windowRoot.ownerGlobal.openTrustedLinkIn(amoUrl, "tab");
 }
 

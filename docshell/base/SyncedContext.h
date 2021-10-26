@@ -57,7 +57,7 @@ class Transaction {
   // If the target has been discarded, changes will be ignored.
   //
   // NOTE: This method mutates `this`, clearing the modified field set.
-  nsresult Commit(Context* aOwner);
+  [[nodiscard]] nsresult Commit(Context* aOwner);
 
   // Called from `ContentParent` in response to a transaction from content.
   mozilla::ipc::IPCResult CommitFromIPC(const MaybeDiscarded<Context>& aOwner,
@@ -186,6 +186,27 @@ class FieldStorage {
   Values mValues;
 };
 
+// Helper type traits to use concrete types rather than generic forwarding
+// references for the `SetXXX` methods defined on the synced context type.
+//
+// This helps avoid potential issues where someone accidentally declares an
+// overload of these methods with slightly different types and different
+// behaviours. See bug 1659520.
+template <typename T>
+struct GetFieldSetterType {
+  using SetterArg = T;
+};
+template <>
+struct GetFieldSetterType<nsString> {
+  using SetterArg = const nsAString&;
+};
+template <>
+struct GetFieldSetterType<nsCString> {
+  using SetterArg = const nsACString&;
+};
+template <typename T>
+using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
+
 #define MOZ_DECL_SYNCED_CONTEXT_FIELD_INDEX(name, type) IDX_##name,
 #define MOZ_DECL_SYNCED_CONTEXT_FIELDS_DECL(name, type)             \
   /* index based field lookup */                                    \
@@ -197,12 +218,21 @@ class FieldStorage {
 #define MOZ_DECL_SYNCED_CONTEXT_FIELD_GETSET(name, type)                       \
   const type& Get##name() const { return mFields.template Get<IDX_##name>(); } \
                                                                                \
-  template <typename U>                                                        \
-  void Set##name(U&& aValue) {                                                 \
+  [[nodiscard]] nsresult Set##name(                                            \
+      ::mozilla::dom::syncedcontext::FieldSetterType<type> aValue) {           \
     Transaction txn;                                                           \
-    txn.template Set<IDX_##name>(std::forward<U>(aValue));                     \
-    txn.Commit(this);                                                          \
+    txn.template Set<IDX_##name>(std::move(aValue));                           \
+    return txn.Commit(this);                                                   \
+  }                                                                            \
+  void Set##name(::mozilla::dom::syncedcontext::FieldSetterType<type> aValue,  \
+                 ErrorResult& aRv) {                                           \
+    nsresult rv = this->Set##name(std::move(aValue));                          \
+    if (NS_FAILED(rv)) {                                                       \
+      aRv.ThrowInvalidStateError("cannot set synced field '" #name             \
+                                 "': context is discarded");                   \
+    }                                                                          \
   }
+
 #define MOZ_DECL_SYNCED_CONTEXT_TRANSACTION_SET(name, type)  \
   template <typename U>                                      \
   void Set##name(U&& aValue) {                               \

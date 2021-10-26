@@ -483,9 +483,10 @@ DevToolsStartup.prototype = {
       .getElementById("webDeveloperMenu")
       .setAttribute("hidden", "true");
     // This will hide the "Web Developer" item in the hamburger menu.
-    window.document
-      .getElementById("appMenu-developer-button")
-      .setAttribute("hidden", "true");
+    PanelMultiView.getViewNode(
+      window.document,
+      "appMenu-developer-button"
+    ).setAttribute("hidden", "true");
   },
 
   onFirstWindowReady(window) {
@@ -1317,6 +1318,7 @@ const JsonView = {
             null /* filepicker title key */,
             null /* file chosen */,
             null /* referrer */,
+            doc.cookieJarSettings,
             null /* initiating document */,
             false /* don't skip prompt for a location */,
             null /* cache key */,

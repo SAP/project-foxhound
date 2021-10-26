@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+#define MOZ_USE_LAUNCHER_ERROR
+
 #include "nsWindowsDllInterceptor.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
@@ -16,11 +18,7 @@
 
 #include "DllBlocklistInit.h"
 #include "freestanding/DllBlocklist.h"
-#include "freestanding/FunctionTableResolver.h"
-
-#if defined(_MSC_VER)
-extern "C" IMAGE_DOS_HEADER __ImageBase;
-#endif
+#include "freestanding/SharedSection.h"
 
 namespace mozilla {
 
@@ -43,27 +41,28 @@ LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
 #else
 
 static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
-    const wchar_t* aFullImagePath, HANDLE aChildProcess,
+    const wchar_t* aFullImagePath, nt::CrossExecTransferManager& aTransferMgr,
     const IMAGE_THUNK_DATA* aCachedNtdllThunk) {
-  freestanding::gK32.Init();
-  if (freestanding::gK32.IsInitialized()) {
-    freestanding::gK32.Transfer(aChildProcess, &freestanding::gK32);
+  LauncherVoidResult transferResult =
+      freestanding::gSharedSection.TransferHandle(aTransferMgr);
+  if (transferResult.isErr()) {
+    return transferResult.propagateErr();
   }
 
-  CrossProcessDllInterceptor intcpt(aChildProcess);
+  CrossProcessDllInterceptor intcpt(aTransferMgr.RemoteProcess());
   intcpt.Init(L"ntdll.dll");
 
   bool ok = freestanding::stub_NtMapViewOfSection.SetDetour(
-      aChildProcess, intcpt, "NtMapViewOfSection",
+      aTransferMgr, intcpt, "NtMapViewOfSection",
       &freestanding::patched_NtMapViewOfSection);
   if (!ok) {
-    return LAUNCHER_ERROR_GENERIC();
+    return LAUNCHER_ERROR_FROM_DETOUR_ERROR(intcpt.GetLastDetourError());
   }
 
   ok = freestanding::stub_LdrLoadDll.SetDetour(
-      aChildProcess, intcpt, "LdrLoadDll", &freestanding::patched_LdrLoadDll);
+      aTransferMgr, intcpt, "LdrLoadDll", &freestanding::patched_LdrLoadDll);
   if (!ok) {
-    return LAUNCHER_ERROR_GENERIC();
+    return LAUNCHER_ERROR_FROM_DETOUR_ERROR(intcpt.GetLastDetourError());
   }
 
   // Because aChildProcess has just been created in a suspended state, its
@@ -77,22 +76,12 @@ static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
   // it onto the child process's IAT, thus enabling the child process's hook to
   // safely make its ntdll calls.
 
-  HMODULE ourModule;
-#  if defined(_MSC_VER)
-  ourModule = reinterpret_cast<HMODULE>(&__ImageBase);
-#  else
-  ourModule = ::GetModuleHandleW(nullptr);
-#  endif  // defined(_MSC_VER)
-
-  mozilla::nt::PEHeaders ourExeImage(ourModule);
-  if (!ourExeImage) {
-    return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
-  }
+  const nt::PEHeaders& ourExeImage = aTransferMgr.LocalPEHeaders();
 
   // As part of our mitigation of binary tampering, copy our import directory
   // from the original in our executable file.
-  LauncherVoidResult importDirRestored = RestoreImportDirectory(
-      aFullImagePath, ourExeImage, aChildProcess, ourModule);
+  LauncherVoidResult importDirRestored =
+      RestoreImportDirectory(aFullImagePath, aTransferMgr);
   if (importDirRestored.isErr()) {
     return importDirRestored;
   }
@@ -126,24 +115,22 @@ static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
     return LAUNCHER_ERROR_FROM_WIN32(ERROR_INVALID_DATA);
   }
 
-  SIZE_T bytesWritten;
-
   {  // Scope for prot
     PIMAGE_THUNK_DATA firstIatThunkDst = ntdllThunks.value().data();
     const IMAGE_THUNK_DATA* firstIatThunkSrc =
         aCachedNtdllThunk ? aCachedNtdllThunk : firstIatThunkDst;
     SIZE_T iatLength = ntdllThunks.value().LengthBytes();
 
-    AutoVirtualProtect prot(firstIatThunkDst, iatLength, PAGE_READWRITE,
-                            aChildProcess);
+    AutoVirtualProtect prot =
+        aTransferMgr.Protect(firstIatThunkDst, iatLength, PAGE_READWRITE);
     if (!prot) {
       return LAUNCHER_ERROR_FROM_MOZ_WINDOWS_ERROR(prot.GetError());
     }
 
-    ok = !!::WriteProcessMemory(aChildProcess, firstIatThunkDst,
-                                firstIatThunkSrc, iatLength, &bytesWritten);
-    if (!ok || bytesWritten != iatLength) {
-      return LAUNCHER_ERROR_FROM_LAST();
+    LauncherVoidResult writeResult =
+        aTransferMgr.Transfer(firstIatThunkDst, firstIatThunkSrc, iatLength);
+    if (writeResult.isErr()) {
+      return writeResult.propagateErr();
     }
   }
 
@@ -156,10 +143,10 @@ static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
     newFlags |= eDllBlocklistInitFlagIsChildProcess;
   }
 
-  ok = !!::WriteProcessMemory(aChildProcess, &gBlocklistInitFlags, &newFlags,
-                              sizeof(newFlags), &bytesWritten);
-  if (!ok || bytesWritten != sizeof(newFlags)) {
-    return LAUNCHER_ERROR_FROM_LAST();
+  LauncherVoidResult writeResult =
+      aTransferMgr.Transfer(&gBlocklistInitFlags, &newFlags, sizeof(newFlags));
+  if (writeResult.isErr()) {
+    return writeResult.propagateErr();
   }
 
   return Ok();
@@ -168,34 +155,44 @@ static LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPInternal(
 LauncherVoidResultWithLineInfo InitializeDllBlocklistOOP(
     const wchar_t* aFullImagePath, HANDLE aChildProcess,
     const IMAGE_THUNK_DATA* aCachedNtdllThunk) {
+  nt::CrossExecTransferManager transferMgr(aChildProcess);
+  if (!transferMgr) {
+    return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
+  }
+
   // We come here when the browser process launches a sandbox process.
   // If the launcher process already failed to bootstrap the browser process,
   // we should not attempt to bootstrap a child process because it's likely
   // to fail again.  Instead, we only restore the import directory entry.
   if (!(gBlocklistInitFlags & eDllBlocklistInitFlagWasBootstrapped)) {
-    HMODULE exeImageBase;
-#  if defined(_MSC_VER)
-    exeImageBase = reinterpret_cast<HMODULE>(&__ImageBase);
-#  else
-    exeImageBase = ::GetModuleHandleW(nullptr);
-#  endif  // defined(_MSC_VER)
-
-    mozilla::nt::PEHeaders localImage(exeImageBase);
-    if (!localImage) {
-      return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
-    }
-
-    return RestoreImportDirectory(aFullImagePath, localImage, aChildProcess,
-                                  exeImageBase);
+    return RestoreImportDirectory(aFullImagePath, transferMgr);
   }
 
-  return InitializeDllBlocklistOOPInternal(aFullImagePath, aChildProcess,
+  return InitializeDllBlocklistOOPInternal(aFullImagePath, transferMgr,
                                            aCachedNtdllThunk);
 }
 
 LauncherVoidResultWithLineInfo InitializeDllBlocklistOOPFromLauncher(
     const wchar_t* aFullImagePath, HANDLE aChildProcess) {
-  return InitializeDllBlocklistOOPInternal(aFullImagePath, aChildProcess,
+  nt::CrossExecTransferManager transferMgr(aChildProcess);
+  if (!transferMgr) {
+    return LAUNCHER_ERROR_FROM_WIN32(ERROR_BAD_EXE_FORMAT);
+  }
+
+  // The launcher process initializes a section object, whose handle is
+  // transferred to the browser process, and that transferred handle in
+  // the browser process is transferred to the sandbox processes.
+  LauncherVoidResultWithLineInfo result =
+      freestanding::gSharedSection.Init(transferMgr.LocalPEHeaders());
+  if (result.isErr()) {
+    return result.propagateErr();
+  }
+
+  auto clearInstance = MakeScopeExit([]() {
+    // After transfer, the launcher process does not need the object anymore.
+    freestanding::gSharedSection.Reset(nullptr);
+  });
+  return InitializeDllBlocklistOOPInternal(aFullImagePath, transferMgr,
                                            nullptr);
 }
 

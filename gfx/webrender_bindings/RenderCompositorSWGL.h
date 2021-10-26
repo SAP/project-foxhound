@@ -16,7 +16,7 @@ namespace wr {
 class RenderCompositorSWGL : public RenderCompositor {
  public:
   static UniquePtr<RenderCompositor> Create(
-      RefPtr<widget::CompositorWidget>&& aWidget);
+      RefPtr<widget::CompositorWidget>&& aWidget, nsACString& aError);
 
   RenderCompositorSWGL(RefPtr<widget::CompositorWidget>&& aWidget,
                        void* aContext);
@@ -33,7 +33,18 @@ class RenderCompositorSWGL : public RenderCompositor {
   void Pause() override;
   bool Resume() override;
 
+  layers::WebRenderBackend BackendType() const override {
+    return layers::WebRenderBackend::SOFTWARE;
+  }
+  layers::WebRenderCompositor CompositorType() const override {
+    return layers::WebRenderCompositor::SOFTWARE;
+  }
+
+  bool SurfaceOriginIsTopLeft() override { return true; }
+
   LayoutDeviceIntSize GetBufferSize() override;
+
+  bool SupportsExternalBufferTextures() const override { return true; }
 
   // Interface for wr::Compositor
   CompositorCapabilities GetCompositorCapabilities() override;
@@ -48,7 +59,7 @@ class RenderCompositorSWGL : public RenderCompositor {
 
   void ClearMappedBuffer();
 
-  void CommitMappedBuffer(const nsTArray<DeviceIntRect>* aDirtyRects = nullptr);
+  void CommitMappedBuffer();
 };
 
 }  // namespace wr

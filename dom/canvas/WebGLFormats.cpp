@@ -10,8 +10,7 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/StaticMutex.h"
 
-namespace mozilla {
-namespace webgl {
+namespace mozilla::webgl {
 
 const char* ToString(const ComponentType type) {
   switch (type) {
@@ -75,10 +74,11 @@ static inline V* FindOrNull(const std::map<K, V*>& dest, const K2& key) {
 }
 
 // Returns a pointer to the in-place value for `key`.
-template <typename K, typename V, typename K2>
-static inline V* FindPtrOrNull(std::map<K, V>& dest, const K2& key) {
-  auto itr = dest.find(key);
-  if (itr == dest.end()) return nullptr;
+template <typename C, typename K2>
+static inline auto FindPtrOrNull(C& container, const K2& key) {
+  auto itr = container.find(key);
+  using R = decltype(&(itr->second));
+  if (itr == container.end()) return R{nullptr};
 
   return &(itr->second);
 }
@@ -436,6 +436,17 @@ static void InitFormatInfo() {
     // OES_compressed_ETC1_RGB8_texture
     AddFormatInfo(FOO(ETC1_RGB8_OES), 0, 1,1,1,0, 0,0, UnsizedFormat::RGB, false, ComponentType::NormUInt);
 
+    // EXT_texture_norm16
+    AddFormatInfo(FOO(R16   ), 2, 16, 0, 0, 0, 0,0, UnsizedFormat::R   , false, ComponentType::NormUInt);
+    AddFormatInfo(FOO(RG16  ), 4, 16,16, 0, 0, 0,0, UnsizedFormat::RG  , false, ComponentType::NormUInt);
+    AddFormatInfo(FOO(RGB16 ), 6, 16,16,16, 0, 0,0, UnsizedFormat::RGB , false, ComponentType::NormUInt);
+    AddFormatInfo(FOO(RGBA16), 8, 16,16,16,16, 0,0, UnsizedFormat::RGBA, false, ComponentType::NormUInt);
+
+    AddFormatInfo(FOO(R16_SNORM   ), 2, 16, 0, 0, 0, 0,0, UnsizedFormat::R   , false, ComponentType::NormInt);
+    AddFormatInfo(FOO(RG16_SNORM  ), 4, 16,16, 0, 0, 0,0, UnsizedFormat::RG  , false, ComponentType::NormInt);
+    AddFormatInfo(FOO(RGB16_SNORM ), 6, 16,16,16, 0, 0,0, UnsizedFormat::RGB , false, ComponentType::NormInt);
+    AddFormatInfo(FOO(RGBA16_SNORM), 8, 16,16,16,16, 0,0, UnsizedFormat::RGBA, false, ComponentType::NormInt);
+
 #undef FOO
 
     // 'Virtual' effective formats have no sizedFormat.
@@ -516,6 +527,7 @@ static void InitFormatInfo() {
     SET_BY_SUFFIX(8I)
     SET_BY_SUFFIX(8UI)
 
+    SET_BY_SUFFIX(16)
     SET_BY_SUFFIX(16I)
     SET_BY_SUFFIX(16UI)
 
@@ -1222,5 +1234,4 @@ const FormatUsageInfo* FormatUsageAuthority::GetUsage(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace webgl
-}  // namespace mozilla
+}  // namespace mozilla::webgl

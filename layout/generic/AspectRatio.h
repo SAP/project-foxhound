@@ -10,13 +10,18 @@
 /* The aspect ratio of a box, in a "width / height" format. */
 
 #include "mozilla/Attributes.h"
+#include "mozilla/gfx/BaseSize.h"
 #include "nsCoord.h"
 #include <algorithm>
 #include <limits>
 
 namespace mozilla {
 
+class WritingMode;
+
 struct AspectRatio {
+  friend struct IPC::ParamTraits<mozilla::AspectRatio>;
+
   AspectRatio() : mRatio(0.0f) {}
   explicit AspectRatio(float aRatio) : mRatio(std::max(aRatio, 0.0f)) {}
 
@@ -25,6 +30,11 @@ struct AspectRatio {
       return AspectRatio();
     }
     return AspectRatio(aWidth / aHeight);
+  }
+
+  template <typename T, typename Sub>
+  static AspectRatio FromSize(const gfx::BaseSize<T, Sub>& aSize) {
+    return FromSize(aSize.Width(), aSize.Height());
   }
 
   explicit operator bool() const { return mRatio != 0.0f; }
@@ -50,6 +60,9 @@ struct AspectRatio {
     return AspectRatio(
         std::max(std::numeric_limits<float>::epsilon(), 1.0f / mRatio));
   }
+
+  [[nodiscard]] inline AspectRatio ConvertToWritingMode(
+      const WritingMode& aWM) const;
 
   bool operator==(const AspectRatio& aOther) const {
     return mRatio == aOther.mRatio;

@@ -9,12 +9,11 @@
 #include "mozilla/dom/WebGLCrossProcessCommandQueue.h"
 #include "mozilla/layers/LayerTransactionParent.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
+#include "ImageContainer.h"
 #include "HostWebGLContext.h"
 #include "WebGLMethodDispatcher.h"
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 mozilla::ipc::IPCResult WebGLParent::RecvInitialize(
     const webgl::InitContextDesc& desc,
@@ -50,6 +49,9 @@ IPCResult WebGLParent::RecvDispatchCommands(Shmem&& rawShmem,
                                             const uint64_t cmdsByteSize) {
   auto shmem = webgl::RaiiShmem(this, std::move(rawShmem));
 
+  const auto& gl = mHost->mContext->GL();
+  const gl::GLContext::TlsScope tlsIsCurrent(gl);
+
   MOZ_ASSERT(cmdsByteSize);
   const auto shmemBytes = shmem.ByteRange();
   const auto byteSize = std::min<uint64_t>(shmemBytes.length(), cmdsByteSize);
@@ -58,6 +60,7 @@ IPCResult WebGLParent::RecvDispatchCommands(Shmem&& rawShmem,
   auto view = webgl::RangeConsumerView{cmdsBytes};
 
   while (true) {
+    view.AlignTo(kUniversalAlignment);
     size_t id = 0;
     const auto status = view.ReadParam(&id);
     if (status != QueueStatus::kSuccess) break;
@@ -88,8 +91,8 @@ IPCResult WebGLParent::RecvGetFrontBufferSnapshot(
 
   auto shmem = webgl::RaiiShmem::Alloc(
       this, byteSize, mozilla::ipc::SharedMemory::SharedMemoryType::TYPE_BASIC);
-  MOZ_ASSERT(shmem);
   if (!shmem) {
+    NS_WARNING("Failed to alloc shmem for RecvGetFrontBufferSnapshot.");
     return IPC_FAIL(this, "Failed to allocate shmem for result");
   }
 
@@ -110,8 +113,8 @@ IPCResult WebGLParent::RecvGetBufferSubData(const GLenum target,
   auto shmem = webgl::RaiiShmem::Alloc(
       this, allocSize,
       mozilla::ipc::SharedMemory::SharedMemoryType::TYPE_BASIC);
-  MOZ_ASSERT(shmem);
   if (!shmem) {
+    NS_WARNING("Failed to alloc shmem for RecvGetBufferSubData.");
     return IPC_FAIL(this, "Failed to allocate shmem for result");
   }
 
@@ -136,8 +139,8 @@ IPCResult WebGLParent::RecvReadPixels(const webgl::ReadPixelsDesc& desc,
   auto shmem = webgl::RaiiShmem::Alloc(
       this, allocSize,
       mozilla::ipc::SharedMemory::SharedMemoryType::TYPE_BASIC);
-  MOZ_ASSERT(shmem);
   if (!shmem) {
+    NS_WARNING("Failed to alloc shmem for RecvReadPixels.");
     return IPC_FAIL(this, "Failed to allocate shmem for result");
   }
 
@@ -303,5 +306,4 @@ IPCResult WebGLParent::RecvValidateProgram(ObjectId id, bool* const ret) {
   return IPC_OK();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

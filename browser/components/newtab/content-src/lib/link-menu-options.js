@@ -30,6 +30,14 @@ export const LinkMenuOptions = {
     },
     userEvent: "SHOW_PRIVACY_INFO",
   }),
+  AboutSponsored: site => ({
+    id: "newtab-menu-show-privacy-info",
+    icon: "info",
+    action: ac.AlsoToMain({
+      type: at.ABOUT_SPONSORED_TOP_SITES,
+    }),
+    userEvent: "TOPSITE_SPONSOR_INFO",
+  }),
   RemoveBookmark: site => ({
     id: "newtab-menu-remove-bookmark",
     icon: "bookmark-added",
@@ -75,7 +83,7 @@ export const LinkMenuOptions = {
     action: ac.AlsoToMain({
       type: at.BLOCK_URL,
       data: tiles.map(site => ({
-        url: site.open_url || site.url,
+        url: site.original_url || site.open_url || site.url,
         // pocket_id is only for pocket stories being in highlights, and then dismissed.
         pocket_id: site.pocket_id,
         ...(site.flight_id ? { flight_id: site.flight_id } : {}),
@@ -180,28 +188,13 @@ export const LinkMenuOptions = {
       data: { url: site.url },
     }),
   }),
-  PinSpocTopSite: (site, index) => ({
+  PinTopSite: (site, index) => ({
     id: "newtab-menu-pin",
     icon: "pin",
     action: ac.AlsoToMain({
       type: at.TOP_SITES_PIN,
       data: {
         site,
-        index,
-      },
-    }),
-    userEvent: "PIN",
-  }),
-  PinTopSite: ({ url, searchTopSite, label }, index) => ({
-    id: "newtab-menu-pin",
-    icon: "pin",
-    action: ac.AlsoToMain({
-      type: at.TOP_SITES_PIN,
-      data: {
-        site: {
-          url,
-          ...(searchTopSite && { searchTopSite, label }),
-        },
         index,
       },
     }),

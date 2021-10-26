@@ -7,9 +7,14 @@
 #ifndef js_Tracer_h
 #define js_Tracer_h
 
-#include "jsfriendapi.h"
-
 #include "gc/Barrier.h"
+#include "js/HashTable.h"
+
+namespace JS {
+using CompartmentSet =
+    js::HashSet<Compartment*, js::DefaultHasher<Compartment*>,
+                js::SystemAllocPolicy>;
+}  // namespace JS
 
 namespace js {
 
@@ -50,26 +55,6 @@ namespace js {
 //     this point.
 
 namespace gc {
-
-// Map from all trace kinds to the base GC type.
-template <JS::TraceKind kind>
-struct MapTraceKindToType {};
-
-#define DEFINE_TRACE_KIND_MAP(name, type, _, _1)   \
-  template <>                                      \
-  struct MapTraceKindToType<JS::TraceKind::name> { \
-    using Type = type;                             \
-  };
-JS_FOR_EACH_TRACEKIND(DEFINE_TRACE_KIND_MAP);
-#undef DEFINE_TRACE_KIND_MAP
-
-// Map from a possibly-derived type to the base GC type.
-template <typename T>
-struct BaseGCType {
-  using type =
-      typename MapTraceKindToType<JS::MapTypeToTraceKind<T>::kind>::Type;
-  static_assert(std::is_base_of_v<type, T>, "Failed to find base type");
-};
 
 // Our barrier templates are parameterized on the pointer types so that we can
 // share the definitions with Value and jsid. Thus, we need to strip the
@@ -122,13 +107,14 @@ inline void AssertRootMarkingPhase(JSTracer* trc) {}
 template <typename T>
 inline void TraceEdge(JSTracer* trc, const WriteBarriered<T>* thingp,
                       const char* name) {
-  gc::TraceEdgeInternal(
-      trc, gc::ConvertToBase(thingp->unsafeUnbarrieredForTracing()), name);
+  gc::TraceEdgeInternal(trc, gc::ConvertToBase(thingp->unbarrieredAddress()),
+                        name);
 }
 
 template <typename T>
 inline void TraceEdge(JSTracer* trc, WeakHeapPtr<T>* thingp, const char* name) {
-  gc::TraceEdgeInternal(trc, gc::ConvertToBase(thingp->unsafeGet()), name);
+  gc::TraceEdgeInternal(trc, gc::ConvertToBase(thingp->unbarrieredAddress()),
+                        name);
 }
 
 template <class BC, class T>
@@ -138,7 +124,7 @@ inline void TraceCellHeaderEdge(JSTracer* trc,
   T* thing = thingp->headerPtr();
   gc::TraceEdgeInternal(trc, gc::ConvertToBase(&thing), name);
   if (thing != thingp->headerPtr()) {
-    thingp->unsafeSetHeaderPtr(thing);
+    thingp->unbarrieredSetHeaderPtr(thing);
   }
 }
 
@@ -169,7 +155,7 @@ inline void TraceNullableCellHeaderEdge(
   if (thing) {
     gc::TraceEdgeInternal(trc, gc::ConvertToBase(&thing), name);
     if (thing != thingp->headerPtr()) {
-      thingp->unsafeSetHeaderPtr(thing);
+      thingp->unbarrieredSetHeaderPtr(thing);
     }
   }
 }
@@ -186,7 +172,7 @@ inline void TraceRoot(JSTracer* trc, T* thingp, const char* name) {
 
 template <typename T>
 inline void TraceRoot(JSTracer* trc, WeakHeapPtr<T>* thingp, const char* name) {
-  TraceRoot(trc, thingp->unsafeGet(), name);
+  TraceRoot(trc, thingp->unbarrieredAddress(), name);
 }
 
 // Idential to TraceRoot, except that this variant will not crash if |*thingp|
@@ -203,7 +189,7 @@ inline void TraceNullableRoot(JSTracer* trc, T* thingp, const char* name) {
 template <typename T>
 inline void TraceNullableRoot(JSTracer* trc, WeakHeapPtr<T>* thingp,
                               const char* name) {
-  TraceNullableRoot(trc, thingp->unsafeGet(), name);
+  TraceNullableRoot(trc, thingp->unbarrieredAddress(), name);
 }
 
 // Like TraceEdge, but for edges that do not use one of the automatic barrier
@@ -229,7 +215,7 @@ template <typename T>
 inline bool TraceWeakEdge(JSTracer* trc, BarrieredBase<T>* thingp,
                           const char* name) {
   return gc::TraceEdgeInternal(
-      trc, gc::ConvertToBase(thingp->unsafeUnbarrieredForTracing()), name);
+      trc, gc::ConvertToBase(thingp->unbarrieredAddress()), name);
 }
 
 // Trace all edges contained in the given array.
@@ -237,8 +223,8 @@ inline bool TraceWeakEdge(JSTracer* trc, BarrieredBase<T>* thingp,
 template <typename T>
 void TraceRange(JSTracer* trc, size_t len, BarrieredBase<T>* vec,
                 const char* name) {
-  gc::TraceRangeInternal(
-      trc, len, gc::ConvertToBase(vec[0].unsafeUnbarrieredForTracing()), name);
+  gc::TraceRangeInternal(trc, len,
+                         gc::ConvertToBase(vec[0].unbarrieredAddress()), name);
 }
 
 // Trace all root edges in the given array.
@@ -260,7 +246,7 @@ template <typename T>
 void TraceCrossCompartmentEdge(JSTracer* trc, JSObject* src,
                                const WriteBarriered<T>* dst, const char* name) {
   TraceManuallyBarrieredCrossCompartmentEdge(
-      trc, src, gc::ConvertToBase(dst->unsafeUnbarrieredForTracing()), name);
+      trc, src, gc::ConvertToBase(dst->unbarrieredAddress()), name);
 }
 
 // Trace a weak map key. For debugger weak maps these may be cross compartment,
@@ -274,8 +260,7 @@ inline void TraceWeakMapKeyEdge(JSTracer* trc, Zone* weakMapZone,
                                 const WriteBarriered<T>* thingp,
                                 const char* name) {
   TraceWeakMapKeyEdgeInternal(
-      trc, weakMapZone,
-      gc::ConvertToBase(thingp->unsafeUnbarrieredForTracing()), name);
+      trc, weakMapZone, gc::ConvertToBase(thingp->unbarrieredAddress()), name);
 }
 
 // Permanent atoms and well-known symbols are shared between runtimes and must
@@ -296,15 +281,23 @@ void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc, gc::Cell** thingp,
 
 void TraceGCCellPtrRoot(JSTracer* trc, JS::GCCellPtr* thingp, const char* name);
 
-// Deprecated. Please use one of the strongly typed variants above.
-void TraceChildren(JSTracer* trc, void* thing, JS::TraceKind kind);
-
 namespace gc {
 
 // Trace through a shape or group iteratively during cycle collection to avoid
 // deep or infinite recursion.
 void TraceCycleCollectorChildren(JS::CallbackTracer* trc, Shape* shape);
 void TraceCycleCollectorChildren(JS::CallbackTracer* trc, ObjectGroup* group);
+
+/**
+ * Trace every value within |compartments| that is wrapped by a
+ * cross-compartment wrapper from a compartment that is not an element of
+ * |compartments|.
+ */
+void TraceIncomingCCWs(JSTracer* trc, const JS::CompartmentSet& compartments);
+
+/* Get information about a GC thing. Used when dumping the heap. */
+void GetTraceThingInfo(char* buf, size_t bufsize, void* thing,
+                       JS::TraceKind kind, bool includeDetails);
 
 }  // namespace gc
 }  // namespace js

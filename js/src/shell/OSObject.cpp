@@ -32,7 +32,10 @@
 #include "gc/FreeOp.h"
 #include "js/CharacterEncoding.h"
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_NewUint8Array
+#include "js/Object.h"                  // JS::GetReservedSlot
 #include "js/PropertySpec.h"
+#include "js/Value.h"  // JS::Value
 #include "js/Wrapper.h"
 #include "shell/jsshell.h"
 #include "shell/StringUtils.h"
@@ -197,7 +200,7 @@ JSObject* FileAsTypedArray(JSContext* cx, JS::HandleString pathnameStr) {
       }
       JS_ReportErrorUTF8(cx, "can't seek start of %s", pathname.get());
     } else {
-      if (len > ArrayBufferObject::MaxBufferByteLength) {
+      if (len > ArrayBufferObject::maxBufferByteLength()) {
         JS_ReportErrorUTF8(cx, "file %s is too large for a Uint8Array",
                            pathname.get());
         return nullptr;
@@ -474,8 +477,8 @@ static bool osfile_writeTypedArrayToFile(JSContext* cx, unsigned argc,
     return false;
   }
   void* buf = obj->dataPointerUnshared();
-  if (fwrite(buf, obj->bytesPerElement(), obj->length(), file) !=
-          obj->length() ||
+  size_t length = obj->length().get();
+  if (fwrite(buf, obj->bytesPerElement(), length, file) != length ||
       !autoClose.release()) {
     filename = JS_EncodeStringToUTF8(cx, str);
     if (!filename) {
@@ -560,7 +563,7 @@ class FileObject : public NativeObject {
 
   RCFile* rcFile() {
     return reinterpret_cast<RCFile*>(
-        js::GetReservedSlot(this, FILE_SLOT).toPrivate());
+        JS::GetReservedSlot(this, FILE_SLOT).toPrivate());
   }
 };
 

@@ -37,6 +37,10 @@ class SharedSurfaceTextureData : public TextureData {
   const gfx::SurfaceFormat mFormat;
   const gfx::IntSize mSize;
 
+  static already_AddRefed<TextureClient> CreateTextureClient(
+      const layers::SurfaceDescriptor& aDesc, const gfx::SurfaceFormat aFormat,
+      gfx::IntSize aSize, TextureFlags aFlags, LayersIPCChannel* aAllocator);
+
   SharedSurfaceTextureData(const SurfaceDescriptor&, gfx::SurfaceFormat,
                            gfx::IntSize);
   virtual ~SharedSurfaceTextureData();
@@ -50,6 +54,12 @@ class SharedSurfaceTextureData : public TextureData {
   bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
 
   void Deallocate(LayersIPCChannel*) override;
+
+  TextureFlags GetTextureFlags() const override;
+
+  Maybe<uint64_t> GetBufferId() const override;
+
+  mozilla::ipc::FileDescriptor GetAcquireFence() override;
 };
 /*
 class SharedSurfaceTextureClient : public TextureClient {

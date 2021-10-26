@@ -230,13 +230,9 @@ bool FilterInstance::BuildWebRenderFilters(nsIFrame* aFilteredFrame,
       const GaussianBlurAttributes& blur = attr.as<GaussianBlurAttributes>();
 
       const Size& stdDev = blur.mStdDeviation;
-      if (stdDev.width != stdDev.height) {
-        return false;
-      }
-
-      float radius = stdDev.width;
-      if (radius != 0.0) {
-        aWrFilters.filters.AppendElement(wr::FilterOp::Blur(radius));
+      if (stdDev.width != 0.0 || stdDev.height != 0.0) {
+        aWrFilters.filters.AppendElement(
+            wr::FilterOp::Blur(stdDev.width, stdDev.height));
       } else {
         filterIsNoop = true;
       }
@@ -727,8 +723,17 @@ void FilterInstance::BuildSourceImage(DrawTarget* aDest,
   ctx->SetMatrixDouble(devPxToCssPxTM * mPaintTransform *
                        gfxMatrix::Translation(-neededRect.TopLeft()));
 
-  mPaintCallback->Paint(*ctx, mTargetFrame, mPaintTransform, &dirty,
-                        aImgParams);
+  auto imageFlags = aImgParams.imageFlags;
+  if (mTargetFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
+    // We're coming from a mask or pattern instance. Patterns
+    // are painted into a separate surface and it seems we can't
+    // handle the differently sized surface that might be returned
+    // with FLAG_HIGH_QUALITY_SCALING
+    imageFlags &= ~imgIContainer::FLAG_HIGH_QUALITY_SCALING;
+  }
+  imgDrawingParams imgParams(imageFlags);
+  mPaintCallback->Paint(*ctx, mTargetFrame, mPaintTransform, &dirty, imgParams);
+  aImgParams.result = imgParams.result;
 
   mSourceGraphic.mSourceSurface = offscreenDT->Snapshot();
   mSourceGraphic.mSurfaceRect = neededRect;

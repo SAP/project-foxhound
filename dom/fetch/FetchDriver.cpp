@@ -9,6 +9,7 @@
 
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "mozilla/dom/Document.h"
+#include "nsICookieJarSettings.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsIFileChannel.h"
@@ -46,8 +47,7 @@
 #include "InternalRequest.h"
 #include "InternalResponse.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -459,7 +459,7 @@ nsresult FetchDriver::Fetch(AbortSignalImpl* aSignalImpl,
   // the operation.
   if (aSignalImpl) {
     if (aSignalImpl->Aborted()) {
-      Abort();
+      RunAbortAlgorithm();
       return NS_OK;
     }
 
@@ -801,8 +801,8 @@ nsresult FetchDriver::HttpFetch(
   if (!aPreferredAlternativeDataType.IsEmpty()) {
     nsCOMPtr<nsICacheInfoChannel> cic = do_QueryInterface(chan);
     if (cic) {
-      cic->PreferAlternativeDataType(aPreferredAlternativeDataType,
-                                     EmptyCString(), true);
+      cic->PreferAlternativeDataType(aPreferredAlternativeDataType, ""_ns,
+                                     true);
       MOZ_ASSERT(!mAltDataListener);
       mAltDataListener = new AlternativeDataStreamListener(
           this, chan, aPreferredAlternativeDataType);
@@ -867,7 +867,9 @@ already_AddRefed<InternalResponse> FetchDriver::BeginAndGetFilteredResponse(
   MOZ_ASSERT(filteredResponse);
   MOZ_ASSERT(mObserver);
   if (!ShouldCheckSRI(*mRequest, *filteredResponse)) {
-    mObserver->OnResponseAvailable(filteredResponse);
+    // Need to keep mObserver alive.
+    RefPtr<FetchDriverObserver> observer = mObserver;
+    observer->OnResponseAvailable(filteredResponse);
 #ifdef DEBUG
     mResponseAvailableCalled = true;
 #endif
@@ -880,7 +882,9 @@ void FetchDriver::FailWithNetworkError(nsresult rv) {
   AssertIsOnMainThread();
   RefPtr<InternalResponse> error = InternalResponse::NetworkError(rv);
   if (mObserver) {
-    mObserver->OnResponseAvailable(error);
+    // Need to keep mObserver alive.
+    RefPtr<FetchDriverObserver> observer = mObserver;
+    observer->OnResponseAvailable(error);
 #ifdef DEBUG
     mResponseAvailableCalled = true;
 #endif
@@ -1263,10 +1267,12 @@ FetchDriver::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
   if (mNeedToObserveOnDataAvailable) {
     mNeedToObserveOnDataAvailable = false;
     if (mObserver) {
+      // Need to keep mObserver alive.
+      RefPtr<FetchDriverObserver> observer = mObserver;
       if (NS_IsMainThread()) {
-        mObserver->OnDataAvailable();
+        observer->OnDataAvailable();
       } else {
-        RefPtr<Runnable> runnable = new DataAvailableRunnable(mObserver);
+        RefPtr<Runnable> runnable = new DataAvailableRunnable(observer);
         nsresult rv = mMainThreadEventTarget->Dispatch(runnable.forget(),
                                                        NS_DISPATCH_NORMAL);
         if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -1401,7 +1407,9 @@ void FetchDriver::FinishOnStopRequest(
     // From "Main Fetch" step 19.1, 19.2: Process response.
     if (ShouldCheckSRI(*mRequest, *mResponse)) {
       MOZ_ASSERT(mResponse);
-      mObserver->OnResponseAvailable(mResponse);
+      // Need to keep mObserver alive.
+      RefPtr<FetchDriverObserver> observer = mObserver;
+      observer->OnResponseAvailable(mResponse);
 #ifdef DEBUG
       mResponseAvailableCalled = true;
 #endif
@@ -1422,7 +1430,7 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
                                     nsIAsyncVerifyRedirectCallback* aCallback) {
   nsCOMPtr<nsIHttpChannel> oldHttpChannel = do_QueryInterface(aOldChannel);
   nsCOMPtr<nsIHttpChannel> newHttpChannel = do_QueryInterface(aNewChannel);
-  if (newHttpChannel) {
+  if (oldHttpChannel && newHttpChannel) {
     nsAutoCString method;
     mRequest->GetMethod(method);
 
@@ -1570,7 +1578,7 @@ void FetchDriver::SetRequestHeaders(nsIHttpChannel* aChannel,
   }
 }
 
-void FetchDriver::Abort() {
+void FetchDriver::RunAbortAlgorithm() {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
   if (mObserver) {
@@ -1589,5 +1597,4 @@ void FetchDriver::Abort() {
   mAborted = true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

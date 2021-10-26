@@ -23,12 +23,12 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   friend class AutoCallVM;
 
   IonCacheIRCompiler(JSContext* cx, const CacheIRWriter& writer, IonIC* ic,
-                     IonScript* ionScript, IonICStub* stub,
+                     IonScript* ionScript,
                      const PropertyTypeCheckInfo* typeCheckInfo,
                      uint32_t stubDataOffset);
 
   MOZ_MUST_USE bool init();
-  JitCode* compile();
+  JitCode* compile(IonICStub* stub);
 
 #ifdef DEBUG
   void assertFloatRegisterAvailable(FloatRegister reg);
@@ -38,9 +38,6 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   const CacheIRWriter& writer_;
   IonIC* ic_;
   IonScript* ionScript_;
-
-  // The stub we're generating code for.
-  IonICStub* stub_;
 
   // Information necessary to generate property type checks. Non-null iff
   // this is a SetProp/SetElem stub.
@@ -53,12 +50,10 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
   bool savedLiveRegs_;
 
   template <typename T>
-  T rawWordStubField(uint32_t offset);
+  T rawPointerStubField(uint32_t offset);
 
   template <typename T>
   T rawInt64StubField(uint32_t offset);
-
-  uint64_t* expandoGenerationStubFieldPtr(uint32_t offset);
 
   void prepareVMCall(MacroAssembler& masm, const AutoSaveLiveRegisters&);
 
@@ -69,12 +64,6 @@ class MOZ_RAII IonCacheIRCompiler : public CacheIRCompiler {
       CacheOp op, ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
       bool changeGroup, uint32_t newGroupOffset, uint32_t newShapeOffset,
       mozilla::Maybe<uint32_t> numNewSlotsOffset);
-  MOZ_MUST_USE bool emitCallScriptedGetterResultShared(
-      TypedOrValueRegister receiver, uint32_t getterOffset, bool sameRealm,
-      TypedOrValueRegister output);
-  MOZ_MUST_USE bool emitCallNativeGetterResultShared(
-      TypedOrValueRegister receiver, uint32_t getterOffset,
-      const AutoOutputRegister& output, AutoSaveLiveRegisters& save);
 
   bool needsPostBarrier() const;
 

@@ -515,15 +515,23 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     bool needBlendContainer = false;
     nsDisplayListBuilder::AutoContainerASRTracker contASRTracker(aBuilder);
 
-    // In high-contrast-mode, we suppress background-image on the canvas frame
-    // (even when backplating), because users expect site backgrounds to conform
-    // to their HCM background color when a solid color is rendered, and some
-    // websites use solid-color images instead of an overwritable background
-    // color.
-    const bool suppressBackgroundImage =
-        !PresContext()->PrefSheetPrefs().mUseDocumentColors &&
-        StaticPrefs::
-            browser_display_suppress_canvas_background_image_on_forced_colors();
+    const bool suppressBackgroundImage = [&] {
+      // Handle print settings.
+      if (!ComputeShouldPaintBackground().mImage) {
+        return true;
+      }
+      // In high-contrast-mode, we suppress background-image on the canvas frame
+      // (even when backplating), because users expect site backgrounds to
+      // conform to their HCM background color when a solid color is rendered,
+      // and some websites use solid-color images instead of an overwritable
+      // background color.
+      if (!PresContext()->PrefSheetPrefs().mUseDocumentColors &&
+          StaticPrefs::
+              browser_display_suppress_canvas_background_image_on_forced_colors()) {
+        return true;
+      }
+      return false;
+    }();
 
     // Create separate items for each background layer.
     const nsStyleImageLayers& layers = bg->StyleBackground()->mImage;
@@ -742,7 +750,7 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     WritingMode kidWM = kidReflowInput.GetWritingMode();
     nsSize containerSize = aReflowInput.ComputedPhysicalSize();
 
-    LogicalMargin margin = kidReflowInput.ComputedLogicalMargin();
+    LogicalMargin margin = kidReflowInput.ComputedLogicalMargin(kidWM);
     LogicalPoint kidPt(kidWM, margin.IStart(kidWM), margin.BStart(kidWM));
 
     // Reflow the frame
@@ -797,7 +805,7 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
       finalSize.BSize(wm) =
           kidFrame->GetLogicalSize(wm).BSize(wm) +
-          kidReflowInput.ComputedLogicalMargin().BStartEnd(wm);
+          kidReflowInput.ComputedLogicalMargin(wm).BStartEnd(wm);
     } else {
       finalSize.BSize(wm) = aReflowInput.ComputedBSize();
     }

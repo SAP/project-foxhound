@@ -7,6 +7,7 @@
 #include "jit/JitScript-inl.h"
 
 #include "mozilla/BinarySearch.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/ScopeExit.h"
 
@@ -15,6 +16,8 @@
 #include "jit/BaselineIC.h"
 #include "jit/BytecodeAnalysis.h"
 #include "jit/IonScript.h"
+#include "jit/JitFrames.h"
+#include "jit/ScriptFromCalleeToken.h"
 #include "util/Memory.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
@@ -34,6 +37,8 @@
 
 using namespace js;
 using namespace js::jit;
+
+using mozilla::CheckedInt;
 
 /* static */
 size_t JitScript::NumTypeSets(JSScript* script) {
@@ -62,8 +67,8 @@ JitScript::JitScript(JSScript* script, Offset typeSetOffset,
       typeSetOffset_(typeSetOffset),
       bytecodeTypeMapOffset_(bytecodeTypeMapOffset),
       endOffset_(endOffset),
-      icScript_(this, script->getWarmUpCount(),
-                typeSetOffset - offsetOfICScript()) {
+      icScript_(script->getWarmUpCount(), typeSetOffset - offsetOfICScript(),
+                /*depth=*/0) {
   setTypesGeneration(script->zone()->types.generation);
 
   if (IsTypeInferenceEnabled()) {
@@ -269,20 +274,28 @@ void ICScript::trace(JSTracer* trc) {
   }
 }
 
-bool ICScript::isInlined() const { return jitScript()->icScript() != this; }
-
 bool ICScript::addInlinedChild(JSContext* cx, UniquePtr<ICScript> child,
                                uint32_t pcOffset) {
+  MOZ_ASSERT(!hasInlinedChild(pcOffset));
+
   if (!inlinedChildren_) {
-    inlinedChildren_ = js::MakeUnique<Vector<CallSite>>(cx);
+    inlinedChildren_ = cx->make_unique<Vector<CallSite>>(cx);
     if (!inlinedChildren_) {
       return false;
     }
   }
-  if (!inlinedChildren_->emplaceBack(child.get(), pcOffset)) {
+
+  // First reserve space in inlinedChildren_ to ensure that if the ICScript is
+  // added to the inlining root, it can also be added to inlinedChildren_.
+  CallSite callsite(child.get(), pcOffset);
+  if (!inlinedChildren_->reserve(inlinedChildren_->length() + 1)) {
     return false;
   }
-  return inliningRoot()->addInlinedScript(std::move(child));
+  if (!inliningRoot()->addInlinedScript(std::move(child))) {
+    return false;
+  }
+  inlinedChildren_->infallibleAppend(callsite);
+  return true;
 }
 
 ICScript* ICScript::findInlinedChild(uint32_t pcOffset) {
@@ -292,6 +305,32 @@ ICScript* ICScript::findInlinedChild(uint32_t pcOffset) {
     }
   }
   MOZ_CRASH("Inlined child expected at pcOffset");
+}
+
+void ICScript::removeInlinedChild(uint32_t pcOffset) {
+  MOZ_ASSERT(inliningRoot());
+  inlinedChildren_->eraseIf([pcOffset](const CallSite& callsite) -> bool {
+    return callsite.pcOffset_ == pcOffset;
+  });
+}
+
+bool ICScript::hasInlinedChild(uint32_t pcOffset) {
+  if (!inlinedChildren_) {
+    return false;
+  }
+  for (auto& callsite : *inlinedChildren_) {
+    if (callsite.pcOffset_ == pcOffset) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void JitScript::resetWarmUpCount(uint32_t count) {
+  icScript_.resetWarmUpCount(count);
+  if (hasInliningRoot()) {
+    inliningRoot()->resetWarmUpCounts(count);
+  }
 }
 
 void JitScript::ensureProfileString(JSContext* cx, JSScript* script) {
@@ -668,7 +707,7 @@ void JitScript::setBaselineScriptImpl(JSScript* script,
 void JitScript::setBaselineScriptImpl(JSFreeOp* fop, JSScript* script,
                                       BaselineScript* baselineScript) {
   if (hasBaselineScript()) {
-    BaselineScript::writeBarrierPre(script->zone(), baselineScript_);
+    BaselineScript::preWriteBarrier(script->zone(), baselineScript_);
     fop->removeCellMemory(script, baselineScript_->allocBytes(),
                           MemoryUse::BaselineScript);
     baselineScript_ = nullptr;
@@ -697,7 +736,7 @@ void JitScript::setIonScriptImpl(JSFreeOp* fop, JSScript* script,
                 !baselineScript()->hasPendingIonCompileTask());
 
   if (hasIonScript()) {
-    IonScript::writeBarrierPre(script->zone(), ionScript_);
+    IonScript::preWriteBarrier(script->zone(), ionScript_);
     fop->removeCellMemory(script, ionScript_->allocBytes(),
                           MemoryUse::IonScript);
     ionScript_ = nullptr;
@@ -865,8 +904,14 @@ InliningRoot* JitScript::getOrCreateInliningRoot(JSContext* cx,
 }
 
 FallbackICStubSpace* ICScript::fallbackStubSpace() {
-  if (inliningRoot_) {
+  if (isInlined()) {
     return inliningRoot_->fallbackStubSpace();
   }
-  return jitScript_->fallbackStubSpace();
+  return outerJitScript()->fallbackStubSpace();
+}
+
+JitScript* ICScript::outerJitScript() {
+  MOZ_ASSERT(!isInlined());
+  uint8_t* ptr = reinterpret_cast<uint8_t*>(this);
+  return reinterpret_cast<JitScript*>(ptr - JitScript::offsetOfICScript());
 }

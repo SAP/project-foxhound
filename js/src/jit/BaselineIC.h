@@ -8,22 +8,46 @@
 #define jit_BaselineIC_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 
-#include "builtin/TypedObject.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <utility>
+
 #include "gc/Barrier.h"
 #include "gc/GC.h"
+#include "gc/Rooting.h"
 #include "jit/BaselineICList.h"
-#include "jit/BaselineJIT.h"
 #include "jit/ICState.h"
+#include "jit/ICStubSpace.h"
+#include "jit/JitCode.h"
+#include "jit/JitOptions.h"
+#include "jit/Registers.h"
+#include "jit/RegisterSets.h"
+#include "jit/shared/Assembler-shared.h"
 #include "jit/SharedICRegisters.h"
-#include "js/GCVector.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
 #include "vm/ArrayObject.h"
-#include "vm/BytecodeUtil.h"
-#include "vm/JSContext.h"
-#include "vm/Realm.h"
+#include "vm/JSScript.h"
+
+class JS_PUBLIC_API JSTracer;
 
 namespace js {
+
+class StackTypeSet;
+
+MOZ_COLD void ReportOutOfMemory(JSContext* cx);
+
 namespace jit {
+
+class BaselineFrame;
+class CacheIRStubInfo;
+class ICScript;
+class MacroAssembler;
+
+enum class TailCallVMFunctionId;
+enum class VMFunctionId;
 
 // [SMDOC] JIT Inline Caches (ICs)
 //
@@ -679,6 +703,11 @@ class ICFallbackStub : public ICStub {
 
   inline size_t numOptimizedStubs() const { return state_.numOptimizedStubs(); }
 
+  bool newStubIsFirstStub() const {
+    return (state_.mode() == ICState::Mode::Specialized &&
+            numOptimizedStubs() == 0);
+  }
+
   ICState& state() { return state_; }
 
   // The icEntry_ field can't be initialized when the stub is created since we
@@ -707,6 +736,15 @@ class ICFallbackStub : public ICStub {
 
   void clearUsedByTranspiler() { state_.clearUsedByTranspiler(); }
   void setUsedByTranspiler() { state_.setUsedByTranspiler(); }
+
+  TrialInliningState trialInliningState() const {
+    return state_.trialInliningState();
+  }
+  void setTrialInliningState(TrialInliningState state) {
+    state_.setTrialInliningState(state);
+  }
+
+  void trackNotAttached(JSContext* cx, JSScript* script);
 
   // If the transpiler optimized based on this IC, invalidate the script's Warp
   // code.
@@ -1558,6 +1596,15 @@ class ICHasOwn_Fallback : public ICFallbackStub {
       : ICFallbackStub(ICStub::HasOwn_Fallback, stubCode) {}
 };
 
+// CheckPrivateField
+//      JSOp::CheckPrivateField
+class ICCheckPrivateField_Fallback : public ICFallbackStub {
+  friend class ICStubSpace;
+
+  explicit ICCheckPrivateField_Fallback(TrampolinePtr stubCode)
+      : ICFallbackStub(ICStub::CheckPrivateField_Fallback, stubCode) {}
+};
+
 // GetName
 //      JSOp::GetName
 //      JSOp::GetGName
@@ -1597,6 +1644,8 @@ class ICGetProp_Fallback : public ICMonitoredFallbackStub {
       : ICMonitoredFallbackStub(ICStub::GetProp_Fallback, stubCode) {}
 
  public:
+  // Whether this bytecode op called a getter. This is used by IonBuilder.
+  // To improve performance, the flag is not set if WarpBuilder is enabled.
   static const size_t ACCESSED_GETTER_BIT = 1;
 
   void noteAccessedGetter() { extra_ |= (1u << ACCESSED_GETTER_BIT); }
@@ -1651,6 +1700,13 @@ class ICGetIterator_Fallback : public ICFallbackStub {
 
   explicit ICGetIterator_Fallback(TrampolinePtr stubCode)
       : ICFallbackStub(ICStub::GetIterator_Fallback, stubCode) {}
+};
+
+class ICOptimizeSpreadCall_Fallback : public ICFallbackStub {
+  friend class ICStubSpace;
+
+  explicit ICOptimizeSpreadCall_Fallback(TrampolinePtr stubCode)
+      : ICFallbackStub(ICStub::OptimizeSpreadCall_Fallback, stubCode) {}
 };
 
 // InstanceOf
@@ -1799,21 +1855,6 @@ class ICNewObject_Fallback : public ICFallbackStub {
   void setTemplateObject(JSObject* obj) { templateObject_ = obj; }
 };
 
-inline bool IsCacheableDOMProxy(JSObject* obj) {
-  if (!obj->is<ProxyObject>()) {
-    return false;
-  }
-
-  const BaseProxyHandler* handler = obj->as<ProxyObject>().handler();
-  if (handler->family() != GetDOMProxyHandlerFamily()) {
-    return false;
-  }
-
-  // Some DOM proxies have dynamic prototypes.  We can't really cache those very
-  // well.
-  return obj->hasStaticPrototype();
-}
-
 struct IonOsrTempData;
 
 extern MOZ_MUST_USE bool TypeMonitorResult(JSContext* cx,
@@ -1864,6 +1905,12 @@ extern bool DoHasOwnFallback(JSContext* cx, BaselineFrame* frame,
                              ICHasOwn_Fallback* stub, HandleValue keyValue,
                              HandleValue objValue, MutableHandleValue res);
 
+extern bool DoCheckPrivateFieldFallback(JSContext* cx, BaselineFrame* frame,
+                                        ICCheckPrivateField_Fallback* stub,
+                                        HandleValue objValue,
+                                        HandleValue keyValue,
+                                        MutableHandleValue res);
+
 extern bool DoGetNameFallback(JSContext* cx, BaselineFrame* frame,
                               ICGetName_Fallback* stub, HandleObject envChain,
                               MutableHandleValue res);
@@ -1892,6 +1939,11 @@ extern bool DoSetPropFallback(JSContext* cx, BaselineFrame* frame,
 extern bool DoGetIteratorFallback(JSContext* cx, BaselineFrame* frame,
                                   ICGetIterator_Fallback* stub,
                                   HandleValue value, MutableHandleValue res);
+
+extern bool DoOptimizeSpreadCallFallback(JSContext* cx, BaselineFrame* frame,
+                                         ICOptimizeSpreadCall_Fallback* stub,
+                                         HandleValue value,
+                                         MutableHandleValue res);
 
 extern bool DoInstanceOfFallback(JSContext* cx, BaselineFrame* frame,
                                  ICInstanceOf_Fallback* stub, HandleValue lhs,

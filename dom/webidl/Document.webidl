@@ -23,6 +23,7 @@ interface URI;
 interface nsIDocShell;
 interface nsILoadGroup;
 interface nsIReferrerInfo;
+interface nsICookieJarSettings;
 interface nsIPermissionDelegateHandler;
 interface XULCommandDispatcher;
 
@@ -400,6 +401,10 @@ partial interface Document {
   [ChromeOnly]
   readonly attribute Principal partitionedPrincipal;
 
+  // The cookieJarSettings of this document
+  [ChromeOnly]
+  readonly attribute nsICookieJarSettings cookieJarSettings;
+
   // The principal to use for the content blocking allow list
   [ChromeOnly]
   readonly attribute Principal? contentBlockingAllowListPrincipal;
@@ -482,6 +487,15 @@ partial interface Document {
   readonly attribute long  popupRangeOffset;
   [ChromeOnly]
   attribute Node? tooltipNode;
+
+  /**
+   * Returns all the shadow roots connected to the document, in no particular
+   * order, and without regard to open/closed-ness. Also returns UA widgets
+   * (like <video> controls), which can be checked using
+   * ShadowRoot.isUAWidget().
+   */
+  [ChromeOnly]
+  sequence<ShadowRoot> getConnectedShadowRoots();
 };
 
 dictionary BlockParsingOptions {

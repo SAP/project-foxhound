@@ -25,6 +25,7 @@
 #include "js/Conversions.h"
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
+#include "js/String.h"  // JS::{,Lossy}CopyLinearStringChars, JS::CopyStringChars, JS::Get{,Linear}StringLength, JS::MaxStringLength, JS::StringHasLatin1Chars
 #include "nsString.h"
 #include "xpcpublic.h"
 
@@ -246,7 +247,7 @@ template <typename T, typename std::enable_if_t<std::is_same<
                           typename T::char_type, char16_t>::value>* = nullptr>
 inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   size_t len = JS::GetStringLength(s);
-  static_assert(js::MaxStringLength < (1 << 30),
+  static_assert(JS::MaxStringLength < (1 << 30),
                 "Shouldn't overflow here or in SetCapacity");
 
   const char16_t* chars;
@@ -277,7 +278,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   // TaintFox: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
 
-  return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
+  return JS::CopyStringChars(cx, dest.BeginWriting(), s, len);
 }
 
 // Specialization for UTF8String.
@@ -288,7 +289,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   CheckedInt<size_t> bufLen(JS::GetStringLength(s));
   // From the contract for JS_EncodeStringToUTF8BufferPartial, to guarantee that
   // the whole string is converted.
-  if (js::StringHasLatin1Chars(s)) {
+  if (JS::StringHasLatin1Chars(s)) {
     bufLen *= 2;
   } else {
     bufLen *= 3;
@@ -302,12 +303,13 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   // Shouldn't really matter, but worth being safe.
   const bool kAllowShrinking = true;
 
-  nsresult rv;
-  auto handle = dest.BulkWrite(bufLen.value(), 0, kAllowShrinking, rv);
-  if (MOZ_UNLIKELY(NS_FAILED(rv))) {
+  auto handleOrErr = dest.BulkWrite(bufLen.value(), 0, kAllowShrinking);
+  if (MOZ_UNLIKELY(handleOrErr.isErr())) {
     JS_ReportOutOfMemory(cx);
     return false;
   }
+
+  auto handle = handleOrErr.unwrap();
 
   auto maybe = JS_EncodeStringToUTF8BufferPartial(cx, s, handle.AsSpan());
   if (MOZ_UNLIKELY(!maybe)) {
@@ -325,23 +327,23 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
 }
 
 inline void AssignJSLinearString(nsAString& dest, JSLinearString* s) {
-  size_t len = js::GetLinearStringLength(s);
-  static_assert(js::MaxStringLength < (1 << 30),
+  size_t len = JS::GetLinearStringLength(s);
+  static_assert(JS::MaxStringLength < (1 << 30),
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
 
   // TaintFox: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
 
-  js::CopyLinearStringChars(dest.BeginWriting(), s, len);
+  JS::CopyLinearStringChars(dest.BeginWriting(), s, len);
 }
 
 inline void AssignJSLinearString(nsACString& dest, JSLinearString* s) {
-  size_t len = js::GetLinearStringLength(s);
-  static_assert(js::MaxStringLength < (1 << 30),
+  size_t len = JS::GetLinearStringLength(s);
+  static_assert(JS::MaxStringLength < (1 << 30),
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
-  js::CopyLinearStringChars(dest.BeginWriting(), s, len);
+  JS::LossyCopyLinearStringChars(dest.BeginWriting(), s, len);
 }
 
 template <typename T>

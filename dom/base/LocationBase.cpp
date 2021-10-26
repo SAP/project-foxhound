@@ -16,9 +16,9 @@
 #include "nsGlobalWindow.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/WindowContext.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
     nsIURI* aURI, nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
@@ -99,6 +99,7 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
     principal->CreateReferrerInfo(referrerPolicy, getter_AddRefs(referrerInfo));
   }
   loadState->SetTriggeringPrincipal(triggeringPrincipal);
+  loadState->SetTriggeringSandboxFlags(doc->GetSandboxFlags());
   loadState->SetCsp(doc->GetCsp());
   if (referrerInfo) {
     loadState->SetReferrerInfo(referrerInfo);
@@ -113,6 +114,16 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
                           ErrorResult& aRv, bool aReplace) {
   RefPtr<BrowsingContext> bc = GetBrowsingContext();
   if (!bc || bc->IsDiscarded()) {
+    return;
+  }
+
+  CallerType callerType = aSubjectPrincipal.IsSystemPrincipal()
+                              ? CallerType::System
+                              : CallerType::NonSystem;
+
+  nsresult rv = bc->CheckLocationChangeRateLimit(callerType);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
     return;
   }
 
@@ -132,16 +143,16 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
   nsCOMPtr<nsPIDOMWindowInner> sourceWindow =
       nsContentUtils::CallerInnerWindow();
   if (sourceWindow) {
-    RefPtr<BrowsingContext> sourceBC = sourceWindow->GetBrowsingContext();
-    loadState->SetSourceBrowsingContext(sourceBC);
+    WindowContext* context = sourceWindow->GetWindowContext();
+    loadState->SetSourceBrowsingContext(sourceWindow->GetBrowsingContext());
     loadState->SetHasValidUserGestureActivation(
-        sourceBC && sourceBC->HasValidTransientUserGestureActivation());
+        context && context->HasValidTransientUserGestureActivation());
   }
 
   loadState->SetLoadFlags(nsIWebNavigation::LOAD_FLAGS_NONE);
   loadState->SetFirstParty(true);
 
-  nsresult rv = bc->LoadURI(loadState);
+  rv = bc->LoadURI(loadState);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
   }
@@ -243,5 +254,4 @@ nsIURI* LocationBase::GetSourceBaseURL() {
   return doc ? doc->GetBaseURI() : nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

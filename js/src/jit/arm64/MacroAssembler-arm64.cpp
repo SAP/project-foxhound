@@ -6,13 +6,17 @@
 
 #include "jit/arm64/MacroAssembler-arm64.h"
 
+#include "jsmath.h"
+
 #include "jit/arm64/MoveEmitter-arm64.h"
 #include "jit/arm64/SharedICRegisters-arm64.h"
 #include "jit/Bailouts.h"
 #include "jit/BaselineFrame.h"
+#include "jit/JitRuntime.h"
 #include "jit/MacroAssembler.h"
 #include "util/Memory.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
+#include "vm/JSContext.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -33,6 +37,20 @@ void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
   Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
       Operand(ImmShiftedTag(type).value));
 }
+
+#ifdef ENABLE_WASM_SIMD
+bool MacroAssembler::MustScalarizeShiftSimd128(wasm::SimdOp op) {
+  MOZ_CRASH("NYI - ion porting interface not in use");
+}
+
+bool MacroAssembler::MustMaskShiftCountSimd128(wasm::SimdOp op, int32_t* mask) {
+  MOZ_CRASH("NYI - ion porting interface not in use");
+}
+
+bool MacroAssembler::MustScalarizeShiftSimd128(wasm::SimdOp op, Imm32 imm) {
+  MOZ_CRASH("NYI - ion porting interface not in use");
+}
+#endif
 
 void MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output) {
   ARMRegister dest(output, 32);
@@ -129,7 +147,7 @@ void MacroAssemblerCompat::loadPrivate(const Address& src, Register dest) {
 }
 
 void MacroAssemblerCompat::handleFailureWithHandlerTail(
-    void* handler, Label* profilerExitTail) {
+    Label* profilerExitTail) {
   // Reserve space for exception information.
   int64_t size = (sizeof(ResumeFromException) + 7) & ~7;
   Sub(GetStackPointer64(), GetStackPointer64(), Operand(size));
@@ -140,10 +158,11 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
   Mov(x0, GetStackPointer64());
 
   // Call the handler.
+  using Fn = void (*)(ResumeFromException * rfe);
   asMasm().setupUnalignedABICall(r1);
   asMasm().passABIArg(r0);
-  asMasm().callWithABI(handler, MoveOp::GENERAL,
-                       CheckUnsafeCallWithABI::DontCheckHasExitFrame);
+  asMasm().callWithABI<Fn, HandleException>(
+      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   Label entryFrame;
   Label catch_;
@@ -278,6 +297,10 @@ void MacroAssemblerCompat::profilerEnterFrame(RegisterOrSP framePtr,
            Address(scratch, JitActivation::offsetOfLastProfilingCallSite()));
 }
 
+void MacroAssemblerCompat::profilerExitFrame() {
+  jump(GetJitContext()->runtime->jitRuntime()->getProfilerExitFrameTail());
+}
+
 void MacroAssemblerCompat::breakpoint() {
   // Note, other payloads are possible, but GDB is known to misinterpret them
   // sometimes and iloop on the breakpoint instead of stopping properly.
@@ -313,6 +336,10 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                         AnyRegister outany, Register64 out64) {
   uint32_t offset = access.offset();
   MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
+
+  // Not yet supported: not used by baseline compiler
+  MOZ_ASSERT(!access.isSplatSimd128Load());
+  MOZ_ASSERT(!access.isWidenSimd128Load());
 
   MOZ_ASSERT(ptr_ == ptrScratch_);
 
@@ -360,15 +387,19 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
         Ldr(SelectGPReg(outany, out64), srcAddr);
         break;
       case Scalar::Float32:
+        // LDR does the right thing also for access.isZeroExtendSimd128Load()
         Ldr(SelectFPReg(outany, out64, 32), srcAddr);
         break;
       case Scalar::Float64:
+        // LDR does the right thing also for access.isZeroExtendSimd128Load()
         Ldr(SelectFPReg(outany, out64, 64), srcAddr);
+        break;
+      case Scalar::Simd128:
+        Ldr(SelectFPReg(outany, out64, 128), srcAddr);
         break;
       case Scalar::Uint8Clamped:
       case Scalar::BigInt64:
       case Scalar::BigUint64:
-      case Scalar::Simd128:
       case Scalar::MaxTypedArrayViewType:
         MOZ_CRASH("unexpected array type");
     }
@@ -425,16 +456,205 @@ void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
       case Scalar::Float64:
         Str(SelectFPReg(valany, val64, 64), dstAddr);
         break;
+      case Scalar::Simd128:
+        Str(SelectFPReg(valany, val64, 128), dstAddr);
+        break;
       case Scalar::Uint8Clamped:
       case Scalar::BigInt64:
       case Scalar::BigUint64:
-      case Scalar::Simd128:
       case Scalar::MaxTypedArrayViewType:
         MOZ_CRASH("unexpected array type");
     }
   }
 
   asMasm().memoryBarrierAfter(access.sync());
+}
+
+void MacroAssemblerCompat::compareSimd128Int(Assembler::Condition cond,
+                                             ARMFPRegister dest,
+                                             ARMFPRegister lhs,
+                                             ARMFPRegister rhs) {
+  switch (cond) {
+    case Assembler::Equal:
+      Cmeq(dest, lhs, rhs);
+      break;
+    case Assembler::NotEqual:
+      Cmeq(dest, lhs, rhs);
+      Mvn(lhs, lhs);
+      break;
+    case Assembler::GreaterThan:
+      Cmgt(dest, lhs, rhs);
+      break;
+    case Assembler::GreaterThanOrEqual:
+      Cmge(dest, lhs, rhs);
+      break;
+    case Assembler::LessThan:
+      Cmgt(dest, rhs, lhs);
+      break;
+    case Assembler::LessThanOrEqual:
+      Cmge(dest, rhs, lhs);
+      break;
+    case Assembler::Above:
+      Cmhi(dest, lhs, rhs);
+      break;
+    case Assembler::AboveOrEqual:
+      Cmhs(dest, lhs, rhs);
+      break;
+    case Assembler::Below:
+      Cmhi(dest, rhs, lhs);
+      break;
+    case Assembler::BelowOrEqual:
+      Cmhs(dest, rhs, lhs);
+      break;
+    default:
+      MOZ_CRASH("Unexpected SIMD integer condition");
+  }
+}
+
+void MacroAssemblerCompat::compareSimd128Float(Assembler::Condition cond,
+                                               ARMFPRegister dest,
+                                               ARMFPRegister lhs,
+                                               ARMFPRegister rhs) {
+  switch (cond) {
+    case Assembler::Equal:
+      Fcmeq(dest, lhs, rhs);
+      break;
+    case Assembler::NotEqual:
+      Fcmeq(dest, lhs, rhs);
+      Mvn(lhs, lhs);
+      break;
+    case Assembler::GreaterThan:
+      Fcmgt(dest, lhs, rhs);
+      break;
+    case Assembler::GreaterThanOrEqual:
+      Fcmge(dest, lhs, rhs);
+      break;
+    case Assembler::LessThan:
+      Fcmgt(dest, rhs, lhs);
+      break;
+    case Assembler::LessThanOrEqual:
+      Fcmge(dest, rhs, lhs);
+      break;
+    default:
+      MOZ_CRASH("Unexpected SIMD integer condition");
+  }
+}
+
+void MacroAssemblerCompat::rightShiftInt8x16(Register rhs,
+                                             FloatRegister lhsDest,
+                                             FloatRegister temp,
+                                             bool isUnsigned) {
+  ScratchSimd128Scope scratch_(asMasm());
+  ARMFPRegister shift = Simd8H(scratch_);
+
+  // Compute 8 - (shift & 7) in all 16-bit lanes
+  {
+    vixl::UseScratchRegisterScope temps(this);
+    ARMRegister scratch = temps.AcquireW();
+    And(scratch, ARMRegister(rhs, 32), 7);
+    Neg(scratch, scratch);
+    Add(scratch, scratch, 8);
+    Dup(shift, scratch);
+  }
+
+  // Widen high bytes, shift left variable, then recover top bytes.
+  if (isUnsigned) {
+    Ushll2(Simd8H(temp), Simd16B(lhsDest), 0);
+  } else {
+    Sshll2(Simd8H(temp), Simd16B(lhsDest), 0);
+  }
+  Ushl(Simd8H(temp), Simd8H(temp), shift);
+  Shrn(Simd8B(temp), Simd8H(temp), 8);
+
+  // Ditto low bytes, leaving them in the correct place for the output.
+  if (isUnsigned) {
+    Ushll(Simd8H(lhsDest), Simd8B(lhsDest), 0);
+  } else {
+    Sshll(Simd8H(lhsDest), Simd8B(lhsDest), 0);
+  }
+  Ushl(Simd8H(lhsDest), Simd8H(lhsDest), shift);
+  Shrn(Simd8B(lhsDest), Simd8H(lhsDest), 8);
+
+  // Reassemble: insert the high bytes.
+  Ins(Simd2D(lhsDest), 1, Simd2D(temp), 0);
+}
+
+void MacroAssemblerCompat::rightShiftInt16x8(Register rhs,
+                                             FloatRegister lhsDest,
+                                             FloatRegister temp,
+                                             bool isUnsigned) {
+  ScratchSimd128Scope scratch_(asMasm());
+  ARMFPRegister shift = Simd4S(scratch_);
+
+  // Compute 16 - (shift & 15) in all 32-bit lanes
+  {
+    vixl::UseScratchRegisterScope temps(this);
+    ARMRegister scratch = temps.AcquireW();
+    And(scratch, ARMRegister(rhs, 32), 15);
+    Neg(scratch, scratch);
+    Add(scratch, scratch, 16);
+    Dup(shift, scratch);
+  }
+
+  // Widen high halfwords, shift left variable, then recover top halfwords
+  if (isUnsigned) {
+    Ushll2(Simd4S(temp), Simd8H(lhsDest), 0);
+  } else {
+    Sshll2(Simd4S(temp), Simd8H(lhsDest), 0);
+  }
+  Ushl(Simd4S(temp), Simd4S(temp), shift);
+  Shrn(Simd4H(temp), Simd4S(temp), 16);
+
+  // Ditto low halfwords
+  if (isUnsigned) {
+    Ushll(Simd4S(lhsDest), Simd4H(lhsDest), 0);
+  } else {
+    Sshll(Simd4S(lhsDest), Simd4H(lhsDest), 0);
+  }
+  Ushl(Simd4S(lhsDest), Simd4S(lhsDest), shift);
+  Shrn(Simd4H(lhsDest), Simd4S(lhsDest), 16);
+
+  // Reassemble: insert the high halfwords.
+  Ins(Simd2D(lhsDest), 1, Simd2D(temp), 0);
+}
+
+void MacroAssemblerCompat::rightShiftInt32x4(Register rhs,
+                                             FloatRegister lhsDest,
+                                             FloatRegister temp,
+                                             bool isUnsigned) {
+  ScratchSimd128Scope scratch_(asMasm());
+  ARMFPRegister shift = Simd2D(scratch_);
+
+  // Compute 32 - (shift & 31) in all 64-bit lanes
+  {
+    vixl::UseScratchRegisterScope temps(this);
+    ARMRegister scratch = temps.AcquireX();
+    And(scratch, ARMRegister(rhs, 64), 31);
+    Neg(scratch, scratch);
+    Add(scratch, scratch, 32);
+    Dup(shift, scratch);
+  }
+
+  // Widen high words, shift left variable, then recover top words
+  if (isUnsigned) {
+    Ushll2(Simd2D(temp), Simd4S(lhsDest), 0);
+  } else {
+    Sshll2(Simd2D(temp), Simd4S(lhsDest), 0);
+  }
+  Ushl(Simd2D(temp), Simd2D(temp), shift);
+  Shrn(Simd2S(temp), Simd2D(temp), 32);
+
+  // Ditto high words
+  if (isUnsigned) {
+    Ushll(Simd2D(lhsDest), Simd2S(lhsDest), 0);
+  } else {
+    Sshll(Simd2D(lhsDest), Simd2S(lhsDest), 0);
+  }
+  Ushl(Simd2D(lhsDest), Simd2D(lhsDest), shift);
+  Shrn(Simd2S(lhsDest), Simd2D(lhsDest), 32);
+
+  // Reassemble: insert the high words.
+  Ins(Simd2D(lhsDest), 1, Simd2D(temp), 0);
 }
 
 void MacroAssembler::reserveStack(uint32_t amount) {
@@ -461,12 +681,12 @@ void MacroAssembler::flush() { Assembler::flush(); }
 
 // ===============================================================
 // Stack manipulation functions.
+//
+// These all assume no SIMD registers, because SIMD registers are handled with
+// other routines when that is necessary.  See lengthy comment in
+// Architecture-arm64.h.
 
 void MacroAssembler::PushRegsInMask(LiveRegisterSet set) {
-#ifdef ENABLE_WASM_SIMD
-#  error "Needs more careful logic if SIMD is enabled"
-#endif
-
   for (GeneralRegisterBackwardIterator iter(set.gprs()); iter.more();) {
     vixl::CPURegister src[4] = {vixl::NoCPUReg, vixl::NoCPUReg, vixl::NoCPUReg,
                                 vixl::NoCPUReg};
@@ -495,10 +715,6 @@ void MacroAssembler::PushRegsInMask(LiveRegisterSet set) {
 
 void MacroAssembler::storeRegsInMask(LiveRegisterSet set, Address dest,
                                      Register scratch) {
-#ifdef ENABLE_WASM_SIMD
-#  error "Needs more careful logic if SIMD is enabled"
-#endif
-
   FloatRegisterSet fpuSet(set.fpus().reduceSetForPush());
   unsigned numFpu = fpuSet.size();
   int32_t diffF = fpuSet.getPushSizeInBytes();
@@ -535,10 +751,6 @@ void MacroAssembler::storeRegsInMask(LiveRegisterSet set, Address dest,
 
 void MacroAssembler::PopRegsInMaskIgnore(LiveRegisterSet set,
                                          LiveRegisterSet ignore) {
-#ifdef ENABLE_WASM_SIMD
-#  error "Needs more careful logic if SIMD is enabled"
-#endif
-
   // The offset of the data from the stack pointer.
   uint32_t offset = 0;
 
@@ -597,6 +809,100 @@ void MacroAssembler::PopRegsInMaskIgnore(LiveRegisterSet set,
   freeStack(bytesPushed);
 }
 
+#ifdef ENABLE_WASM_SIMD
+void MacroAssemblerCompat::PushRegsInMaskForWasmStubs(LiveRegisterSet set) {
+  for (GeneralRegisterBackwardIterator iter(set.gprs()); iter.more();) {
+    vixl::CPURegister src[4] = {vixl::NoCPUReg, vixl::NoCPUReg, vixl::NoCPUReg,
+                                vixl::NoCPUReg};
+
+    for (size_t i = 0; i < 4 && iter.more(); i++) {
+      src[i] = ARMRegister(*iter, 64);
+      ++iter;
+      asMasm().adjustFrame(8);
+    }
+    vixl::MacroAssembler::Push(src[0], src[1], src[2], src[3]);
+  }
+
+  // reduceSetForPush returns a set with the unique encodings and kind==0.  For
+  // each encoding in the set, just push the SIMD register.
+  for (FloatRegisterBackwardIterator iter(set.fpus().reduceSetForPush());
+       iter.more();) {
+    vixl::CPURegister src[4] = {vixl::NoCPUReg, vixl::NoCPUReg, vixl::NoCPUReg,
+                                vixl::NoCPUReg};
+
+    for (size_t i = 0; i < 4 && iter.more(); i++) {
+      src[i] = ARMFPRegister(*iter, 128);
+      ++iter;
+      asMasm().adjustFrame(FloatRegister::SizeOfSimd128);
+    }
+    vixl::MacroAssembler::Push(src[0], src[1], src[2], src[3]);
+  }
+}
+
+void MacroAssemblerCompat::PopRegsInMaskForWasmStubs(LiveRegisterSet set,
+                                                     LiveRegisterSet ignore) {
+  // The offset of the data from the stack pointer.
+  uint32_t offset = 0;
+
+  // See comments above
+  for (FloatRegisterIterator iter(set.fpus().reduceSetForPush());
+       iter.more();) {
+    vixl::CPURegister dest[2] = {vixl::NoCPUReg, vixl::NoCPUReg};
+    uint32_t nextOffset = offset;
+
+    for (size_t i = 0; i < 2 && iter.more(); i++) {
+      if (!ignore.has(*iter)) {
+        dest[i] = ARMFPRegister(*iter, 128);
+      }
+      ++iter;
+      nextOffset += FloatRegister::SizeOfSimd128;
+    }
+
+    if (!dest[0].IsNone() && !dest[1].IsNone()) {
+      Ldp(dest[0], dest[1], MemOperand(GetStackPointer64(), offset));
+    } else if (!dest[0].IsNone()) {
+      Ldr(dest[0], MemOperand(GetStackPointer64(), offset));
+    } else if (!dest[1].IsNone()) {
+      Ldr(dest[1], MemOperand(GetStackPointer64(), offset + 16));
+    }
+
+    offset = nextOffset;
+  }
+
+  MOZ_ASSERT(offset ==
+             FloatRegister::GetPushSizeInBytesForWasmStubs(set.fpus()));
+
+  for (GeneralRegisterIterator iter(set.gprs()); iter.more();) {
+    vixl::CPURegister dest[2] = {vixl::NoCPUReg, vixl::NoCPUReg};
+    uint32_t nextOffset = offset;
+
+    for (size_t i = 0; i < 2 && iter.more(); i++) {
+      if (!ignore.has(*iter)) {
+        dest[i] = ARMRegister(*iter, 64);
+      }
+      ++iter;
+      nextOffset += sizeof(uint64_t);
+    }
+
+    if (!dest[0].IsNone() && !dest[1].IsNone()) {
+      Ldp(dest[0], dest[1], MemOperand(GetStackPointer64(), offset));
+    } else if (!dest[0].IsNone()) {
+      Ldr(dest[0], MemOperand(GetStackPointer64(), offset));
+    } else if (!dest[1].IsNone()) {
+      Ldr(dest[1], MemOperand(GetStackPointer64(), offset + sizeof(uint64_t)));
+    }
+
+    offset = nextOffset;
+  }
+
+  size_t bytesPushed =
+      set.gprs().size() * sizeof(uint64_t) +
+      FloatRegister::GetPushSizeInBytesForWasmStubs(set.fpus());
+  MOZ_ASSERT(offset == bytesPushed);
+  asMasm().freeStack(bytesPushed);
+}
+#endif
+
 void MacroAssembler::Push(Register reg) {
   push(reg);
   adjustFrame(sizeof(intptr_t));
@@ -645,7 +951,8 @@ void MacroAssembler::Pop(Register reg) {
 }
 
 void MacroAssembler::Pop(FloatRegister f) {
-  MOZ_CRASH("NYI: Pop(FloatRegister)");
+  loadDouble(Address(getStackPointer(), 0), f);
+  freeStack(sizeof(double));
 }
 
 void MacroAssembler::Pop(const ValueOperand& val) {
@@ -672,8 +979,11 @@ void MacroAssembler::call(ImmWord imm) { call(ImmPtr((void*)imm.value)); }
 
 void MacroAssembler::call(ImmPtr imm) {
   syncStackPtr();
-  movePtr(imm, ip0);
-  Blr(vixl::ip0);
+  vixl::UseScratchRegisterScope temps(this);
+  MOZ_ASSERT(temps.IsAvailable(ScratchReg64));  // ip0
+  temps.Exclude(ScratchReg64);
+  movePtr(imm, ScratchReg64.asUnsized());
+  Blr(ScratchReg64);
 }
 
 CodeOffset MacroAssembler::call(wasm::SymbolicAddress imm) {
@@ -792,7 +1102,7 @@ void MacroAssembler::popReturnAddress() {
 // ABI function calls.
 
 void MacroAssembler::setupUnalignedABICall(Register scratch) {
-  setupABICall();
+  setupNativeABICall();
   dynamicAlignment_ = true;
 
   int64_t alignment = ~(int64_t(ABIStackAlignment) - 1);
@@ -1091,18 +1401,19 @@ CodeOffset MacroAssembler::wasmTrapInstruction() {
   return offs;
 }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Register boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Register boundsCheckLimit,
+                                       Label* label) {
   branch32(cond, index, boundsCheckLimit, label);
   if (JitOptions.spectreIndexMasking) {
     csel(ARMRegister(index, 32), vixl::wzr, ARMRegister(index, 32), cond);
   }
 }
 
-void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
-                                     Address boundsCheckLimit, Label* label) {
+void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
+                                       Address boundsCheckLimit, Label* label) {
   MOZ_ASSERT(boundsCheckLimit.offset ==
-             offsetof(wasm::TlsData, boundsCheckLimit));
+             offsetof(wasm::TlsData, boundsCheckLimit32));
 
   branch32(cond, index, boundsCheckLimit, label);
   if (JitOptions.spectreIndexMasking) {
@@ -2310,6 +2621,59 @@ void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
   }
 
   bind(&done);
+}
+
+void MacroAssembler::nearbyIntDouble(RoundingMode mode, FloatRegister src,
+                                     FloatRegister dest) {
+  switch (mode) {
+    case RoundingMode::Up:
+      frintp(ARMFPRegister(dest, 64), ARMFPRegister(src, 64));
+      return;
+    case RoundingMode::Down:
+      frintm(ARMFPRegister(dest, 64), ARMFPRegister(src, 64));
+      return;
+    case RoundingMode::NearestTiesToEven:
+      frintn(ARMFPRegister(dest, 64), ARMFPRegister(src, 64));
+      return;
+    case RoundingMode::TowardsZero:
+      frintz(ARMFPRegister(dest, 64), ARMFPRegister(src, 64));
+      return;
+  }
+  MOZ_CRASH("unexpected mode");
+}
+
+void MacroAssembler::nearbyIntFloat32(RoundingMode mode, FloatRegister src,
+                                      FloatRegister dest) {
+  switch (mode) {
+    case RoundingMode::Up:
+      frintp(ARMFPRegister(dest, 32), ARMFPRegister(src, 32));
+      return;
+    case RoundingMode::Down:
+      frintm(ARMFPRegister(dest, 32), ARMFPRegister(src, 32));
+      return;
+    case RoundingMode::NearestTiesToEven:
+      frintn(ARMFPRegister(dest, 32), ARMFPRegister(src, 32));
+      return;
+    case RoundingMode::TowardsZero:
+      frintz(ARMFPRegister(dest, 32), ARMFPRegister(src, 32));
+      return;
+  }
+  MOZ_CRASH("unexpected mode");
+}
+
+void MacroAssembler::copySignDouble(FloatRegister lhs, FloatRegister rhs,
+                                    FloatRegister output) {
+  ScratchDoubleScope scratch(*this);
+
+  // Double with only the sign bit set (= negative zero).
+  loadConstantDouble(0, scratch);
+  negateDouble(scratch);
+
+  moveDouble(lhs, output);
+
+  bit(ARMFPRegister(output.encoding(), vixl::VectorFormat::kFormat8B),
+      ARMFPRegister(rhs.encoding(), vixl::VectorFormat::kFormat8B),
+      ARMFPRegister(scratch.encoding(), vixl::VectorFormat::kFormat8B));
 }
 
 //}}} check_macroassembler_style

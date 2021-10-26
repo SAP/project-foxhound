@@ -58,8 +58,7 @@ ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Link)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLLinkElement::HTMLLinkElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -491,7 +490,7 @@ JSObject* HTMLLinkElement::WrapNode(JSContext* aCx,
 }
 
 void HTMLLinkElement::GetAs(nsAString& aResult) {
-  GetEnumAttr(nsGkAtoms::as, EmptyCString().get(), aResult);
+  GetEnumAttr(nsGkAtoms::as, "", aResult);
 }
 
 static const nsAttrValue::EnumTable kAsAttributeTable[] = {
@@ -534,7 +533,7 @@ nsContentPolicyType HTMLLinkElement::AsValueToContentPolicy(
     case DESTINATION_STYLE:
       return nsIContentPolicy::TYPE_STYLESHEET;
     case DESTINATION_FETCH:
-      return nsIContentPolicy::TYPE_OTHER;
+      return nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD;
   }
   return nsIContentPolicy::TYPE_INVALID;
 }
@@ -698,8 +697,6 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     nsAutoString notUsed;
     if (aOldValue) {
       aOldValue->ToString(oldType);
-    } else {
-      oldType = EmptyString();
     }
     nsAutoString oldMimeType;
     nsContentUtils::SplitMimeType(oldType, oldMimeType, notUsed);
@@ -713,8 +710,6 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     nsAutoString oldMedia;
     if (aOldValue) {
       aOldValue->ToString(oldMedia);
-    } else {
-      oldMedia = EmptyString();
     }
     if (CheckPreloadAttrs(asAttr, mimeType, oldMedia, OwnerDoc())) {
       oldPolicyType = asPolicyType;
@@ -811,7 +806,7 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
   nsString type = nsString(aType);
   ToLowerCase(type);
 
-  if (policyType == nsIContentPolicy::TYPE_OTHER) {
+  if (policyType == nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD) {
     return true;
   }
   if (policyType == nsIContentPolicy::TYPE_MEDIA) {
@@ -858,5 +853,4 @@ bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
   return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

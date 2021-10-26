@@ -2023,8 +2023,6 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::Invalid |
             NonTSPseudoClass::MozUIValid |
             NonTSPseudoClass::MozBroken |
-            NonTSPseudoClass::MozUserDisabled |
-            NonTSPseudoClass::MozSuppressed |
             NonTSPseudoClass::MozLoading |
             NonTSPseudoClass::MozHandlerBlocked |
             NonTSPseudoClass::MozHandlerDisabled |
@@ -2057,6 +2055,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozDirAttrLikeAuto |
             NonTSPseudoClass::MozAutofill |
             NonTSPseudoClass::MozModalDialog |
+            NonTSPseudoClass::MozTopmostModalDialog |
             NonTSPseudoClass::Active |
             NonTSPseudoClass::Hover |
             NonTSPseudoClass::MozAutofillPreview => {
@@ -2102,10 +2101,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 }
                 true
             },
-            NonTSPseudoClass::MozNativeAnonymous |
-            NonTSPseudoClass::MozNativeAnonymousNoSpecificity => {
-                self.is_in_native_anonymous_subtree()
-            },
+            NonTSPseudoClass::MozNativeAnonymous => self.is_in_native_anonymous_subtree(),
             NonTSPseudoClass::MozUseShadowTreeRoot => self.is_root_of_use_element_shadow_tree(),
             NonTSPseudoClass::MozTableBorderNonzero => unsafe {
                 bindings::Gecko_IsTableBorderNonzero(self.0)

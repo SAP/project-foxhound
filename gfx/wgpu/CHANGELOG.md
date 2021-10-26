@@ -1,6 +1,58 @@
 # Change Log
 
-## v0.5 (06-04-2020)
+## v0.6 (2020-08-17)
+  - Crates:
+    - C API is moved to [another repository](https://github.com/gfx-rs/wgpu-native)
+    - `player`: standalone API replayer and tester
+  - Features:
+    - Proper error handling with all functions returning `Result`
+    - Graceful handling of "error" objects
+    - API tracing [infrastructure](http://kvark.github.io/wgpu/debug/test/ron/2020/07/18/wgpu-api-tracing.html)
+    - uploading data with `write_buffer`/`write_texture` queue operations
+    - reusable render bundles
+    - read-only depth/stencil attachments
+    - bind group layout deduplication
+    - Cows, cows everywhere
+    - Web+Native features:
+      - Depth clamping (feature)
+      - BC texture compression
+    - Native-only features:
+      - mappable primary buffers
+      - texture array bindings
+      - push constants
+      - multi-draw indirect
+  - Validation:
+    - all transfer operations
+    - all resource creation
+    - bind group matching to the layout
+    - experimental shader interface matching with Naga
+
+## v0.5.6 (2020-07-09)
+  - add debug markers support
+
+## v0.5.5 (2020-05-20)
+  - fix destruction of adapters, swap chains, and bind group layouts
+  - fix command pool leak with temporary threads
+  - improve assertion messages
+  - implement `From<TextureFormat>` for `TextureComponentType`
+
+## v0.5.4 (2020-04-24)
+  - fix memory management of staging buffers
+
+## v0.5.3 (2020-04-18)
+  - fix reading access to storage textures
+  - another fix to layout transitions for swapchain images
+
+## v0.5.2 (2020-04-15)
+  - fix read-only storage flags
+  - fix pipeline layout life time
+  - improve various assert messages
+
+## v0.5.1 (2020-04-10)
+  - fix tracking of swapchain images that are used multiple times in a command buffer
+  - fix tracking of initial usage of a resource across a command buffer
+
+## v0.5 (2020-04-06)
   - Crates:
     - `wgpu-types`: common types between native and web targets
     - `wgpu-core`: internal API for the native and remote wrappers
@@ -8,6 +60,7 @@
     - based on gfx-hal-0.5
     - moved from Rendy to the new `gfx-memory` and `gfx-descriptor` crates
     - passes are now recorded on the client side. The user is also responsible to keep all resources referenced in the pass up until it ends recording.
+    - coordinate system is changed to have Y up in the rendering space
     - revised GPU lifetime tracking of all resources
     - revised usage tracking logic
     - all IDs are now non-zero
@@ -20,17 +73,17 @@
     - unmapping dropped buffers
     - better error messages on misused swapchain frames
 
-## v0.4.3 (20-01-2020)
+## v0.4.3 (2020-01-20)
   - improved swap chain error handling
 
-## v0.4.2 (15-12-2019)
+## v0.4.2 (2019-12-15)
   - fixed render pass transitions
 
-## v0.4.1 (28-11-2019)
+## v0.4.1 (2019-11-28)
   - fixed depth/stencil transitions
   - fixed dynamic offset iteration
 
-## v0.4 (03-11-2019)
+## v0.4 (2019-11-03)
   - Platforms: removed OpenGL/WebGL support temporarily
   - Features:
     - based on gfx-hal-0.4 with the new swapchain model
@@ -40,13 +93,13 @@
   - Validation:
     - buffer and texture usage
 
-## v0.3.3 (22-08-2019)
+## v0.3.3 (2019-08-22)
   - fixed instance creation on Windows
 
-## v0.3.1 (21-08-2019)
+## v0.3.1 (2019-08-21)
   - fixed pipeline barriers that aren't transitions
 
-## v0.3 (21-08-2019)
+## v0.3 (2019-08-21)
   - Platforms: experimental OpenGL/WebGL
   - Crates:
     - Rust API is moved out to [another repository](https://github.com/gfx-rs/wgpu-rs)
@@ -66,23 +119,23 @@
     - bind group buffer ranges
     - required stencil reference, blend color
 
-## v0.2.6 (04-04-2019)
+## v0.2.6 (2019-04-04)
   - fixed frame acquisition GPU waits
 
-## v0.2.5 (31-03-2019)
+## v0.2.5 (2019-03-31)
   - fixed submission tracking
   - added support for blend colors
   - fixed bind group compatibility at the gfx-hal level
   - validating the bind groups and blend colors
 
-## v0.2.3 (20-03-2019)
+## v0.2.3 (2019-03-20)
   - fixed vertex format mapping
   - fixed building with "empty" backend on Windows
   - bumped the default descriptor pool size
   - fixed host mapping alignments
   - validating the uniform buffer offset
 
-## v0.2 (06-03-2019)
+## v0.2 (2019-03-06)
   - Platforms: iOS/Metal, D3D11
   - Crates:
     - `wgpu-remote`: remoting layer for the cross-process boundary
@@ -101,7 +154,7 @@
   - Fixes
     - fixed resource destruction
 
-## v0.1 (24-01-2019)
+## v0.1 (2019-01-24)
   - Platforms: Linux/Vulkan, Windows/Vulkan, D3D12, macOS/Metal
   - Crates:
     - `wgpu-native`: C API implementation of WebGPU, based on gfx-hal

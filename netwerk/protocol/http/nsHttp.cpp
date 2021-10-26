@@ -14,7 +14,9 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsCRT.h"
+#include "nsContentUtils.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpResponseHead.h"
 #include "nsHttpHandler.h"
@@ -27,8 +29,9 @@
 namespace mozilla {
 namespace net {
 
-const uint32_t kHttp3VersionCount = 3;
-const nsCString kHttp3Versions[] = {"h3-27"_ns, "h3-28"_ns, "h3-29"_ns};
+const uint32_t kHttp3VersionCount = 4;
+const nsCString kHttp3Versions[] = {"h3-27"_ns, "h3-28"_ns, "h3-29"_ns,
+                                    "h3-30"_ns};
 
 // define storage for all atoms
 namespace nsHttp {
@@ -998,6 +1001,49 @@ nsresult HttpProxyResponseToErrorCode(uint32_t aStatusCode) {
   }
 
   return rv;
+}
+
+Tuple<nsCString, bool> SelectAlpnFromAlpnList(const nsACString& aAlpnList,
+                                              bool aNoHttp2, bool aNoHttp3) {
+  nsCString h3Value;
+  nsCString h2Value;
+  nsCString h1Value;
+  // aAlpnList is a list of alpn-id and use comma as a delimiter.
+  nsCCharSeparatedTokenizer tokenizer(aAlpnList, ',');
+  nsAutoCString npnStr;
+  while (tokenizer.hasMoreTokens()) {
+    const nsACString& npnToken(tokenizer.nextToken());
+    bool isHttp3 = gHttpHandler->IsHttp3VersionSupported(npnToken);
+    if (isHttp3 && h3Value.IsEmpty()) {
+      h3Value.Assign(npnToken);
+    }
+
+    uint32_t spdyIndex;
+    SpdyInformation* spdyInfo = gHttpHandler->SpdyInfo();
+    if (NS_SUCCEEDED(spdyInfo->GetNPNIndex(npnToken, &spdyIndex)) &&
+        spdyInfo->ProtocolEnabled(spdyIndex) && h2Value.IsEmpty()) {
+      h2Value.Assign(npnToken);
+    }
+
+    if (npnToken.LowerCaseEqualsASCII("http/1.1") && h1Value.IsEmpty()) {
+      h1Value.Assign(npnToken);
+    }
+  }
+
+  if (!h3Value.IsEmpty() && gHttpHandler->IsHttp3Enabled() && !aNoHttp3) {
+    return MakeTuple(h3Value, true);
+  }
+
+  if (!h2Value.IsEmpty() && gHttpHandler->IsSpdyEnabled() && !aNoHttp2) {
+    return MakeTuple(h2Value, false);
+  }
+
+  if (!h1Value.IsEmpty()) {
+    return MakeTuple(h1Value, false);
+  }
+
+  // If we are here, there is no supported alpn can be used.
+  return MakeTuple(EmptyCString(), false);
 }
 
 }  // namespace net

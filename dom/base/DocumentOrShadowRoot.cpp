@@ -21,8 +21,7 @@
 #include "nsLayoutUtils.h"
 #include "nsWindowSizes.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 DocumentOrShadowRoot::DocumentOrShadowRoot(ShadowRoot* aShadowRoot)
     : mAsNode(aShadowRoot), mKind(Kind::ShadowRoot) {
@@ -172,7 +171,7 @@ void DocumentOrShadowRoot::SetAdoptedStyleSheets(
   mAdoptedStyleSheets.SetCapacity(aAdoptedStyleSheets.Length());
 
   // Only add sheets that are not already in the common prefix.
-  for (const auto& sheet : MakeSpan(aAdoptedStyleSheets).From(commonPrefix)) {
+  for (const auto& sheet : Span(aAdoptedStyleSheets).From(commonPrefix)) {
     if (MOZ_UNLIKELY(!set.EnsureInserted(sheet))) {
       // The idea is that this case is rare, so we pay the price of removing the
       // old sheet from the styles and append it later rather than the other way
@@ -848,5 +847,4 @@ void DocumentOrShadowRoot::Unlink(DocumentOrShadowRoot* tmp) {
   tmp->mRadioGroups.Clear();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

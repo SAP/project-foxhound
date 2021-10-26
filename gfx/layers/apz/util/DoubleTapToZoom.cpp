@@ -16,6 +16,7 @@
 #include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
+#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleConsts.h"
 
@@ -126,9 +127,9 @@ CSSRect CalculateRectToZoomTo(const RefPtr<dom::Document>& aRootContentDocument,
 
   FrameMetrics metrics =
       nsLayoutUtils::CalculateBasicFrameMetrics(rootScrollFrame);
-  CSSRect compositedArea(
-      CSSPoint::FromAppUnits(presShell->GetVisualViewportOffset()),
-      metrics.CalculateCompositedSizeInCssPixels());
+  CSSPoint visualScrollOffset = metrics.GetVisualScrollOffset();
+  CSSRect compositedArea(visualScrollOffset,
+                         metrics.CalculateCompositedSizeInCssPixels());
   const CSSCoord margin = 15;
   CSSRect rect =
       nsLayoutUtils::GetBoundingContentRect(element, rootScrollFrame);
@@ -174,7 +175,7 @@ CSSRect CalculateRectToZoomTo(const RefPtr<dom::Document>& aRootContentDocument,
   // upon. This prevents flying to the top of the page when double-tapping
   // to zoom in (bug 761721). The 1.2 multiplier is just a little fuzz to
   // compensate for 'rect' including horizontal margins but not vertical ones.
-  CSSCoord cssTapY = metrics.GetScrollOffset().y + aPoint.y;
+  CSSCoord cssTapY = visualScrollOffset.y + aPoint.y;
   if ((rect.Height() > rounded.Height()) &&
       (cssTapY > rounded.Y() + (rounded.Height() * 1.2))) {
     rounded.MoveToY(cssTapY - (rounded.Height() / 2));

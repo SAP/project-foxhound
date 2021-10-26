@@ -51,6 +51,10 @@
 #endif
 #include "VsyncSource.h"
 
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/AndroidHardwareBuffer.h"
+#endif
+
 using mozilla::Unused;
 using mozilla::gfx::GPUProcessManager;
 using mozilla::layers::LayerTransactionChild;
@@ -812,6 +816,12 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvParentAsyncMessages(
         NotifyNotUsed(op.TextureId(), op.fwdTransactionId());
         break;
       }
+      case AsyncParentMessageData::TOpDeliverReleaseFence: {
+        // Release fences are delivered via ImageBridge.
+        // Since some TextureClients are recycled without recycle callback.
+        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+        break;
+      }
       default:
         NS_ERROR("unknown AsyncParentMessageData type");
         return IPC_FAIL_NO_REASON(this);
@@ -868,6 +878,15 @@ void CompositorBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     return;
   }
 
+#ifdef MOZ_WIDGET_ANDROID
+  auto bufferId = aClient->GetInternalData()->GetBufferId();
+  if (bufferId.isSome()) {
+    MOZ_ASSERT(aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END);
+    AndroidHardwareBufferManager::Get()->HoldUntilNotifyNotUsed(
+        bufferId.ref(), GetFwdTransactionId(), /* aUsesImageBridge */ false);
+  }
+#endif
+
   bool waitNotifyNotUsed =
       aClient->GetFlags() & TextureFlags::RECYCLE ||
       aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END;
@@ -909,10 +928,8 @@ TextureClientPool* CompositorBridgeChild::GetTexturePool(
   }
 
   mTexturePools.AppendElement(new TextureClientPool(
-      aAllocator->GetCompositorBackendType(),
-      aAllocator->SupportsTextureDirectMapping(),
-      aAllocator->GetMaxTextureSize(), aFormat, gfx::gfxVars::TileSize(),
-      aFlags, StaticPrefs::layers_tile_pool_shrink_timeout_AtStartup(),
+      aAllocator, aFormat, gfx::gfxVars::TileSize(), aFlags,
+      StaticPrefs::layers_tile_pool_shrink_timeout_AtStartup(),
       StaticPrefs::layers_tile_pool_clear_timeout_AtStartup(),
       StaticPrefs::layers_tile_initial_pool_size_AtStartup(),
       StaticPrefs::layers_tile_pool_unused_size_AtStartup(), this));

@@ -115,12 +115,15 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::StoreUnboxedScalar:
     case MDefinition::Opcode::StoreDataViewElement:
     case MDefinition::Opcode::SetInitializedLength:
+    case MDefinition::Opcode::AddAndStoreSlot:
+    case MDefinition::Opcode::AllocateAndStoreSlot:
     case MDefinition::Opcode::ArrayLength:
     case MDefinition::Opcode::SetArrayLength:
     case MDefinition::Opcode::Slots:
     case MDefinition::Opcode::Elements:
     case MDefinition::Opcode::MaybeCopyElementsForWrite:
     case MDefinition::Opcode::MaybeToDoubleElement:
+    case MDefinition::Opcode::ArrayBufferByteLengthInt32:
     case MDefinition::Opcode::ArrayBufferViewLength:
     case MDefinition::Opcode::ArrayBufferViewByteOffset:
     case MDefinition::Opcode::ArrayPopShift:
@@ -150,21 +153,45 @@ static inline const MDefinition* GetObject(const MDefinition* ins) {
     case MDefinition::Opcode::HomeObjectSuperBase:
     case MDefinition::Opcode::ObjectStaticProto:
     case MDefinition::Opcode::GuardNoDenseElements:
+    case MDefinition::Opcode::GuardElementNotHole:
+    case MDefinition::Opcode::GuardArrayIsPacked:
+    case MDefinition::Opcode::GuardFunctionFlags:
+    case MDefinition::Opcode::GuardFunctionIsNonBuiltinCtor:
+    case MDefinition::Opcode::GuardFunctionKind:
+    case MDefinition::Opcode::ArgumentsObjectLength:
+    case MDefinition::Opcode::FunctionLength:
+    case MDefinition::Opcode::FunctionName:
+    case MDefinition::Opcode::GuardArgumentsObjectNotOverriddenIterator:
       object = ins->getOperand(0);
       break;
     case MDefinition::Opcode::GetPropertyCache:
     case MDefinition::Opcode::CallGetProperty:
     case MDefinition::Opcode::GetDOMProperty:
     case MDefinition::Opcode::GetDOMMember:
+    case MDefinition::Opcode::LoadDOMExpandoValue:
+    case MDefinition::Opcode::LoadDOMExpandoValueGuardGeneration:
+    case MDefinition::Opcode::LoadDOMExpandoValueIgnoreGeneration:
+    case MDefinition::Opcode::GuardDOMExpandoMissingOrGuardShape:
     case MDefinition::Opcode::Call:
     case MDefinition::Opcode::Throw:
     case MDefinition::Opcode::ThrowRuntimeLexicalError:
     case MDefinition::Opcode::GetArgumentsObjectArg:
     case MDefinition::Opcode::SetArgumentsObjectArg:
+    case MDefinition::Opcode::LoadArgumentsObjectArg:
     case MDefinition::Opcode::CreateThis:
+    case MDefinition::Opcode::NewArrayDynamicLength:
+    case MDefinition::Opcode::NewTypedArrayDynamicLength:
+    case MDefinition::Opcode::CheckObjCoercible:
+    case MDefinition::Opcode::ToObject:
+    case MDefinition::Opcode::MegamorphicLoadSlot:
+    case MDefinition::Opcode::MegamorphicLoadSlotByValue:
+    case MDefinition::Opcode::MegamorphicStoreSlot:
+    case MDefinition::Opcode::MegamorphicHasProp:
     case MDefinition::Opcode::CompareExchangeTypedArrayElement:
     case MDefinition::Opcode::AtomicExchangeTypedArrayElement:
     case MDefinition::Opcode::AtomicTypedArrayElementBinop:
+    case MDefinition::Opcode::LoadWrapperTarget:
+    case MDefinition::Opcode::GuardHasGetterSetter:
     case MDefinition::Opcode::AsmJSLoadHeap:
     case MDefinition::Opcode::AsmJSStoreHeap:
     case MDefinition::Opcode::WasmHeapBase:

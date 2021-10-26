@@ -11,13 +11,14 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Span.h"  // for Span
 #include "mozilla/Variant.h"
 
 #include <algorithm>
 #include <type_traits>
 
 #include "gc/Rooting.h"
-#include "jit/JSJitFrameIter.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
@@ -213,6 +214,9 @@ class AbstractFramePtr {
 
   inline bool isFunctionFrame() const;
   inline bool isGeneratorFrame() const;
+
+  inline bool saveGeneratorSlots(JSContext* cx, unsigned nslots,
+                                 ArrayObject* dest) const;
 
   inline unsigned numActualArgs() const;
   inline unsigned numFormalArgs() const;
@@ -642,6 +646,14 @@ class InterpreterFrame {
     markReturnValue();
   }
 
+  // Copy values from this frame into a private Array, owned by the
+  // GeneratorObject, for suspending.
+  MOZ_MUST_USE inline bool saveGeneratorSlots(JSContext* cx, unsigned nslots,
+                                              ArrayObject* dest) const;
+
+  // Copy values from the Array into this stack frame, for resuming.
+  inline void restoreGeneratorSlots(ArrayObject* src);
+
   void resumeGeneratorFrame(JSObject* envChain) {
     MOZ_ASSERT(script()->isGenerator() || script()->isAsync());
     MOZ_ASSERT(isFunctionFrame());
@@ -887,7 +899,8 @@ class GenericArgsBase
 template <MaybeConstruct Construct, size_t N>
 class FixedArgsBase
     : public std::conditional_t<Construct, AnyConstructArgs, AnyInvokeArgs> {
-  static_assert(N <= ARGS_LENGTH_MAX, "o/~ too many args o/~");
+  // Add +1 here to avoid noisy warning on gcc when N=0 (0 <= unsigned).
+  static_assert(N + 1 <= ARGS_LENGTH_MAX + 1, "o/~ too many args o/~");
 
  protected:
   JS::RootedValueArray<2 + N + uint32_t(Construct)> v_;

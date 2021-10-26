@@ -12,7 +12,19 @@ def get_element_property(session, element_id, prop):
             prop=prop))
 
 
-def test_no_browsing_context(session, closed_window):
+def test_no_top_browsing_context(session, closed_window):
+    original_handle, element = closed_window
+    response = get_element_property(session, element.id, "value")
+    assert_error(response, "no such window")
+    response = get_element_property(session, "foo", "id")
+    assert_error(response, "no such window")
+
+    session.window_handle = original_handle
+    response = get_element_property(session, element.id, "value")
+    assert_error(response, "no such element")
+
+
+def test_no_browsing_context(session, closed_frame):
     response = get_element_property(session, "foo", "id")
     assert_error(response, "no such window")
 
@@ -101,7 +113,11 @@ def test_mutated_element(session):
     session.url = inline("<input type=checkbox>")
     element = session.find.css("input", all=False)
     element.click()
-    assert session.execute_script("return arguments[0].hasAttribute('checked')", args=(element,)) is False
+
+    checked = session.execute_script("""
+        return arguments[0].hasAttribute('checked')
+        """, args=(element,))
+    assert checked is False
 
     response = get_element_property(session, element.id, "checked")
     assert_success(response, True)

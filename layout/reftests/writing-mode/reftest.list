@@ -66,16 +66,11 @@ fuzzy(0-116,0-94) fuzzy-if(winWidget,0-135,0-124) == 1115916-1-vertical-metrics.
 # These don't like padding on textareas by default different to the UA stylesheet ones.
 # FIXME(emilio): Maybe these should be rewritten to use -moz-appearance: none?
 skip-if(Android||winWidget||!nativeThemePref) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1a-ref.html
-skip-if(!(Android&&nativeThemePref)) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1b-ref.html
 skip-if(!winWidget) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1c-ref.html
 
 fuzzy-if(Android,0-1,0-18) == ua-style-sheet-checkbox-radio-1.html ua-style-sheet-checkbox-radio-1-ref.html
 # Android uses different margins for buttons compared to the ref.
 skip-if(Android) fuzzy-if(skiaContent&&!Android,0-2,0-6) == ua-style-sheet-button-1.html ua-style-sheet-button-1a-ref.html
-
-# These don't like padding on buttons by default different to the UA stylesheet ones.
-# FIXME(emilio): Maybe these should be rewritten to use -moz-appearance: none?
-skip-if(!(Android&&nativeThemePref)) == ua-style-sheet-button-1.html ua-style-sheet-button-1b-ref.html
 
 # Android uses different margins for buttons compared to the ref.
 skip-if(Android) == ua-style-sheet-input-color-1.html ua-style-sheet-input-color-1-ref.html
@@ -157,8 +152,8 @@ random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 1188061-2-nsChangeHint_U
 # tests involving sideways-lr mode
 random-if(gtkWidget) == 1193519-sideways-lr-1.html 1193519-sideways-lr-1-ref.html
 random-if(gtkWidget) == 1193519-sideways-lr-2.html 1193519-sideways-lr-2-ref.html
-fuzzy-if(winWidget,0-3,0-84) fails-if(webrender&&winWidget) == 1193519-sideways-lr-3.html 1193519-sideways-lr-3-ref.html
-fuzzy-if(winWidget,0-3,0-112) fails-if(webrender&&!cocoaWidget) fails-if(Android) random-if(gtkWidget) == 1193519-sideways-lr-4.html 1193519-sideways-lr-4-ref.html # see bug 1366692. Rounding error with WR enabled, and on Android.
+fuzzy-if(winWidget,0-3,0-84) fails-if(webrender&&winWidget&&!swgl) == 1193519-sideways-lr-3.html 1193519-sideways-lr-3-ref.html
+fuzzy-if(winWidget,0-3,0-112) fails-if(webrender&&!swgl&&!cocoaWidget) fails-if(Android) random-if(gtkWidget) == 1193519-sideways-lr-4.html 1193519-sideways-lr-4-ref.html # see bug 1366692. Rounding error with WR enabled, and on Android.
 fuzzy-if(gtkWidget,0-255,0-12) fuzzy-if(cocoaWidget,0-65,0-69) fuzzy-if(geckoview&&webrender,0-255,0-13) == 1193519-sideways-lr-decoration-1.html 1193519-sideways-lr-decoration-1-ref.html
 
 == 1196887-1-computed-display-inline-block.html 1196887-1-computed-display-inline-block-ref.html
@@ -189,6 +184,7 @@ fuzzy-if(Android,0-54,0-852) == 1302389-scrolled-rect-2d.html 1302389-scrolled-r
 
 == 1361631-mongolian-upright-1.html 1361631-mongolian-upright-1-ref.html
 == 1395926-vertical-upright-gpos-1.html 1395926-vertical-upright-gpos-1-ref.html
+skip-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 1673510-1.html 1673510-1-ref.html # test font doesn't load reliably on win7
 
 # Suite of tests from Gérard Talbot in bug 1079151
 # Frequent Windows 7 load failed: timed out waiting for test to complete (waiting for onload scripts to complete), bug 1167155 and friends

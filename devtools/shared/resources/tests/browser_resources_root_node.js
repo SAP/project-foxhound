@@ -10,9 +10,6 @@ const {
 } = require("devtools/shared/resources/resource-watcher");
 
 /**
- * This first test is a simplified version of
- * devtools/server/tests/browser/browser_inspector_walker_watch_root_node.js
- *
  * The original test still asserts some scenarios using several watchRootNode
  * call sites, which is not something we intend to support at the moment in the
  * resource watcher.
@@ -24,17 +21,15 @@ add_task(async function() {
   // Open a test tab
   const tab = await addTab("data:text/html,Root Node tests");
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   const browser = gBrowser.selectedBrowser;
 
   info("Call watchResources([ROOT_NODE], ...)");
   let onAvailableCounter = 0;
-  const onAvailable = () => onAvailableCounter++;
+  const onAvailable = resources => (onAvailableCounter += resources.length);
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.ROOT_NODE], {
     onAvailable,
   });
@@ -70,7 +65,7 @@ add_task(async function() {
   );
 
   // Cleanup
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 });
 
@@ -80,27 +75,25 @@ add_task(async function() {
 add_task(async function testRootNodeFrontIsCorrect() {
   const tab = await addTab("data:text/html,<div id=div1>");
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
   const browser = gBrowser.selectedBrowser;
 
   info("Call watchResources([ROOT_NODE], ...)");
 
   let rootNodeResolve;
   let rootNodePromise = new Promise(r => (rootNodeResolve = r));
-  const onAvailable = rootNodeFront => rootNodeResolve(rootNodeFront);
+  const onAvailable = ([rootNodeFront]) => rootNodeResolve(rootNodeFront);
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.ROOT_NODE], {
     onAvailable,
   });
 
   info("Wait until onAvailable has been called");
-  const { resource: root1, resourceType } = await rootNodePromise;
+  const root1 = await rootNodePromise;
   ok(!!root1, "onAvailable has been called with a valid argument");
   is(
-    resourceType,
+    root1.resourceType,
     ResourceWatcher.TYPES.ROOT_NODE,
     "The resource has the expected type"
   );
@@ -113,7 +106,7 @@ add_task(async function testRootNodeFrontIsCorrect() {
   rootNodePromise = new Promise(r => (rootNodeResolve = r));
   browser.reload();
 
-  const { resource: root2 } = await rootNodePromise;
+  const root2 = await rootNodePromise;
   ok(
     root1 !== root2,
     "onAvailable has been called with a different node front after reload"
@@ -122,7 +115,7 @@ add_task(async function testRootNodeFrontIsCorrect() {
   info("Navigate to another URL");
   rootNodePromise = new Promise(r => (rootNodeResolve = r));
   BrowserTestUtils.loadURI(browser, `data:text/html,<div id=div3>`);
-  const { resource: root3 } = await rootNodePromise;
+  const root3 = await rootNodePromise;
   info("Check we can query an expected node under the retrieved root");
   const div3 = await root3.walkerFront.querySelector(root3, "div");
   is(div3.getAttribute("id"), "div3", "Correct root node retrieved");
@@ -131,6 +124,6 @@ add_task(async function testRootNodeFrontIsCorrect() {
   resourceWatcher.unwatchResources([ResourceWatcher.TYPES.ROOT_NODE], {
     onAvailable,
   });
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 });

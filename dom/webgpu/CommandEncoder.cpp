@@ -18,56 +18,74 @@ namespace webgpu {
 GPU_IMPL_CYCLE_COLLECTION(CommandEncoder, mParent, mBridge)
 GPU_IMPL_JS_WRAP(CommandEncoder)
 
+void CommandEncoder::ConvertTextureDataLayoutToFFI(
+    const dom::GPUTextureDataLayout& aLayout,
+    ffi::WGPUTextureDataLayout* aLayoutFFI) {
+  *aLayoutFFI = {};
+  aLayoutFFI->offset = aLayout.mOffset;
+  aLayoutFFI->bytes_per_row = aLayout.mBytesPerRow;
+  aLayoutFFI->rows_per_image = aLayout.mRowsPerImage;
+}
+
+void CommandEncoder::ConvertTextureCopyViewToFFI(
+    const dom::GPUTextureCopyView& aView, ffi::WGPUTextureCopyView* aViewFFI) {
+  *aViewFFI = {};
+  aViewFFI->texture = aView.mTexture->mId;
+  aViewFFI->mip_level = aView.mMipLevel;
+  if (aView.mOrigin.WasPassed()) {
+    const auto& origin = aView.mOrigin.Value();
+    if (origin.IsRangeEnforcedUnsignedLongSequence()) {
+      const auto& seq = origin.GetAsRangeEnforcedUnsignedLongSequence();
+      aViewFFI->origin.x = seq.Length() > 0 ? seq[0] : 0;
+      aViewFFI->origin.y = seq.Length() > 1 ? seq[1] : 0;
+      aViewFFI->origin.z = seq.Length() > 2 ? seq[2] : 0;
+    } else if (origin.IsGPUOrigin3DDict()) {
+      const auto& dict = origin.GetAsGPUOrigin3DDict();
+      aViewFFI->origin.x = dict.mX;
+      aViewFFI->origin.y = dict.mY;
+      aViewFFI->origin.z = dict.mZ;
+    } else {
+      MOZ_CRASH("Unexpected origin type");
+    }
+  }
+}
+
+void CommandEncoder::ConvertExtent3DToFFI(const dom::GPUExtent3D& aExtent,
+                                          ffi::WGPUExtent3d* aExtentFFI) {
+  *aExtentFFI = {};
+  if (aExtent.IsRangeEnforcedUnsignedLongSequence()) {
+    const auto& seq = aExtent.GetAsRangeEnforcedUnsignedLongSequence();
+    aExtentFFI->width = seq.Length() > 0 ? seq[0] : 0;
+    aExtentFFI->height = seq.Length() > 1 ? seq[1] : 0;
+    aExtentFFI->depth = seq.Length() > 2 ? seq[2] : 0;
+  } else if (aExtent.IsGPUExtent3DDict()) {
+    const auto& dict = aExtent.GetAsGPUExtent3DDict();
+    aExtentFFI->width = dict.mWidth;
+    aExtentFFI->height = dict.mHeight;
+    aExtentFFI->depth = dict.mDepth;
+  } else {
+    MOZ_CRASH("Unexptected extent type");
+  }
+}
+
 static ffi::WGPUBufferCopyView ConvertBufferCopyView(
     const dom::GPUBufferCopyView& aView) {
   ffi::WGPUBufferCopyView view = {};
   view.buffer = aView.mBuffer->mId;
-  view.offset = aView.mOffset;
-  view.bytes_per_row = aView.mBytesPerRow;
-  view.rows_per_image = aView.mRowsPerImage;
+  CommandEncoder::ConvertTextureDataLayoutToFFI(aView, &view.layout);
   return view;
 }
 
 static ffi::WGPUTextureCopyView ConvertTextureCopyView(
     const dom::GPUTextureCopyView& aView) {
   ffi::WGPUTextureCopyView view = {};
-  view.texture = aView.mTexture->mId;
-  view.mip_level = aView.mMipLevel;
-  view.array_layer = aView.mArrayLayer;
-  if (aView.mOrigin.WasPassed()) {
-    const auto& origin = aView.mOrigin.Value();
-    if (origin.IsRangeEnforcedUnsignedLongSequence()) {
-      const auto& seq = origin.GetAsRangeEnforcedUnsignedLongSequence();
-      view.origin.x = seq.Length() > 0 ? seq[0] : 0;
-      view.origin.y = seq.Length() > 1 ? seq[1] : 0;
-      view.origin.z = seq.Length() > 2 ? seq[2] : 0;
-    } else if (origin.IsGPUOrigin3DDict()) {
-      const auto& dict = origin.GetAsGPUOrigin3DDict();
-      view.origin.x = dict.mX;
-      view.origin.y = dict.mY;
-      view.origin.z = dict.mZ;
-    } else {
-      MOZ_CRASH("Unexpected origin type");
-    }
-  }
+  CommandEncoder::ConvertTextureCopyViewToFFI(aView, &view);
   return view;
 }
 
 static ffi::WGPUExtent3d ConvertExtent(const dom::GPUExtent3D& aExtent) {
   ffi::WGPUExtent3d extent = {};
-  if (aExtent.IsRangeEnforcedUnsignedLongSequence()) {
-    const auto& seq = aExtent.GetAsRangeEnforcedUnsignedLongSequence();
-    extent.width = seq.Length() > 0 ? seq[0] : 0;
-    extent.height = seq.Length() > 1 ? seq[1] : 0;
-    extent.depth = seq.Length() > 2 ? seq[2] : 0;
-  } else if (aExtent.IsGPUExtent3DDict()) {
-    const auto& dict = aExtent.GetAsGPUExtent3DDict();
-    extent.width = dict.mWidth;
-    extent.height = dict.mHeight;
-    extent.depth = dict.mDepth;
-  } else {
-    MOZ_CRASH("Unexptected extent type");
-  }
+  CommandEncoder::ConvertExtent3DToFFI(aExtent, &extent);
   return extent;
 }
 
@@ -93,9 +111,11 @@ void CommandEncoder::CopyBufferToBuffer(const Buffer& aSource,
                                         BufferAddress aDestinationOffset,
                                         BufferAddress aSize) {
   if (mValid) {
-    mBridge->SendCommandEncoderCopyBufferToBuffer(
-        mId, aSource.mId, aSourceOffset, aDestination.mId, aDestinationOffset,
-        aSize);
+    ipc::ByteBuf bb;
+    ffi::wgpu_command_encoder_copy_buffer_to_buffer(
+        aSource.mId, aSourceOffset, aDestination.mId, aDestinationOffset, aSize,
+        ToFFI(&bb));
+    mBridge->SendCommandEncoderAction(mId, std::move(bb));
   }
 }
 
@@ -104,11 +124,11 @@ void CommandEncoder::CopyBufferToTexture(
     const dom::GPUTextureCopyView& aDestination,
     const dom::GPUExtent3D& aCopySize) {
   if (mValid) {
-    const auto source = ConvertBufferCopyView(aSource);
-    const auto destination = ConvertTextureCopyView(aDestination);
-    const auto size = ConvertExtent(aCopySize);
-    mBridge->SendCommandEncoderCopyBufferToTexture(mId, source, destination,
-                                                   size);
+    ipc::ByteBuf bb;
+    ffi::wgpu_command_encoder_copy_buffer_to_texture(
+        ConvertBufferCopyView(aSource), ConvertTextureCopyView(aDestination),
+        ConvertExtent(aCopySize), ToFFI(&bb));
+    mBridge->SendCommandEncoderAction(mId, std::move(bb));
   }
 }
 void CommandEncoder::CopyTextureToBuffer(
@@ -116,11 +136,11 @@ void CommandEncoder::CopyTextureToBuffer(
     const dom::GPUBufferCopyView& aDestination,
     const dom::GPUExtent3D& aCopySize) {
   if (mValid) {
-    const auto source = ConvertTextureCopyView(aSource);
-    const auto destination = ConvertBufferCopyView(aDestination);
-    const auto size = ConvertExtent(aCopySize);
-    mBridge->SendCommandEncoderCopyTextureToBuffer(mId, source, destination,
-                                                   size);
+    ipc::ByteBuf bb;
+    ffi::wgpu_command_encoder_copy_texture_to_buffer(
+        ConvertTextureCopyView(aSource), ConvertBufferCopyView(aDestination),
+        ConvertExtent(aCopySize), ToFFI(&bb));
+    mBridge->SendCommandEncoderAction(mId, std::move(bb));
   }
 }
 void CommandEncoder::CopyTextureToTexture(
@@ -128,11 +148,11 @@ void CommandEncoder::CopyTextureToTexture(
     const dom::GPUTextureCopyView& aDestination,
     const dom::GPUExtent3D& aCopySize) {
   if (mValid) {
-    const auto source = ConvertTextureCopyView(aSource);
-    const auto destination = ConvertTextureCopyView(aDestination);
-    const auto size = ConvertExtent(aCopySize);
-    mBridge->SendCommandEncoderCopyTextureToTexture(mId, source, destination,
-                                                    size);
+    ipc::ByteBuf bb;
+    ffi::wgpu_command_encoder_copy_texture_to_texture(
+        ConvertTextureCopyView(aSource), ConvertTextureCopyView(aDestination),
+        ConvertExtent(aCopySize), ToFFI(&bb));
+    mBridge->SendCommandEncoderAction(mId, std::move(bb));
   }
 }
 
@@ -159,36 +179,26 @@ already_AddRefed<RenderPassEncoder> CommandEncoder::BeginRenderPass(
   return pass.forget();
 }
 
-void CommandEncoder::EndComputePass(Span<const uint8_t> aData,
+void CommandEncoder::EndComputePass(ffi::WGPUComputePass& aPass,
                                     ErrorResult& aRv) {
   if (!mValid) {
     return aRv.ThrowInvalidStateError("Command encoder is not valid");
   }
-  ipc::Shmem shmem;
-  if (!mBridge->AllocShmem(aData.Length(), ipc::Shmem::SharedMemory::TYPE_BASIC,
-                           &shmem)) {
-    return aRv.ThrowAbortError(nsPrintfCString(
-        "Unable to allocate shmem of size %zu", aData.Length()));
-  }
 
-  memcpy(shmem.get<uint8_t>(), aData.data(), aData.Length());
-  mBridge->SendCommandEncoderRunComputePass(mId, std::move(shmem));
+  ipc::ByteBuf byteBuf;
+  ffi::wgpu_compute_pass_finish(&aPass, ToFFI(&byteBuf));
+  mBridge->SendCommandEncoderAction(mId, std::move(byteBuf));
 }
 
-void CommandEncoder::EndRenderPass(Span<const uint8_t> aData,
+void CommandEncoder::EndRenderPass(ffi::WGPURenderPass& aPass,
                                    ErrorResult& aRv) {
   if (!mValid) {
     return aRv.ThrowInvalidStateError("Command encoder is not valid");
   }
-  ipc::Shmem shmem;
-  if (!mBridge->AllocShmem(aData.Length(), ipc::Shmem::SharedMemory::TYPE_BASIC,
-                           &shmem)) {
-    return aRv.ThrowAbortError(nsPrintfCString(
-        "Unable to allocate shmem of size %zu", aData.Length()));
-  }
 
-  memcpy(shmem.get<uint8_t>(), aData.data(), aData.Length());
-  mBridge->SendCommandEncoderRunRenderPass(mId, std::move(shmem));
+  ipc::ByteBuf byteBuf;
+  ffi::wgpu_render_pass_finish(&aPass, ToFFI(&byteBuf));
+  mBridge->SendCommandEncoderAction(mId, std::move(byteBuf));
 }
 
 already_AddRefed<CommandBuffer> CommandEncoder::Finish(

@@ -4,7 +4,7 @@ Building Firefox On Linux
 They aren’t complicated, but there are a few prerequisites to building Firefox on Linux. You need:
 
 #. A 64-bit installation of Linux. You can check by opening a terminal window; if ``uname -m`` returns ``x86_64`` you can proceed.
-#. Next, you’ll need Python 3.6 or later installed. You can check with ``python3 --version`` to see if you have it already. If not, see `Installing Python <#installingpython>`_.
+#. Next, you’ll need Python 3.6 or later installed. You can check with ``python3 --version`` to see if you have it already. If not, see `Installing Python <#installingpython>`_. You'll also need to install Mercurial and can do so with ``pip3 install Mercurial``.
 #. Finally, a reasonably fast internet connection and 30GB of free disk space.
 
 Getting Started
@@ -39,8 +39,8 @@ like this:
    python3 bootstrap.py
 
 ... and follow the prompts. This will use mercurial to checkout
-the source code. If you prefer to work with git, use this command
-instead:
+the source code. If you prefer to work with ``git``, use this command
+instead (make sure you have ``git`` installed):
 
 .. code-block:: shell
 
@@ -53,12 +53,12 @@ You’re ready; now we can tie it all together. In your terminal:
 
 .. code-block:: shell
 
-   cd mozilla-central
+   cd mozilla-unified  # ... or the name of the repo you chose in the above step
 
 If you are not working on the C/C++ files you can also opt for
 :ref:`Artifact Builds <Understanding Artifact Builds>`
 which are much faster. To enable artifact build set up a
-`.mozconfig <https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Build_Instructions/Configuring_Build_Options>`_
+:ref:`mozconfig <Configuring Build Options>`
 file with the following options:
 
 .. code-block:: shell
@@ -71,7 +71,7 @@ file with the following options:
    mk_add_options MOZ_OBJDIR=./objdir-frontend
 
 If you plan to walk through code with a debugger, set up a
-`.mozconfig <https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Build_Instructions/Configuring_Build_Options>`_
+:ref:`.mozconfig <Configuring Build Options>`
 file with the following options:
 
 .. code-block:: shell
@@ -115,9 +115,9 @@ Now the fun starts
 
 You have the code, you’ve compiled Firefox. Fire it up with
 ``./mach run`` and you’re ready to start hacking. The next steps
-are up to you: join us on IRC in the ``#introduction`` channel,
-and find `a bug to start working
-on. <https://codetribute.mozilla.org/>`_
+are up to you: join us on `Matrix <https://chat.mozilla.org/>`_
+in the `Introduction <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`_
+channel, and find `a bug to start working on. <https://codetribute.mozilla.org/>`_
 
 
 General considerations
@@ -126,17 +126,11 @@ General considerations
 #. 4GB RAM with an additional 4GB of available swap space is the bare minimum, and more RAM is always better - having 8GB or more will dramatically improve build time.
 #. A 64-bit x86 CPU and a 64-bit OS. As of early 2015 it is no longer possible to do a full build of Firefox from source on most 32-bit systems; a 64-bit OS is required. ":ref:`Artifact Builds <Understanding Artifact Builds>`" may be possible, but are not a supported configuration. On Linux you can determine this by typing "``uname -a``" in a terminal. It is possible to build a 32-bit Firefox on a 64-bit system, see :ref:`Building Firefox 32-bit on Linux 64-bit <Building Firefox 32-bit On Linux 64-bit>`.
 #. A recent version of Clang is required to build Firefox. You can learn more about the features we use and their :ref:`compiler support <Using C++ in Mozilla code>`.
-#. Most Linux distros now install a later version of autoconf, which the build system cannot use, reporting the error "``*** Couldn't find autoconf 2.13.  Stop.``" However a separate ``autoconf2.13`` package is usually available. To install `autoconf 2.13` in Debian based distros copy this line and paste it into a terminal window:
+#. If you are on a Fedora machine then simply install the following prerequisites from the terminal window:
 
 .. code-block:: shell
 
-   $ sudo apt install autoconf2.13
-
-5. If you are on a Fedora machine then simply install the following prerequisites from the terminal window:
-
-.. code-block:: shell
-
-   sudo dnf install @development-tools @c-development autoconf213 gtk2-devel gtk3-devel libXt-devel GConf2-devel dbus-glib-devel yasm-devel alsa-lib-devel pulseaudio-libs-devel
+   sudo dnf install @development-tools @c-development gtk2-devel gtk3-devel libXt-devel GConf2-devel dbus-glib-devel yasm-devel alsa-lib-devel pulseaudio-libs-devel
 
 
 .. _installingpython:
@@ -182,9 +176,6 @@ You need a number of different packages:
 
    # the rust package manager
    aptitude install cargo
-
-   # the required (old) version of autoconf
-   aptitude install autoconf2.13
 
    # the headers of important libs
    aptitude install libgtk-2-dev
@@ -239,8 +230,7 @@ Hoye <mailto:mhoye@mozilla.com>` directly for help. Please include the
 error message and some details about your operating system.
 
 If you have already checked out the source code via Mercurial or Git you
-can also use `mach <https://developer.mozilla.org/en-US/docs/Developer_Guide/mach>`_ with the
-bootstrap command:
+can also use :ref:`mach` with the bootstrap command:
 
 .. code-block:: shell
 
@@ -289,5 +279,4 @@ More info
 ---------
 
 The above bootstrap script supports popular Linux distributions. If it
-doesn't work for you, see `Linux build
-prerequisites <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Build_Instructions/Linux_Prerequisites>`_ for more.
+doesn't work for you, see :ref:`Linux build prerequisites <Building Firefox On Linux>` for more.

@@ -9,13 +9,11 @@
 
 #include <type_traits>
 
-#include "builtin/ModuleObject.h"
 #include "frontend/NameAnalysisTypes.h"
 #include "gc/Barrier.h"
 #include "gc/WeakMap.h"
 #include "js/GCHashTable.h"
 #include "vm/ArgumentsObject.h"
-#include "vm/GeneratorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
@@ -24,7 +22,10 @@
 
 namespace js {
 
+class AbstractGeneratorObject;
+class IndirectBindingMap;
 class ModuleObject;
+
 using HandleModuleObject = Handle<ModuleObject*>;
 
 /*
@@ -316,14 +317,16 @@ class EnvironmentObject : public NativeObject {
 
 class CallObject : public EnvironmentObject {
  protected:
-  static const uint32_t CALLEE_SLOT = 1;
+  static constexpr uint32_t CALLEE_SLOT = 1;
 
   static CallObject* create(JSContext* cx, HandleScript script,
                             HandleFunction callee, HandleObject enclosing);
 
  public:
-  static const uint32_t RESERVED_SLOTS = 2;
   static const JSClass class_;
+
+  static constexpr uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t BASESHAPE_FLAGS = BaseShape::QUALIFIED_VAROBJ;
 
   /* These functions are internal and are exposed only for JITs. */
 
@@ -370,7 +373,7 @@ class CallObject : public EnvironmentObject {
 };
 
 class VarEnvironmentObject : public EnvironmentObject {
-  static const uint32_t SCOPE_SLOT = 1;
+  static constexpr uint32_t SCOPE_SLOT = 1;
 
   static VarEnvironmentObject* create(JSContext* cx, HandleShape shape,
                                       HandleObject enclosing,
@@ -381,8 +384,10 @@ class VarEnvironmentObject : public EnvironmentObject {
   }
 
  public:
-  static const uint32_t RESERVED_SLOTS = 2;
   static const JSClass class_;
+
+  static constexpr uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t BASESHAPE_FLAGS = BaseShape::QUALIFIED_VAROBJ;
 
   static VarEnvironmentObject* create(JSContext* cx, HandleScope scope,
                                       AbstractFramePtr frame);
@@ -401,7 +406,7 @@ class VarEnvironmentObject : public EnvironmentObject {
 };
 
 class ModuleEnvironmentObject : public EnvironmentObject {
-  static const uint32_t MODULE_SLOT = 1;
+  static constexpr uint32_t MODULE_SLOT = 1;
 
   static const ObjectOps objectOps_;
   static const JSClassOps classOps_;
@@ -409,7 +414,9 @@ class ModuleEnvironmentObject : public EnvironmentObject {
  public:
   static const JSClass class_;
 
-  static const uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t BASESHAPE_FLAGS =
+      BaseShape::NOT_EXTENSIBLE | BaseShape::QUALIFIED_VAROBJ;
 
   static ModuleEnvironmentObject* create(JSContext* cx,
                                          HandleModuleObject module);
@@ -457,12 +464,13 @@ class WasmInstanceEnvironmentObject : public EnvironmentObject {
   // meaningful way. However, it is an invariant of DebugEnvironments that
   // environments kept in those maps have live scopes, thus this strong
   // reference.
-  static const uint32_t SCOPE_SLOT = 1;
+  static constexpr uint32_t SCOPE_SLOT = 1;
 
  public:
   static const JSClass class_;
 
-  static const uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t BASESHAPE_FLAGS = BaseShape::NOT_EXTENSIBLE;
 
   static WasmInstanceEnvironmentObject* createHollowForDebug(
       JSContext* cx, Handle<WasmInstanceScope*> scope);
@@ -478,12 +486,15 @@ class WasmFunctionCallObject : public EnvironmentObject {
   // meaningful way. However, it is an invariant of DebugEnvironments that
   // environments kept in those maps have live scopes, thus this strong
   // reference.
-  static const uint32_t SCOPE_SLOT = 1;
+  static constexpr uint32_t SCOPE_SLOT = 1;
 
  public:
   static const JSClass class_;
 
-  static const uint32_t RESERVED_SLOTS = 2;
+  // TODO Check what Debugger behavior should be when it evaluates a
+  // var declaration.
+  static constexpr uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t BASESHAPE_FLAGS = BaseShape::NOT_EXTENSIBLE;
 
   static WasmFunctionCallObject* createHollowForDebug(
       JSContext* cx, HandleObject enclosing, Handle<WasmFunctionScope*> scope);
@@ -500,11 +511,13 @@ class LexicalEnvironmentObject : public EnvironmentObject {
   // backpointer to the LexicalScope.
   //
   // Since the two sets are disjoint, we only use one slot to save space.
-  static const unsigned THIS_VALUE_OR_SCOPE_SLOT = 1;
+  static constexpr uint32_t THIS_VALUE_OR_SCOPE_SLOT = 1;
 
  public:
-  static const unsigned RESERVED_SLOTS = 2;
   static const JSClass class_;
+
+  static constexpr uint32_t RESERVED_SLOTS = 2;
+  static constexpr uint32_t BASESHAPE_FLAGS = BaseShape::NOT_EXTENSIBLE;
 
  private:
   static LexicalEnvironmentObject* createTemplateObject(
@@ -615,8 +628,10 @@ class NamedLambdaObject : public LexicalEnvironmentObject {
 // the global object.
 class NonSyntacticVariablesObject : public EnvironmentObject {
  public:
-  static const unsigned RESERVED_SLOTS = 1;
   static const JSClass class_;
+
+  static constexpr uint32_t RESERVED_SLOTS = 1;
+  static constexpr uint32_t BASESHAPE_FLAGS = 0;
 
   static NonSyntacticVariablesObject* create(JSContext* cx);
 };
@@ -628,13 +643,15 @@ extern bool CreateNonSyntacticEnvironmentChain(JSContext* cx,
 
 // With environment objects on the run-time environment chain.
 class WithEnvironmentObject : public EnvironmentObject {
-  static const unsigned OBJECT_SLOT = 1;
-  static const unsigned THIS_SLOT = 2;
-  static const unsigned SCOPE_SLOT = 3;
+  static constexpr uint32_t OBJECT_SLOT = 1;
+  static constexpr uint32_t THIS_SLOT = 2;
+  static constexpr uint32_t SCOPE_SLOT = 3;
 
  public:
-  static const unsigned RESERVED_SLOTS = 4;
   static const JSClass class_;
+
+  static constexpr uint32_t RESERVED_SLOTS = 4;
+  static constexpr uint32_t BASESHAPE_FLAGS = 0;
 
   static WithEnvironmentObject* create(JSContext* cx, HandleObject object,
                                        HandleObject enclosing,
@@ -719,23 +736,20 @@ class MOZ_RAII EnvironmentIter {
 
  public:
   // Constructing from a copy of an existing EnvironmentIter.
-  EnvironmentIter(JSContext* cx,
-                  const EnvironmentIter& ei MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  EnvironmentIter(JSContext* cx, const EnvironmentIter& ei);
 
   // Constructing from an environment, scope pair. All environments
   // considered not to be withinInitialFrame, since no frame is given.
-  EnvironmentIter(JSContext* cx, JSObject* env,
-                  Scope* scope MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  EnvironmentIter(JSContext* cx, JSObject* env, Scope* scope);
 
   // Constructing from a frame. Places the EnvironmentIter on the innermost
   // environment at pc.
-  EnvironmentIter(JSContext* cx, AbstractFramePtr frame,
-                  jsbytecode* pc MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  EnvironmentIter(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc);
 
   // Constructing from an environment, scope and frame. The frame is given
   // to initialize to proper enclosing environment/scope.
   EnvironmentIter(JSContext* cx, JSObject* env, Scope* scope,
-                  AbstractFramePtr frame MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+                  AbstractFramePtr frame);
 
   bool done() const { return si_.done(); }
 
@@ -790,8 +804,6 @@ class MOZ_RAII EnvironmentIter {
   }
 
   AbstractFramePtr maybeInitialFrame() const { return frame_; }
-
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // The key in MissingEnvironmentMap. For live frames, maps live frames to
@@ -863,28 +875,46 @@ class LiveEnvironmentVal {
 /****************************************************************************/
 
 /*
- * Debug environment objects
+ * [SMDOC] Debug environment objects
  *
- * The debugger effectively turns every opcode into a potential direct eval.
- * Naively, this would require creating a EnvironmentObject for every
- * call/block scope and using JSOp::GetAliasedVar for every access. To optimize
- * this, the engine assumes there is no debugger and optimizes scope access
- * and creation accordingly. When the debugger wants to perform an unexpected
- * eval-in-frame (or other, similar environment-requiring operations),
- * fp->environmentChain is now incomplete.
+ * The frontend optimizes unaliased variables into stack slots and can optimize
+ * away whole EnvironmentObjects. So when the debugger wants to perform an
+ * unexpected eval-in-frame (or otherwise access the environment),
+ * `fp->environmentChain` is often incomplete. This is a problem: a major use
+ * case for eval-in-frame is to access the local variables in debuggee code.
  *
- * To resolve this, the debugger first calls GetDebugEnvironmentFor* to
- * synthesize a "debug env chain". A debug env chain is just a chain of
- * objects that fill in missing environments and protect the engine from
- * unexpected access. (The latter means that some debugger operations, like
- * redefining a lexical binding, can fail when a true eval would succeed.) To
- * do both of these things, GetDebugEnvironmentFor* creates a new proxy
- * DebugEnvironmentProxy to sit in front of every existing EnvironmentObject.
+ * Even when all EnvironmentObjects exist, giving complete information for all
+ * bindings, stack and heap, there's another issue: eval-in-frame code can
+ * create closures that capture stack locals. The variable slots go away when
+ * the frame is popped, but the closure, which uses them, may survive.
  *
- * GetDebugEnvironmentFor* ensures the invariant that the same
- * DebugEnvironmentProxy is always produced for the same underlying
- * environment (optimized or not!). This is maintained by some bookkeeping
- * information stored in DebugEnvironments.
+ * To solve both problems, eval-in-frame code is compiled and run against a
+ * "debug environment chain" of DebugEnvironmentProxy objects rather than real
+ * EnvironmentObjects. The `GetDebugEnvironmentFor` functions below create
+ * these proxies, one to sit in front of each existing EnvironmentObject. They
+ * also create bogus "hollow" EnvironmentObjects to stand in for environments
+ * that were optimized away; and proxies for those. The frontend sees these
+ * environments as something like `with` scopes, and emits deoptimized bytecode
+ * instructions for all variable accesses.
+ *
+ * When eval-in-frame code runs, `fp->environmentChain` points to this chain of
+ * proxies. On each variable access, the proxy laboriously figures out what to
+ * do. See e.g. `DebuggerEnvironmentProxyHandler::handleUnaliasedAccess`.
+ *
+ * There's a limit to what the proxies can manage, since they're proxying
+ * environments that are already optimized. Some debugger operations, like
+ * redefining a lexical binding, can fail when a true direct eval would
+ * succeed. Even plain variable accesses can throw, if the variable has been
+ * optimized away.
+ *
+ * To support accessing stack variables after they've gone out of scope, we
+ * copy the variables to the heap as they leave scope. See
+ * `DebugEnvironments::onPopCall` and `onPopLexical`.
+ *
+ * `GetDebugEnvironmentFor*` guarantees that the same DebugEnvironmentProxy is
+ * always produced for the same underlying environment (optimized or not!).
+ * This is maintained by some bookkeeping information stored in
+ * `DebugEnvironments`.
  */
 
 extern JSObject* GetDebugEnvironmentForFunction(JSContext* cx,
@@ -1117,7 +1147,7 @@ inline bool IsFrameInitialEnvironment(AbstractFramePtr frame,
   // start of execution in the frame.
   //
   // This logic must be in sync with the HAS_INITIAL_ENV logic in
-  // InitFromBailout.
+  // BaselineStackBuilder::buildBaselineFrame.
 
   // A function frame's CallObject, if present, is always the initial
   // environment.

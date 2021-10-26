@@ -18,13 +18,11 @@
     "resource://gre/modules/BrowserUtils.jsm"
   );
 
-  let LazyModules = {};
-
-  ChromeUtils.defineModuleGetter(
-    LazyModules,
-    "PermitUnloader",
-    "resource://gre/actors/BrowserElementParent.jsm"
+  const { XPCOMUtils } = ChromeUtils.import(
+    "resource://gre/modules/XPCOMUtils.jsm"
   );
+
+  let LazyModules = {};
 
   ChromeUtils.defineModuleGetter(
     LazyModules,
@@ -44,10 +42,11 @@
     "resource://gre/actors/PopupBlockingParent.jsm"
   );
 
-  ChromeUtils.defineModuleGetter(
-    LazyModules,
-    "XPCOMUtils",
-    "resource://gre/modules/XPCOMUtils.jsm"
+  let lazyPrefs = {};
+  XPCOMUtils.defineLazyPreferenceGetter(
+    lazyPrefs,
+    "unloadTimeoutMs",
+    "dom.beforeunload_timeout_ms"
   );
 
   const elementsToDestroyOnUnload = new Set();
@@ -79,6 +78,8 @@
       this._characterSet = null;
       this._documentContentType = null;
 
+      this._inPermitUnload = new WeakSet();
+
       /**
        * These are managed by the tabbrowser:
        */
@@ -86,11 +87,7 @@
       this.mIconURL = null;
       this.lastURI = null;
 
-      // Track progress listeners added to this <browser>. These need to persist
-      // between calls to destroy().
-      this.progressListeners = [];
-
-      LazyModules.XPCOMUtils.defineLazyGetter(this, "popupBlocker", () => {
+      XPCOMUtils.defineLazyGetter(this, "popupBlocker", () => {
         return new LazyModules.PopupBlocker(this);
       });
 
@@ -206,19 +203,6 @@
       this._documentURI = null;
 
       this._documentContentType = null;
-
-      /**
-       * Weak reference to an optional frame loader that can be used to influence
-       * process selection for this browser.
-       * See nsIBrowser.sameProcessAsFrameLoader.
-       *
-       * tabbrowser sets "sameProcessAsFrameLoader" on some browsers before
-       * they are connected. This avoids clearing that out while we're doing
-       * the initial construct(), which is what would read it.
-       */
-      if (this.mInitialized) {
-        this._sameProcessAsFrameLoader = null;
-      }
 
       this._loadContext = null;
 
@@ -357,16 +341,6 @@
       }
     }
 
-    set sameProcessAsFrameLoader(val) {
-      this._sameProcessAsFrameLoader = Cu.getWeakReference(val);
-    }
-
-    get sameProcessAsFrameLoader() {
-      return (
-        this._sameProcessAsFrameLoader && this._sameProcessAsFrameLoader.get()
-      );
-    }
-
     get loadContext() {
       if (this._loadContext) {
         return this._loadContext;
@@ -413,25 +387,11 @@
     }
 
     set suspendMediaWhenInactive(val) {
-      if (this.isRemoteBrowser) {
-        let { frameLoader } = this;
-        if (frameLoader && frameLoader.remoteTab) {
-          frameLoader.remoteTab.suspendMediaWhenInactive = val;
-        }
-      } else if (this.docShell) {
-        this.docShell.suspendMediaWhenInactive = val;
-      }
+      this.browsingContext.suspendMediaWhenInactive = val;
     }
 
     get suspendMediaWhenInactive() {
-      if (this.isRemoteBrowser) {
-        let { frameLoader } = this;
-        if (frameLoader && frameLoader.remoteTab) {
-          return frameLoader.remoteTab.suspendMediaWhenInactive;
-        }
-        return false;
-      }
-      return this.docShell && this.docShell.suspendMediaWhenInactive;
+      return !!this.browsingContext?.suspendMediaWhenInactive;
     }
 
     set docShellIsActive(val) {
@@ -668,6 +628,12 @@
 
       return this.browsingContext.currentWindowGlobal
         .contentBlockingAllowListPrincipal;
+    }
+
+    get cookieJarSettings() {
+      return this.isRemoteBrowser
+        ? this.browsingContext?.currentWindowGlobal?.cookieJarSettings
+        : this.contentDocument.cookieJarSettings;
     }
 
     get csp() {
@@ -917,39 +883,11 @@
         aNotifyMask = Ci.nsIWebProgress.NOTIFY_ALL;
       }
 
-      this.progressListeners.push({
-        weakListener: Cu.getWeakReference(aListener),
-        mask: aNotifyMask,
-      });
-
       this.webProgress.addProgressListener(aListener, aNotifyMask);
     }
 
     removeProgressListener(aListener) {
       this.webProgress.removeProgressListener(aListener);
-
-      // Remove aListener from our progress listener list, and clear out dead
-      // weak references while we're at it.
-      this.progressListeners = this.progressListeners.filter(
-        ({ weakListener }) =>
-          weakListener.get() && weakListener.get() !== aListener
-      );
-    }
-
-    /**
-     * Move the previously-tracked web progress listeners to this <browser>'s
-     * current WebProgress.
-     */
-    restoreProgressListeners() {
-      let listeners = this.progressListeners;
-      this.progressListeners = [];
-
-      for (let { weakListener, mask } of listeners) {
-        let listener = weakListener.get();
-        if (listener) {
-          this.addProgressListener(listener, mask);
-        }
-      }
     }
 
     onPageHide(aEvent) {
@@ -1064,7 +1002,6 @@
          * the <browser> element may not be initialized yet.
          */
 
-        let oldNavigation = this._remoteWebNavigation;
         this._remoteWebNavigation = new LazyModules.RemoteWebNavigation(this);
 
         // Initialize contentPrincipal to the about:blank principal for this loadcontext
@@ -1077,13 +1014,6 @@
         // CSP for about:blank is null; if we ever change _contentPrincipal above,
         // we should re-evaluate the CSP here.
         this._csp = null;
-
-        if (!oldNavigation) {
-          // If we weren't remote, then we're transitioning from local to
-          // remote. Add all listeners from the previous <browser> to the new
-          // RemoteWebProgress.
-          this.restoreProgressListeners();
-        }
 
         this.messageManager.loadFrameScript(
           "chrome://global/content/browser-child.js",
@@ -1133,7 +1063,6 @@
 
       if (!this.isRemoteBrowser) {
         this._remoteWebNavigation = null;
-        this.restoreProgressListeners();
         this.addEventListener("pagehide", this.onPageHide, true);
       }
     }
@@ -1188,9 +1117,13 @@
     }
 
     updateWebNavigationForLocationChange(aCanGoBack, aCanGoForward) {
-      if (this.isRemoteBrowser && this.messageManager) {
-        this._remoteWebNavigation.canGoBack = aCanGoBack;
-        this._remoteWebNavigation.canGoForward = aCanGoForward;
+      if (
+        this.isRemoteBrowser &&
+        this.messageManager &&
+        !Services.appinfo.sessionHistoryInParent
+      ) {
+        this._remoteWebNavigation._canGoBack = aCanGoBack;
+        this._remoteWebNavigation._canGoForward = aCanGoForward;
       }
     }
 
@@ -1235,11 +1168,41 @@
     }
 
     purgeSessionHistory() {
-      if (this.isRemoteBrowser) {
-        this._remoteWebNavigation.canGoBack = false;
-        this._remoteWebNavigation.canGoForward = false;
+      if (this.isRemoteBrowser && !Services.appinfo.sessionHistoryInParent) {
+        this._remoteWebNavigation._canGoBack = false;
+        this._remoteWebNavigation._canGoForward = false;
       }
+
       try {
+        if (Services.appinfo.sessionHistoryInParent) {
+          let sessionHistory = this.browsingContext?.sessionHistory;
+          if (!sessionHistory) {
+            return;
+          }
+
+          // place the entry at current index at the end of the history list, so it won't get removed
+          if (sessionHistory.index < sessionHistory.count - 1) {
+            let indexEntry = sessionHistory.getEntryAtIndex(
+              sessionHistory.index
+            );
+            sessionHistory.addEntry(indexEntry, true);
+          }
+
+          let purge = sessionHistory.count;
+          if (
+            this.browsingContext.currentWindowGlobal.documentURI !=
+            "about:blank"
+          ) {
+            --purge; // Don't remove the page the user's staring at from shistory
+          }
+
+          if (purge > 0) {
+            sessionHistory.purgeHistory(purge);
+          }
+
+          return;
+        }
+
         this.sendMessageToActor(
           "Browser:PurgeSessionHistory",
           {},
@@ -1588,7 +1551,7 @@
       //            to the JS global of the current browser, which would rather
       //            easily create leaks while swapping.
       // IMPORTANT2: When the current browser element is removed from DOM,
-      //             which is quite common after a swpDocShells call, its
+      //             which is quite common after a swapDocShells call, its
       //             frame loader is destroyed, and that destroys the relevant
       //             message manager, which will remove the listeners.
       let event = new CustomEvent("SwapDocShells", { detail: aOtherBrowser });
@@ -1676,7 +1639,10 @@
           aCallback(false);
           return;
         }
-        aCallback(LazyModules.PermitUnloader.inPermitUnload(this.frameLoader));
+
+        aCallback(
+          this._inPermitUnload.has(this.browsingContext.currentWindowGlobal)
+        );
         return;
       }
 
@@ -1687,26 +1653,71 @@
       aCallback(this.docShell.contentViewer.inPermitUnload);
     }
 
-    permitUnload(aPermitUnloadFlags) {
+    async asyncPermitUnload(action) {
+      let wgp = this.browsingContext.currentWindowGlobal;
+      if (this._inPermitUnload.has(wgp)) {
+        throw new Error("permitUnload is already running for this tab.");
+      }
+
+      this._inPermitUnload.add(wgp);
+      try {
+        let permitUnload = await wgp.permitUnload(
+          action,
+          lazyPrefs.unloadTimeoutMs
+        );
+        return { permitUnload };
+      } finally {
+        this._inPermitUnload.delete(wgp);
+      }
+    }
+
+    get hasBeforeUnload() {
+      function hasBeforeUnload(bc) {
+        if (bc.currentWindowContext?.hasBeforeUnload) {
+          return true;
+        }
+        return bc.children.some(hasBeforeUnload);
+      }
+      return hasBeforeUnload(this.browsingContext);
+    }
+
+    permitUnload(action) {
       if (this.isRemoteBrowser) {
-        if (!LazyModules.PermitUnloader.hasBeforeUnload(this.frameLoader)) {
-          return { permitUnload: true, timedOut: false };
+        if (!this.hasBeforeUnload) {
+          return { permitUnload: true };
         }
 
-        return LazyModules.PermitUnloader.permitUnload(
-          this.frameLoader,
-          aPermitUnloadFlags
+        let result;
+        let success;
+
+        this.asyncPermitUnload(action).then(
+          val => {
+            result = val;
+            success = true;
+          },
+          err => {
+            result = err;
+            success = false;
+          }
         );
+
+        // The permitUnload() promise will, alas, not call its resolution
+        // callbacks after the browser window the promise lives in has closed,
+        // so we have to check for that case explicitly.
+        Services.tm.spinEventLoopUntilOrShutdown(
+          () => window.closed || success !== undefined
+        );
+        if (success) {
+          return result;
+        }
+        throw result;
       }
 
       if (!this.docShell || !this.docShell.contentViewer) {
-        return { permitUnload: true, timedOut: false };
+        return { permitUnload: true };
       }
       return {
-        permitUnload: this.docShell.contentViewer.permitUnload(
-          aPermitUnloadFlags
-        ),
-        timedOut: false,
+        permitUnload: this.docShell.contentViewer.permitUnload(),
       };
     }
 
@@ -1867,6 +1878,17 @@
       /* no-op unless replaced */
     }
 
+    // This method is replaced by frontend code in order to handle restoring
+    // remote session history
+    //
+    // Called immediately after changing remoteness.  If this method returns
+    // `true`, Gecko will assume frontend handled resuming the load, and will
+    // not attempt to resume the load itself.
+    afterChangeRemoteness(browser, redirectLoadSwitchId) {
+      /* no-op unless replaced */
+      return false;
+    }
+
     // Called by Gecko before the remoteness change happens, allowing for
     // listeners, etc. to be stashed before the process switch.
     beforeChangeRemoteness() {
@@ -1891,16 +1913,9 @@
       event.initEvent("DidChangeBrowserRemoteness", true, false);
       this.dispatchEvent(event);
 
-      // If we have a tabbrowser, we need to let it handle restoring session
-      // history, and performing the `resumeRedirectedLoad`, in order to get
-      // sesssion state set up correctly.
-      // FIXME: This probably needs to be hookable by GeckoView.
-      let tabbrowser = this.getTabBrowser();
-      if (tabbrowser) {
-        tabbrowser.finishBrowserRemotenessChange(this, redirectLoadSwitchId);
-        return true;
-      }
-      return false;
+      // Call into frontend code which may want to handle the load (e.g. to
+      // while restoring session state).
+      return this.afterChangeRemoteness(redirectLoadSwitchId);
     }
   }
 

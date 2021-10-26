@@ -22,8 +22,7 @@
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace indexedDB;
 
@@ -347,8 +346,8 @@ void IDBTypedCursor<CursorType>::Continue(JSContext* const aCx,
 
   Key key;
   auto result = key.SetFromJSVal(aCx, aKey);
-  if (!result.Is(Ok)) {
-    aRv = result.ExtractErrorResult(
+  if (result.isErr()) {
+    aRv = result.unwrapErr().ExtractErrorResult(
         InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
     return;
   }
@@ -356,12 +355,11 @@ void IDBTypedCursor<CursorType>::Continue(JSContext* const aCx,
   if constexpr (!IsObjectStoreCursor) {
     if (IsLocaleAware() && !key.IsUnset()) {
       auto result = key.ToLocaleAwareKey(GetSourceRef().Locale());
-      if (!result.Is(Ok)) {
-        aRv = result.ExtractErrorResult(
-            InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
+      if (result.isErr()) {
+        aRv.Throw(result.inspectErr());
         return;
       }
-      key = result.Unwrap();
+      key = result.unwrap();
     }
   }
 
@@ -450,20 +448,19 @@ void IDBTypedCursor<CursorType>::ContinuePrimaryKey(
 
     Key key;
     auto result = key.SetFromJSVal(aCx, aKey);
-    if (!result.Is(Ok)) {
-      aRv = result.ExtractErrorResult(
+    if (result.isErr()) {
+      aRv = result.unwrapErr().ExtractErrorResult(
           InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
       return;
     }
 
     if (IsLocaleAware() && !key.IsUnset()) {
       auto result = key.ToLocaleAwareKey(GetSourceRef().Locale());
-      if (!result.Is(Ok)) {
-        aRv = result.ExtractErrorResult(
-            InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
+      if (result.isErr()) {
+        aRv.Throw(result.inspectErr());
         return;
       }
-      key = result.Unwrap();
+      key = result.unwrap();
     }
 
     if (key.IsUnset()) {
@@ -473,8 +470,8 @@ void IDBTypedCursor<CursorType>::ContinuePrimaryKey(
 
     Key primaryKey;
     result = primaryKey.SetFromJSVal(aCx, aPrimaryKey);
-    if (!result.Is(Ok)) {
-      aRv = result.ExtractErrorResult(
+    if (result.isErr()) {
+      aRv = result.unwrapErr().ExtractErrorResult(
           InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
       return;
     }
@@ -871,5 +868,4 @@ template class IDBTypedCursor<IDBCursorType::ObjectStoreKey>;
 template class IDBTypedCursor<IDBCursorType::Index>;
 template class IDBTypedCursor<IDBCursorType::IndexKey>;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

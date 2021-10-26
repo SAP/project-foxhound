@@ -11,15 +11,10 @@ const {
 } = require("devtools/shared/resources/resource-watcher");
 
 add_task(async function() {
-  // We are testing the server-side resource watcher
-  await pushPref("devtools.testing.enableServerWatcherSupport", true);
-
   const tab = await addTab("data:text/html,Test");
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   // Start watching for console messages. We don't care about messages here, only the
   // registration/destroy mechanism, so we make onAvailable a no-op function.
@@ -59,7 +54,7 @@ add_task(async function() {
   });
 
   info("Close the client, which will destroy the target");
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 
   info(
@@ -94,6 +89,4 @@ add_task(async function() {
     // Cleanup work variable
     delete content._testTargetActor;
   });
-
-  await pushPref("devtools.testing.enableServerWatcherSupport", false);
 });

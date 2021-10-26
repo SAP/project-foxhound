@@ -446,7 +446,8 @@ void GPUProcessManager::SimulateDeviceReset() {
   }
 }
 
-void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
+void GPUProcessManager::DisableWebRender(wr::WebRenderError aError,
+                                         const nsCString& aMsg) {
   if (!gfx::gfxVars::UseWebRender()) {
     return;
   }
@@ -454,8 +455,7 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
   if (aError == wr::WebRenderError::INITIALIZE) {
     gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
         .ForceDisable(gfx::FeatureStatus::Unavailable,
-                      "WebRender initialization failed",
-                      "FEATURE_FAILURE_WEBRENDER_INITIALIZE"_ns);
+                      "WebRender initialization failed", aMsg);
   } else if (aError == wr::WebRenderError::MAKE_CURRENT) {
     gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
         .ForceDisable(gfx::FeatureStatus::Unavailable,
@@ -475,6 +475,7 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
     MOZ_ASSERT_UNREACHABLE("Invalid value");
   }
   gfx::gfxVars::SetUseWebRender(false);
+  gfx::gfxVars::SetUseWebRenderDCompVideoOverlayWin(false);
 
 #if defined(MOZ_WIDGET_ANDROID)
   // If aError is not wr::WebRenderError::INITIALIZE, nsWindow does not
@@ -483,6 +484,14 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
   if (aError != wr::WebRenderError::INITIALIZE) {
     NotifyDisablingWebRender();
   }
+#elif defined(MOZ_WIDGET_GTK)
+  // Hardware compositing should be disabled by default if we aren't using
+  // WebRender. We had to check if it is enabled at all, because it may
+  // already have been forced disabled (e.g. safe mode, headless). It may
+  // still be forced on by the user, and if so, this should have no effect.
+  gfxConfig::SetFailed(Feature::HW_COMPOSITING, FeatureStatus::Blocked,
+                       "Acceleration blocked by platform",
+                       "FEATURE_FAILURE_LOST_WEBRENDER"_ns);
 #endif
 
   if (mProcess) {
@@ -493,7 +502,15 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
 }
 
 void GPUProcessManager::NotifyWebRenderError(wr::WebRenderError aError) {
-  DisableWebRender(aError);
+  if (aError == wr::WebRenderError::VIDEO_OVERLAY) {
+#ifdef XP_WIN
+    gfxVars::SetUseWebRenderDCompVideoOverlayWin(false);
+#else
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+#endif
+    return;
+  }
+  DisableWebRender(aError, nsCString());
 }
 
 void GPUProcessManager::OnInProcessDeviceReset() {
@@ -528,11 +545,12 @@ void GPUProcessManager::OnRemoteProcessDeviceReset(GPUProcessHost* aHost) {
 
 void GPUProcessManager::FallbackToSoftware(const char* aMessage) {
   gfxConfig::SetFailed(Feature::HW_COMPOSITING, FeatureStatus::Blocked,
-                       aMessage);
+                       aMessage, "GPU_PROCESS_FALLBACK_TO_SOFTWARE"_ns);
 #ifdef XP_WIN
   gfxConfig::SetFailed(Feature::D3D11_COMPOSITING, FeatureStatus::Blocked,
-                       aMessage);
-  gfxConfig::SetFailed(Feature::DIRECT2D, FeatureStatus::Blocked, aMessage);
+                       aMessage, "GPU_PROCESS_FALLBACK_TO_SOFTWARE"_ns);
+  gfxConfig::SetFailed(Feature::DIRECT2D, FeatureStatus::Blocked, aMessage,
+                       "GPU_PROCESS_FALLBACK_TO_SOFTWARE"_ns);
 #endif
 }
 
@@ -544,6 +562,10 @@ void GPUProcessManager::NotifyListenersOnCompositeDeviceReset() {
 
 void GPUProcessManager::OnProcessUnexpectedShutdown(GPUProcessHost* aHost) {
   MOZ_ASSERT(mProcess && mProcess == aHost);
+
+  if (StaticPrefs::layers_gpu_process_crash_also_crashes_browser()) {
+    MOZ_CRASH("GPU process crashed and pref is set to crash the browser.");
+  }
 
   CompositorManagerChild::OnGPUProcessLost(aHost->GetProcessToken());
   DestroyProcess();

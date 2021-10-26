@@ -166,136 +166,135 @@ HarCollector.prototype = {
 
   // Event Handlers
 
-  onResourceAvailable: function({ resourceType, targetFront, resource }) {
-    trace.log("HarCollector.onNetworkEvent; ", resource);
+  onResourceAvailable: function(resources) {
+    for (const resource of resources) {
+      trace.log("HarCollector.onNetworkEvent; ", resource);
 
-    const {
-      actor,
-      startedDateTime,
-      request: { method, url },
-      isXHR,
-    } = resource;
-    const startTime = Date.parse(startedDateTime);
+      const { actor, startedDateTime, method, url, isXHR } = resource;
+      const startTime = Date.parse(startedDateTime);
 
-    if (this.firstRequestStart == -1) {
-      this.firstRequestStart = startTime;
+      if (this.firstRequestStart == -1) {
+        this.firstRequestStart = startTime;
+      }
+
+      if (this.lastRequestEnd < startTime) {
+        this.lastRequestEnd = startTime;
+      }
+
+      let file = this.getFile(actor);
+      if (file) {
+        console.error(
+          "HarCollector.onNetworkEvent; ERROR " + "existing file conflict!"
+        );
+        continue;
+      }
+
+      file = {
+        id: actor,
+        startedDeltaMs: startTime - this.firstRequestStart,
+        startedMs: startTime,
+        method: method,
+        url: url,
+        isXHR: isXHR,
+      };
+
+      this.files.set(actor, file);
+
+      // Mimic the Net panel data structure
+      this.items.push(file);
     }
-
-    if (this.lastRequestEnd < startTime) {
-      this.lastRequestEnd = startTime;
-    }
-
-    let file = this.getFile(actor);
-    if (file) {
-      console.error(
-        "HarCollector.onNetworkEvent; ERROR " + "existing file conflict!"
-      );
-      return;
-    }
-
-    file = {
-      id: actor,
-      startedDeltaMs: startTime - this.firstRequestStart,
-      startedMs: startTime,
-      method: method,
-      url: url,
-      isXHR: isXHR,
-    };
-
-    this.files.set(actor, file);
-
-    // Mimic the Net panel data structure
-    this.items.push(file);
   },
 
-  onResourceUpdated: function({ resourceType, targetFront, resource }) {
-    // Skip events from unknown actors (not in the list).
-    // It can happen when there are zombie requests received after
-    // the target is closed or multiple tabs are attached through
-    // one connection (one DevToolsClient object).
-    const file = this.getFile(resource.actor);
-    if (!file) {
-      return;
-    }
+  onResourceUpdated: function(updates) {
+    for (const { resource } of updates) {
+      // Skip events from unknown actors (not in the list).
+      // It can happen when there are zombie requests received after
+      // the target is closed or multiple tabs are attached through
+      // one connection (one DevToolsClient object).
+      const file = this.getFile(resource.actor);
+      if (!file) {
+        return;
+      }
 
-    trace.log(
-      "HarCollector.onNetworkEventUpdate; " + resource.updateType,
-      resource
-    );
+      const includeResponseBodies = Services.prefs.getBoolPref(
+        "devtools.netmonitor.har.includeResponseBodies"
+      );
 
-    const includeResponseBodies = Services.prefs.getBoolPref(
-      "devtools.netmonitor.har.includeResponseBodies"
-    );
+      [
+        {
+          type: "eventTimings",
+          method: "getEventTimings",
+          callbackName: "onEventTimings",
+        },
+        {
+          type: "requestHeaders",
+          method: "getRequestHeaders",
+          callbackName: "onRequestHeaders",
+        },
+        {
+          type: "requestPostData",
+          method: "getRequestPostData",
+          callbackName: "onRequestPostData",
+        },
+        {
+          type: "responseHeaders",
+          method: "getResponseHeaders",
+          callbackName: "onResponseHeaders",
+        },
+        { type: "responseStart" },
+        {
+          type: "responseContent",
+          method: "getResponseContent",
+          callbackName: "onResponseContent",
+        },
+        {
+          type: "requestCookies",
+          method: "getRequestCookies",
+          callbackName: "onRequestCookies",
+        },
+        {
+          type: "responseCookies",
+          method: "getResponseCookies",
+          callbackName: "onResponseCookies",
+        },
+      ].forEach(updateType => {
+        trace.log(
+          "HarCollector.onNetworkEventUpdate; " + updateType.type,
+          resource
+        );
 
-    let request;
-    switch (resource.updateType) {
-      case "requestHeaders":
-        request = this.getData(
-          resource.actor,
-          "getRequestHeaders",
-          this.onRequestHeaders
-        );
-        break;
-      case "requestCookies":
-        request = this.getData(
-          resource.actor,
-          "getRequestCookies",
-          this.onRequestCookies
-        );
-        break;
-      case "requestPostData":
-        request = this.getData(
-          resource.actor,
-          "getRequestPostData",
-          this.onRequestPostData
-        );
-        break;
-      case "responseHeaders":
-        request = this.getData(
-          resource.actor,
-          "getResponseHeaders",
-          this.onResponseHeaders
-        );
-        break;
-      case "responseCookies":
-        request = this.getData(
-          resource.actor,
-          "getResponseCookies",
-          this.onResponseCookies
-        );
-        break;
-      case "responseStart":
-        file.httpVersion = resource.response.httpVersion;
-        file.status = resource.response.status;
-        file.statusText = resource.response.statusText;
-        break;
-      case "responseContent":
-        file.contentSize = resource.contentSize;
-        file.mimeType = resource.mimeType;
-        file.transferredSize = resource.transferredSize;
-
-        if (includeResponseBodies) {
-          request = this.getData(
-            resource.actor,
-            "getResponseContent",
-            this.onResponseContent
-          );
+        let request;
+        if (resource[`${updateType.type}Available`]) {
+          if (updateType.type == "responseStart") {
+            file.httpVersion = resource.httpVersion;
+            file.status = resource.status;
+            file.statusText = resource.statusText;
+          } else if (updateType.type == "responseContent") {
+            file.contentSize = resource.contentSize;
+            file.mimeType = resource.mimeType;
+            file.transferredSize = resource.transferredSize;
+            if (includeResponseBodies) {
+              request = this.getData(
+                resource.actor,
+                updateType.method,
+                this[updateType.callbackName]
+              );
+            }
+          } else {
+            request = this.getData(
+              resource.actor,
+              updateType.method,
+              this[updateType.callbackName]
+            );
+          }
         }
-        break;
-      case "eventTimings":
-        request = this.getData(
-          resource.actor,
-          "getEventTimings",
-          this.onEventTimings
-        );
-        break;
-    }
 
-    if (request) {
-      this.requests.push(request);
+        if (request) {
+          this.requests.push(request);
+        }
+        this.resetPageLoadTimeout();
+      });
     }
-
-    this.resetPageLoadTimeout();
   },
 
   getData: function(actor, method, callback) {

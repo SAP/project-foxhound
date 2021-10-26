@@ -12,12 +12,11 @@ import { connect } from "../../utils/connect";
 import classnames from "classnames";
 import { debounce } from "lodash";
 
-import { isFirefox } from "devtools-environment";
 import { getLineText } from "./../../utils/source";
 import { features } from "../../utils/prefs";
 import { getIndentation } from "../../utils/indentation";
 
-import { showMenu } from "devtools-contextmenu";
+import { showMenu } from "../../context-menu/menu";
 import {
   createBreakpointItems,
   breakpointItemActions,
@@ -39,6 +38,7 @@ import {
   getThreadContext,
   getSkipPausing,
   getInlinePreview,
+  getEditorWrapping,
   getHighlightedCalls,
 } from "../../selectors";
 
@@ -126,6 +126,7 @@ export type Props = {
   isPaused: boolean,
   skipPausing: boolean,
   inlinePreviewEnabled: boolean,
+  editorWrappingEnabled: boolean,
   highlightedCalls: ?highlightedCallsType,
 
   // Actions
@@ -224,17 +225,9 @@ class Editor extends PureComponent<Props, State> {
     const codeMirrorGutter = codeMirror.getGutterElement();
     codeMirrorGutter.addEventListener("mouseleave", toggleFoldMarkerVisibility);
     codeMirrorGutter.addEventListener("mouseenter", toggleFoldMarkerVisibility);
-
-    if (!isFirefox()) {
-      codeMirror.on("gutterContextMenu", (cm, line, eventName, event) =>
-        this.onGutterContextMenu(event)
-      );
-      codeMirror.on("contextmenu", (cm, event) => this.openMenu(event));
-    } else {
-      codeMirrorWrapper.addEventListener("contextmenu", event =>
-        this.openMenu(event)
-      );
-    }
+    codeMirrorWrapper.addEventListener("contextmenu", event =>
+      this.openMenu(event)
+    );
 
     codeMirror.on("scroll", this.onEditorScroll);
     this.onEditorScroll();
@@ -261,7 +254,7 @@ class Editor extends PureComponent<Props, State> {
     shortcuts.on("Esc", this.onEscape);
   }
 
-  onCloseShortcutPress = (key: mixed, e: KeyboardEvent) => {
+  onCloseShortcutPress = (e: KeyboardEvent) => {
     const { cx, selectedSource } = this.props;
     if (selectedSource) {
       e.preventDefault();
@@ -296,7 +289,7 @@ class Editor extends PureComponent<Props, State> {
     return toSourceLine(selectedSource.id, line);
   }
 
-  onToggleBreakpoint = (key: mixed, e: KeyboardEvent) => {
+  onToggleBreakpoint = (e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -308,7 +301,7 @@ class Editor extends PureComponent<Props, State> {
     this.props.toggleBreakpointAtLine(this.props.cx, line);
   };
 
-  onToggleConditionalPanel = (key: mixed, e: KeyboardEvent) => {
+  onToggleConditionalPanel = (e: KeyboardEvent) => {
     e.stopPropagation();
     e.preventDefault();
 
@@ -388,7 +381,7 @@ class Editor extends PureComponent<Props, State> {
    * split console. Restore it here, but preventDefault if and only if there
    * is a multiselection.
    */
-  onEscape = (key: mixed, e: KeyboardEvent) => {
+  onEscape = (e: KeyboardEvent) => {
     if (!this.state.editor) {
       return;
     }
@@ -657,6 +650,7 @@ class Editor extends PureComponent<Props, State> {
       conditionalPanelLocation,
       isPaused,
       inlinePreviewEnabled,
+      editorWrappingEnabled,
     } = this.props;
     const { editor, contextMenu } = this.state;
 
@@ -680,6 +674,7 @@ class Editor extends PureComponent<Props, State> {
             contextMenu={contextMenu}
             clearContextMenu={this.clearContextMenu}
             selectedSource={selectedSource}
+            editorWrappingEnabled={editorWrappingEnabled}
           />
         }
         {conditionalPanelLocation ? <ConditionalPanel editor={editor} /> : null}
@@ -741,6 +736,7 @@ const mapStateToProps = state => {
     isPaused: getIsPaused(state, getCurrentThread(state)),
     skipPausing: getSkipPausing(state),
     inlinePreviewEnabled: getInlinePreview(state),
+    editorWrappingEnabled: getEditorWrapping(state),
     highlightedCalls: getHighlightedCalls(state, getCurrentThread(state)),
   };
 };

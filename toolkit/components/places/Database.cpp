@@ -309,7 +309,7 @@ nsresult SetupDurability(nsCOMPtr<mozIStorageConnection>& aDBConn,
       Preferences::GetInt(PREF_GROWTH_INCREMENT_KIB, 5 * BYTES_PER_KIBIBYTE);
   if (growthIncrementKiB > 0) {
     (void)aDBConn->SetGrowthIncrement(growthIncrementKiB * BYTES_PER_KIBIBYTE,
-                                      EmptyCString());
+                                      ""_ns);
   }
   return NS_OK;
 }
@@ -1242,6 +1242,13 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
 
       // Firefox 69 uses schema version 53
 
+      if (currentSchemaVersion < 54) {
+        rv = MigrateV54Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 81 uses schema version 54
+
       // Schema Upgrades must add migration code here.
       // >>> IMPORTANT! <<<
       // NEVER MIX UP SYNC AND ASYNC EXECUTION IN MIGRATORS, YOU MAY LOCK THE
@@ -1414,8 +1421,8 @@ nsresult Database::EnsureBookmarkRoots(const int32_t startPosition,
 
   if (mRootId < 1) {
     // The first root's title is an empty string.
-    rv = CreateRoot(mMainConn, "places"_ns, "root________"_ns, EmptyCString(),
-                    0, mRootId);
+    rv = CreateRoot(mMainConn, "places"_ns, "root________"_ns, ""_ns, 0,
+                    mRootId);
 
     if (NS_FAILED(rv)) return rv;
   }
@@ -2187,10 +2194,7 @@ nsresult Database::MigrateV50Up() {
 struct StringWriteFunc : public JSONWriteFunc {
   nsCString& mCString;
   explicit StringWriteFunc(nsCString& aCString) : mCString(aCString) {}
-  void Write(const char* aStr) override { mCString.Append(aStr); }
-  void Write(const char* aStr, size_t aLen) override {
-    mCString.Append(aStr, aLen);
-  }
+  void Write(const Span<const char>& aStr) override { mCString.Append(aStr); }
 };
 
 nsresult Database::MigrateV51Up() {
@@ -2219,7 +2223,8 @@ nsresult Database::MigrateV51Up() {
   uint32_t length;
   while (NS_SUCCEEDED(stmt->ExecuteStep(&hasMore)) && hasMore) {
     hasAtLeastOne = true;
-    jw.StringElement(stmt->AsSharedUTF8String(0, &length));
+    const char* stmtString = stmt->AsSharedUTF8String(0, &length);
+    jw.StringElement(Span<const char>(stmtString, length));
   }
   jw.EndArray();
 
@@ -2415,6 +2420,30 @@ nsresult Database::MigrateV53Up() {
       "  EXCEPT "
       "  SELECT DISTINCT anno_attribute_id FROM moz_items_annos "
       ")"));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult Database::MigrateV54Up() {
+  // Add an expiration column to moz_icons_to_pages.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT expire_ms FROM moz_icons_to_pages"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_icons_to_pages "
+        "ADD COLUMN expire_ms INTEGER NOT NULL DEFAULT 0 "_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Set all the zero-ed entries as expired today, they won't be removed until
+  // the next related page load.
+  rv = mMainConn->ExecuteSimpleSQL(
+      "UPDATE moz_icons_to_pages "
+      "SET expire_ms = strftime('%s','now','localtime','start "
+      "of day','utc') * 1000 "
+      "WHERE expire_ms = 0 "_ns);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

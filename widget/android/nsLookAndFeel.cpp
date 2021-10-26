@@ -409,6 +409,12 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       break;
     }
 
+    case IntID::DragThresholdX:
+    case IntID::DragThresholdY:
+      // Threshold where a tap becomes a drag, in 1/240" reference pixels.
+      aResult = 25;
+      break;
+
     default:
       aResult = 0;
       rv = NS_ERROR_FAILURE;
@@ -481,31 +487,28 @@ void nsLookAndFeel::EnsureInitShowPassword() {
   }
 }
 
-nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {
-  nsTArray<LookAndFeelInt> lookAndFeelIntCache =
-      nsXPLookAndFeel::GetIntCacheImpl();
+widget::LookAndFeelCache nsLookAndFeel::GetCacheImpl() {
+  LookAndFeelCache cache = nsXPLookAndFeel::GetCacheImpl();
 
   const IntID kIdsToCache[] = {IntID::PrefersReducedMotion,
                                IntID::SystemUsesDarkTheme};
 
   for (IntID id : kIdsToCache) {
-    lookAndFeelIntCache.AppendElement(
-        LookAndFeelInt{.id = id, .value = GetInt(id)});
+    cache.mInts().AppendElement(LookAndFeelInt(id, GetInt(id)));
   }
 
-  return lookAndFeelIntCache;
+  return cache;
 }
 
-void nsLookAndFeel::SetIntCacheImpl(
-    const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) {
-  for (const auto& entry : aLookAndFeelIntCache) {
-    switch (entry.id) {
+void nsLookAndFeel::SetCacheImpl(const LookAndFeelCache& aCache) {
+  for (const auto& entry : aCache.mInts()) {
+    switch (entry.id()) {
       case IntID::PrefersReducedMotion:
-        mPrefersReducedMotion = entry.value;
+        mPrefersReducedMotion = entry.value();
         mPrefersReducedMotionCached = true;
         break;
       case IntID::SystemUsesDarkTheme:
-        mSystemUsesDarkTheme = !!entry.value;
+        mSystemUsesDarkTheme = !!entry.value();
         mSystemUsesDarkThemeCached = true;
         break;
       default:

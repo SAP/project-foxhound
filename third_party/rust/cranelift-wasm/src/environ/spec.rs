@@ -6,7 +6,7 @@
 //!
 //! [Wasmtime]: https://github.com/bytecodealliance/wasmtime
 
-use crate::state::{FuncTranslationState, ModuleTranslationState};
+use crate::state::FuncTranslationState;
 use crate::translation_utils::{
     DataIndex, ElemIndex, FuncIndex, Global, GlobalIndex, Memory, MemoryIndex, SignatureIndex,
     Table, TableIndex,
@@ -23,8 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::boxed::Box;
 use std::string::ToString;
 use thiserror::Error;
-use wasmparser::BinaryReaderError;
-use wasmparser::Operator;
+use wasmparser::ValidatorResources;
+use wasmparser::{BinaryReaderError, FuncValidator, FunctionBody, Operator, WasmFeatures};
 
 /// WebAssembly value type -- equivalent of `wasmparser`'s Type.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -62,6 +62,20 @@ impl TryFrom<wasmparser::Type> for WasmType {
                 message: "unexpected value type".to_string(),
                 offset: 0,
             }),
+        }
+    }
+}
+
+impl From<WasmType> for wasmparser::Type {
+    fn from(ty: WasmType) -> wasmparser::Type {
+        match ty {
+            WasmType::I32 => wasmparser::Type::I32,
+            WasmType::I64 => wasmparser::Type::I64,
+            WasmType::F32 => wasmparser::Type::F32,
+            WasmType::F64 => wasmparser::Type::F64,
+            WasmType::V128 => wasmparser::Type::V128,
+            WasmType::FuncRef => wasmparser::Type::FuncRef,
+            WasmType::ExternRef => wasmparser::Type::ExternRef,
         }
     }
 }
@@ -546,6 +560,38 @@ pub trait FuncEnvironment: TargetEnvironment {
         val: ir::Value,
     ) -> WasmResult<()>;
 
+    /// Translate an `i32.atomic.wait` or `i64.atomic.wait` WebAssembly instruction.
+    /// The `index` provided identifies the linear memory containing the value
+    /// to wait on, and `heap` is the heap reference returned by `make_heap`
+    /// for the same index.  Whether the waited-on value is 32- or 64-bit can be
+    /// determined by examining the type of `expected`, which must be only I32 or I64.
+    ///
+    /// Returns an i32, which is negative if the helper call failed.
+    fn translate_atomic_wait(
+        &mut self,
+        pos: FuncCursor,
+        index: MemoryIndex,
+        heap: ir::Heap,
+        addr: ir::Value,
+        expected: ir::Value,
+        timeout: ir::Value,
+    ) -> WasmResult<ir::Value>;
+
+    /// Translate an `atomic.notify` WebAssembly instruction.
+    /// The `index` provided identifies the linear memory containing the value
+    /// to wait on, and `heap` is the heap reference returned by `make_heap`
+    /// for the same index.
+    ///
+    /// Returns an i64, which is negative if the helper call failed.
+    fn translate_atomic_notify(
+        &mut self,
+        pos: FuncCursor,
+        index: MemoryIndex,
+        heap: ir::Heap,
+        addr: ir::Value,
+        count: ir::Value,
+    ) -> WasmResult<ir::Value>;
+
     /// Emit code at the beginning of every wasm loop.
     ///
     /// This can be used to insert explicit interrupt or safepoint checking at
@@ -743,15 +789,17 @@ pub trait ModuleEnvironment<'data>: TargetEnvironment {
     /// Declare a passive data segment.
     fn declare_passive_data(&mut self, data_index: DataIndex, data: &'data [u8]) -> WasmResult<()>;
 
+    /// Indicates how many functions the code section reports and the byte
+    /// offset of where the code sections starts.
+    fn reserve_function_bodies(&mut self, bodies: u32, code_section_offset: u64) {
+        drop((bodies, code_section_offset));
+    }
+
     /// Provides the contents of a function body.
-    ///
-    /// Note there's no `reserve_function_bodies` function because the number of
-    /// functions is already provided by `reserve_func_types`.
     fn define_function_body(
         &mut self,
-        module_translation_state: &ModuleTranslationState,
-        body_bytes: &'data [u8],
-        body_offset: usize,
+        validator: FuncValidator<ValidatorResources>,
+        body: FunctionBody<'data>,
     ) -> WasmResult<()>;
 
     /// Provides the number of data initializers up front. By default this does nothing, but
@@ -773,20 +821,28 @@ pub trait ModuleEnvironment<'data>: TargetEnvironment {
     ///
     /// By default this does nothing, but implementations can use this to read
     /// the module name subsection of the custom name section if desired.
-    fn declare_module_name(&mut self, _name: &'data str) -> WasmResult<()> {
-        Ok(())
-    }
+    fn declare_module_name(&mut self, _name: &'data str) {}
 
     /// Declares the name of a function to the environment.
     ///
     /// By default this does nothing, but implementations can use this to read
     /// the function name subsection of the custom name section if desired.
-    fn declare_func_name(&mut self, _func_index: FuncIndex, _name: &'data str) -> WasmResult<()> {
-        Ok(())
+    fn declare_func_name(&mut self, _func_index: FuncIndex, _name: &'data str) {}
+
+    /// Declares the name of a function's local to the environment.
+    ///
+    /// By default this does nothing, but implementations can use this to read
+    /// the local name subsection of the custom name section if desired.
+    fn declare_local_name(&mut self, _func_index: FuncIndex, _local_index: u32, _name: &'data str) {
     }
 
     /// Indicates that a custom section has been found in the wasm file
     fn custom_section(&mut self, _name: &'data str, _data: &'data [u8]) -> WasmResult<()> {
         Ok(())
+    }
+
+    /// Returns the list of enabled wasm features this translation will be using.
+    fn wasm_features(&self) -> WasmFeatures {
+        WasmFeatures::default()
     }
 }

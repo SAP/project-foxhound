@@ -42,12 +42,11 @@ file-whitespace:
         - dom/html/test
         - dom/jsurl/crashtests/344996-1.xhtml
         - dom/jsurl/test
-        - dom/media/gtest/AudioGenerator.cpp
-        - dom/media/gtest/AudioGenerator.h
         - dom/media/mediasource/test/crashtests/926665.html
         - dom/media/test
         - dom/media/tests
         - dom/media/webaudio/test
+        - dom/media/webrtc/transport/nricectx.cpp
         - dom/media/webspeech/synth/test
         - dom/plugins/test
         - dom/smil/crashtests
@@ -107,7 +106,6 @@ file-whitespace:
         - layout/xul/reftest
         - layout/xul/test
         - layout/xul/tree
-        - media/mtransport/nricectx.cpp
         - modules/libjar/zipwriter/test/unit/data/test_bug399727.html
         - netwerk/test/crashtests
         - netwerk/dns/prepare_tlds.py

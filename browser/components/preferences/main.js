@@ -26,6 +26,15 @@ ChromeUtils.defineModuleGetter(
   "CloudStorage",
   "resource://gre/modules/CloudStorage.jsm"
 );
+var { Integration } = ChromeUtils.import(
+  "resource://gre/modules/Integration.jsm"
+);
+/* global DownloadIntegration */
+Integration.downloads.defineModuleGetter(
+  this,
+  "DownloadIntegration",
+  "resource://gre/modules/DownloadIntegration.jsm"
+);
 ChromeUtils.defineModuleGetter(
   this,
   "SelectionChangedMenulist",
@@ -206,6 +215,9 @@ Preferences.addAll([
     id: "media.videocontrols.picture-in-picture.video-toggle.enabled",
     type: "bool",
   },
+
+  // Media
+  { id: "media.hardwaremediakeys.enabled", type: "bool" },
 ]);
 
 if (AppConstants.HAVE_SHELL_SERVICE) {
@@ -518,6 +530,27 @@ var gMainPane = {
       "command",
       gMainPane.showContainerSettings
     );
+
+    // For media control toggle button, we support it on Windows 8.1+ (NT6.3),
+    // MacOs 10.4+ (darwin8.0, but we already don't support that) and
+    // gtk-based Linux.
+    if (
+      AppConstants.isPlatformAndVersionAtLeast("win", "6.3") ||
+      AppConstants.platform == "macosx" ||
+      AppConstants.MOZ_WIDGET_GTK
+    ) {
+      document.getElementById("mediaControlBox").hidden = false;
+      let mediaControlLearnMoreUrl =
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "media-keyboard-control";
+      let link = document.getElementById("mediaControlLearnMore");
+      link.setAttribute("href", mediaControlLearnMoreUrl);
+      setEventListener(
+        "mediaControlToggleEnabled",
+        "command",
+        gMainPane.updateMediaControlTelemetry
+      );
+    }
 
     // Initializes the fonts dropdowns displayed in this pane.
     this._rebuildFonts();
@@ -1272,8 +1305,10 @@ var gMainPane = {
       let isDefault = shellSvc.isDefaultBrowser(false, true);
       setDefaultPane.selectedIndex = isDefault ? 1 : 0;
       let alwaysCheck = document.getElementById("alwaysCheckDefault");
-      alwaysCheck.disabled =
-        alwaysCheck.disabled || (isDefault && alwaysCheck.checked);
+      let alwaysCheckPref = Preferences.get(
+        "browser.shell.checkDefaultBrowser"
+      );
+      alwaysCheck.disabled = alwaysCheckPref.locked || isDefault;
     }
   },
 
@@ -1336,9 +1371,8 @@ var gMainPane = {
     let opts = { selected: gMainPane.selectedLocales, search, telemetryId };
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/browserLanguages.xhtml",
-      null,
-      opts,
-      this.browserLanguagesClosed
+      { closingCallback: this.browserLanguagesClosed },
+      opts
     );
   },
 
@@ -1410,7 +1444,7 @@ var gMainPane = {
   configureFonts() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/fonts.xhtml",
-      "resizable=no"
+      { features: "resizable=no" }
     );
   },
 
@@ -1421,7 +1455,7 @@ var gMainPane = {
   configureColors() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/colors.xhtml",
-      "resizable=no"
+      { features: "resizable=no" }
     );
   },
 
@@ -1432,9 +1466,7 @@ var gMainPane = {
   showConnections() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/connection.xhtml",
-      null,
-      null,
-      this.updateProxySettingsUI.bind(this)
+      { closingCallback: this.updateProxySettingsUI.bind(this) }
     );
   },
 
@@ -1515,6 +1547,14 @@ var gMainPane = {
    */
   showContainerSettings() {
     gotoPref("containers");
+  },
+
+  updateMediaControlTelemetry() {
+    const telemetry = Services.telemetry.getHistogramById(
+      "MEDIA_CONTROL_SETTING_CHANGE"
+    );
+    const checkbox = document.getElementById("mediaControlToggleEnabled");
+    telemetry.add(checkbox.checked ? "EnableFromUI" : "DisableFromUI");
   },
 
   /**
@@ -1826,7 +1866,7 @@ var gMainPane = {
     let um = Cc["@mozilla.org/updates/update-manager;1"].getService(
       Ci.nsIUpdateManager
     );
-    if (!um.activeUpdate) {
+    if (!um.readyUpdate && !um.downloadingUpdate) {
       return;
     }
 
@@ -1866,7 +1906,8 @@ var gMainPane = {
         Ci.nsIApplicationUpdateService
       );
       aus.stopDownload();
-      um.cleanupActiveUpdate();
+      um.cleanupReadyUpdate();
+      um.cleanupDownloadingUpdate();
     }
   },
 
@@ -1947,7 +1988,18 @@ var gMainPane = {
    * applications menu.
    */
   _loadInternalHandlers() {
-    var internalHandlers = [new PDFHandlerInfoWrapper()];
+    let internalHandlers = [new PDFHandlerInfoWrapper()];
+
+    let enabledHandlers = Services.prefs
+      .getCharPref("browser.download.viewableInternally.enabledTypes", "")
+      .trim();
+    if (enabledHandlers) {
+      for (let ext of enabledHandlers.split(",")) {
+        internalHandlers.push(
+          new ViewableInternallyHandlerInfoWrapper(ext.trim())
+        );
+      }
+    }
     for (let internalHandler of internalHandlers) {
       if (internalHandler.enabled) {
         this._handledTypes[internalHandler.type] = internalHandler;
@@ -2540,7 +2592,7 @@ var gMainPane = {
    * Filter the list when the user enters a filter term into the filter field.
    */
   filter() {
-    this._rebuildView();
+    this._rebuildView(); // FIXME: Should this be await since bug 1508156?
   },
 
   focusFilterBox() {
@@ -2629,9 +2681,8 @@ var gMainPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/applicationManager.xhtml",
-      "resizable=no",
-      handlerInfo,
-      onComplete
+      { features: "resizable=no", closingCallback: onComplete },
+      handlerInfo
     );
   },
 
@@ -2695,9 +2746,8 @@ var gMainPane = {
 
       gSubDialog.open(
         "chrome://global/content/appPicker.xhtml",
-        null,
-        params,
-        onAppSelected
+        { closingCallback: onAppSelected },
+        params
       );
     } else {
       let winTitle = await document.l10n.formatValue(
@@ -3630,8 +3680,9 @@ class HandlerInfoWrapper {
  * menu.
  */
 class InternalHandlerInfoWrapper extends HandlerInfoWrapper {
-  constructor(mimeType) {
-    super(mimeType, gMIMEService.getFromTypeAndExtension(mimeType, null));
+  constructor(mimeType, extension) {
+    let type = gMIMEService.getFromTypeAndExtension(mimeType, extension);
+    super(mimeType || type.type, type);
   }
 
   // Override store so we so we can notify any code listening for registration
@@ -3643,22 +3694,24 @@ class InternalHandlerInfoWrapper extends HandlerInfoWrapper {
   get enabled() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
-
-  get description() {
-    return { id: this._appPrefLabel };
-  }
 }
 
 class PDFHandlerInfoWrapper extends InternalHandlerInfoWrapper {
   constructor() {
-    super(TYPE_PDF);
-  }
-
-  get _appPrefLabel() {
-    return "applications-type-pdf";
+    super(TYPE_PDF, null);
   }
 
   get enabled() {
     return !Services.prefs.getBoolPref(PREF_PDFJS_DISABLED);
+  }
+}
+
+class ViewableInternallyHandlerInfoWrapper extends InternalHandlerInfoWrapper {
+  constructor(extension) {
+    super(null, extension);
+  }
+
+  get enabled() {
+    return DownloadIntegration.shouldViewDownloadInternally(this.type);
   }
 }

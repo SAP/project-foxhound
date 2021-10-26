@@ -187,10 +187,9 @@ class RulesView {
    * if they are supported in the current target.
    */
   async initSimulationFeatures() {
-    // In order to query if the content-viewer actor's print and color simulation methods are
-    // supported, we have to call the content-viewer front so that the actor is lazily loaded.
-    // This allows us to use `actorHasMethod`. Please see `getActorDescription` for more
-    // information.
+    // XXX: We used to initialize the front early in order to call
+    // actorHasMethod to check against backward compatibility. This is no longer
+    // necessary and the call to getFront could be done later if needed.
     this.contentViewerFront = await this.currentTarget.getFront(
       "contentViewer"
     );
@@ -201,19 +200,12 @@ class RulesView {
       this.store.dispatch(updatePrintSimulationHidden(true));
     }
 
-    // Show the color scheme simulation toggle button if:
-    // - The feature pref is enabled.
-    // - Color scheme simulation is supported for the current target.
-    const isEmulateColorSchemeSupported = await this.currentTarget.actorHasMethod(
-      "contentViewer",
-      "getEmulatedColorScheme"
-    );
-
+    // Show the color scheme simulation toggle button if the feature pref is
+    // enabled.
     if (
       Services.prefs.getBoolPref(
         "devtools.inspector.color-scheme-simulation.enabled"
-      ) &&
-      isEmulateColorSchemeSupported
+      )
     ) {
       this.store.dispatch(updateColorSchemeSimulationHidden(false));
     } else {
@@ -242,11 +234,6 @@ class RulesView {
     if (this._contextMenu) {
       this._contextMenu.destroy();
       this._contextMenu = null;
-    }
-
-    if (this._selectHighlighter) {
-      this._selectorHighlighter.finalize();
-      this._selectorHighlighter = null;
     }
 
     if (this.elementStyle) {
@@ -394,34 +381,6 @@ class RulesView {
   }
 
   /**
-   * Get an instance of SelectorHighlighter (used to highlight nodes that match
-   * selectors in the rule-view).
-   *
-   * @return {Promise} resolves to the instance of the highlighter.
-   */
-  async getSelectorHighlighter() {
-    if (!this.inspector) {
-      return null;
-    }
-
-    if (this._selectorHighlighter) {
-      return this._selectorHighlighter;
-    }
-
-    try {
-      const front = this.inspector.inspectorFront;
-      this._selectorHighlighter = await front.getHighlighterByType(
-        "SelectorHighlighter"
-      );
-      return this._selectorHighlighter;
-    } catch (e) {
-      // The SelectorHighlighter type could not be created in the
-      // current target. It could be an older server, or a XUL page.
-      return null;
-    }
-  }
-
-  /**
    * Returns true if the rules panel is visible, and false otherwise.
    */
   isPanelVisible() {
@@ -432,6 +391,20 @@ class RulesView {
       this.inspector.toolbox.currentToolId === "inspector" &&
       this.inspector.sidebar.getCurrentTabID() === "newruleview"
     );
+  }
+
+  /**
+   * Check whether a SelectorHighlighter is active for the given selector text.
+   *
+   * @param {String} selector
+   * @return {Boolean}
+   */
+  isSelectorHighlighted(selector) {
+    const options = this.inspector.highlighters.getOptionsForActiveHighlighter(
+      this.inspector.highlighters.TYPES.SELECTOR
+    );
+
+    return options?.selector === selector;
   }
 
   /**
@@ -581,30 +554,22 @@ class RulesView {
    *         The selector used to find nodes in the page.
    */
   async onToggleSelectorHighlighter(selector) {
-    const highlighter = await this.getSelectorHighlighter();
-    if (!highlighter) {
-      return;
-    }
-
-    await highlighter.hide();
-
-    if (selector !== this.highlighters.selectorHighlighterShown) {
-      this.store.dispatch(updateHighlightedSelector(selector));
-
-      await highlighter.show(this.selection.nodeFront, {
-        hideInfoBar: true,
-        hideGuides: true,
-        selector,
-      });
-
-      this.highlighters.selectorHighlighterShown = selector;
-      // This event is emitted for testing purposes.
-      this.emit("ruleview-selectorhighlighter-toggled", true);
-    } else {
-      this.highlighters.selectorHighlighterShown = null;
+    if (this.isSelectorHighlighted(selector)) {
+      await this.inspector.highlighters.hideHighlighterType(
+        this.inspector.highlighters.TYPES.SELECTOR
+      );
       this.store.dispatch(updateHighlightedSelector(""));
-      // This event is emitted for testing purposes.
-      this.emit("ruleview-selectorhighlighter-toggled", false);
+    } else {
+      await this.inspector.highlighters.showHighlighterTypeForNode(
+        this.inspector.highlighters.TYPES.SELECTOR,
+        this.inspector.selection.nodeFront,
+        {
+          hideInfoBar: true,
+          hideGuides: true,
+          selector,
+        }
+      );
+      this.store.dispatch(updateHighlightedSelector(selector));
     }
   }
 
@@ -772,15 +737,9 @@ class RulesView {
         }
 
         // Hide the selector highlighter if it matches the selector being edited.
-        if (this.highlighters.selectorHighlighterShown) {
-          const selector = await this.elementStyle
-            .getRule(ruleId)
-            .getUniqueSelector();
-          if (this.highlighters.selectorHighlighterShown === selector) {
-            this.onToggleSelectorHighlighter(
-              this.highlighters.selectorHighlighterShown
-            );
-          }
+        const rule = this.elementStyle.getRule(ruleId);
+        if (this.isSelectorHighlighted(rule.selectorText)) {
+          await this.onToggleSelectorHighlighter(rule.selectorText);
         }
 
         await this.elementStyle.modifySelector(ruleId, value);

@@ -72,7 +72,7 @@ class MachCommands(MachCommandBase):
     )
     def lint(self, *runargs, **lintargs):
         """Run linters."""
-        self._activate_virtualenv()
+        self.activate_virtualenv()
         from mozlint import cli, parser
 
         try:
@@ -87,6 +87,8 @@ class MachCommands(MachCommandBase):
         lintargs.setdefault("root", self.topsrcdir)
         lintargs["exclude"] = get_global_excludes(lintargs["root"])
         lintargs["config_paths"].insert(0, here)
+        lintargs["virtualenv_bin_path"] = self.virtualenv_manager.bin_path
+        lintargs["virtualenv_manager"] = self.virtualenv_manager
         for path in EXCLUSION_FILES:
             parser.GLOBAL_SUPPORT_FILES.append(os.path.join(self.topsrcdir, path))
         return cli.run(*runargs, **lintargs)

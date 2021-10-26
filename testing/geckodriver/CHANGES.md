@@ -1,19 +1,106 @@
 Change log
 ==========
 
-All notable changes to this program is documented in this file.
+All notable changes to this program are documented in this file.
 
+0.28.0  (2020-11-03, `c00d2b6acd3f`)
+--------------------
 
-0.27.0
-------
+### Known problems
+
+- _macOS 10.15 (Catalina):_
+
+  Due to the requirement from Apple that all programs must be
+  notarized, geckodriver will not work on Catalina if you manually
+  download it through another notarized program, such as Firefox.
+
+  Whilst we are working on a repackaging fix for this problem, you can
+  find more details on how to work around this issue in the [macOS
+  notarization] section of the documentation.
 
 ### Added
 
-- To set environment variables for the launched Firefox, it is now
-  possible to add an `env` object on `moz:firefoxOptions`
+- The command line flag `--android-storage` has been added, to allow geckodriver
+to also control Firefox on root-less Android devices. See the [documentation][Flags]
+for available values.
 
-0.26.0
-------
+### Fixed
+
+- Firefox can be started again via a shell script that is located outside of the
+  Firefox directory on Linux.
+
+- If Firefox cannot be started by geckodriver the real underlying error message is
+  now being reported.
+
+- Version numbers for minor and extended support releases of Firefox are now parsed correctly.
+
+### Removed
+
+- Since Firefox 72 extension commands for finding an element’s anonymous children
+  and querying its attributes are no longer needed, and have been removed.
+
+0.27.0  (2020-07-27, `7b8c4f32cdde`)
+--------------------
+
+### Security Fixes
+
+- CVE-2020-15660
+
+  - Added additional checks on the `Content-Type` header for `POST`
+    requests to disallow `application/x-www-form-urlencoded`,
+    `multipart/form-data` and `text/plain`.
+
+  - Added checking of the `Origin` header for `POST` requests.
+
+  - The version number of Firefox is now checked when establishing a session.
+
+### Known problems
+
+- _macOS 10.15 (Catalina):_
+
+  Due to the requirement from Apple that all programs must be
+  notarized, geckodriver will not work on Catalina if you manually
+  download it through another notarized program, such as Firefox.
+
+  Whilst we are working on a repackaging fix for this problem, you can
+  find more details on how to work around this issue in the [macOS
+  notarization] section of the documentation.
+
+### Added
+
+- To set environment variables for the launched Firefox for Android,
+  it is now possible to add an `env` object on `moz:firefoxOptions`
+  (note: this is not supported for Firefox Desktop)
+
+- Support for print-to-PDF
+
+  The newly standardised WebDriver [Print] endpoint provides a way to
+  render pages to a paginated PDF representation. This endpoint is
+  supported by geckodriver when using Firefox version ≥78.
+
+- Support for same-site cookies
+
+  Cookies can now be set with a `same-site` parameter, and the value
+  of that parameter will be returned when cookies are
+  retrieved. Requires Firefox version ≥79. Thanks to [Peter Major] for
+  the patch.
+
+### Fixed
+
+- _Android:_
+
+  * Firefox running on Android devices can now be controlled from a Windows host.
+
+  * Setups with multiple connected Android devices are now supported.
+
+  * Improved cleanup of configuration files. This prevents crashes if
+    the application is started manually after launching it through
+    geckodriver.
+
+- Windows and Linux binaries are again statically linked.
+
+0.26.0  (2019-10-12, `e9783a644016'`)
+------------------------------------
 
 Note that with this release the minimum recommended Firefox version
 has changed to Firefox ≥60.
@@ -1286,6 +1373,7 @@ and greater.
 [Firefox Preview]: https://play.google.com/store/apps/details?id=org.mozilla.fenix
 [Firefox Reality]: https://play.google.com/store/apps/details?id=org.mozilla.vrbrowser
 [Capabilities]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Capabilities.html
+[Flags]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Flags.html
 [enable remote debugging on the Android device]: https://developers.google.com/web/tools/chrome-devtools/remote-debugging
 [macOS notarization]: https://firefox-source-docs.mozilla.org/testing/geckodriver/Notarization.html
 
@@ -1335,6 +1423,7 @@ and greater.
 [Minimize Window]: https://w3c.github.io/webdriver/webdriver-spec.html#minimize-window
 [New Session]: https://w3c.github.io/webdriver/webdriver-spec.html#new-session
 [New Window]: https://developer.mozilla.org/en-US/docs/Web/WebDriver/Commands/New_Window
+[Print]: https://w3c.github.io/webdriver/webdriver-spec.html#print
 [Send Alert Text]: https://w3c.github.io/webdriver/webdriver-spec.html#send-alert-text
 [Set Timeouts]: https://w3c.github.io/webdriver/webdriver-spec.html#set-timeouts
 [Set Window Rect]: https://w3c.github.io/webdriver/webdriver-spec.html#set-window-rect
@@ -1350,6 +1439,7 @@ and greater.
 [Kriti Singh]: https://github.com/kritisingh1
 [Mike Pennisi]: https://github.com/jugglinmike
 [Nupur Baghel]: https://github.com/nupurbaghel
+[Peter Major]: https://github.com/aldaris
 [Shivam Singhal]: https://github.com/championshuttler
 [Sven Jost]: https://github/mythsunwind
 [Vlad Filippov]: https://github.com/vladikoff

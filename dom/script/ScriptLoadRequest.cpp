@@ -11,7 +11,9 @@
 #include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
+#include "ModuleLoadRequest.h"
 #include "nsContentUtils.h"
+#include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
 #include "nsISupportsPriority.h"
 #include "ScriptLoadRequest.h"
@@ -58,6 +60,9 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(ScriptLoadRequest)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(ScriptLoadRequest)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchOptions, mCacheInfo)
   tmp->mScript = nullptr;
+  if (Runnable* runnable = tmp->mRunnable.exchange(nullptr)) {
+    runnable->Release();
+  }
   tmp->DropBytecodeCacheReferences();
   tmp->MaybeUnblockOnload();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -90,6 +95,7 @@ ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind, nsIURI* aURI,
       mIsTracking(false),
       mFetchOptions(aFetchOptions),
       mOffThreadToken(nullptr),
+      mRunnable(nullptr),
       mScriptTextLength(0),
       mScriptBytecode(),
       mBytecodeOffset(0),
@@ -147,6 +153,14 @@ void ScriptLoadRequest::MaybeCancelOffThreadScript() {
     MOZ_ASSERT(IsBytecode());
     JS::CancelOffThreadScriptDecoder(cx, mOffThreadToken);
   }
+
+  // Cancellation request above should guarantee removal of the parse task, so
+  // releasing the runnable should be safe to do here.
+  if (Runnable* runnable = mRunnable.exchange(nullptr)) {
+    runnable->Release();
+  }
+
+  MaybeUnblockOnload();
   mOffThreadToken = nullptr;
 }
 

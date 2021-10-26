@@ -7,20 +7,21 @@
 #ifndef GFX_ASYNCCOMPOSITIONMANAGER_H
 #define GFX_ASYNCCOMPOSITIONMANAGER_H
 
-#include "Units.h"                                 // for ScreenPoint, etc
-#include "FrameMetrics.h"                          // for FrameMetrics
-#include "mozilla/layers/LayerManagerComposite.h"  // for LayerManagerComposite
-#include "mozilla/Attributes.h"                    // for final, etc
-#include "mozilla/RefPtr.h"                        // for RefCounted
-#include "mozilla/TimeStamp.h"                     // for TimeStamp
-#include "mozilla/gfx/BasePoint.h"                 // for BasePoint
-#include "mozilla/gfx/Matrix.h"                    // for Matrix4x4
-#include "mozilla/HalScreenConfiguration.h"        // For ScreenOrientation
-#include "mozilla/layers/FrameUniformityData.h"    // For FrameUniformityData
-#include "mozilla/layers/LayersMessages.h"         // for TargetConfig
-#include "mozilla/RefPtr.h"                        // for nsRefPtr
-#include "nsISupportsImpl.h"         // for LayerManager::AddRef, etc
-#include "CompositorBridgeParent.h"  // for TransformsToSkip
+#include "Units.h"                                  // for ScreenPoint, etc
+#include "FrameMetrics.h"                           // for FrameMetrics
+#include "mozilla/layers/APZUtils.h"                // for GeckoViewMetrics
+#include "mozilla/layers/CompositorBridgeParent.h"  // for TransformsToSkip
+#include "mozilla/layers/LayerManagerComposite.h"   // for LayerManagerComposite
+#include "mozilla/Attributes.h"                     // for final, etc
+#include "mozilla/RefPtr.h"                         // for RefCounted
+#include "mozilla/TimeStamp.h"                      // for TimeStamp
+#include "mozilla/gfx/BasePoint.h"                  // for BasePoint
+#include "mozilla/gfx/Matrix.h"                     // for Matrix4x4
+#include "mozilla/HalScreenConfiguration.h"         // For ScreenOrientation
+#include "mozilla/layers/FrameUniformityData.h"     // For FrameUniformityData
+#include "mozilla/layers/LayersMessages.h"          // for TargetConfig
+#include "mozilla/RefPtr.h"                         // for nsRefPtr
+#include "nsISupportsImpl.h"  // for LayerManager::AddRef, etc
 
 namespace mozilla {
 namespace layers {
@@ -29,28 +30,7 @@ class Layer;
 class LayerManagerComposite;
 class AutoResolveRefLayers;
 class CompositorBridgeParent;
-
-// Represents async transforms consisting of a scale and a translation.
-struct AsyncTransform {
-  explicit AsyncTransform(
-      LayerToParentLayerScale aScale = LayerToParentLayerScale(),
-      ParentLayerPoint aTranslation = ParentLayerPoint())
-      : mScale(aScale), mTranslation(aTranslation) {}
-
-  operator AsyncTransformComponentMatrix() const {
-    return AsyncTransformComponentMatrix::Scaling(mScale.scale, mScale.scale, 1)
-        .PostTranslate(mTranslation.x, mTranslation.y, 0);
-  }
-
-  bool operator==(const AsyncTransform& rhs) const {
-    return mTranslation == rhs.mTranslation && mScale == rhs.mScale;
-  }
-
-  bool operator!=(const AsyncTransform& rhs) const { return !(*this == rhs); }
-
-  LayerToParentLayerScale mScale;
-  ParentLayerPoint mTranslation;
-};
+class SampleTime;
 
 /**
  * Manage async composition effects. This class is only used with OMTC and only
@@ -83,7 +63,7 @@ class AsyncCompositionManager final {
   // Sample transforms for layer trees.  Return true to request
   // another animation frame.
   bool TransformShadowTree(
-      TimeStamp aCurrentFrame, TimeDuration aVsyncRate,
+      const SampleTime& aCurrentFrame, TimeDuration aVsyncRate,
       CompositorBridgeParentBase::TransformsToSkip aSkip =
           CompositorBridgeParentBase::TransformsToSkip::NoneOfThem);
 
@@ -127,14 +107,6 @@ class AsyncCompositionManager final {
   };
 
   typedef std::map<Layer*, ClipParts> ClipPartsCache;
-
-  /**
-   * Compute the translation that should be applied to a layer that's fixed
-   * at |eFixedSides|, to respect the fixed layer margins |aFixedMargins|.
-   */
-  static ScreenPoint ComputeFixedMarginsOffset(
-      const ScreenMargin& aFixedMargins, SideBits eFixedSides,
-      const ScreenMargin& aGeckoFixedLayerMargins);
 
  private:
   // Return true if an AsyncPanZoomController content transform was
@@ -257,11 +229,11 @@ class AsyncCompositionManager final {
 
 #ifdef MOZ_WIDGET_ANDROID
  private:
-  // This calculates whether frame metrics should be sent to Java.
-  bool FrameMetricsHaveUpdated(const FrameMetrics& aMetrics);
-  // This holds the most recent scroll/zoom metrics sent to Java, and is used
+  // This calculates whether GeckoView metrics should be sent to Java.
+  bool GeckoViewMetricsHaveUpdated(const GeckoViewMetrics& aMetrics);
+  // This holds the most recent GeckoView metrics sent to Java, and is used
   // to send new updates when it changes.
-  FrameMetrics mLastMetrics;
+  GeckoViewMetrics mLastMetrics;
   // The following two fields are only needed on Fennec with C++ APZ, because
   // then we need to reposition the gecko scrollbar to deal with the
   // dynamic toolbar shifting content around.

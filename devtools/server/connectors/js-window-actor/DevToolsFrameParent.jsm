@@ -10,7 +10,7 @@ const { EventEmitter } = ChromeUtils.import(
   "resource://gre/modules/EventEmitter.jsm"
 );
 const { WatcherRegistry } = ChromeUtils.import(
-  "resource://devtools/server/actors/descriptors/watcher/WatcherRegistry.jsm"
+  "resource://devtools/server/actors/watcher/WatcherRegistry.jsm"
 );
 
 loader.lazyRequireGetter(
@@ -58,13 +58,13 @@ class DevToolsFrameParent extends JSWindowActorParent {
     watcherActorID,
     connectionPrefix,
     browserId,
-    watchedResources,
+    watchedData,
   }) {
     return this.sendQuery("DevToolsFrameParent:instantiate-already-available", {
       watcherActorID,
       connectionPrefix,
       browserId,
-      watchedResources,
+      watchedData,
     });
   }
 
@@ -76,22 +76,26 @@ class DevToolsFrameParent extends JSWindowActorParent {
   }
 
   /**
-   * Request the content process to fetch all already existing resources,
-   * and also start listening for the future ones to be created.
+   * Communicate to the content process that some data have been added.
    */
-  watchFrameResources({ watcherActorID, browserId, resourceTypes }) {
-    return this.sendQuery("DevToolsFrameParent:watchResources", {
+  addWatcherDataEntry({ watcherActorID, browserId, type, entries }) {
+    return this.sendQuery("DevToolsFrameParent:addWatcherDataEntry", {
       watcherActorID,
       browserId,
-      resourceTypes,
+      type,
+      entries,
     });
   }
 
-  unwatchFrameResources({ watcherActorID, browserId, resourceTypes }) {
-    this.sendAsyncMessage("DevToolsFrameParent:unwatchResources", {
+  /**
+   * Communicate to the content process that some data have been removed.
+   */
+  removeWatcherDataEntry({ watcherActorID, browserId, type, entries }) {
+    this.sendAsyncMessage("DevToolsFrameParent:removeWatcherDataEntry", {
       watcherActorID,
       browserId,
-      resourceTypes,
+      type,
+      entries,
     });
   }
 

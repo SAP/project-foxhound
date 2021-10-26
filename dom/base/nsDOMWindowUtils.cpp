@@ -6,6 +6,7 @@
 
 #include "nsDOMWindowUtils.h"
 
+#include "MobileViewportManager.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "nsPresContext.h"
@@ -45,6 +46,7 @@
 #include "nsCharsetSource.h"
 #include "nsJSEnvironment.h"
 #include "nsJSUtils.h"
+#include "js/Object.h"  // JS::GetClass
 
 #include "mozilla/ChaosMode.h"
 #include "mozilla/CheckedInt.h"
@@ -119,6 +121,7 @@
 #include "mozilla/PreloadedStyleSheet.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
+#include "mozilla/DisplayPortUtils.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ViewportUtils.h"
 
@@ -218,21 +221,27 @@ nsDOMWindowUtils::nsDOMWindowUtils(nsGlobalWindowOuter* aWindow) {
 
 nsDOMWindowUtils::~nsDOMWindowUtils() { OldWindowSize::GetAndRemove(mWindow); }
 
-PresShell* nsDOMWindowUtils::GetPresShell() {
+nsIDocShell* nsDOMWindowUtils::GetDocShell() {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  if (!window) return nullptr;
+  if (!window) {
+    return nullptr;
+  }
+  return window->GetDocShell();
+}
 
-  nsIDocShell* docShell = window->GetDocShell();
-  if (!docShell) return nullptr;
-
+PresShell* nsDOMWindowUtils::GetPresShell() {
+  nsIDocShell* docShell = GetDocShell();
+  if (!docShell) {
+    return nullptr;
+  }
   return docShell->GetPresShell();
 }
 
 nsPresContext* nsDOMWindowUtils::GetPresContext() {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  if (!window) return nullptr;
-  nsIDocShell* docShell = window->GetDocShell();
-  if (!docShell) return nullptr;
+  nsIDocShell* docShell = GetDocShell();
+  if (!docShell) {
+    return nullptr;
+  }
   return docShell->GetPresContext();
 }
 
@@ -469,8 +478,8 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
       new DisplayPortPropertyData(displayport, aPriority, wasPainted),
       nsINode::DeleteProperty<DisplayPortPropertyData>);
 
-  nsLayoutUtils::InvalidateForDisplayPortChange(aElement, hadDisplayPort,
-                                                oldDisplayPort, displayport);
+  DisplayPortUtils::InvalidateForDisplayPortChange(aElement, hadDisplayPort,
+                                                   oldDisplayPort, displayport);
 
   nsIFrame* rootFrame = presShell->GetRootFrame();
   if (rootFrame) {
@@ -520,8 +529,9 @@ nsDOMWindowUtils::SetDisplayPortMarginsForElement(
   ScreenMargin displayportMargins(aTopMargin, aRightMargin, aBottomMargin,
                                   aLeftMargin);
 
-  nsLayoutUtils::SetDisplayPortMargins(aElement, presShell, displayportMargins,
-                                       aPriority);
+  DisplayPortUtils::SetDisplayPortMargins(
+      aElement, presShell,
+      DisplayPortMargins::ForContent(aElement, displayportMargins), aPriority);
 
   return NS_OK;
 }
@@ -543,7 +553,8 @@ nsDOMWindowUtils::SetDisplayPortBaseForElement(int32_t aX, int32_t aY,
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsLayoutUtils::SetDisplayPortBase(aElement, nsRect(aX, aY, aWidth, aHeight));
+  DisplayPortUtils::SetDisplayPortBase(aElement,
+                                       nsRect(aX, aY, aWidth, aHeight));
 
   return NS_OK;
 }
@@ -558,8 +569,10 @@ nsDOMWindowUtils::GetScrollbarSizes(Element* aElement,
     return NS_ERROR_INVALID_ARG;
   }
 
-  CSSIntMargin scrollbarSizes = RoundedToInt(
-      CSSMargin::FromAppUnits(scrollFrame->GetActualScrollbarSizes()));
+  CSSIntMargin scrollbarSizes =
+      RoundedToInt(CSSMargin::FromAppUnits(scrollFrame->GetActualScrollbarSizes(
+          nsIScrollableFrame::ScrollbarSizesOptions::
+              INCLUDE_VISUAL_VIEWPORT_SCROLLBARS)));
   *aOutVerticalScrollbarWidth = scrollbarSizes.LeftRight();
   *aOutHorizontalScrollbarHeight = scrollbarSizes.TopBottom();
 
@@ -679,6 +692,15 @@ nsDOMWindowUtils::SendMouseEventCommon(
       presShell, aType, aX, aY, aButton, aButtons, aClickCount, aModifiers,
       aIgnoreRootScrollFrame, aPressure, aInputSourceArg, aPointerId, aToWindow,
       aPreventDefault, aIsDOMEventSynthesized, aIsWidgetEventSynthesized);
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::IsCORSSafelistedRequestHeader(const nsACString& aName,
+                                                const nsACString& aValue,
+                                                bool* aRetVal) {
+  NS_ENSURE_ARG_POINTER(aRetVal);
+  *aRetVal = nsContentUtils::IsCORSSafelistedRequestHeader(aName, aValue);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -991,7 +1013,7 @@ nsDOMWindowUtils::SuppressAnimation(bool aSuppress) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::ClearSharedStyleSheetCache() {
-  SharedStyleSheetCache::ClearForTest();
+  SharedStyleSheetCache::Clear();
   return NS_OK;
 }
 
@@ -1274,8 +1296,7 @@ nsDOMWindowUtils::GetTranslationNodes(nsINode* aRoot,
 static already_AddRefed<DataSourceSurface> CanvasToDataSourceSurface(
     HTMLCanvasElement* aCanvas) {
   MOZ_ASSERT(aCanvas);
-  nsLayoutUtils::SurfaceFromElementResult result =
-      nsLayoutUtils::SurfaceFromElement(aCanvas);
+  SurfaceFromElementResult result = nsLayoutUtils::SurfaceFromElement(aCanvas);
 
   MOZ_ASSERT(result.GetSourceSurface());
   return result.GetSourceSurface()->GetDataSurface();
@@ -1739,6 +1760,16 @@ nsDOMWindowUtils::GetFocusedInputMode(nsAString& aInputMode) {
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::GetFocusedAutocapitalize(nsAString& aAutocapitalize) {
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget) {
+    return NS_ERROR_FAILURE;
+  }
+  aAutocapitalize = widget->GetInputContext().mAutocapitalize;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::GetViewId(Element* aElement, nsViewID* aResult) {
   if (aElement && nsLayoutUtils::FindIDFor(aElement, aResult)) {
     return NS_OK;
@@ -2071,7 +2102,7 @@ nsDOMWindowUtils::GetClassName(JS::Handle<JS::Value> aObject, JSContext* aCx,
     return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
 
-  *aName = NS_xstrdup(JS_GetClass(aObject.toObjectOrNull())->name);
+  *aName = NS_xstrdup(JS::GetClass(aObject.toObjectOrNull())->name);
   return NS_OK;
 }
 
@@ -2129,6 +2160,13 @@ nsDOMWindowUtils::IsInModalState(bool* retval) {
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::GetDesktopModeViewport(bool* retval) {
+  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
+  *retval = window && window->IsDesktopModeViewport();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::SetDesktopModeViewport(bool aDesktopMode) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_STATE(window);
@@ -2138,25 +2176,11 @@ nsDOMWindowUtils::SetDesktopModeViewport(bool aDesktopMode) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetOuterWindowID(uint64_t* aWindowID) {
+nsDOMWindowUtils::GetDeprecatedOuterWindowID(uint64_t* aWindowID) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_STATE(window);
 
   *aWindowID = window->WindowID();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::GetCurrentInnerWindowID(uint64_t* aWindowID) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  NS_ENSURE_TRUE(window, NS_ERROR_NOT_AVAILABLE);
-
-  nsGlobalWindowInner* inner =
-      nsGlobalWindowOuter::Cast(window)->GetCurrentInnerWindowInternal();
-  if (!inner) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-  *aWindowID = inner->WindowID();
   return NS_OK;
 }
 
@@ -2565,6 +2589,26 @@ nsDOMWindowUtils::DisableApzForElement(Element* aElement) {
   return NS_OK;
 }
 
+static nsTArray<nsIScrollableFrame*> CollectScrollableAncestors(
+    nsIFrame* aStart) {
+  nsTArray<nsIScrollableFrame*> result;
+  nsIFrame* frame = aStart;
+  while (frame) {
+    frame = nsLayoutUtils::GetCrossDocParentFrame(frame);
+    if (!frame) {
+      break;
+    }
+    nsIScrollableFrame* scrollAncestor =
+        nsLayoutUtils::GetAsyncScrollableAncestorFrame(frame);
+    if (!scrollAncestor) {
+      break;
+    }
+    result.AppendElement(scrollAncestor);
+    frame = do_QueryFrame(scrollAncestor);
+  }
+  return result;
+}
+
 NS_IMETHODIMP
 nsDOMWindowUtils::ZoomToFocusedInput() {
   if (!Preferences::GetBool("apz.zoom-to-focused-input.enabled")) {
@@ -2612,14 +2656,16 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
     // We could try to teach apz to zoom to a rect only without panning, or
     // maybe we could give it a rect offsetted by the root scroll position, if
     // we wanted to do this.
-    //
-    // Note that we only do this if the frame belongs to `presShell` (that is,
-    // we still zoom in fixed elements in subdocuments, as they're not fixed to
-    // the root content document).
-    if (frame->PresShell() == presShell &&
-        nsLayoutUtils::IsInPositionFixedSubtree(frame)) {
-      return true;
+    for (; frame; frame = nsLayoutUtils::GetCrossDocParentFrame(frame)) {
+      if (frame->PresShell() == presShell) {
+        // Note that we only do this if the frame belongs to `presShell` (that
+        // is, we still zoom in fixed elements in subdocuments, as they're not
+        // fixed to the root content document).
+        return nsLayoutUtils::IsInPositionFixedSubtree(frame);
+      }
+      frame = frame->PresShell()->GetRootFrame();
     }
+
     return false;
   }();
 
@@ -2640,7 +2686,9 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
   }
 
   uint32_t flags = layers::DISABLE_ZOOM_OUT;
-  if (!Preferences::GetBool("formhelper.autozoom")) {
+  if (!Preferences::GetBool("formhelper.autozoom") ||
+      Preferences::GetBool("formhelper.autozoom.force-disable.test-only",
+                           /* aFallback = */ false)) {
     flags |= layers::PAN_INTO_VIEW_ONLY;
   } else {
     flags |= layers::ONLY_ZOOM_TO_DEFAULT_SCALE;
@@ -2669,7 +2717,27 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
   }
 
   bounds.Inflate(15.0f, 0.0f);
-  widget->ZoomToRect(presShellId, viewId, bounds, flags);
+
+  bool waitForRefresh = false;
+  for (nsIScrollableFrame* scrollAncestor :
+       CollectScrollableAncestors(element->GetPrimaryFrame())) {
+    if (scrollAncestor->HasScrollUpdates()) {
+      waitForRefresh = true;
+      break;
+    }
+  }
+  if (waitForRefresh) {
+    waitForRefresh =
+        presShell->AddPostRefreshObserver(new OneShotPostRefreshObserver(
+            presShell, [widget = RefPtr<nsIWidget>(widget), presShellId, viewId,
+                        bounds, flags](PresShell*) {
+              widget->ZoomToRect(presShellId, viewId, bounds, flags);
+            }));
+  }
+  if (!waitForRefresh) {
+    widget->ZoomToRect(presShellId, viewId, bounds, flags);
+  }
+
   return NS_OK;
 }
 
@@ -3029,9 +3097,7 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   nsCString origin;
-  nsresult rv =
-      quota::QuotaManager::GetInfoFromWindow(window, nullptr, nullptr, &origin);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY_VAR(origin, quota::QuotaManager::GetOriginFromWindow(window));
 
   IDBOpenDBOptions options;
   JS::Rooted<JS::Value> optionsVal(aCx, aOptions);
@@ -3047,8 +3113,9 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
   RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
 
   if (mgr) {
-    rv = mgr->BlockAndGetFileReferences(persistenceType, origin, aDatabaseName,
-                                        aId, aRefCnt, aDBRefCnt, aResult);
+    nsresult rv =
+        mgr->BlockAndGetFileReferences(persistenceType, origin, aDatabaseName,
+                                       aId, aRefCnt, aDBRefCnt, aResult);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
     *aRefCnt = *aDBRefCnt = -1;
@@ -3177,13 +3244,17 @@ nsresult nsDOMWindowUtils::RemoteFrameFullscreenReverted() {
   return NS_OK;
 }
 
-static void PrepareForFullscreenChange(PresShell* aPresShell,
+static void PrepareForFullscreenChange(nsIDocShell* aDocShell,
                                        const nsSize& aSize,
                                        nsSize* aOldSize = nullptr) {
-  if (!aPresShell) {
+  if (!aDocShell) {
     return;
   }
-  if (nsRefreshDriver* rd = aPresShell->GetRefreshDriver()) {
+  PresShell* presShell = aDocShell->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+  if (nsRefreshDriver* rd = presShell->GetRefreshDriver()) {
     rd->SetIsResizeSuppressed();
     // Since we are suppressing the resize reflow which would originally
     // be triggered by view manager, we need to ensure that the refresh
@@ -3191,18 +3262,28 @@ static void PrepareForFullscreenChange(PresShell* aPresShell,
     rd->ScheduleViewManagerFlush();
   }
   if (!aSize.IsEmpty()) {
-    if (nsViewManager* viewManager = aPresShell->GetViewManager()) {
+    nsCOMPtr<nsIContentViewer> cv;
+    aDocShell->GetContentViewer(getter_AddRefs(cv));
+    if (cv) {
+      nsIntRect cvBounds;
+      cv->GetBounds(cvBounds);
+      nscoord auPerDev = presShell->GetPresContext()->AppUnitsPerDevPixel();
       if (aOldSize) {
-        viewManager->GetWindowDimensions(&aOldSize->width, &aOldSize->height);
+        *aOldSize = LayoutDeviceIntSize::ToAppUnits(
+            LayoutDeviceIntSize::FromUnknownSize(cvBounds.Size()), auPerDev);
       }
-      viewManager->SetWindowDimensions(aSize.width, aSize.height);
+      LayoutDeviceIntSize newSize =
+          LayoutDeviceIntSize::FromAppUnitsRounded(aSize, auPerDev);
+
+      cvBounds.SizeTo(newSize.width, newSize.height);
+      cv->SetBounds(cvBounds);
     }
   }
 }
 
 NS_IMETHODIMP
 nsDOMWindowUtils::HandleFullscreenRequests(bool* aRetVal) {
-  PROFILER_ADD_MARKER("Enter fullscreen", DOM);
+  PROFILER_MARKER_UNTYPED("Enter fullscreen", DOM);
   nsCOMPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
 
@@ -3215,7 +3296,7 @@ nsDOMWindowUtils::HandleFullscreenRequests(bool* aRetVal) {
     presContext->DeviceContext()->GetRect(screenRect);
   }
   nsSize oldSize;
-  PrepareForFullscreenChange(GetPresShell(), screenRect.Size(), &oldSize);
+  PrepareForFullscreenChange(GetDocShell(), screenRect.Size(), &oldSize);
   OldWindowSize::Set(mWindow, oldSize);
 
   *aRetVal = Document::HandlePendingFullscreenRequests(doc);
@@ -3223,7 +3304,7 @@ nsDOMWindowUtils::HandleFullscreenRequests(bool* aRetVal) {
 }
 
 nsresult nsDOMWindowUtils::ExitFullscreen() {
-  PROFILER_ADD_MARKER("Exit fullscreen", DOM);
+  PROFILER_MARKER_UNTYPED("Exit fullscreen", DOM);
   nsCOMPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
 
@@ -3238,7 +3319,7 @@ nsresult nsDOMWindowUtils::ExitFullscreen() {
   // set the window dimensions in advance. Since the resize message
   // comes after the fullscreen change call, doing so could avoid an
   // extra resize reflow after this point.
-  PrepareForFullscreenChange(GetPresShell(), oldSize);
+  PrepareForFullscreenChange(GetDocShell(), oldSize);
   Document::ExitFullscreenInDocTree(doc);
   return NS_OK;
 }
@@ -4398,4 +4479,27 @@ nsDOMWindowUtils::GetWebrtcRawDeviceId(nsAString& aRawDeviceId) {
 
   aRawDeviceId.AppendInt(rawDeviceId);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetEffectivelyThrottlesFrameRequests(bool* aResult) {
+  Document* doc = GetDocument();
+  if (!doc) {
+    return NS_ERROR_FAILURE;
+  }
+  *aResult = !doc->WouldScheduleFrameRequestCallbacks() ||
+             doc->ShouldThrottleFrameRequests();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::ResetMobileViewportManager() {
+  if (RefPtr<PresShell> presShell = GetPresShell()) {
+    if (auto mvm = presShell->GetMobileViewportManager()) {
+      mvm->SetInitialViewport();
+      return NS_OK;
+    }
+  }
+  // Unable to reset, so let's error out
+  return NS_ERROR_FAILURE;
 }

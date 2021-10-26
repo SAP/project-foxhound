@@ -14,12 +14,12 @@ namespace mozilla {
 namespace net {
 
 enum SvcParamKey : uint16_t {
-  SvcParamKeyNone = 0,
+  SvcParamKeyMandatory = 0,
   SvcParamKeyAlpn = 1,
   SvcParamKeyNoDefaultAlpn = 2,
   SvcParamKeyPort = 3,
   SvcParamKeyIpv4Hint = 4,
-  SvcParamKeyEsniConfig = 5,
+  SvcParamKeyEchConfig = 5,
   SvcParamKeyIpv6Hint = 6,
 
   SvcParamKeyLast = SvcParamKeyIpv6Hint
@@ -50,8 +50,8 @@ struct SvcParamIpv4Hint {
   CopyableTArray<mozilla::net::NetAddr> mValue;
 };
 
-struct SvcParamEsniConfig {
-  bool operator==(const SvcParamEsniConfig& aOther) const {
+struct SvcParamEchConfig {
+  bool operator==(const SvcParamEchConfig& aOther) const {
     return mValue == aOther.mValue;
   }
   nsCString mValue;
@@ -66,7 +66,7 @@ struct SvcParamIpv6Hint {
 
 using SvcParamType =
     mozilla::Variant<Nothing, SvcParamAlpn, SvcParamNoDefaultAlpn, SvcParamPort,
-                     SvcParamIpv4Hint, SvcParamEsniConfig, SvcParamIpv6Hint>;
+                     SvcParamIpv4Hint, SvcParamEchConfig, SvcParamIpv6Hint>;
 
 struct SvcFieldValue {
   bool operator==(const SvcFieldValue& aOther) const {
@@ -82,8 +82,16 @@ struct SVCB {
            mSvcDomainName == aOther.mSvcDomainName &&
            mSvcFieldValue == aOther.mSvcFieldValue;
   }
-  uint16_t mSvcFieldPriority = SvcParamKeyNone;
+  bool operator<(const SVCB& aOther) const;
+  Maybe<uint16_t> GetPort() const;
+  bool NoDefaultAlpn() const;
+  Maybe<Tuple<nsCString, bool>> GetAlpn(bool aNoHttp2, bool aNoHttp3) const;
+  void GetIPHints(CopyableTArray<mozilla::net::NetAddr>& aAddresses) const;
+  uint16_t mSvcFieldPriority = 0;
   nsCString mSvcDomainName;
+  nsCString mEchConfig;
+  bool mHasIPHints = false;
+  bool mHasEchConfig = false;
   CopyableTArray<SvcFieldValue> mSvcFieldValue;
 };
 
@@ -91,11 +99,38 @@ class SVCBRecord : public nsISVCBRecord {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSISVCBRECORD
  public:
-  explicit SVCBRecord(const SVCB& data) : mData(data) {}
+  explicit SVCBRecord(const SVCB& data)
+      : mData(data), mPort(Nothing()), mAlpn(Nothing()) {}
+  explicit SVCBRecord(const SVCB& data, Maybe<uint16_t>&& aPort,
+                      Maybe<Tuple<nsCString, bool>>&& aAlpn)
+      : mData(data), mPort(std::move(aPort)), mAlpn(std::move(aAlpn)) {}
 
  private:
   virtual ~SVCBRecord() = default;
   SVCB mData;
+  Maybe<uint16_t> mPort;
+  Maybe<Tuple<nsCString, bool>> mAlpn;
+};
+
+class DNSHTTPSSVCRecordBase {
+ public:
+  explicit DNSHTTPSSVCRecordBase(const nsACString& aHost) : mHost(aHost) {}
+
+ protected:
+  virtual ~DNSHTTPSSVCRecordBase() = default;
+
+  already_AddRefed<nsISVCBRecord> GetServiceModeRecordInternal(
+      bool aNoHttp2, bool aNoHttp3, const nsTArray<SVCB>& aRecords,
+      bool& aRecordsAllExcluded);
+
+  bool HasIPAddressesInternal(const nsTArray<SVCB>& aRecords);
+
+  void GetAllRecordsWithEchConfigInternal(
+      bool aNoHttp2, bool aNoHttp3, const nsTArray<SVCB>& aRecords,
+      bool* aAllRecordsHaveEchConfig, nsTArray<RefPtr<nsISVCBRecord>>& aResult);
+
+  // The owner name of this HTTPS RR.
+  nsCString mHost;
 };
 
 }  // namespace net

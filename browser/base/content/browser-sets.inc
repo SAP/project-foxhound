@@ -28,8 +28,10 @@
              oncommand="MailIntegration.sendLinkForBrowser(gBrowser.selectedBrowser);"/>
 
     <command id="cmd_pageSetup" oncommand="PrintUtils.showPageSetup();"/>
-    <command id="cmd_print" oncommand="PrintUtils.startPrintWindow(window.gBrowser.selectedBrowser.browsingContext);"/>
-    <command id="cmd_printPreview" oncommand="PrintUtils.printPreview(PrintPreviewListener);"/>
+    <command id="cmd_print" oncommand="PrintUtils.startPrintWindow('cmd_print', gBrowser.selectedBrowser.browsingContext);"/>
+    <!-- cmd_print_kb only exists so that we can differentiate menu prints from keyboard shortcut prints -->
+    <command id="cmd_print_kb" oncommand="PrintUtils.startPrintWindow('cmd_print_kb', gBrowser.selectedBrowser.browsingContext);"/>
+    <command id="cmd_printPreview" oncommand="PrintUtils.printPreview('cmd_printPreview', PrintPreviewListener).catch(() => {});"/>
     <command id="cmd_file_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, [MigrationUtils.MIGRATION_ENTRYPOINT_FILE_MENU]);"/>
     <command id="cmd_help_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, [MigrationUtils.MIGRATION_ENTRYPOINT_HELP_MENU]);"/>
     <command id="cmd_close" oncommand="BrowserCloseTabOrWindow(event);"/>
@@ -76,7 +78,7 @@
     <command id="Browser:ShowAllTabs" oncommand="gTabsPanel.showAllTabsPanel();"/>
     <command id="cmd_fullZoomReduce"  oncommand="FullZoom.reduce()"/>
     <command id="cmd_fullZoomEnlarge" oncommand="FullZoom.enlarge()"/>
-    <command id="cmd_fullZoomReset"   oncommand="FullZoom.reset()"/>
+    <command id="cmd_fullZoomReset"   oncommand="FullZoom.reset(); FullZoom.resetScalingZoom();"/>
     <command id="cmd_fullZoomToggle"  oncommand="ZoomManager.toggleZoom();"/>
     <command id="cmd_gestureRotateLeft" oncommand="gGestureSupport.rotate(event.sourceEvent)"/>
     <command id="cmd_gestureRotateRight" oncommand="gGestureSupport.rotate(event.sourceEvent)"/>
@@ -171,7 +173,7 @@
     <key id="key_openAddons" data-l10n-id="addons-shortcut" command="Tools:Addons" modifiers="accel,shift"/>
     <key id="openFileKb" data-l10n-id="file-open-shortcut" command="Browser:OpenFile"  modifiers="accel"/>
     <key id="key_savePage" data-l10n-id="save-page-shortcut" command="Browser:SavePage" modifiers="accel"/>
-    <key id="printKb" data-l10n-id="print-shortcut" command="cmd_print"  modifiers="accel"/>
+    <key id="printKb" data-l10n-id="print-shortcut" command="cmd_print_kb"  modifiers="accel"/>
     <key id="key_close" data-l10n-id="close-shortcut" command="cmd_close" modifiers="accel" reserved="true"/>
     <key id="key_closeWindow" data-l10n-id="close-shortcut" command="cmd_closeWindow" modifiers="accel,shift" reserved="true"/>
     <key id="key_toggleMute" data-l10n-id="mute-toggle-shortcut" command="cmd_toggleMute" modifiers="control"/>
@@ -219,6 +221,7 @@
     <key keycode="VK_F5" command="Browser:ReloadSkipCache" modifiers="accel"/>
     <key id="key_fullScreen" keycode="VK_F11" command="View:FullScreen"/>
 #else
+    <key id="showAllHistoryKb" data-l10n-id="history-show-all-shortcut-mac" command="Browser:ShowAllHistory" modifiers="accel"/>
     <key id="key_fullScreen" data-l10n-id="full-screen-shortcut" command="View:FullScreen" modifiers="accel,control"/>
     <key id="key_fullScreen_old" data-l10n-id="full-screen-shortcut" command="View:FullScreen" modifiers="accel,shift"/>
     <key keycode="VK_F11" command="View:FullScreen"/>
@@ -236,6 +239,9 @@
 #ifndef XP_MACOSX
     <key id="key_togglePictureInPicture" data-l10n-id="picture-in-picture-toggle-shortcut" command="View:PictureInPicture" modifiers="accel,shift"/>
     <key                                 data-l10n-id="picture-in-picture-toggle-shortcut-alt" command="View:PictureInPicture" modifiers="accel,shift"/>
+#else
+    <key                                 data-l10n-id="picture-in-picture-toggle-shortcut-mac" command="View:PictureInPicture" modifiers="accel,alt,shift"/>
+    <key                                 data-l10n-id="picture-in-picture-toggle-shortcut-mac-alt" command="View:PictureInPicture" modifiers="accel,alt,shift"/>
 #endif
 
     <key data-l10n-id="nav-reload-shortcut" command="Browser:Reload" modifiers="accel" id="key_reload"/>
@@ -259,11 +265,15 @@
          data-l10n-id="bookmark-this-page-shortcut"
          oncommand="PlacesUIUtils.showBookmarkPagesDialog(PlacesCommandHook.uniqueCurrentPages);"
          modifiers="accel,shift"/>
-    <key id="manBookmarkKb" data-l10n-id="bookmark-show-all-shortcut" command="Browser:ShowAllBookmarks" modifiers="accel,shift"/>
+    <key id="manBookmarkKb" data-l10n-id="bookmark-show-library-shortcut" command="Browser:ShowAllBookmarks" modifiers="accel,shift"/>
     <key id="viewBookmarksSidebarKb"
          data-l10n-id="bookmark-show-sidebar-shortcut"
          modifiers="accel"
          oncommand="SidebarUI.toggle('viewBookmarksSidebar');"/>
+    <key id="viewBookmarksToolbarKb"
+         data-l10n-id="bookmark-show-toolbar-shortcut"
+         oncommand="BookmarkingUI.toggleBookmarksToolbar('shortcut');"
+         modifiers="accel,shift"/>
 
     <key id="key_stop" keycode="VK_ESCAPE" command="Browser:Stop"/>
 

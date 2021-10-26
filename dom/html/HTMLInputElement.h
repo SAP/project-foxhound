@@ -848,6 +848,14 @@ class HTMLInputElement final : public TextControlElement,
 
   bool HasBeenTypePassword() { return mHasBeenTypePassword; }
 
+  /**
+   * Returns whether the current value is the empty string.  This only makes
+   * sense for some input types; does NOT make sense for file inputs.
+   *
+   * @return whether the current value is the empty string.
+   */
+  bool IsValueEmpty() const;
+
  protected:
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual ~HTMLInputElement();
 
@@ -924,14 +932,6 @@ class HTMLInputElement final : public TextControlElement,
   // A getter for callers that know we're not dealing with a file input, so they
   // don't have to think about the caller type.
   void GetNonFileValueInternal(nsAString& aValue) const;
-
-  /**
-   * Returns whether the current value is the empty string.  This only makes
-   * sense for some input types; does NOT make sense for file inputs.
-   *
-   * @return whether the current value is the empty string.
-   */
-  bool IsValueEmpty() const;
 
   /**
    * Returns whether the current placeholder value should be shown.
@@ -1376,7 +1376,7 @@ class HTMLInputElement final : public TextControlElement,
 
   /*
    * Returns if the current type is one of the date/time input types: date,
-   * time and month. TODO: week and datetime-local.
+   * time, month, week and datetime-local.
    */
   static bool IsDateTimeInputType(uint8_t aType);
 
@@ -1597,10 +1597,14 @@ class HTMLInputElement final : public TextControlElement,
   }
 
   /**
-   * Checks if aDateTimeInputType should be supported based on
-   * "dom.forms.datetime", and "dom.experimental_forms".
+   * Checks if aDateTimeInputType should be supported.
    */
   static bool IsDateTimeTypeSupported(uint8_t aDateTimeInputType);
+
+  static bool CreatesDateTimeWidget(uint8_t aType) {
+    return aType == NS_FORM_INPUT_TIME || aType == NS_FORM_INPUT_DATE;
+  }
+  bool CreatesDateTimeWidget() const { return CreatesDateTimeWidget(mType); }
 
   struct nsFilePickerFilter {
     nsFilePickerFilter() : mFilterMask(0) {}

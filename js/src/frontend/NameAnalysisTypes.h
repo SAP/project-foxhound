@@ -9,6 +9,7 @@
 
 #include <type_traits>
 
+#include "frontend/ParserAtom.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/Scope.h"
 
@@ -124,6 +125,18 @@ static inline bool DeclarationKindIsLexical(DeclarationKind kind) {
   return BindingKindIsLexical(DeclarationKindToBindingKind(kind));
 }
 
+// Used in Parser and BytecodeEmitter to track the kind of a private name.
+enum class PrivateNameKind : uint8_t {
+  None,
+  Field,
+  Method,
+  Getter,
+  Setter,
+  GetterSetter,
+};
+
+enum class ClosedOver : bool { No = false, Yes = true };
+
 // Used in Parser to track declared names.
 class DeclaredNameInfo {
   uint32_t pos_;
@@ -134,9 +147,15 @@ class DeclaredNameInfo {
   // (i.e., a 'var' declared name in a non-var scope).
   bool closedOver_;
 
+  PrivateNameKind privateNameKind_;
+
  public:
-  explicit DeclaredNameInfo(DeclarationKind kind, uint32_t pos)
-      : pos_(pos), kind_(kind), closedOver_(false) {}
+  explicit DeclaredNameInfo(DeclarationKind kind, uint32_t pos,
+                            ClosedOver closedOver = ClosedOver::No)
+      : pos_(pos),
+        kind_(kind),
+        closedOver_(bool(closedOver)),
+        privateNameKind_(PrivateNameKind::None) {}
 
   // Needed for InlineMap.
   DeclaredNameInfo() = default;
@@ -152,6 +171,12 @@ class DeclaredNameInfo {
   void setClosedOver() { closedOver_ = true; }
 
   bool closedOver() const { return closedOver_; }
+
+  void setPrivateNameKind(PrivateNameKind privateNameKind) {
+    privateNameKind_ = privateNameKind;
+  }
+
+  PrivateNameKind privateNameKind() const { return privateNameKind_; }
 };
 
 // Used in BytecodeEmitter to map names to locations.
@@ -332,7 +357,7 @@ class NameLocation {
 };
 
 // These types are declared here for BaseScript::CreateLazy.
-using AtomVector = Vector<JSAtom*, 24, SystemAllocPolicy>;
+using AtomVector = Vector<const ParserAtom*, 24, SystemAllocPolicy>;
 
 class FunctionBox;
 // FunctionBoxes stored in this type are required to be rooted

@@ -8,7 +8,6 @@
 
 #include <utility>
 
-#include "LayersLogging.h"               // for AppendToString
 #include "composite/CompositableHost.h"  // for CompositableHost, etc
 #include "ipc/IPCMessageUtils.h"         // for null_t
 #include "mozilla/layers/Compositor.h"   // for Compositor
@@ -96,6 +95,7 @@ void ImageHost::SetCurrentTextureHost(TextureHost* aTexture) {
   }
 
   bool swapTextureSources = !!mCurrentTextureHost && !!mCurrentTextureSource &&
+                            mCurrentTextureHost->IsValid() &&
                             mCurrentTextureHost->HasIntermediateBuffer();
 
   if (swapTextureSources) {
@@ -358,7 +358,7 @@ void ImageHost::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   for (const auto& img : Images()) {
     aStream << "\n";
     img.mTextureHost->PrintInfo(aStream, pfx.get());
-    AppendToString(aStream, img.mPictureRect, " [picture-rect=", "]");
+    aStream << " [picture-rect=" << img.mPictureRect << "]";
   }
 }
 

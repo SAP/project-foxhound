@@ -8,6 +8,7 @@
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
+#include "nsIScrollableFrame.h"
 #include "nsNumberControlFrame.h"
 #include "nsPresContext.h"
 #include "nsString.h"
@@ -19,6 +20,7 @@
 #include "nsMenuFrame.h"
 #include "nsRangeFrame.h"
 #include "nsCSSRendering.h"
+#include "ImageContainer.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/dom/Element.h"
@@ -37,8 +39,8 @@ nsNativeTheme::nsNativeTheme() : mAnimatedContentTimeout(UINT32_MAX) {}
 
 NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
 
-EventStates nsNativeTheme::GetContentState(nsIFrame* aFrame,
-                                           StyleAppearance aAppearance) {
+/* static */ EventStates nsNativeTheme::GetContentState(
+    nsIFrame* aFrame, StyleAppearance aAppearance) {
   if (!aFrame) return EventStates();
 
   bool isXULCheckboxRadio = (aAppearance == StyleAppearance::Checkbox ||
@@ -656,8 +658,6 @@ bool nsNativeTheme::IsDarkBackground(nsIFrame* aFrame) {
 
 bool nsNativeTheme::IsWidgetScrollbarPart(StyleAppearance aAppearance) {
   switch (aAppearance) {
-    case StyleAppearance::Scrollbar:
-    case StyleAppearance::ScrollbarSmall:
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarbuttonUp:

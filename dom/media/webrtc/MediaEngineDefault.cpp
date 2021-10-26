@@ -11,6 +11,7 @@
 #include "MediaTrackListener.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/MediaManager.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
@@ -220,13 +221,14 @@ static void ReleaseFrame(layers::PlanarYCbCrData& aData) {
 }
 
 void MediaEngineDefaultVideoSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+    const RefPtr<MediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 
@@ -358,8 +360,8 @@ class AudioSourcePullListener : public MediaTrackListener {
                           uint32_t aFrequency)
       : mTrack(std::move(aTrack)),
         mPrincipalHandle(aPrincipalHandle),
-        mSineGenerator(
-            MakeUnique<SineWaveGenerator>(mTrack->mSampleRate, aFrequency)) {
+        mSineGenerator(MakeUnique<SineWaveGenerator<int16_t>>(
+            mTrack->mSampleRate, aFrequency)) {
     MOZ_COUNT_CTOR(AudioSourcePullListener);
   }
 
@@ -370,7 +372,7 @@ class AudioSourcePullListener : public MediaTrackListener {
 
   const RefPtr<SourceMediaTrack> mTrack;
   const PrincipalHandle mPrincipalHandle;
-  const UniquePtr<SineWaveGenerator> mSineGenerator;
+  const UniquePtr<SineWaveGenerator<int16_t>> mSineGenerator;
 };
 
 /**
@@ -430,18 +432,23 @@ nsresult MediaEngineDefaultAudioSource::Deallocate() {
 }
 
 void MediaEngineDefaultAudioSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+    const RefPtr<MediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 
 nsresult MediaEngineDefaultAudioSource::Start() {
   AssertIsOnOwningThread();
+
+  if (mState == kStarted) {
+    return NS_OK;
+  }
 
   MOZ_ASSERT(mState == kAllocated || mState == kStopped);
   MOZ_ASSERT(mTrack, "SetTrack() must happen before Start()");

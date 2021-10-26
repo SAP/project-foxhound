@@ -19,7 +19,9 @@
 #include "nsIWritablePropertyBag2.h"
 #include "nsIChannel.h"
 #include "nsIScriptError.h"
-#include "nsIEnterprisePolicies.h"
+#include "nsIClassInfoImpl.h"
+
+#include "mozilla/ipc/URIUtils.h"
 
 namespace mozilla {
 namespace net {
@@ -164,26 +166,6 @@ nsresult nsAboutProtocolHandler::CreateNewURI(const nsACString& aSpec,
   return NS_OK;
 }
 
-// The list of about: paths which are always allowed, regardless of enterprise
-// policies.
-//
-// Note: This is stored as a two-dimensional array, with each element the size
-// of the longest string in the list, for space efficiency. An array of
-// character pointers would consume more space than the extra padding in
-// shorter strings, and would require per-process relocations at load time.
-//
-// Important: This list MUST be kept sorted!
-static const char kAboutPageEnterpriseWhitelist[][10] = {
-    // clang-format off
-    "blank",
-    "certerror",
-    "home",
-    "neterror",
-    "newtab",
-    "welcome",
-    // clang-format on
-};
-
 NS_IMETHODIMP
 nsAboutProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
                                    nsIChannel** result) {
@@ -193,34 +175,14 @@ nsAboutProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
   nsCOMPtr<nsIAboutModule> aboutMod;
   nsresult rv = NS_GetAboutModule(uri, getter_AddRefs(aboutMod));
 
-  bool aboutPageAllowed = true;
   nsAutoCString path;
   nsresult rv2 = NS_GetAboutModuleName(uri, path);
-  if (NS_SUCCEEDED(rv2)) {
-    size_t matchIdx;
-    if (path.EqualsLiteral("srcdoc")) {
-      // about:srcdoc is meant to be unresolvable, yet is included in the
-      // about lookup tables so that it can pass security checks when used in
-      // a srcdoc iframe.  To ensure that it stays unresolvable, we pretend
-      // that it doesn't exist.
-      rv = NS_ERROR_FACTORY_NOT_REGISTERED;
-    } else if (!BinarySearchIf(
-                   kAboutPageEnterpriseWhitelist, 0,
-                   ArrayLength(kAboutPageEnterpriseWhitelist),
-                   [&path](const char* aOther) { return path.Compare(aOther); },
-                   &matchIdx)) {
-      nsCOMPtr<nsIEnterprisePolicies> policyManager =
-          do_GetService("@mozilla.org/enterprisepolicies;1", &rv2);
-      if (NS_SUCCEEDED(rv2)) {
-        nsAutoCString normalizedURL;
-        normalizedURL.AssignLiteral("about:");
-        normalizedURL.Append(path);
-        rv2 = policyManager->IsAllowed(normalizedURL, &aboutPageAllowed);
-        if (NS_FAILED(rv2)) {
-          aboutPageAllowed = false;
-        }
-      }
-    }
+  if (NS_SUCCEEDED(rv2) && path.EqualsLiteral("srcdoc")) {
+    // about:srcdoc is meant to be unresolvable, yet is included in the
+    // about lookup tables so that it can pass security checks when used in
+    // a srcdoc iframe.  To ensure that it stays unresolvable, we pretend
+    // that it doesn't exist.
+    rv = NS_ERROR_FACTORY_NOT_REGISTERED;
   }
 
   if (NS_SUCCEEDED(rv)) {
@@ -265,9 +227,6 @@ nsAboutProtocolHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
           writableBag->SetPropertyAsInterface(u"baseURI"_ns,
                                               aboutURI->GetBaseURI());
         }
-      }
-      if (!aboutPageAllowed) {
-        (*result)->Cancel(NS_ERROR_BLOCKED_BY_POLICY);
       }
     }
     return rv;
@@ -336,10 +295,17 @@ nsSafeAboutProtocolHandler::AllowPort(int32_t port, const char* scheme,
 
 ////////////////////////////////////////////////////////////
 // nsNestedAboutURI implementation
+
+NS_IMPL_CLASSINFO(nsNestedAboutURI, nullptr, nsIClassInfo::THREADSAFE,
+                  NS_NESTEDABOUTURI_CID);
+// Empty CI getter. We only need nsIClassInfo for Serialization
+NS_IMPL_CI_INTERFACE_GETTER0(nsNestedAboutURI)
+
 NS_INTERFACE_MAP_BEGIN(nsNestedAboutURI)
   if (aIID.Equals(kNestedAboutURICID))
     foundInterface = static_cast<nsIURI*>(this);
   else
+    NS_IMPL_QUERY_CLASSINFO(nsNestedAboutURI)
 NS_INTERFACE_MAP_END_INHERITING(nsSimpleNestedURI)
 
 // nsISerializable
@@ -394,6 +360,43 @@ nsNestedAboutURI::Write(nsIObjectOutputStream* aStream) {
   return NS_OK;
 }
 
+NS_IMETHODIMP_(void)
+nsNestedAboutURI::Serialize(mozilla::ipc::URIParams& aParams) {
+  using namespace mozilla::ipc;
+
+  NestedAboutURIParams params;
+  URIParams nestedParams;
+
+  nsSimpleNestedURI::Serialize(nestedParams);
+  params.nestedParams() = nestedParams;
+
+  if (mBaseURI) {
+    SerializeURI(mBaseURI, params.baseURI());
+  }
+
+  aParams = params;
+}
+
+bool nsNestedAboutURI::Deserialize(const mozilla::ipc::URIParams& aParams) {
+  using namespace mozilla::ipc;
+
+  if (aParams.type() != URIParams::TNestedAboutURIParams) {
+    NS_ERROR("Received unknown parameters from the other process!");
+    return false;
+  }
+
+  const NestedAboutURIParams& params = aParams.get_NestedAboutURIParams();
+  if (!nsSimpleNestedURI::Deserialize(params.nestedParams())) {
+    return false;
+  }
+
+  mBaseURI = nullptr;
+  if (params.baseURI()) {
+    mBaseURI = DeserializeURI(*params.baseURI());
+  }
+  return true;
+}
+
 // nsSimpleURI
 /* virtual */ nsSimpleURI* nsNestedAboutURI::StartClone(
     nsSimpleURI::RefHandlingEnum aRefHandlingMode, const nsACString& aNewRef) {
@@ -435,13 +438,6 @@ nsNestedAboutURI::Mutate(nsIURIMutator** aMutator) {
     return rv;
   }
   mutator.forget(aMutator);
-  return NS_OK;
-}
-
-// nsIClassInfo
-NS_IMETHODIMP
-nsNestedAboutURI::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
-  *aClassIDNoAlloc = kNestedAboutURICID;
   return NS_OK;
 }
 

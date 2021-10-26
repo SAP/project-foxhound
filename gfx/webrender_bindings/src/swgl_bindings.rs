@@ -3,22 +3,30 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use bindings::{GeckoProfilerThreadListener, WrCompositor};
-use gleam::{gl, gl::Gl};
-use std::cell::Cell;
-use std::collections::hash_map::HashMap;
+use gleam::{gl, gl::GLenum, gl::Gl};
+use std::cell::{Cell, UnsafeCell};
+use std::collections::{hash_map::HashMap, VecDeque};
+use std::ops::{Deref, DerefMut};
 use std::os::raw::c_void;
 use std::ptr;
 use std::rc::Rc;
-use std::sync::{mpsc, Arc, Mutex, Condvar};
+use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicU8, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use webrender::{
-    api::units::*, Compositor, CompositorCapabilities, NativeSurfaceId, NativeSurfaceInfo, NativeTileId,
+    api::units::*, api::ColorDepth, api::ExternalImageId, api::ImageRendering, api::YuvColorSpace, Compositor,
+    CompositorCapabilities, CompositorSurfaceTransform, NativeSurfaceId, NativeSurfaceInfo, NativeTileId,
     ThreadListener,
 };
 
 #[no_mangle]
 pub extern "C" fn wr_swgl_create_context() -> *mut c_void {
     swgl::Context::create().into()
+}
+
+#[no_mangle]
+pub extern "C" fn wr_swgl_reference_context(ctx: *mut c_void) {
+    swgl::Context::from(ctx).reference();
 }
 
 #[no_mangle]
@@ -42,6 +50,70 @@ pub extern "C" fn wr_swgl_init_default_framebuffer(
     swgl::Context::from(ctx).init_default_framebuffer(width, height, stride, buf);
 }
 
+#[no_mangle]
+pub extern "C" fn wr_swgl_gen_texture(ctx: *mut c_void) -> u32 {
+    swgl::Context::from(ctx).gen_textures(1)[0]
+}
+
+#[no_mangle]
+pub extern "C" fn wr_swgl_delete_texture(ctx: *mut c_void, tex: u32) {
+    swgl::Context::from(ctx).delete_textures(&[tex]);
+}
+
+#[no_mangle]
+pub extern "C" fn wr_swgl_set_texture_parameter(ctx: *mut c_void, tex: u32, pname: u32, param: i32) {
+    swgl::Context::from(ctx).set_texture_parameter(tex, pname, param);
+}
+
+#[no_mangle]
+pub extern "C" fn wr_swgl_set_texture_buffer(
+    ctx: *mut c_void,
+    tex: u32,
+    internal_format: u32,
+    width: i32,
+    height: i32,
+    stride: i32,
+    buf: *mut c_void,
+    min_width: i32,
+    min_height: i32,
+) {
+    swgl::Context::from(ctx).set_texture_buffer(
+        tex,
+        internal_format,
+        width,
+        height,
+        stride,
+        buf,
+        min_width,
+        min_height,
+    );
+}
+
+/// Descriptor for a locked surface that will be directly composited by SWGL.
+#[repr(C)]
+struct WrSWGLCompositeSurfaceInfo {
+    /// The number of YUV planes in the surface. 0 indicates non-YUV BGRA.
+    /// 1 is interleaved YUV. 2 is NV12. 3 is planar YUV.
+    yuv_planes: u32,
+    /// Textures for planes of the surface, or 0 if not applicable.
+    textures: [u32; 3],
+    /// Color space of surface if using a YUV format.
+    color_space: YuvColorSpace,
+    /// Color depth of surface if using a YUV format.
+    color_depth: ColorDepth,
+    /// The actual source surface size before transformation.
+    size: DeviceIntSize,
+}
+
+extern "C" {
+    fn wr_swgl_lock_composite_surface(
+        ctx: *mut c_void,
+        external_image_id: ExternalImageId,
+        composite_info: *mut WrSWGLCompositeSurfaceInfo,
+    ) -> bool;
+    fn wr_swgl_unlock_composite_surface(ctx: *mut c_void, external_image_id: ExternalImageId);
+}
+
 pub struct SwTile {
     x: i32,
     y: i32,
@@ -60,12 +132,29 @@ pub struct SwTile {
     overlaps: Cell<u32>,
     /// Whether the tile's contents has been invalidated
     invalid: Cell<bool>,
+    /// Graph node for job dependencies of this tile
+    graph_node: SwCompositeGraphNodeRef,
 }
 
 impl SwTile {
-    fn origin(&self, surface: &SwSurface, position: &DeviceIntPoint) -> DeviceIntPoint {
+    fn new(x: i32, y: i32) -> Self {
+        SwTile {
+            x,
+            y,
+            fbo_id: 0,
+            color_id: 0,
+            tex_id: 0,
+            pbo_id: 0,
+            dirty_rect: DeviceIntRect::zero(),
+            valid_rect: DeviceIntRect::zero(),
+            overlaps: Cell::new(0),
+            invalid: Cell::new(false),
+            graph_node: SwCompositeGraphNode::new(),
+        }
+    }
+
+    fn origin(&self, surface: &SwSurface) -> DeviceIntPoint {
         DeviceIntPoint::new(self.x * surface.tile_size.width, self.y * surface.tile_size.height)
-            + position.to_vector()
     }
 
     /// Bounds used for determining overlap dependencies. This may either be the
@@ -75,10 +164,10 @@ impl SwTile {
     fn overlap_rect(
         &self,
         surface: &SwSurface,
-        position: &DeviceIntPoint,
+        transform: &CompositorSurfaceTransform,
         clip_rect: &DeviceIntRect,
     ) -> Option<DeviceIntRect> {
-        let origin = self.origin(surface, position);
+        let origin = self.origin(surface);
         // If the tile was invalidated this frame, then we don't have precise
         // bounds. Instead, just use the default surface tile size.
         let bounds = if self.invalid.get() {
@@ -86,7 +175,8 @@ impl SwTile {
         } else {
             self.valid_rect.translate(origin.to_vector())
         };
-        bounds.intersection(clip_rect)
+        let device_rect = transform.outer_transformed_rect(&bounds.to_f32())?.round_out().to_i32();
+        device_rect.intersection(clip_rect)
     }
 
     /// Determine if the tile's bounds may overlap the dependency rect if it were
@@ -94,11 +184,11 @@ impl SwTile {
     fn may_overlap(
         &self,
         surface: &SwSurface,
-        position: &DeviceIntPoint,
+        transform: &CompositorSurfaceTransform,
         clip_rect: &DeviceIntRect,
         dep_rect: &DeviceIntRect,
     ) -> bool {
-        self.overlap_rect(surface, position, clip_rect)
+        self.overlap_rect(surface, transform, clip_rect)
             .map_or(false, |r| r.intersects(dep_rect))
     }
 
@@ -108,11 +198,27 @@ impl SwTile {
     fn composite_rects(
         &self,
         surface: &SwSurface,
-        position: &DeviceIntPoint,
+        transform: &CompositorSurfaceTransform,
         clip_rect: &DeviceIntRect,
-    ) -> Option<(DeviceIntRect, DeviceIntRect)> {
-        let valid = self.valid_rect.translate(self.origin(surface, position).to_vector());
-        valid.intersection(clip_rect).map(|r| (r.translate(-valid.origin.to_vector()), r))
+    ) -> Option<(DeviceIntRect, DeviceIntRect, bool)> {
+        // Offset the valid rect to the appropriate surface origin.
+        let valid = self.valid_rect.translate(self.origin(surface).to_vector());
+        // The destination rect is the valid rect transformed and then clipped.
+        let dest_rect = transform
+            .outer_transformed_rect(&valid.to_f32())?
+            .round_out()
+            .to_i32()
+            .intersection(clip_rect)?;
+        // To get a valid source rect, we need to inverse transform the clipped destination rect to find out the effect
+        // of the clip rect in source-space. After this, we subtract off the source-space valid rect origin to get
+        // a source rect that is now relative to the surface origin rather than absolute.
+        let inv_transform = transform.inverse()?;
+        let src_rect = inv_transform
+            .outer_transformed_rect(&dest_rect.to_f32())?
+            .round()
+            .to_i32()
+            .translate(-valid.origin.to_vector());
+        Some((src_rect, dest_rect, transform.m22 < 0.0))
     }
 }
 
@@ -120,6 +226,29 @@ pub struct SwSurface {
     tile_size: DeviceIntSize,
     is_opaque: bool,
     tiles: Vec<SwTile>,
+    /// An attached external image for this surface.
+    external_image: Option<ExternalImageId>,
+    /// Descriptor for the external image if successfully locked for composite.
+    composite_surface: Option<WrSWGLCompositeSurfaceInfo>,
+}
+
+impl SwSurface {
+    fn new(tile_size: DeviceIntSize, is_opaque: bool) -> Self {
+        SwSurface {
+            tile_size,
+            is_opaque,
+            tiles: Vec::new(),
+            external_image: None,
+            composite_surface: None,
+        }
+    }
+}
+
+fn image_rendering_to_gl_filter(filter: ImageRendering) -> gl::GLenum {
+    match filter {
+        ImageRendering::Pixelated => gl::NEAREST,
+        ImageRendering::Auto | ImageRendering::CrispEdges => gl::LINEAR,
+    }
 }
 
 struct DrawTileHelper {
@@ -244,6 +373,8 @@ impl DrawTileHelper {
         src: &DeviceIntRect,
         surface: &SwSurface,
         tile: &SwTile,
+        flip_y: bool,
+        filter: GLenum,
     ) {
         let dx = dest.origin.x as f32 / viewport.size.width as f32;
         let dy = dest.origin.y as f32 / viewport.size.height as f32;
@@ -257,10 +388,10 @@ impl DrawTileHelper {
                 0.0,
                 0.0,
                 0.0,
-                -2.0 * dh,
+                if flip_y { 2.0 * dh } else { -2.0 * dh },
                 0.0,
                 -1.0 + 2.0 * dx,
-                1.0 - 2.0 * dy,
+                if flip_y { -1.0 + 2.0 * dy } else { 1.0 - 2.0 * dy },
                 1.0,
             ],
         );
@@ -270,7 +401,12 @@ impl DrawTileHelper {
         let sh = src.size.height as f32 / surface.tile_size.height as f32;
         self.gl
             .uniform_matrix_3fv(self.tex_matrix_loc, false, &[sw, 0.0, 0.0, 0.0, sh, 0.0, sx, sy, 1.0]);
+
         self.gl.bind_texture(gl::TEXTURE_2D, tile.tex_id);
+        self.gl
+            .tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, filter as gl::GLint);
+        self.gl
+            .tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, filter as gl::GLint);
         self.gl.draw_arrays(gl::TRIANGLE_STRIP, 0, 4);
     }
 
@@ -280,16 +416,237 @@ impl DrawTileHelper {
     }
 }
 
+/// A source for a composite job which can either be a single BGRA locked SWGL
+/// resource or a collection of SWGL resources representing a YUV surface.
+#[derive(Clone)]
+enum SwCompositeSource {
+    BGRA(swgl::LockedResource),
+    YUV(
+        swgl::LockedResource,
+        swgl::LockedResource,
+        swgl::LockedResource,
+        YuvColorSpace,
+        ColorDepth,
+    ),
+}
+
+/// Mark ExternalImage's renderer field as safe to send to SwComposite thread.
+unsafe impl Send for SwCompositeSource {}
+
 /// A tile composition job to be processed by the SwComposite thread.
 /// Stores relevant details about the tile and where to composite it.
+#[derive(Clone)]
 struct SwCompositeJob {
     /// Locked texture that will be unlocked immediately following the job
-    locked_src: swgl::LockedResource,
+    locked_src: SwCompositeSource,
     /// Locked framebuffer that may be shared among many jobs
     locked_dst: swgl::LockedResource,
     src_rect: DeviceIntRect,
-    dst_offset: DeviceIntPoint,
+    dst_rect: DeviceIntRect,
     opaque: bool,
+    flip_y: bool,
+    filter: ImageRendering,
+    /// The total number of bands for this job
+    num_bands: u8,
+}
+
+impl SwCompositeJob {
+    /// Process a composite job
+    fn process(&self, band_index: u8) {
+        // Calculate the Y extents for the job's band, starting at the current index and spanning to
+        // the following index.
+        let band_index = band_index as i32;
+        let num_bands = self.num_bands as i32;
+        let band_offset = (self.dst_rect.size.height * band_index) / num_bands;
+        let band_height = (self.dst_rect.size.height * (band_index + 1)) / num_bands - band_offset;
+        match self.locked_src {
+            SwCompositeSource::BGRA(ref resource) => {
+                self.locked_dst.composite(
+                    resource,
+                    self.src_rect.origin.x,
+                    self.src_rect.origin.y,
+                    self.src_rect.size.width,
+                    self.src_rect.size.height,
+                    self.dst_rect.origin.x,
+                    self.dst_rect.origin.y,
+                    self.dst_rect.size.width,
+                    self.dst_rect.size.height,
+                    self.opaque,
+                    self.flip_y,
+                    image_rendering_to_gl_filter(self.filter),
+                    band_offset,
+                    band_height,
+                );
+            }
+            SwCompositeSource::YUV(ref y, ref u, ref v, color_space, color_depth) => {
+                let swgl_color_space = match color_space {
+                    YuvColorSpace::Rec601 => swgl::YUVColorSpace::Rec601,
+                    YuvColorSpace::Rec709 => swgl::YUVColorSpace::Rec709,
+                    YuvColorSpace::Rec2020 => swgl::YUVColorSpace::Rec2020,
+                    YuvColorSpace::Identity => swgl::YUVColorSpace::Identity,
+                };
+                self.locked_dst.composite_yuv(
+                    y,
+                    u,
+                    v,
+                    swgl_color_space,
+                    color_depth.bit_depth(),
+                    self.src_rect.origin.x,
+                    self.src_rect.origin.y,
+                    self.src_rect.size.width,
+                    self.src_rect.size.height,
+                    self.dst_rect.origin.x,
+                    self.dst_rect.origin.y,
+                    self.dst_rect.size.width,
+                    self.dst_rect.size.height,
+                    self.flip_y,
+                    band_offset,
+                    band_height,
+                );
+            }
+        }
+    }
+}
+
+/// A reference to a SwCompositeGraph node that can be passed from the render
+/// thread to the SwComposite thread. Consistency of mutation is ensured in
+/// SwCompositeGraphNode via use of Atomic operations that prevent more than
+/// one thread from mutating SwCompositeGraphNode at once. This avoids using
+/// messy and not-thread-safe RefCells or expensive Mutexes inside the graph
+/// node and at least signals to the compiler that potentially unsafe coercions
+/// are occurring.
+#[derive(Clone)]
+struct SwCompositeGraphNodeRef(Arc<UnsafeCell<SwCompositeGraphNode>>);
+
+impl SwCompositeGraphNodeRef {
+    fn new(graph_node: SwCompositeGraphNode) -> Self {
+        SwCompositeGraphNodeRef(Arc::new(UnsafeCell::new(graph_node)))
+    }
+
+    fn get(&self) -> &SwCompositeGraphNode {
+        unsafe { &*self.0.get() }
+    }
+
+    fn get_mut(&self) -> &mut SwCompositeGraphNode {
+        unsafe { &mut *self.0.get() }
+    }
+}
+
+unsafe impl Send for SwCompositeGraphNodeRef {}
+
+impl Deref for SwCompositeGraphNodeRef {
+    type Target = SwCompositeGraphNode;
+
+    fn deref(&self) -> &Self::Target {
+        self.get()
+    }
+}
+
+impl DerefMut for SwCompositeGraphNodeRef {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.get_mut()
+    }
+}
+
+/// Dependency graph of composite jobs to be completed. Keeps a list of child jobs that are dependent on the completion of this job.
+/// Also keeps track of the number of parent jobs that this job is dependent upon before it can be processed. Once there are no more
+/// in-flight parent jobs that it depends on, the graph node is finally added to the job queue for processing.
+struct SwCompositeGraphNode {
+    /// Job to be queued for this graph node once ready.
+    job: Option<SwCompositeJob>,
+    /// The maximum number of available bands associated with this job.
+    max_bands: u8,
+    /// The number of remaining bands associated with this job. When this is
+    /// non-zero and the node has no more parents left, then the node is being
+    /// actively used by the composite thread to process jobs. Once it hits
+    /// zero, the owning thread (which brought it to zero) can safely retire
+    /// the node as no other thread is using it.
+    remaining_bands: AtomicU8,
+    /// The number of bands that have been taken for processing.
+    band_index: AtomicU8,
+    /// Count of parents this graph node depends on. While this is non-zero the
+    /// node must ensure that it is only being actively mutated by the render
+    /// thread and otherwise never being accessed by the render thread.
+    parents: AtomicU32,
+    /// Graph nodes of child jobs that are dependent on this job
+    children: Vec<SwCompositeGraphNodeRef>,
+}
+
+unsafe impl Sync for SwCompositeGraphNode {}
+
+impl SwCompositeGraphNode {
+    fn new() -> SwCompositeGraphNodeRef {
+        SwCompositeGraphNodeRef::new(SwCompositeGraphNode {
+            job: None,
+            max_bands: 0,
+            remaining_bands: AtomicU8::new(0),
+            band_index: AtomicU8::new(0),
+            parents: AtomicU32::new(0),
+            children: Vec::new(),
+        })
+    }
+
+    /// Reset the node's state for a new frame
+    fn reset(&mut self) {
+        self.job = None;
+        self.max_bands = 0;
+        self.remaining_bands.store(0, Ordering::SeqCst);
+        self.band_index.store(0, Ordering::SeqCst);
+        // Initialize parents to 1 as sentinel dependency for uninitialized job
+        // to avoid queuing unitialized job as unblocked child dependency.
+        self.parents.store(1, Ordering::SeqCst);
+        self.children.clear();
+    }
+
+    /// Add a dependent child node to dependency list. Update its parent count.
+    fn add_child(&mut self, child: SwCompositeGraphNodeRef) {
+        child.parents.fetch_add(1, Ordering::SeqCst);
+        self.children.push(child);
+    }
+
+    /// Install a job for this node. Return whether or not the job has any unprocessed parents
+    /// that would block immediate composition.
+    fn set_job(&mut self, job: SwCompositeJob, num_bands: u8) -> bool {
+        self.job = Some(job);
+        self.max_bands = num_bands;
+        self.remaining_bands.store(num_bands, Ordering::SeqCst);
+        // Subtract off the sentinel parent dependency now that job is initialized and check
+        // whether there are any remaining parent dependencies to see if this job is ready.
+        self.parents.fetch_sub(1, Ordering::SeqCst) <= 1
+    }
+
+    fn take_band(&self) -> (u8, bool) {
+        let band_index = self.band_index.fetch_add(1, Ordering::SeqCst);
+        (band_index, band_index + 1 >= self.max_bands)
+    }
+
+    /// Try to take the job from this node for processing and then process it within the current band.
+    fn process_job(&self, band_index: u8) {
+        if let Some(ref job) = self.job {
+            job.process(band_index);
+        }
+    }
+
+    /// After processing a band, check all child dependencies and remove this parent from
+    /// their dependency counts. If applicable, queue the new child bands for composition.
+    fn unblock_children(&mut self, thread: &SwCompositeThread) {
+        if self.remaining_bands.fetch_sub(1, Ordering::SeqCst) > 1 {
+            return;
+        }
+        // Clear the job to release any locked resources.
+        self.job = None;
+        let mut lock = None;
+        for child in self.children.drain(..) {
+            // Remove the child's parent dependency on this node. If there are no more
+            // parent dependencies left, send the child job bands for composition.
+            if child.parents.fetch_sub(1, Ordering::SeqCst) <= 1 {
+                if lock.is_none() {
+                    lock = Some(thread.lock());
+                }
+                thread.send_job(lock.as_mut().unwrap(), child, false);
+            }
+        }
+    }
 }
 
 /// The SwComposite thread processes a queue of composite jobs, also signaling
@@ -297,97 +654,237 @@ struct SwCompositeJob {
 /// the job count.
 struct SwCompositeThread {
     /// Queue of available composite jobs
-    job_queue: mpsc::Sender<SwCompositeJob>,
+    jobs: Mutex<SwCompositeJobQueue>,
     /// Count of unprocessed jobs still in the queue
-    job_count: Mutex<usize>,
-    /// Condition signaled when there are no more jobs left to process
-    done_cond: Condvar,
+    job_count: AtomicIsize,
+    /// Condition signaled when there are jobs available to process.
+    jobs_available: Condvar,
+    /// Condition signaled when there are no more jobs left to process.
+    jobs_completed: Condvar,
 }
 
 /// The SwCompositeThread struct is shared between the SwComposite thread
 /// and the rendering thread so that both ends can access the job queue.
 unsafe impl Sync for SwCompositeThread {}
 
+/// A FIFO queue of composite jobs to be processed.
+type SwCompositeJobQueue = VecDeque<SwCompositeGraphNodeRef>;
+
+/// Locked access to the composite job queue.
+type SwCompositeThreadLock<'a> = MutexGuard<'a, SwCompositeJobQueue>;
+
 impl SwCompositeThread {
     /// Create the SwComposite thread. Requires a SWGL context in which
     /// to do the composition.
     fn new() -> Arc<SwCompositeThread> {
-        let (job_queue, job_rx) = mpsc::channel();
         let info = Arc::new(SwCompositeThread {
-            job_queue,
-            job_count: Mutex::new(0),
-            done_cond: Condvar::new(),
+            jobs: Mutex::new(SwCompositeJobQueue::new()),
+            job_count: AtomicIsize::new(0),
+            jobs_available: Condvar::new(),
+            jobs_completed: Condvar::new(),
         });
         let result = info.clone();
         let thread_name = "SwComposite";
-        thread::Builder::new().name(thread_name.into()).spawn(move || {
-            let thread_listener = GeckoProfilerThreadListener::new();
-            thread_listener.thread_started(thread_name);
-            // Process any available jobs. This will return a non-Ok
-            // result when the job queue is dropped, causing the thread
-            // to eventually exit.
-            while let Ok(job) = job_rx.recv() {
-                job.locked_dst.composite(
-                    &job.locked_src,
-                    job.src_rect.origin.x,
-                    job.src_rect.origin.y,
-                    job.src_rect.size.width,
-                    job.src_rect.size.height,
-                    job.dst_offset.x,
-                    job.dst_offset.y,
-                    job.opaque,
-                    false,
-                );
-                // Release locked resources before modifying job count
-                drop(job);
-                // Decrement the job count. If applicable, signal that all jobs
-                // have been completed.
-                let mut count = info.job_count.lock().unwrap();
-                *count -= 1;
-                if *count <= 0 {
-                    info.done_cond.notify_all();
+        thread::Builder::new()
+            .name(thread_name.into())
+            // The composite thread only calls into SWGL to composite, and we
+            // have potentially many composite threads for different windows,
+            // so using the default stack size is excessive. A reasonably small
+            // stack size should be more than enough for SWGL and reduce memory
+            // overhead.
+            .stack_size(32 * 1024)
+            .spawn(move || {
+                let thread_listener = GeckoProfilerThreadListener::new();
+                thread_listener.thread_started(thread_name);
+                // Process any available jobs. This will return a non-Ok
+                // result when the job queue is dropped, causing the thread
+                // to eventually exit.
+                while let Some((job, band)) = info.take_job(true) {
+                    info.process_job(job, band);
                 }
-            }
-            thread_listener.thread_stopped(thread_name);
-        }).expect("Failed creating SwComposite thread");
+                thread_listener.thread_stopped(thread_name);
+            })
+            .expect("Failed creating SwComposite thread");
         result
+    }
+
+    fn deinit(&self) {
+        // Force the job count to be negative to signal the thread needs to exit.
+        self.job_count.store(isize::MIN / 2, Ordering::SeqCst);
+        // Wake up the thread in case it is blocked waiting for new jobs
+        self.jobs_available.notify_all();
+    }
+
+    /// Process a job contained in a dependency graph node received from the job queue.
+    /// Any child dependencies will be unblocked as appropriate after processing. The
+    /// job count will be updated to reflect this.
+    fn process_job(&self, mut graph_node: SwCompositeGraphNodeRef, band: u8) {
+        // Do the actual processing of the job contained in this node.
+        graph_node.process_job(band);
+        // Unblock any child dependencies now that this job has been processed.
+        graph_node.unblock_children(self);
+        // Decrement the job count.
+        self.job_count.fetch_sub(1, Ordering::SeqCst);
     }
 
     /// Queue a tile for composition by adding to the queue and increasing the job count.
     fn queue_composite(
         &self,
-        locked_src: swgl::LockedResource,
+        locked_src: SwCompositeSource,
         locked_dst: swgl::LockedResource,
         src_rect: DeviceIntRect,
         dst_rect: DeviceIntRect,
         opaque: bool,
+        flip_y: bool,
+        filter: ImageRendering,
+        mut graph_node: SwCompositeGraphNodeRef,
+        job_queue: &mut SwCompositeJobQueue,
     ) {
-        // There are still tile updates happening, so send the job to the SwComposite thread.
-        *self.job_count.lock().unwrap() += 1;
-        self.job_queue.send(SwCompositeJob {
+        // For jobs that would span a sufficiently large destination rectangle, split
+        // it into multiple horizontal bands so that multiple threads can process them.
+        let num_bands = if dst_rect.size.width >= 64 && dst_rect.size.height >= 64 {
+            (dst_rect.size.height / 64).min(4) as u8
+        } else {
+            1
+        };
+        let job = SwCompositeJob {
             locked_src,
             locked_dst,
             src_rect,
-            dst_offset: dst_rect.origin,
+            dst_rect,
             opaque,
-        }).expect("Failing queuing SwComposite job");
+            flip_y,
+            filter,
+            num_bands,
+        };
+        self.job_count.fetch_add(num_bands as isize, Ordering::SeqCst);
+        if graph_node.set_job(job, num_bands) {
+            self.send_job(job_queue, graph_node, true);
+        }
     }
 
-    /// Wait for all queued composition jobs to be processed by checking the done condition.
-    fn wait_for_composites(&self) {
-        let mut jobs = self.job_count.lock().unwrap();
-        while *jobs > 0 {
-            jobs = self.done_cond.wait(jobs).unwrap();
+    fn start_compositing(&self) {
+        // Initialize the job count to 1 to prevent spurious signaling of job completion
+        // in the middle of queuing compositing jobs until we're actually waiting for
+        // composition.
+        self.job_count.store(1, Ordering::SeqCst);
+    }
+
+    /// Lock the thread for access to the job queue.
+    fn lock(&self) -> SwCompositeThreadLock {
+        self.jobs.lock().unwrap()
+    }
+
+    /// Send a job to the composite thread by adding it to the job queue.
+    /// Optionally signal that this job has been added in case the queue
+    /// was empty and the SwComposite thread is waiting for jobs.
+    fn send_job(&self, queue: &mut SwCompositeJobQueue, job: SwCompositeGraphNodeRef, signal: bool) {
+        if signal && queue.is_empty() {
+            self.jobs_available.notify_all();
         }
+        queue.push_back(job);
+    }
+
+    /// Take a job from the queue. Optionally block waiting for jobs to become
+    /// available if this is called from the SwComposite thread.
+    fn take_job(&self, wait: bool) -> Option<(SwCompositeGraphNodeRef, u8)> {
+        // Lock the job queue while checking for available jobs. The lock
+        // won't be held while the job is processed later outside of this
+        // function so that other threads can pull from the queue meanwhile.
+        let mut jobs = self.lock();
+        if wait {
+            while jobs.is_empty() {
+                match self.job_count.load(Ordering::SeqCst) {
+                    // If waiting inside the SwCompositeThread and we completed all
+                    // available jobs, signal completion.
+                    0 => self.jobs_completed.notify_all(),
+                    // A negative job count signals to exit immediately.
+                    job_count if job_count < 0 => return None,
+                    _ => {}
+                }
+                // The SwCompositeThread needs to wait for jobs to become
+                // available to avoid busy waiting on the queue.
+                jobs = self.jobs_available.wait(jobs).unwrap();
+            }
+        }
+        // Look for a job at the front of the queue. If there is one, take the
+        // next unprocessed band from the job. If this was the last band in the
+        // job, then finally remove it from the queue.
+        if let Some(job) = jobs.front() {
+            let (band, done) = job.take_band();
+            let job = if done { jobs.pop_front().unwrap() } else { job.clone() };
+            Some((job, band))
+        } else {
+            None
+        }
+    }
+
+    /// Wait for all queued composition jobs to be processed.
+    /// Instead of blocking on the SwComposite thread to complete all jobs,
+    /// this may steal some jobs and attempt to process them while waiting.
+    /// This may optionally process jobs synchronously. When normally doing
+    /// asynchronous processing, the graph dependencies are relied upon to
+    /// properly order the jobs, which makes it safe for the render thread
+    /// to steal jobs from the composite thread without violating those
+    /// dependencies. Synchronous processing just disables this job stealing
+    /// so that the composite thread always handles the jobs in the order
+    /// they were queued without having to rely upon possibly unavailable
+    /// graph dependencies.
+    fn wait_for_composites(&self, sync: bool) {
+        // Subtract off the bias to signal we're now waiting on composition and
+        // need to know if jobs are completed.
+        self.job_count.fetch_sub(1, Ordering::SeqCst);
+        // If processing asynchronously, try to steal jobs from the composite
+        // thread if it is busy.
+        if !sync {
+            while let Some((job, band)) = self.take_job(false) {
+                self.process_job(job, band);
+            }
+            // Once there are no more jobs, just fall through to waiting
+            // synchronously for the composite thread to finish processing.
+        }
+        // If processing synchronously, just wait for the composite thread
+        // to complete processing any in-flight jobs, then bail.
+        let mut jobs = self.lock();
+        // Wake up the composite thread in case it is blocked waiting on a 0
+        // job count resulting from job stealing while it was blocked.
+        self.jobs_available.notify_all();
+        // If the job count is non-zero here, then there are in-flight jobs.
+        while self.job_count.load(Ordering::SeqCst) > 0 {
+            jobs = self.jobs_completed.wait(jobs).unwrap();
+        }
+    }
+
+    /// Check if there is a non-zero job count (including sentinel job) that
+    /// would indicate we are starting to already process jobs in the composite
+    /// thread.
+    fn is_busy_compositing(&self) -> bool {
+        self.job_count.load(Ordering::SeqCst) > 0
     }
 }
 
+/// Adapter for RenderCompositors to work with SWGL that shuttles between
+/// WebRender and the RenderCompositr via the Compositor API.
 pub struct SwCompositor {
     gl: swgl::Context,
     native_gl: Option<Rc<dyn gl::Gl>>,
     compositor: Option<WrCompositor>,
     surfaces: HashMap<NativeSurfaceId, SwSurface>,
-    frame_surfaces: Vec<(NativeSurfaceId, DeviceIntPoint, DeviceIntRect)>,
+    frame_surfaces: Vec<(
+        NativeSurfaceId,
+        CompositorSurfaceTransform,
+        DeviceIntRect,
+        ImageRendering,
+    )>,
+    /// Any surface added after we're already compositing (i.e. debug overlay)
+    /// needs to be processed after those frame surfaces. For simplicity we
+    /// store them in a separate queue that gets processed later.
+    late_surfaces: Vec<(
+        NativeSurfaceId,
+        CompositorSurfaceTransform,
+        DeviceIntRect,
+        ImageRendering,
+    )>,
     cur_tile: NativeTileId,
     draw_tile: Option<DrawTileHelper>,
     /// The maximum tile size required for any of the allocated surfaces.
@@ -420,6 +917,7 @@ impl SwCompositor {
             compositor,
             surfaces: HashMap::new(),
             frame_surfaces: Vec::new(),
+            late_surfaces: Vec::new(),
             cur_tile: NativeTileId {
                 surface_id: NativeSurfaceId(0),
                 x: 0,
@@ -462,6 +960,7 @@ impl SwCompositor {
             for tile in &mut surface.tiles {
                 tile.overlaps.set(0);
                 tile.invalid.set(false);
+                tile.graph_node.reset();
             }
         }
     }
@@ -478,9 +977,21 @@ impl SwCompositor {
     /// surface hasn't yet been added to the current frame list of surfaces to composite
     /// so that we only process potential blockers from surfaces that would come earlier
     /// in composition.
-    fn get_overlaps(&self, overlap_rect: &DeviceIntRect) -> u32 {
-        let mut overlaps = 0;
-        for &(ref id, ref position, ref clip_rect) in &self.frame_surfaces {
+    fn init_overlaps(
+        &self,
+        overlap_surface: &SwSurface,
+        overlap_tile: &SwTile,
+        overlap_transform: &CompositorSurfaceTransform,
+        overlap_clip_rect: &DeviceIntRect,
+    ) {
+        let overlap_rect = match overlap_tile.overlap_rect(overlap_surface, overlap_transform, overlap_clip_rect) {
+            Some(overlap_rect) => overlap_rect,
+            None => return,
+        };
+        // Record an extra overlap for an invalid tile to track the tile's dependency
+        // on its own future update.
+        let mut overlaps = if overlap_tile.invalid.get() { 1 } else { 0 };
+        for &(ref id, ref transform, ref clip_rect, _) in &self.frame_surfaces {
             // If the surface's clip rect doesn't overlap the tile's rect,
             // then there is no need to check any tiles within the surface.
             if !overlap_rect.intersects(clip_rect) {
@@ -490,58 +1001,118 @@ impl SwCompositor {
                 for tile in &surface.tiles {
                     // If there is a deferred tile that might overlap the destination rectangle,
                     // record the overlap.
-                    if tile.overlaps.get() > 0 &&
-                       tile.may_overlap(surface, position, clip_rect, overlap_rect) {
-                        overlaps += 1;
+                    if tile.may_overlap(surface, transform, clip_rect, &overlap_rect) {
+                        if tile.overlaps.get() > 0 {
+                            overlaps += 1;
+                        }
+                        // Regardless of whether this tile is deferred, if it has dependency
+                        // overlaps, then record that it is potentially a dependency parent.
+                        tile.graph_node.get_mut().add_child(overlap_tile.graph_node.clone());
                     }
                 }
             }
         }
-        overlaps
+        if overlaps > 0 {
+            // Has a dependency on some invalid tiles, so need to defer composition.
+            overlap_tile.overlaps.set(overlaps);
+        }
     }
 
     /// Helper function that queues a composite job to the current locked framebuffer
     fn queue_composite(
         &self,
         surface: &SwSurface,
-        position: &DeviceIntPoint,
+        transform: &CompositorSurfaceTransform,
         clip_rect: &DeviceIntRect,
+        filter: ImageRendering,
         tile: &SwTile,
+        job_queue: &mut SwCompositeJobQueue,
     ) {
         if let Some(ref composite_thread) = self.composite_thread {
-            if let Some((src_rect, dst_rect)) = tile.composite_rects(surface, position, clip_rect) {
-                if let Some(texture) = self.gl.lock_texture(tile.color_id) {
-                    let framebuffer = self.locked_framebuffer.clone().unwrap();
-                    composite_thread.queue_composite(texture, framebuffer, src_rect, dst_rect, surface.is_opaque);
+            if let Some((src_rect, dst_rect, flip_y)) = tile.composite_rects(surface, transform, clip_rect) {
+                let source = if surface.external_image.is_some() {
+                    // If the surface has an attached external image, lock any textures supplied in the descriptor.
+                    match surface.composite_surface {
+                        Some(ref info) => match info.yuv_planes {
+                            0 => match self.gl.lock_texture(info.textures[0]) {
+                                Some(texture) => SwCompositeSource::BGRA(texture),
+                                None => return,
+                            },
+                            3 => match (
+                                self.gl.lock_texture(info.textures[0]),
+                                self.gl.lock_texture(info.textures[1]),
+                                self.gl.lock_texture(info.textures[2]),
+                            ) {
+                                (Some(y_texture), Some(u_texture), Some(v_texture)) => SwCompositeSource::YUV(
+                                    y_texture,
+                                    u_texture,
+                                    v_texture,
+                                    info.color_space,
+                                    info.color_depth,
+                                ),
+                                _ => return,
+                            },
+                            _ => panic!("unsupported number of YUV planes: {}", info.yuv_planes),
+                        },
+                        None => return,
+                    }
+                } else if let Some(texture) = self.gl.lock_texture(tile.color_id) {
+                    // Lock the texture representing the picture cache tile.
+                    SwCompositeSource::BGRA(texture)
+                } else {
+                    return;
+                };
+                let framebuffer = self.locked_framebuffer.clone().unwrap();
+                composite_thread.queue_composite(
+                    source,
+                    framebuffer,
+                    src_rect,
+                    dst_rect,
+                    surface.is_opaque,
+                    flip_y,
+                    filter,
+                    tile.graph_node.clone(),
+                    job_queue,
+                );
+            }
+        }
+    }
+
+    /// Lock a surface with an attached external image for compositing.
+    fn try_lock_composite_surface(&mut self, id: &NativeSurfaceId) {
+        if let Some(surface) = self.surfaces.get_mut(id) {
+            if let Some(external_image) = surface.external_image {
+                // If the surface has an attached external image, attempt to lock the external image
+                // for compositing. Yields a descriptor of textures and data necessary for their
+                // interpretation on success.
+                let mut info = WrSWGLCompositeSurfaceInfo {
+                    yuv_planes: 0,
+                    textures: [0; 3],
+                    color_space: YuvColorSpace::Identity,
+                    color_depth: ColorDepth::Color8,
+                    size: DeviceIntSize::zero(),
+                };
+                assert!(surface.tiles.len() > 0);
+                let mut tile = &mut surface.tiles[0];
+                if unsafe { wr_swgl_lock_composite_surface(self.gl.into(), external_image, &mut info) } {
+                    tile.valid_rect = DeviceIntRect::from_size(info.size);
+                    surface.composite_surface = Some(info);
+                } else {
+                    tile.valid_rect = DeviceIntRect::zero();
+                    surface.composite_surface = None;
                 }
             }
         }
     }
 
-    /// If using the SwComposite thread, we need to compute an overlap count for all tiles
-    /// within the surface being queued for composition this frame. If the tile is immediately
-    /// ready to composite, then queue that now. Otherwise, set its draw order index for later
-    /// composition.
-    fn init_composites(&mut self, id: &NativeSurfaceId, position: &DeviceIntPoint, clip_rect: &DeviceIntRect) {
-        if self.composite_thread.is_none() {
-            return;
-        }
-
-        if let Some(surface) = self.surfaces.get(&id) {
-            for tile in &surface.tiles {
-                if let Some(overlap_rect) = tile.overlap_rect(surface, position, clip_rect) {
-                    let mut overlaps = self.get_overlaps(&overlap_rect);
-                    // Record an extra overlap for an invalid tile to track the tile's dependency
-                    // on its own future update.
-                    if tile.invalid.get() {
-                        overlaps += 1;
-                    }
-                    if overlaps == 0 {
-                        // Not dependent on any tiles, so go ahead and composite now.
-                        self.queue_composite(surface, position, clip_rect, tile);
-                    } else {
-                        // Has a dependency on some invalid tiles, so need to defer composition.
-                        tile.overlaps.set(overlaps);
+    /// Look for any attached external images that have been locked and then unlock them.
+    fn unlock_composite_surfaces(&mut self) {
+        for &(ref id, _, _, _) in self.frame_surfaces.iter().chain(self.late_surfaces.iter()) {
+            if let Some(surface) = self.surfaces.get_mut(id) {
+                if let Some(external_image) = surface.external_image {
+                    if surface.composite_surface.is_some() {
+                        unsafe { wr_swgl_unlock_composite_surface(self.gl.into(), external_image) };
+                        surface.composite_surface = None;
                     }
                 }
             }
@@ -551,14 +1122,18 @@ impl SwCompositor {
     /// Issue composites for any tiles that are no longer blocked following a tile update.
     /// We process all surfaces and tiles in the order they were queued.
     fn flush_composites(&self, tile_id: &NativeTileId, surface: &SwSurface, tile: &SwTile) {
-        if self.composite_thread.is_none() {
-            return;
-        }
+        let composite_thread = match &self.composite_thread {
+            Some(composite_thread) => composite_thread,
+            None => return,
+        };
 
         // Look for the tile in the frame list and composite it if it has no dependencies.
-        let mut frame_surfaces = self.frame_surfaces.iter().skip_while(|&(ref id, _, _)| *id != tile_id.surface_id);
-        let overlap_rect = match frame_surfaces.next() {
-            Some(&(_, ref position, ref clip_rect)) => {
+        let mut frame_surfaces = self
+            .frame_surfaces
+            .iter()
+            .skip_while(|&(ref id, _, _, _)| *id != tile_id.surface_id);
+        let (overlap_rect, mut lock) = match frame_surfaces.next() {
+            Some(&(_, ref transform, ref clip_rect, filter)) => {
                 // Remove invalid tile's update dependency.
                 if tile.invalid.get() {
                     tile.overlaps.set(tile.overlaps.get() - 1);
@@ -568,10 +1143,11 @@ impl SwCompositor {
                     return;
                 }
                 // Otherwise, the tile's dependencies are all resolved, so composite it.
-                self.queue_composite(surface, position, clip_rect, tile);
+                let mut lock = composite_thread.lock();
+                self.queue_composite(surface, transform, clip_rect, filter, tile, &mut lock);
                 // Finally, get the tile's overlap rect used for tracking dependencies
-                match tile.overlap_rect(surface, position, clip_rect) {
-                    Some(overlap_rect) => overlap_rect,
+                match tile.overlap_rect(surface, transform, clip_rect) {
+                    Some(overlap_rect) => (overlap_rect, lock),
                     None => return,
                 }
             }
@@ -584,7 +1160,7 @@ impl SwCompositor {
         let mut flushed_rects = vec![overlap_rect];
 
         // Check surfaces following the update in the frame list and see if they would overlap it.
-        for &(ref id, ref position, ref clip_rect) in frame_surfaces {
+        for &(ref id, ref transform, ref clip_rect, filter) in frame_surfaces {
             // If the clip rect doesn't overlap the conservative bounds, we can skip the whole surface.
             if !flushed_bounds.intersects(clip_rect) {
                 continue;
@@ -598,7 +1174,7 @@ impl SwCompositor {
                         continue;
                     }
                     // Get this tile's overlap rect for tracking dependencies
-                    let overlap_rect = match tile.overlap_rect(surface, position, clip_rect) {
+                    let overlap_rect = match tile.overlap_rect(surface, transform, clip_rect) {
                         Some(overlap_rect) => overlap_rect,
                         None => continue,
                     };
@@ -617,7 +1193,7 @@ impl SwCompositor {
                         // If the count hit zero, it is ready to composite.
                         tile.overlaps.set(overlaps);
                         if overlaps == 0 {
-                            self.queue_composite(surface, position, clip_rect, tile);
+                            self.queue_composite(surface, transform, clip_rect, filter, tile, &mut lock);
                             // Record that the tile got flushed to update any downwind dependencies.
                             flushed_bounds = flushed_bounds.union(&overlap_rect);
                             flushed_rects.push(overlap_rect);
@@ -644,14 +1220,15 @@ impl Compositor for SwCompositor {
             self.max_tile_size.width.max(tile_size.width),
             self.max_tile_size.height.max(tile_size.height),
         );
-        self.surfaces.insert(
-            id,
-            SwSurface {
-                tile_size,
-                is_opaque,
-                tiles: Vec::new(),
-            },
-        );
+        self.surfaces.insert(id, SwSurface::new(tile_size, is_opaque));
+    }
+
+    fn create_external_surface(&mut self, id: NativeSurfaceId, is_opaque: bool) {
+        if let Some(compositor) = &mut self.compositor {
+            compositor.create_external_surface(id, is_opaque);
+        }
+        self.surfaces
+            .insert(id, SwSurface::new(DeviceIntSize::zero(), is_opaque));
     }
 
     fn destroy_surface(&mut self, id: NativeSurfaceId) {
@@ -664,6 +1241,10 @@ impl Compositor for SwCompositor {
     }
 
     fn deinit(&mut self) {
+        if let Some(ref composite_thread) = self.composite_thread {
+            composite_thread.deinit();
+        }
+
         for surface in self.surfaces.values() {
             self.deinit_surface(surface);
         }
@@ -682,11 +1263,17 @@ impl Compositor for SwCompositor {
             compositor.create_tile(id);
         }
         if let Some(surface) = self.surfaces.get_mut(&id.surface_id) {
-            let color_id = self.gl.gen_textures(1)[0];
-            let fbo_id = self.gl.gen_framebuffers(1)[0];
-            self.gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, fbo_id);
-            self.gl
-                .framebuffer_texture_2d(gl::DRAW_FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, color_id, 0);
+            let mut tile = SwTile::new(id.x, id.y);
+            tile.color_id = self.gl.gen_textures(1)[0];
+            tile.fbo_id = self.gl.gen_framebuffers(1)[0];
+            self.gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, tile.fbo_id);
+            self.gl.framebuffer_texture_2d(
+                gl::DRAW_FRAMEBUFFER,
+                gl::COLOR_ATTACHMENT0,
+                gl::TEXTURE_2D,
+                tile.color_id,
+                0,
+            );
             self.gl.framebuffer_texture_2d(
                 gl::DRAW_FRAMEBUFFER,
                 gl::DEPTH_ATTACHMENT,
@@ -696,11 +1283,9 @@ impl Compositor for SwCompositor {
             );
             self.gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, 0);
 
-            let mut tex_id = 0;
-            let mut pbo_id = 0;
             if let Some(native_gl) = &self.native_gl {
-                tex_id = native_gl.gen_textures(1)[0];
-                native_gl.bind_texture(gl::TEXTURE_2D, tex_id);
+                tile.tex_id = native_gl.gen_textures(1)[0];
+                native_gl.bind_texture(gl::TEXTURE_2D, tile.tex_id);
                 native_gl.tex_image_2d(
                     gl::TEXTURE_2D,
                     0,
@@ -718,8 +1303,8 @@ impl Compositor for SwCompositor {
                 native_gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::GLint);
                 native_gl.bind_texture(gl::TEXTURE_2D, 0);
 
-                pbo_id = native_gl.gen_buffers(1)[0];
-                native_gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, pbo_id);
+                tile.pbo_id = native_gl.gen_buffers(1)[0];
+                native_gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, tile.pbo_id);
                 native_gl.buffer_data_untyped(
                     gl::PIXEL_UNPACK_BUFFER,
                     surface.tile_size.area() as isize * 4 + 16,
@@ -729,18 +1314,7 @@ impl Compositor for SwCompositor {
                 native_gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, 0);
             }
 
-            surface.tiles.push(SwTile {
-                x: id.x,
-                y: id.y,
-                fbo_id,
-                color_id,
-                tex_id,
-                pbo_id,
-                dirty_rect: DeviceIntRect::zero(),
-                valid_rect: DeviceIntRect::zero(),
-                overlaps: Cell::new(0),
-                invalid: Cell::new(false),
-            });
+            surface.tiles.push(tile);
         }
     }
 
@@ -753,6 +1327,21 @@ impl Compositor for SwCompositor {
         }
         if let Some(compositor) = &mut self.compositor {
             compositor.destroy_tile(id);
+        }
+    }
+
+    fn attach_external_image(&mut self, id: NativeSurfaceId, external_image: ExternalImageId) {
+        if let Some(compositor) = &mut self.compositor {
+            compositor.attach_external_image(id, external_image);
+        }
+        if let Some(surface) = self.surfaces.get_mut(&id) {
+            // Surfaces with attached external images have a single tile at the origin encompassing
+            // the entire surface.
+            assert!(surface.tile_size.is_empty());
+            surface.external_image = Some(external_image);
+            if surface.tiles.is_empty() {
+                surface.tiles.push(SwTile::new(0, 0));
+            }
         }
     }
 
@@ -914,7 +1503,7 @@ impl Compositor for SwCompositor {
                     let viewport = dirty.translate(info.origin.to_vector());
                     let draw_tile = self.draw_tile.as_ref().unwrap();
                     draw_tile.enable(&viewport);
-                    draw_tile.draw(&viewport, &viewport, &dirty, &surface, &tile);
+                    draw_tile.draw(&viewport, &viewport, &dirty, &surface, &tile, false, gl::LINEAR);
                     draw_tile.disable();
 
                     native_gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, 0);
@@ -932,6 +1521,7 @@ impl Compositor for SwCompositor {
             compositor.begin_frame();
         }
         self.frame_surfaces.clear();
+        self.late_surfaces.clear();
 
         self.reset_overlaps();
         if self.composite_thread.is_some() {
@@ -939,15 +1529,62 @@ impl Compositor for SwCompositor {
         }
     }
 
-    fn add_surface(&mut self, id: NativeSurfaceId, position: DeviceIntPoint, clip_rect: DeviceIntRect) {
+    fn add_surface(
+        &mut self,
+        id: NativeSurfaceId,
+        transform: CompositorSurfaceTransform,
+        clip_rect: DeviceIntRect,
+        filter: ImageRendering,
+    ) {
         if let Some(compositor) = &mut self.compositor {
-            compositor.add_surface(id, position, clip_rect);
+            compositor.add_surface(id, transform, clip_rect, filter);
         }
 
-        // Compute overlap dependencies and issue any initial composite jobs for the SwComposite thread.
-        self.init_composites(&id, &position, &clip_rect);
+        if self.composite_thread.is_some() {
+            // If the surface has an attached external image, try to lock that now.
+            self.try_lock_composite_surface(&id);
 
-        self.frame_surfaces.push((id, position, clip_rect));
+            // If we're already busy compositing, then add to the queue of late
+            // surfaces instead of trying to sort into the main frame queue.
+            // These late surfaces will not have any overlap tracking done for
+            // them and must be processed synchronously at the end of the frame.
+            if self.composite_thread.as_ref().unwrap().is_busy_compositing() {
+                self.late_surfaces.push((id, transform, clip_rect, filter));
+                return;
+            }
+
+            // Compute overlap dependencies for the surface.
+            if let Some(surface) = self.surfaces.get(&id) {
+                for tile in &surface.tiles {
+                    self.init_overlaps(surface, tile, &transform, &clip_rect);
+                }
+            }
+        }
+
+        self.frame_surfaces.push((id, transform, clip_rect, filter));
+    }
+
+    /// Now that all the dependency graph nodes have been built, start queuing
+    /// composition jobs. Any surfaces that get added after this point in the
+    /// frame will not have overlap dependencies assigned and so must instead
+    /// be added to the late_surfaces queue to be processed at the end of the
+    /// frame.
+    fn start_compositing(&mut self, _dirty_rects: &[DeviceIntRect]) {
+        if let Some(ref composite_thread) = self.composite_thread {
+            composite_thread.start_compositing();
+            // Issue any initial composite jobs for the SwComposite thread.
+            let mut lock = composite_thread.lock();
+            for &(ref id, ref transform, ref clip_rect, filter) in &self.frame_surfaces {
+                if let Some(surface) = self.surfaces.get(id) {
+                    for tile in &surface.tiles {
+                        if tile.overlaps.get() == 0 {
+                            // Not dependent on any tiles, so go ahead and composite now.
+                            self.queue_composite(surface, transform, clip_rect, filter, tile, &mut lock);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn end_frame(&mut self) {
@@ -960,7 +1597,7 @@ impl Compositor for SwCompositor {
             draw_tile.enable(&viewport);
             let mut blend = false;
             native_gl.blend_func(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
-            for &(ref id, ref position, ref clip_rect) in &self.frame_surfaces {
+            for &(ref id, ref transform, ref clip_rect, filter) in &self.frame_surfaces {
                 if let Some(surface) = self.surfaces.get(id) {
                     if surface.is_opaque {
                         if blend {
@@ -972,8 +1609,17 @@ impl Compositor for SwCompositor {
                         blend = true;
                     }
                     for tile in &surface.tiles {
-                        if let Some((src_rect, dst_rect)) = tile.composite_rects(surface, position, clip_rect) {
-                            draw_tile.draw(&viewport, &dst_rect, &src_rect, surface, tile);
+                        if let Some((src_rect, dst_rect, flip_y)) = tile.composite_rects(surface, transform, clip_rect)
+                        {
+                            draw_tile.draw(
+                                &viewport,
+                                &dst_rect,
+                                &src_rect,
+                                surface,
+                                tile,
+                                flip_y,
+                                image_rendering_to_gl_filter(filter),
+                            );
                         }
                     }
                 }
@@ -984,8 +1630,31 @@ impl Compositor for SwCompositor {
             draw_tile.disable();
         } else if let Some(ref composite_thread) = self.composite_thread {
             // Need to wait for the SwComposite thread to finish any queued jobs.
-            composite_thread.wait_for_composites();
+            composite_thread.wait_for_composites(false);
+
+            if !self.late_surfaces.is_empty() {
+                // All of the main frame surface have been processed by now. But if there
+                // are any late surfaces, we need to kick off a new synchronous composite
+                // phase. These late surfaces don't have any overlap/dependency tracking,
+                // so we just queue them directly and wait synchronously for the composite
+                // thread to process them in order.
+                composite_thread.start_compositing();
+                {
+                    let mut lock = composite_thread.lock();
+                    for &(ref id, ref transform, ref clip_rect, filter) in &self.late_surfaces {
+                        if let Some(surface) = self.surfaces.get(id) {
+                            for tile in &surface.tiles {
+                                self.queue_composite(surface, transform, clip_rect, filter, tile, &mut lock);
+                            }
+                        }
+                    }
+                }
+                composite_thread.wait_for_composites(true);
+            }
+
             self.locked_framebuffer = None;
+
+            self.unlock_composite_surfaces();
         }
     }
 

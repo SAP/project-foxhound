@@ -8,11 +8,11 @@
 
 #include "CanvasRenderingContextHelper.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "jsapi.h"
 #include "js/Array.h"  // JS::GetArrayLength
 #include "mozilla/FloatingPoint.h"
-#include "nsLayoutUtils.h"
 
 class nsIPrincipal;
 

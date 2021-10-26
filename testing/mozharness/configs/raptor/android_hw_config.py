@@ -2,14 +2,14 @@ import os
 
 config = {
     "log_name": "raptor",
-    "title": os.uname()[1].lower().split('.')[0],
+    "title": os.uname()[1].lower().split(".")[0],
     "default_actions": [
         "clobber",
         "download-and-extract",
         "populate-webroot",
+        "create-virtualenv",
         "install-chrome-android",
         "install-chromium-distribution",
-        "create-virtualenv",
         "install",
         "run-tests",
     ],
@@ -19,5 +19,5 @@ config = {
 }
 
 # raptor will pick these up in mitmproxy.py, doesn't use the mozharness config
-os.environ['TOOLTOOLCACHE'] = config['tooltool_cache']
-os.environ['HOSTUTILS_MANIFEST_PATH'] = config['hostutils_manifest_path']
+os.environ["TOOLTOOLCACHE"] = config["tooltool_cache"]
+os.environ["HOSTUTILS_MANIFEST_PATH"] = config["hostutils_manifest_path"]

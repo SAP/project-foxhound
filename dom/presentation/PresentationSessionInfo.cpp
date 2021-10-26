@@ -34,10 +34,6 @@
 #  include "nsIPresentationNetworkHelper.h"
 #endif  // MOZ_WIDGET_ANDROID
 
-using namespace mozilla;
-using namespace mozilla::dom;
-using namespace mozilla::services;
-
 /*
  * Implementation of PresentationChannelDescription
  */
@@ -128,9 +124,6 @@ class TCPPresentationChannelDescription final
   nsCString mAddress;
   uint16_t mPort;
 };
-
-}  // namespace dom
-}  // namespace mozilla
 
 NS_IMPL_ISUPPORTS(TCPPresentationChannelDescription,
                   nsIPresentationChannelDescription)
@@ -1538,3 +1531,6 @@ void PresentationPresentingInfo::RejectedCallback(
 
   ReplyError(NS_ERROR_DOM_OPERATION_ERR);
 }
+
+}  // namespace dom
+}  // namespace mozilla

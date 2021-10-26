@@ -86,6 +86,33 @@ function mergeArrays(a, b) {
   return a.map((classlist, index) => classlist.concat(b[index]));
 }
 
+async function verifyPickerPosition(browsingContext, inputId) {
+  let inputRect = await SpecialPowers.spawn(
+    browsingContext,
+    [inputId],
+    async function(inputIdChild) {
+      let rect = content.document
+        .getElementById(inputIdChild)
+        .getBoundingClientRect();
+      return {
+        left: content.mozInnerScreenX + rect.left,
+        bottom: content.mozInnerScreenY + rect.bottom,
+      };
+    }
+  );
+
+  function is_close(got, exp, msg) {
+    // on some platforms we see differences of a fraction of a pixel - so
+    // allow any difference of < 1 pixels as being OK.
+    ok(
+      Math.abs(got - exp) < 1,
+      msg + ": " + got + " should be equal(-ish) to " + exp
+    );
+  }
+  is_close(helper.panel.screenX, inputRect.left, "datepicker x position");
+  is_close(helper.panel.screenY, inputRect.bottom, "datepicker y position");
+}
+
 let helper = new DateTimeTestHelper();
 
 registerCleanupFunction(() => {
@@ -183,6 +210,77 @@ add_task(async function test_datepicker_open() {
     calendarClasslist_201612,
     "2016-12 classNames"
   );
+
+  await helper.tearDown();
+});
+
+/**
+ * Ensure picker closes when focus moves to a different input.
+ */
+add_task(async function test_datepicker_focus_change() {
+  await helper.openPicker(
+    `data:text/html,<input id=date type=date><input id=other>`
+  );
+  let browser = helper.tab.linkedBrowser;
+  await verifyPickerPosition(browser, "date");
+
+  isnot(helper.panel.hidden, "Panel should be visible");
+
+  await SpecialPowers.spawn(browser, [], () => {
+    content.document.querySelector("#other").focus();
+  });
+
+  // NOTE: Would be cool to be able to use promisePickerClosed(), but
+  // popuphidden isn't really triggered for this code path it seems, so oh
+  // well.
+  await BrowserTestUtils.waitForCondition(
+    () => helper.panel.hidden,
+    "waiting for close"
+  );
+  await helper.tearDown();
+});
+
+/**
+ * Ensure picker opens and closes with key bindings appropriately.
+ */
+add_task(async function test_datepicker_keyboard_open() {
+  const inputValue = "2016-12-15";
+  const prevMonth = "2016-11-01";
+  await helper.openPicker(
+    `data:text/html,<input id=date type=date value=${inputValue}>`
+  );
+  let browser = helper.tab.linkedBrowser;
+  await verifyPickerPosition(browser, "date");
+
+  BrowserTestUtils.synthesizeKey(" ", {}, browser);
+
+  await BrowserTestUtils.waitForCondition(
+    () => helper.panel.hidden,
+    "waiting for close"
+  );
+
+  BrowserTestUtils.synthesizeKey(" ", {}, browser);
+
+  await BrowserTestUtils.waitForCondition(
+    () => !helper.panel.hidden,
+    "waiting for open"
+  );
+
+  // NOTE: After the click, the first input field (the month one) is focused,
+  // so down arrow will change the selected month.
+  //
+  // This assumes en-US locale, which seems fine for testing purposes (as
+  // DATE_FORMAT and other bits around do the same).
+  BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
+
+  // It'd be good to use something else than waitForCondition for this but
+  // there's no exposed event atm when the value changes from the child.
+  await BrowserTestUtils.waitForCondition(() => {
+    return (
+      helper.getElement(MONTH_YEAR).textContent ==
+      DATE_FORMAT(new Date(prevMonth))
+    );
+  }, "Should update date when updating months");
 
   await helper.tearDown();
 });
@@ -334,8 +432,12 @@ add_task(async function test_datepicker_clicked() {
   const firstDayOnCalendar = "2016-11-27";
 
   await helper.openPicker(
-    `data:text/html, <input type="date" value="${inputValue}">`
+    `data:text/html, <input id="date" type="date" value="${inputValue}">`
   );
+
+  let browser = helper.tab.linkedBrowser;
+  await verifyPickerPosition(browser, "date");
+
   // Click the first item (top-left corner) of the calendar
   let promise = BrowserTestUtils.waitForContentEvent(
     helper.tab.linkedBrowser,
@@ -345,11 +447,34 @@ add_task(async function test_datepicker_clicked() {
   await promise;
 
   let value = await SpecialPowers.spawn(
-    helper.tab.linkedBrowser,
+    browser,
     [],
     () => content.document.querySelector("input").value
   );
   Assert.equal(value, firstDayOnCalendar);
+
+  await helper.tearDown();
+});
+
+/**
+ * Ensure that the datepicker popop appears correctly positioned when
+ * the input field has been transformed.
+ */
+add_task(async function test_datepicker_transformed_position() {
+  const inputValue = "2016-12-15";
+
+  const style =
+    "transform: translateX(7px) translateY(13px); border-top: 2px; border-left: 5px; margin: 30px;";
+  const iframeContent = `<input id="date" type="date" value="${inputValue}" style="${style}">`;
+  await helper.openPicker(
+    "data:text/html,<iframe id='iframe' src='http://example.net/document-builder.sjs?html=" +
+      encodeURI(iframeContent) +
+      "'>",
+    true
+  );
+
+  let bc = helper.tab.linkedBrowser.browsingContext.children[0];
+  await verifyPickerPosition(bc, "date");
 
   await helper.tearDown();
 });
@@ -575,6 +700,31 @@ add_task(async function test_datepicker_abs_min() {
     ],
     "0001-01"
   );
+
+  await helper.tearDown();
+});
+
+// This test checks if the change event is considered as user input event.
+add_task(async function test_datepicker_handling_user_input() {
+  await helper.openPicker(`data:text/html, <input type="date">`);
+
+  let changeEventPromise = SpecialPowers.spawn(
+    helper.tab.linkedBrowser,
+    [],
+    async () => {
+      let input = content.document.querySelector("input");
+      await ContentTaskUtils.waitForEvent(input, "change", false, e => {
+        ok(
+          content.window.windowUtils.isHandlingUserInput,
+          "isHandlingUserInput should be true"
+        );
+        return true;
+      });
+    }
+  );
+  // Click the first item (top-left corner) of the calendar
+  helper.click(helper.getElement(DAYS_VIEW).children[0]);
+  await changeEventPromise;
 
   await helper.tearDown();
 });

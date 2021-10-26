@@ -391,10 +391,10 @@ const Dav1dWarpedMotionParams dav1d_default_wm_params = {
         0, 0, 1 << 16,
         0, 0, 1 << 16,
     },
-    .alpha = 0,
-    .beta = 0,
-    .gamma = 0,
-    .delta = 0,
+    .u.p.alpha = 0,
+    .u.p.beta = 0,
+    .u.p.gamma = 0,
+    .u.p.delta = 0,
 };
 
 const int8_t dav1d_cdef_directions[2 + 8 + 2 /* dir */][2 /* pass */] = {
@@ -692,7 +692,7 @@ const int8_t ALIGN(dav1d_resize_filter[64][8], 8) = {
     { 0, -1,  2,   -4, -127,  3, -1, 0 }, { 0,  0,  1,   -2, -128,  1,  0, 0 },
 };
 
-const uint8_t dav1d_sm_weights[128] = {
+const uint8_t ALIGN(dav1d_sm_weights[128], 16) = {
     // Unused, because we always offset by bs, which is at least 2.
       0,   0,
     // bs = 2

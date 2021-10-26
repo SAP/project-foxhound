@@ -91,7 +91,7 @@ const MESSAGES = () => [
       published_date: 1586859903200,
       title: { string_id: "cfr-whatsnew-pip-fullscreen-header" },
       icon_url:
-        "resource://activity-stream/data/content/assets/remote/pip-message-icon.svg",
+        "chrome://activity-stream/content/data/content/assets/remote/pip-message-icon.svg",
       icon_alt: { string_id: "cfr-whatsnew-pip-fullscreen-icon-alt" },
       body: { string_id: "cfr-whatsnew-pip-fullscreen-body" },
       cta_url:
@@ -150,7 +150,7 @@ const MESSAGES = () => [
       title: { string_id: "cfr-whatsnew-fingerprinter-counter-header" },
       subtitle: { string_id: "cfr-whatsnew-tracking-blocked-subtitle" },
       icon_url:
-        "resource://activity-stream/data/content/assets/protection-report-icon.png",
+        "chrome://activity-stream/content/data/content/assets/protection-report-icon.png",
       icon_alt: "",
       body: { string_id: "cfr-whatsnew-fingerprinter-counter-body" },
       link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
@@ -169,7 +169,7 @@ const MESSAGES = () => [
       published_date: 1574776601000,
       title: { string_id: "cfr-whatsnew-fingerprinter-counter-header-alt" },
       icon_url:
-        "resource://activity-stream/data/content/assets/protection-report-icon.png",
+        "chrome://activity-stream/content/data/content/assets/protection-report-icon.png",
       icon_alt: "",
       body: { string_id: "cfr-whatsnew-fingerprinter-counter-body-alt" },
       link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
@@ -188,7 +188,7 @@ const MESSAGES = () => [
       published_date: 1560969794394,
       title: "Protection Is Our Focus",
       icon_url:
-        "resource://activity-stream/data/content/assets/whatsnew-send-icon.png",
+        "chrome://activity-stream/content/data/content/assets/whatsnew-send-icon.png",
       icon_alt: "Firefox Send Logo",
       body:
         "The New Enhanced Tracking Protection, gives you the best level of protection and performance. Discover how this version is the safest version of firefox ever made.",
@@ -244,7 +244,7 @@ const MESSAGES = () => [
       title: { string_id: "cfr-whatsnew-tracking-blocked-title" },
       subtitle: { string_id: "cfr-whatsnew-tracking-blocked-subtitle" },
       icon_url:
-        "resource://activity-stream/data/content/assets/protection-report-icon.png",
+        "chrome://activity-stream/content/data/content/assets/protection-report-icon.png",
       icon_alt: "Protection Report icon",
       body: { string_id: "cfr-whatsnew-tracking-protect-body" },
       link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
@@ -257,7 +257,7 @@ const MESSAGES = () => [
   {
     id: "BOOKMARK_CFR",
     template: "cfr_doorhanger",
-    groups: ["cfr-fxa"],
+    groups: ["cfr"],
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
@@ -307,6 +307,7 @@ const MESSAGES = () => [
   {
     id: "PDF_URL_FFX_SEND",
     template: "cfr_doorhanger",
+    groups: ["cfr"],
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
@@ -361,6 +362,7 @@ const MESSAGES = () => [
   {
     id: "SEND_TAB_CFR",
     template: "cfr_doorhanger",
+    groups: ["cfr"],
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
@@ -415,6 +417,7 @@ const MESSAGES = () => [
     // Higher priority because this has the same targeting rules as
     // SEND_TAB_CFR but is more specific
     priority: 1,
+    groups: ["cfr"],
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
@@ -465,6 +468,7 @@ const MESSAGES = () => [
   {
     id: "PERSONALIZED_CFR_MESSAGE",
     template: "cfr_doorhanger",
+    groups: ["cfr"],
     content: {
       layout: "icon_and_message",
       category: "cfrFeatures",
@@ -520,10 +524,12 @@ const MESSAGES = () => [
 
 const PanelTestProvider = {
   getMessages() {
-    return MESSAGES().map(message => ({
-      ...message,
-      targeting: `providerCohorts.panel_local_testing == "SHOW_TEST"`,
-    }));
+    return Promise.resolve(
+      MESSAGES().map(message => ({
+        ...message,
+        targeting: `providerCohorts.panel_local_testing == "SHOW_TEST"`,
+      }))
+    );
   },
 };
 this.PanelTestProvider = PanelTestProvider;

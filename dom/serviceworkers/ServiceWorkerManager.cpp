@@ -237,26 +237,10 @@ class TeardownRunnable final : public Runnable {
   RefPtr<ServiceWorkerManagerChild> mActor;
 };
 
-bool ServiceWorkersAreCrossProcess() {
-  return ServiceWorkerParentInterceptEnabled() && XRE_IsE10sParentProcess();
-}
-
-const char* GetStartShutdownTopic() {
-  if (ServiceWorkersAreCrossProcess()) {
-    return "profile-change-teardown";
-  }
-
-  return NS_XPCOM_SHUTDOWN_OBSERVER_ID;
-}
-
 constexpr char kFinishShutdownTopic[] = "profile-before-change-qm";
 
 already_AddRefed<nsIAsyncShutdownClient> GetAsyncShutdownBarrier() {
   AssertIsOnMainThread();
-
-  if (!ServiceWorkersAreCrossProcess()) {
-    return nullptr;
-  }
 
   nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
   MOZ_ASSERT(svc);
@@ -431,10 +415,6 @@ ServiceWorkerManager::~ServiceWorkerManager() {
   // The map will assert if it is not empty when destroyed.
   mRegistrationInfos.Clear();
 
-  if (!ServiceWorkersAreCrossProcess()) {
-    MOZ_ASSERT(!mActor);
-  }
-
   // This can happen if the browser is started up in ProfileManager mode, in
   // which case XPCOM will startup and shutdown, but there won't be any
   // profile-* topic notifications. The shutdown blocker expects to be in a
@@ -450,11 +430,6 @@ void ServiceWorkerManager::BlockShutdownOn(GenericNonExclusivePromise* aPromise,
                                            uint32_t aShutdownStateId) {
   AssertIsOnMainThread();
 
-  // This may be called when in non-e10s mode with parent-intercept enabled.
-  if (!ServiceWorkersAreCrossProcess()) {
-    return;
-  }
-
   MOZ_ASSERT(mShutdownBlocker);
   MOZ_ASSERT(aPromise);
 
@@ -462,28 +437,32 @@ void ServiceWorkerManager::BlockShutdownOn(GenericNonExclusivePromise* aPromise,
 }
 
 void ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar) {
+  // ServiceWorkers now only support parent intercept.  In parent intercept
+  // mode, only the parent process ServiceWorkerManager has any state or does
+  // anything.
+  //
+  // It is our goal to completely eliminate support for content process
+  // ServiceWorkerManager instances and make getting a SWM instance trigger a
+  // fatal assertion.  But until we've reached that point, we make
+  // initialization a no-op so that content process ServiceWorkerManager
+  // instances will simply have no state and no registrations.
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
+
   nsCOMPtr<nsIAsyncShutdownClient> shutdownBarrier = GetAsyncShutdownBarrier();
 
   if (shutdownBarrier) {
-    mShutdownBlocker =
-        ServiceWorkerShutdownBlocker::CreateAndRegisterOn(shutdownBarrier);
+    mShutdownBlocker = ServiceWorkerShutdownBlocker::CreateAndRegisterOn(
+        *shutdownBarrier, *this);
     MOZ_ASSERT(mShutdownBlocker);
   }
 
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    DebugOnly<nsresult> rv;
-    rv = obs->AddObserver(this, GetStartShutdownTopic(), false /* ownsWeak */);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-  }
+  MOZ_DIAGNOSTIC_ASSERT(aRegistrar);
 
-  if (XRE_IsParentProcess()) {
-    MOZ_DIAGNOSTIC_ASSERT(aRegistrar);
-
-    nsTArray<ServiceWorkerRegistrationData> data;
-    aRegistrar->GetRegistrations(data);
-    LoadRegistrations(data);
-  }
+  nsTArray<ServiceWorkerRegistrationData> data;
+  aRegistrar->GetRegistrations(data);
+  LoadRegistrations(data);
 
   PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!actorChild)) {
@@ -643,12 +622,8 @@ void ServiceWorkerManager::MaybeStartShutdown() {
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
-    obs->RemoveObserver(this, GetStartShutdownTopic());
-
-    if (ServiceWorkersAreCrossProcess()) {
-      obs->AddObserver(this, kFinishShutdownTopic, false);
-      return;
-    }
+    obs->AddObserver(this, kFinishShutdownTopic, false);
+    return;
   }
 
   MaybeFinishShutdown();
@@ -714,32 +689,6 @@ class ServiceWorkerResolveWindowPromiseOnRegisterCallback final
 };
 
 namespace {
-
-class PropagateSoftUpdateRunnable final : public Runnable {
- public:
-  PropagateSoftUpdateRunnable(const OriginAttributes& aOriginAttributes,
-                              const nsAString& aScope)
-      : Runnable("dom::ServiceWorkerManager::PropagateSoftUpdateRunnable"),
-        mOriginAttributes(aOriginAttributes),
-        mScope(aScope) {}
-
-  NS_IMETHOD Run() override {
-    MOZ_ASSERT(NS_IsMainThread());
-
-    RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
-    if (swm) {
-      swm->PropagateSoftUpdate(mOriginAttributes, mScope);
-    }
-
-    return NS_OK;
-  }
-
- private:
-  ~PropagateSoftUpdateRunnable() = default;
-
-  const OriginAttributes mOriginAttributes;
-  const nsString mScope;
-};
 
 class PromiseResolverCallback final : public ServiceWorkerUpdateFinishCallback {
  public:
@@ -1175,7 +1124,6 @@ ServiceWorkerManager::GetRegistrations(const ClientInfo& aClientInfo) const {
       new GetRegistrationsRunnable(aClientInfo);
   MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(runnable));
   return runnable->Promise();
-  ;
 }
 
 /*
@@ -1266,11 +1214,11 @@ ServiceWorkerManager::SendPushEvent(const nsACString& aOriginAttributes,
     // whether we really need to in PushMessageDispatcher::NotifyWorkers.  Since
     // in practice this only affects JS callers that pass data, and we don't
     // have any right now, let's not worry about it.
-    return SendPushEvent(aOriginAttributes, aScope, EmptyString(),
+    return SendPushEvent(aOriginAttributes, aScope, u""_ns,
                          Some(aDataBytes.Clone()));
   }
   MOZ_ASSERT(optional_argc == 0);
-  return SendPushEvent(aOriginAttributes, aScope, EmptyString(), Nothing());
+  return SendPushEvent(aOriginAttributes, aScope, u""_ns, Nothing());
 }
 
 nsresult ServiceWorkerManager::SendPushEvent(
@@ -1400,8 +1348,8 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerManager::WhenReady(
 }
 
 void ServiceWorkerManager::CheckPendingReadyPromises() {
-  nsTArray<UniquePtr<PendingReadyData>> pendingReadyList;
-  mPendingReadyList.SwapElements(pendingReadyList);
+  nsTArray<UniquePtr<PendingReadyData>> pendingReadyList =
+      std::move(mPendingReadyList);
   for (uint32_t i = 0; i < pendingReadyList.Length(); ++i) {
     UniquePtr<PendingReadyData> prd(std::move(pendingReadyList[i]));
 
@@ -1418,8 +1366,8 @@ void ServiceWorkerManager::CheckPendingReadyPromises() {
 
 void ServiceWorkerManager::RemovePendingReadyPromise(
     const ClientInfo& aClientInfo) {
-  nsTArray<UniquePtr<PendingReadyData>> pendingReadyList;
-  mPendingReadyList.SwapElements(pendingReadyList);
+  nsTArray<UniquePtr<PendingReadyData>> pendingReadyList =
+      std::move(mPendingReadyList);
   for (uint32_t i = 0; i < pendingReadyList.Length(); ++i) {
     UniquePtr<PendingReadyData> prd(std::move(pendingReadyList[i]));
 
@@ -1669,9 +1617,6 @@ already_AddRefed<ServiceWorkerManager> ServiceWorkerManager::GetInstance() {
   return copy.forget();
 }
 
-void ServiceWorkerManager::FinishFetch(
-    ServiceWorkerRegistrationInfo* aRegistration) {}
-
 void ServiceWorkerManager::ReportToAllClients(
     const nsCString& aScope, const nsString& aMessage,
     const nsString& aFilename, const nsString& aLine, uint32_t aLineNumber,
@@ -1749,8 +1694,8 @@ void ServiceWorkerManager::LoadRegistration(
     if (uri->SchemeIs("moz-extension")) {
       const auto& cacheName = aRegistration.cacheName();
       serviceWorkerScriptCache::PurgeCache(principal, cacheName);
+      return;
     }
-    return;
   }
 
   RefPtr<ServiceWorkerRegistrationInfo> registration =
@@ -2142,7 +2087,7 @@ ServiceWorkerManager::GetScopeForUrl(nsIPrincipal* aPrincipal,
     return NS_ERROR_FAILURE;
   }
 
-  aScope = NS_ConvertUTF8toUTF16(r->Scope());
+  CopyUTF8toUTF16(r->Scope(), aScope);
   return NS_OK;
 }
 
@@ -2480,7 +2425,7 @@ bool ServiceWorkerManager::IsAvailable(nsIPrincipal* aPrincipal, nsIURI* aURI,
 
     // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm 17.1
     // try schedule a soft-update for non-subresource case.
-    registration->MaybeScheduleTimeCheckAndUpdate();
+    registration->MaybeScheduleUpdate();
     return false;
   }
   // Found a matching service worker which handles fetch events, return true.
@@ -2659,9 +2604,8 @@ void ServiceWorkerManager::Update(
       new UpdateRunnable(aPrincipal, aScope, std::move(aNewestWorkerScriptUrl),
                          aCallback, UpdateRunnable::eSuccess, promise);
 
-  RefPtr<CancelableRunnable> failureRunnable =
-      new UpdateRunnable(aPrincipal, aScope, EmptyCString(), aCallback,
-                         UpdateRunnable::eFailure, promise);
+  RefPtr<CancelableRunnable> failureRunnable = new UpdateRunnable(
+      aPrincipal, aScope, ""_ns, aCallback, UpdateRunnable::eFailure, promise);
 
   ServiceWorkerUpdaterChild* actor =
       new ServiceWorkerUpdaterChild(promise, successRunnable, failureRunnable);
@@ -2898,7 +2842,7 @@ ServiceWorkerManager::RegisterForAddonPrincipal(nsIPrincipal* aPrincipal,
   }
 
   nsCString scope;
-  auto result = addonPolicy->GetURL(EmptyString());
+  auto result = addonPolicy->GetURL(u""_ns);
   if (result.isOk()) {
     scope.Assign(NS_ConvertUTF16toUTF8(result.unwrap()));
   } else {
@@ -3093,7 +3037,7 @@ ServiceWorkerManager::RemoveRegistrationsByOriginAttributes(
   return NS_OK;
 }
 
-// MUST ONLY BE CALLED FROM Remove(), RemoveAll() and RemoveAllRegistrations()!
+// MUST ONLY BE CALLED FROM Remove()!
 void ServiceWorkerManager::ForceUnregister(
     RegistrationDataPerPrincipal* aRegistrationData,
     ServiceWorkerRegistrationInfo* aRegistration) {
@@ -3157,11 +3101,6 @@ void ServiceWorkerManager::Remove(const nsACString& aHost) {
   }
 }
 
-void ServiceWorkerManager::PropagateRemove(const nsACString& aHost) {
-  MOZ_ASSERT(NS_IsMainThread());
-  mActor->SendPropagateRemove(nsCString(aHost));
-}
-
 void ServiceWorkerManager::RemoveAll() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -3172,12 +3111,6 @@ void ServiceWorkerManager::RemoveAll() {
       ForceUnregister(data, reg);
     }
   }
-}
-
-void ServiceWorkerManager::PropagateRemoveAll() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(XRE_IsParentProcess());
-  mActor->SendPropagateRemoveAll();
 }
 
 NS_IMETHODIMP
@@ -3210,11 +3143,6 @@ ServiceWorkerManager::RemoveListener(
 NS_IMETHODIMP
 ServiceWorkerManager::Observe(nsISupports* aSubject, const char* aTopic,
                               const char16_t* aData) {
-  if (strcmp(aTopic, GetStartShutdownTopic()) == 0) {
-    MaybeStartShutdown();
-    return NS_OK;
-  }
-
   if (strcmp(aTopic, kFinishShutdownTopic) == 0) {
     MaybeFinishShutdown();
     return NS_OK;
@@ -3324,29 +3252,6 @@ class UpdateTimerCallback final : public nsITimerCallback, public nsINamed {
 };
 
 NS_IMPL_ISUPPORTS(UpdateTimerCallback, nsITimerCallback, nsINamed)
-
-bool ServiceWorkerManager::MayHaveActiveServiceWorkerInstance(
-    ContentParent* aContent, nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aPrincipal);
-
-  if (mShuttingDown) {
-    return false;
-  }
-
-  nsAutoCString scopeKey;
-  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return false;
-  }
-
-  RegistrationDataPerPrincipal* data;
-  if (!mRegistrationInfos.Get(scopeKey, &data)) {
-    return false;
-  }
-
-  return true;
-}
 
 void ServiceWorkerManager::ScheduleUpdateTimer(nsIPrincipal* aPrincipal,
                                                const nsACString& aScope) {

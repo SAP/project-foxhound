@@ -1218,8 +1218,7 @@ void nsTreeSanitizer::SanitizeAttributes(mozilla::dom::Element* aElement,
   // If we've got HTML audio or video, add the controls attribute, because
   // otherwise the content is unplayable with scripts removed.
   if (aElement->IsAnyOfHTMLElements(nsGkAtoms::video, nsGkAtoms::audio)) {
-    aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::controls, EmptyString(),
-                      false);
+    aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::controls, u""_ns, false);
   }
 }
 
@@ -1341,6 +1340,7 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
         nsAutoString sanitizedStyle;
         SanitizeStyleSheet(styleText, sanitizedStyle, aRoot->OwnerDoc(),
                            node->GetBaseURI());
+        RemoveAllAttributesFromDescendants(elt);
         nsContentUtils::SetNodeTextContent(node, sanitizedStyle, true);
 
         if (!mOnlyConditionalCSS) {
@@ -1424,6 +1424,18 @@ void nsTreeSanitizer::RemoveAllAttributes(Element* aElement) {
     int32_t attrNs = attrName->NamespaceID();
     RefPtr<nsAtom> attrLocal = attrName->LocalName();
     aElement->UnsetAttr(attrNs, attrLocal, false);
+  }
+}
+
+void nsTreeSanitizer::RemoveAllAttributesFromDescendants(
+    mozilla::dom::Element* aElement) {
+  nsIContent* node = aElement->GetFirstChild();
+  while (node) {
+    if (node->IsElement()) {
+      mozilla::dom::Element* elt = node->AsElement();
+      RemoveAllAttributes(elt);
+    }
+    node = node->GetNextNode(aElement);
   }
 }
 

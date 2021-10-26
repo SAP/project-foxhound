@@ -85,8 +85,6 @@ class MacOSFontEntry final : public gfxFontEntry {
 
   static void DestroyBlobFunc(void* aUserData);
 
-  bool CheckForColorGlyphs();
-
   CGFontRef
       mFontRef;  // owning reference to the CGFont, released on destruction
 
@@ -148,6 +146,7 @@ class gfxMacPlatformFontList final : public gfxPlatformFontList {
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
+                          nsAtom* aLanguage = nullptr,
                           gfxFloat aDevToCssSize = 1.0) override;
 
   // lookup the system font for a particular system font type and set
@@ -165,7 +164,8 @@ class gfxMacPlatformFontList final : public gfxPlatformFontList {
   void ReadSystemFontList(nsTArray<FontFamilyListEntry>* aList);
 
  protected:
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
  private:
   friend class gfxPlatformMac;
@@ -221,7 +221,8 @@ class gfxMacPlatformFontList final : public gfxPlatformFontList {
 
   void GetFacesInitDataForFamily(
       const mozilla::fontlist::Family* aFamily,
-      nsTArray<mozilla::fontlist::Face::InitData>& aFaces) const override;
+      nsTArray<mozilla::fontlist::Face::InitData>& aFaces,
+      bool aLoadCmaps) const override;
 
   void ReadFaceNamesForFamily(mozilla::fontlist::Family* aFamily,
                               bool aNeedFullnamePostscriptNames) override;

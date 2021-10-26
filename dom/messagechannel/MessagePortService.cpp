@@ -6,6 +6,7 @@
 
 #include "MessagePortService.h"
 #include "MessagePortParent.h"
+#include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -15,8 +16,7 @@
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -34,8 +34,7 @@ struct MessagePortService::NextParent {
   CheckedUnsafePtr<MessagePortParent> mParent;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 // Need to call CheckedUnsafePtr's copy constructor and destructor when
 // resizing dynamic arrays containing NextParent (by calling NextParent's
@@ -43,8 +42,7 @@ struct MessagePortService::NextParent {
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
     mozilla::dom::MessagePortService::NextParent);
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MessagePortService::MessagePortServiceData final {
  public:
@@ -223,7 +221,7 @@ bool MessagePortService::DisentanglePort(
 
   // We didn't find the parent.
   if (!nextParent) {
-    data->mMessages.SwapElements(aMessages);
+    data->mMessages = std::move(aMessages);
     data->mWaitingForNewParent = true;
     data->mParent = nullptr;
     return true;
@@ -409,5 +407,4 @@ bool MessagePortService::ForceClose(const nsID& aUUID,
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

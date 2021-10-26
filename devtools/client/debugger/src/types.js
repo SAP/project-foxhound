@@ -383,6 +383,16 @@ export type Grip = {
   fileName?: string,
   message?: string,
   name?: string,
+  displayClass: string,
+  displayName?: string,
+  parameterNames?: string[],
+  userDisplayName?: string,
+  location?: {
+    url: string,
+    line: number,
+    column: number,
+  },
+  optimizedOut: boolean,
 };
 
 export type TextSourceContent = {|
@@ -477,11 +487,11 @@ export type Scope = {|
   scopeKind: string,
 |};
 
-export type ThreadType = "mainThread" | "worker" | "contentProcess";
 export type Thread = {
   +actor: ThreadId,
   +url: URL,
-  +type: ThreadType,
+  +isTopLevel: boolean,
+  +targetType: string,
   +name: string,
   serviceWorkerStatus?: string,
 };
@@ -526,7 +536,6 @@ export type Preview = {
 export type Exception = {
   columnNumber: number,
   errorMessage: string,
-  fileName: URL,
   lineNumber: number,
   sourceActorId: SourceActorId,
   stacktrace: Array<StacktraceFrame>,
@@ -538,4 +547,22 @@ export type StacktraceFrame = {
   functionName: string,
   lineNumber: number,
   sourceId: SourceActorId,
+};
+
+// ObjectInspector types
+export type OINodeContents = {
+  value: Object | number | string | boolean | null | typeof undefined,
+};
+
+export type OINodeMeta = {
+  startIndex: number,
+  endIndex: number,
+};
+
+export type OINode = {
+  contents: Array<OINode> | OINodeContents,
+  name: string,
+  path: string,
+  type?: Symbol,
+  meta?: OINodeMeta,
 };

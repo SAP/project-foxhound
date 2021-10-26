@@ -12,6 +12,7 @@
 #include "mozilla/TimeStamp.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace layers {
@@ -20,6 +21,7 @@ struct FrameMetrics;
 
 class WheelScrollAnimation;
 class KeyboardScrollAnimation;
+class SmoothMsdScrollAnimation;
 class SmoothScrollAnimation;
 
 class AsyncPanZoomAnimation {
@@ -72,6 +74,9 @@ class AsyncPanZoomAnimation {
     return nullptr;
   }
   virtual WheelScrollAnimation* AsWheelScrollAnimation() { return nullptr; }
+  virtual SmoothMsdScrollAnimation* AsSmoothMsdScrollAnimation() {
+    return nullptr;
+  }
   virtual SmoothScrollAnimation* AsSmoothScrollAnimation() { return nullptr; }
 
   virtual bool WantsRepaints() { return true; }

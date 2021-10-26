@@ -10,6 +10,8 @@
 #include "nsCSPUtils.h"
 #include "nsDocShell.h"
 #include "nsHttpChannel.h"
+#include "nsContentSecurityUtils.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIChannel.h"
 #include "nsIConsoleReportCollector.h"
 #include "nsIContentSecurityPolicy.h"
@@ -27,6 +29,7 @@
 #include "nsIObserverService.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 /* static */
 void FramingChecker::ReportError(const char* aMessageTag,
@@ -150,10 +153,10 @@ static bool ShouldIgnoreFrameOptions(nsIChannel* aChannel,
   AutoTArray<nsString, 2> params = {u"x-frame-options"_ns,
                                     u"frame-ancestors"_ns};
   CSP_LogLocalizedStr("IgnoringSrcBecauseOfDirective", params,
-                      EmptyString(),  // no sourcefile
-                      EmptyString(),  // no scriptsample
-                      0,              // no linenumber
-                      0,              // no columnnumber
+                      u""_ns,  // no sourcefile
+                      u""_ns,  // no scriptsample
+                      0,       // no linenumber
+                      0,       // no columnnumber
                       nsIScriptError::warningFlag,
                       "IgnoringSrcBecauseOfDirective"_ns, innerWindowID,
                       privateWindow);

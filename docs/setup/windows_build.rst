@@ -1,4 +1,4 @@
-Building Firefox On Windows
+﻿Building Firefox On Windows
 ===========================
 
 Thank you for helping us build the world's best browser on the world's
@@ -87,7 +87,7 @@ MozillaBuild
 ^^^^^^^^^^^^
 
 Finally, download the `MozillaBuild
-Package <https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`_
+Package <https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`__
 from Mozilla. Accept the default settings, in particular the default
 installation directory: ``c:\mozilla-build\``. On some versions of
 Windows an error dialog will give you the option to ‘reinstall with the
@@ -124,7 +124,17 @@ then you can just use:
 
 .. code-block:: shell
 
-    hg clone https://hg.mozilla.org/mozilla-central
+    curl https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -o bootstrap.py
+
+    python3 bootstrap.py
+
+... and follow the prompts. This will use mercurial to checkout the
+source code. If you prefer to work with git, use this command instead (you'll
+have to have `Git for Windows <https://git-scm.com/download/win>`_ installed):
+
+.. code-block:: shell
+
+    python3 bootstrap.py --vcs=git
 
 While you’re waiting for that process to finish, take a look at `our
 Mercurial
@@ -140,7 +150,7 @@ source directory as before and type
 
 .. code-block:: shell
 
-    cd mozilla-central
+    cd mozilla-unified  # ... or the name of the repo you chose earlier
 
     ./mach bootstrap
 
@@ -148,7 +158,7 @@ source directory as before and type
 
 The ``./mach bootstrap`` step is a catch-all for any dependencies not
 covered in this documentation. Note that, bootstrap works **only with
-the Mercuial repo of the source**, not with source tar balls, nor the
+the Mercurial repo of the source**, not with source tar balls, nor the
 github mirror. If you are working on Firefox or Firefox for Android
 frontends or building Firefox without any changes, select :ref:`Artifact Builds
 <Understanding Artifact Builds>` in
@@ -208,7 +218,7 @@ Overview
 The Mozilla build process requires many tools that are not pre-installed
 on most Windows systems. In addition to Visual Studio, install
 MozillaBuild - a software bundle that includes the required versions of
-bash, GNU make, autoconf, Mercurial, and much more.
+bash, GNU make, Mercurial, and much more.
 
 Firefox 61+ require Visual Studio 2017 Update 6 or newer to build.
 
@@ -243,7 +253,7 @@ successfully. There are notes on these software requirements below.
    android-emulator", or run talos tests locally, you should install it
    for building psutil.
 #. Download and install the
-   `MozillaBuild <https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`_
+   `MozillaBuild <https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`__
    package, containing additional build tools. If you have Cygwin
    installed, read the note in the tips section. If you see a Windows
    error dialog giving you the option to re-install with the 'correct
@@ -257,25 +267,26 @@ Troubleshooting
 
 In some circumstances, the following problems can arise:
 
-**Some antivirus and system protection software can dramatically slow or
-break the build process**
+Antivirus performance
+^^^^^^^^^^^^^^^^^^^^^
 
 -  Windows Defender and some scanning antivirus products are known to
    have a major impact on build times. For example, if you have cloned
-   ``mozilla-central`` successfully but ``./mach build`` fails reporting
+   ``mozilla-unified`` successfully but ``./mach build`` fails, reporting
    a missing file, you are likely experiencing this problem. Our
    regression tests, for well-known security bugs, can include code
    samples that some antivirus software will identify as a threat, and
    will either quarantine or otherwise corrupt the files involved. To
    resolve this you will need to add your source and object directories
    (the ``mozilla-source`` and ``mozilla-build``
-   directories) to the allow list in Windows Defender or your antivirus 
-   software and if you're missing files, revert your source tree with the
-   "``hg update -C" `` command. Once this is done your next
+   directories) to the
+   `exclusion list in Windows Defender <https://support.microsoft.com/en-ca/help/4028485/windows-10-add-an-exclusion-to-windows-security>`_
+   or your antivirus software. If you are missing files, revert your source
+   tree with the ``hg update -C`` command. Once this is done your next
    ``./mach build`` should complete successfully.
 
-**Installing Visual Studio in a different language than the system can
-cause issues**
+Installing Visual Studio in a different language than the system can cause issues
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 -  For example, having Visual Studio in French when the system is in
    English causes the build to spew a lot of include errors and finishes
@@ -290,14 +301,13 @@ cause issues**
    contains spaces. It is strongly recommended that you accept the default
    settings for all installation locations.
 
-MozillaBuild
-~~~~~~~~~~~~
+MozillaBuild package
+~~~~~~~~~~~~~~~~~~~~
 
 The MozillaBuild package contains other software prerequisites necessary
 for building Mozilla, including the MSYS build environment,
-`Mercurial <https://www.mercurial-scm.org/>`_, autoconf-2.13, CVS,
-Python, YASM, NSIS, and UPX, as well as optional but useful tools such
-as wget and emacs.
+`Mercurial <https://www.mercurial-scm.org/>`_, CVS, Python, YASM, NSIS, and UPX,
+as well as optional but useful tools such as wget and emacs.
 
 `Download the current MozillaBuild
 package. <https://ftp.mozilla.org/pub/mozilla.org/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe>`_
@@ -392,14 +402,16 @@ Command prompt tips and caveats
 Common problems, hints, and restrictions
 ----------------------------------------
 
--  `Debugging Firefox on Windows
-   FAQ <https://developer.mozilla.org/docs/Mozilla/Debugging/Debugging_Mozilla_on_Windows_FAQ>`_:
+-  :ref:`Debugging Firefox on Windows FAQ <Debugging On Windows>`:
    Tips on how to debug Mozilla on Windows.
 -  Your installed MozillaBuild may be too old. The build system may
    assume you have new features and bugfixes that are only present in
    newer versions of MozillaBuild. Instructions for how to update
    MozillaBuild `can be found
    here <https://wiki.mozilla.org/MozillaBuild>`_.
+-  If the bootstrapping script ``bootstrap.py`` fails, you can also try running
+   ``hg clone https://hg.mozilla.org/mozilla-unified`` followed by
+   ``cd mozilla-unified; ./mach bootstrap`` yourself.
 -  The build may fail if your machine is configured with the wrong
    architecture. If you want to build 64-bit Firefox, add the two lines
    below to your mozconfig file:
@@ -451,10 +463,10 @@ Common problems, hints, and restrictions
    ``SET "PATH=%PATH%;!LLVMDIR!\bin"``.
 -  If you encounter a build failure with
    ``LINK: fatal error LNK1181: cannot open input file ..\..\..\..\..\security\nss3.lib``,
-   it may be related to your clone of ``mozilla-central`` being located
+   it may be related to your clone of ``mozilla-unified`` being located
    in the Users folder (possibly encrypted). Try moving it outside of
    the Users folder. The docs recommend
-   ``C:\mozilla-source\mozilla-central`` which should work.
+   ``C:\mozilla-source\mozilla-unified`` which should work.
 -  If you encounter a build failure with
    ``ERROR: GetShortPathName returned a long path name.``.You need
    create a 8dot3name short name for the path which has space.For

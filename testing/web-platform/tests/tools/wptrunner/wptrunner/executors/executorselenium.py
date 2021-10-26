@@ -24,7 +24,7 @@ from .protocol import (BaseProtocolPart,
                        TestDriverProtocolPart)
 from ..testrunner import Stop
 
-here = os.path.join(os.path.split(__file__)[0])
+here = os.path.dirname(__file__)
 
 webdriver = None
 exceptions = None
@@ -60,6 +60,9 @@ class SeleniumBaseProtocolPart(BaseProtocolPart):
 
     def set_window(self, handle):
         self.webdriver.switch_to_window(handle)
+
+    def window_handles(self):
+        return self.webdriver.window_handles
 
     def load(self, url):
         self.webdriver.get(url)
@@ -155,7 +158,7 @@ class SeleniumTestharnessProtocolPart(TestharnessProtocolPart):
         """
         while True:
             try:
-                self.webdriver.execute_script(self.window_loaded_script, asynchronous=True)
+                self.webdriver.execute_async_script(self.window_loaded_script)
                 break
             except exceptions.JavascriptException:
                 pass
@@ -200,8 +203,9 @@ class SeleniumTestDriverProtocolPart(TestDriverProtocolPart):
     def setup(self):
         self.webdriver = self.parent.webdriver
 
-    def send_message(self, message_type, status, message=None):
+    def send_message(self, cmd_id, message_type, status, message=None):
         obj = {
+            "cmd_id": cmd_id,
             "type": "testdriver-%s" % str(message_type),
             "status": str(status)
         }

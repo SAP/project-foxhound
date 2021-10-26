@@ -10,7 +10,7 @@
 //! single ISA instance.
 
 use crate::binemit::{
-    relax_branches, shrink_instructions, CodeInfo, MemoryCodeSink, RelocSink, StackmapSink,
+    relax_branches, shrink_instructions, CodeInfo, MemoryCodeSink, RelocSink, StackMapSink,
     TrapSink,
 };
 use crate::dce::do_dce;
@@ -36,8 +36,13 @@ use crate::timing;
 use crate::unreachable_code::eliminate_unreachable_code;
 use crate::value_label::{build_value_labels_ranges, ComparableSourceLoc, ValueLabelsRanges};
 use crate::verifier::{verify_context, verify_locations, VerifierErrors, VerifierResult};
+#[cfg(feature = "souper-harvest")]
+use alloc::string::String;
 use alloc::vec::Vec;
 use log::debug;
+
+#[cfg(feature = "souper-harvest")]
+use crate::souper_harvest::do_souper_harvest;
 
 /// Persistent data structures and compilation pipeline.
 pub struct Context {
@@ -127,13 +132,19 @@ impl Context {
         mem: &mut Vec<u8>,
         relocs: &mut dyn RelocSink,
         traps: &mut dyn TrapSink,
-        stackmaps: &mut dyn StackmapSink,
+        stack_maps: &mut dyn StackMapSink,
     ) -> CodegenResult<CodeInfo> {
         let info = self.compile(isa)?;
         let old_len = mem.len();
         mem.resize(old_len + info.total_size as usize, 0);
         let new_info = unsafe {
-            self.emit_to_memory(isa, mem.as_mut_ptr().add(old_len), relocs, traps, stackmaps)
+            self.emit_to_memory(
+                isa,
+                mem.as_mut_ptr().add(old_len),
+                relocs,
+                traps,
+                stack_maps,
+            )
         };
         debug_assert!(new_info == info);
         Ok(info)
@@ -222,10 +233,10 @@ impl Context {
         mem: *mut u8,
         relocs: &mut dyn RelocSink,
         traps: &mut dyn TrapSink,
-        stackmaps: &mut dyn StackmapSink,
+        stack_maps: &mut dyn StackMapSink,
     ) -> CodeInfo {
         let _tt = timing::binemit();
-        let mut sink = MemoryCodeSink::new(mem, relocs, traps, stackmaps);
+        let mut sink = MemoryCodeSink::new(mem, relocs, traps, stack_maps);
         if let Some(ref result) = &self.mach_compile_result {
             result.buffer.emit(&mut sink);
         } else {
@@ -440,5 +451,15 @@ impl Context {
             &self.regalloc,
             isa,
         ))
+    }
+
+    /// Harvest candidate left-hand sides for superoptimization with Souper.
+    #[cfg(feature = "souper-harvest")]
+    pub fn souper_harvest(
+        &mut self,
+        out: &mut std::sync::mpsc::Sender<String>,
+    ) -> CodegenResult<()> {
+        do_souper_harvest(&self.func, out);
+        Ok(())
     }
 }

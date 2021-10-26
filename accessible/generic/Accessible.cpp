@@ -457,8 +457,7 @@ uint64_t Accessible::NativeInteractiveState() const {
 uint64_t Accessible::NativeLinkState() const { return 0; }
 
 bool Accessible::NativelyUnavailable() const {
-  if (mContent->IsHTMLElement())
-    return mContent->AsElement()->State().HasState(NS_EVENT_STATE_DISABLED);
+  if (mContent->IsHTMLElement()) return mContent->AsElement()->IsDisabled();
 
   return mContent->IsElement() && mContent->AsElement()->AttrValueIs(
                                       kNameSpaceID_None, nsGkAtoms::disabled,
@@ -592,13 +591,7 @@ Accessible* Accessible::ChildAtPoint(int32_t aX, int32_t aY,
 nsRect Accessible::RelativeBounds(nsIFrame** aBoundingFrame) const {
   nsIFrame* frame = GetFrame();
   if (frame && mContent) {
-    bool* pHasHitRegionRect =
-        static_cast<bool*>(mContent->GetProperty(nsGkAtoms::hitregion));
-    MOZ_ASSERT(pHasHitRegionRect == nullptr || *pHasHitRegionRect,
-               "hitregion property is always null or true");
-    bool hasHitRegionRect = pHasHitRegionRect != nullptr && *pHasHitRegionRect;
-
-    if (hasHitRegionRect && mContent->IsElement()) {
+    if (mContent->GetProperty(nsGkAtoms::hitregion) && mContent->IsElement()) {
       // This is for canvas fallback content
       // Find a canvas frame the found hit region is relative to.
       nsIFrame* canvasFrame = frame->GetParent();
@@ -610,15 +603,14 @@ nsRect Accessible::RelativeBounds(nsIFrame** aBoundingFrame) const {
       // make the canvas the bounding frame
       if (canvasFrame) {
         *aBoundingFrame = canvasFrame;
-        dom::HTMLCanvasElement* canvas =
-            dom::HTMLCanvasElement::FromNode(canvasFrame->GetContent());
-
-        // get the bounding rect of the hit region
-        nsRect bounds;
-        if (canvas && canvas->CountContexts() &&
-            canvas->GetContextAtIndex(0)->GetHitRegionRect(
-                mContent->AsElement(), bounds)) {
-          return bounds;
+        if (auto* canvas =
+                dom::HTMLCanvasElement::FromNode(canvasFrame->GetContent())) {
+          if (auto* context = canvas->GetCurrentContext()) {
+            nsRect bounds;
+            if (context->GetHitRegionRect(mContent->AsElement(), bounds)) {
+              return bounds;
+            }
+          }
         }
       }
     }
@@ -785,7 +777,7 @@ nsresult Accessible::HandleAccEvent(AccEvent* aEvent) {
     nsAutoCString strMarker;
     strMarker.AppendLiteral("A11y Event - ");
     strMarker.Append(strEventType);
-    PROFILER_ADD_MARKER(strMarker.get(), OTHER);
+    PROFILER_MARKER_UNTYPED(strMarker, OTHER);
   }
 #endif
 
@@ -1090,6 +1082,15 @@ already_AddRefed<nsIPersistentProperties> Accessible::NativeAttributes() {
   // Expose 'margin-bottom' attribute.
   styleInfo.MarginBottom(value);
   nsAccUtils::SetAccAttr(attributes, nsGkAtoms::marginBottom, value);
+
+  // Expose data-at-shortcutkeys attribute for web applications and virtual
+  // cursors. Currently mostly used by JAWS.
+  nsAutoString atShortcutKeys;
+  if (mContent->AsElement()->GetAttr(
+          kNameSpaceID_None, nsGkAtoms::dataAtShortcutkeys, atShortcutKeys)) {
+    nsAccUtils::SetAccAttr(attributes, nsGkAtoms::dataAtShortcutkeys,
+                           atShortcutKeys);
+  }
 
   return attributes.forget();
 }
@@ -1718,9 +1719,14 @@ Relation Accessible::RelationByType(RelationType aType) const {
            * was called from, which is expected. */
           Pivot p = Pivot(currParent);
           PivotRoleRule rule(roles::RADIOBUTTON);
-          Accessible* match = currParent;
-          while ((match = p.Next(match, rule))) {
-            rel.AppendTarget(match);
+          AccessibleOrProxy wrappedParent = AccessibleOrProxy(currParent);
+          AccessibleOrProxy match = p.Next(wrappedParent, rule);
+          while (!match.IsNull()) {
+            MOZ_ASSERT(
+                !match.IsProxy(),
+                "We shouldn't find any proxy's while building our relation!");
+            rel.AppendTarget(match.AsAccessible());
+            match = p.Next(match, rule);
           }
         }
 

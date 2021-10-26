@@ -11,6 +11,8 @@
 namespace mozilla {
 
 class ContainerWriter;
+class EncodedFrame;
+class TrackMetadataBase;
 
 // Generic Muxer class that helps pace the output from track encoders to the
 // ContainerWriter, so time never appears to go backwards.
@@ -57,9 +59,6 @@ class Muxer {
   MediaQueue<EncodedFrame> mEncodedVideoFrames;
   // The writer for the specific container we're recording into.
   UniquePtr<ContainerWriter> mWriter;
-  // How much each audio time stamp should be delayed in microseconds. Used to
-  // adjust for opus codec delay.
-  uint64_t mAudioCodecDelay = 0;
   // True once metadata has been set in the muxer.
   bool mMetadataSet = false;
   // True once metadata has been written to file.

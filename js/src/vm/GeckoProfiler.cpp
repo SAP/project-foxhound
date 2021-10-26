@@ -17,9 +17,9 @@
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineJIT.h"
 #include "jit/JitcodeMap.h"
-#include "jit/JitFrames.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/JSJitFrameIter.h"
+#include "js/ProfilingStack.h"
 #include "js/TraceLoggerAPI.h"
 #include "util/StringBuffer.h"
 #include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
@@ -50,7 +50,8 @@ void GeckoProfilerThread::setProfilingStack(ProfilingStack* profilingStack,
   profilingStackIfEnabled_ = enabled ? profilingStack : nullptr;
 }
 
-void GeckoProfilerRuntime::setEventMarker(void (*fn)(const char*)) {
+void GeckoProfilerRuntime::setEventMarker(void (*fn)(const char*,
+                                                     const char*)) {
   eventMarker_ = fn;
 }
 
@@ -196,11 +197,11 @@ void GeckoProfilerRuntime::onScriptFinalized(BaseScript* script) {
   }
 }
 
-void GeckoProfilerRuntime::markEvent(const char* event) {
+void GeckoProfilerRuntime::markEvent(const char* event, const char* details) {
   MOZ_ASSERT(enabled());
   if (eventMarker_) {
     JS::AutoSuppressGCAnalysis nogc;
-    eventMarker_(event);
+    eventMarker_(event, details);
   }
 }
 
@@ -405,10 +406,8 @@ void ProfilingStackFrame::trace(JSTracer* trc) {
 }
 
 GeckoProfilerBaselineOSRMarker::GeckoProfilerBaselineOSRMarker(
-    JSContext* cx,
-    bool hasProfilerFrame MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+    JSContext* cx, bool hasProfilerFrame)
     : profiler(&cx->geckoProfiler()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (!hasProfilerFrame || !cx->runtime()->geckoProfiler().enabled()) {
     profiler = nullptr;
     return;
@@ -501,15 +500,13 @@ JS_FRIEND_API void js::EnableContextProfilingStack(JSContext* cx,
 }
 
 JS_FRIEND_API void js::RegisterContextProfilingEventMarker(
-    JSContext* cx, void (*fn)(const char*)) {
+    JSContext* cx, void (*fn)(const char*, const char*)) {
   MOZ_ASSERT(cx->runtime()->geckoProfiler().enabled());
   cx->runtime()->geckoProfiler().setEventMarker(fn);
 }
 
-AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(
-    JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(JSContext* cx)
     : cx_(cx), previouslyEnabled_(cx->isProfilerSamplingEnabled()) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   if (previouslyEnabled_) {
     cx_->disableProfilerSampling();
   }

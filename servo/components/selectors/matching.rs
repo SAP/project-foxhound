@@ -751,7 +751,7 @@ where
                 &NamespaceConstraint::Specific(&crate::parser::namespace_empty_string::<E::Impl>()),
                 local_name,
                 &AttrSelectorOperation::WithValue {
-                    operator: operator,
+                    operator,
                     case_sensitivity: case_sensitivity.to_unconditional(is_html),
                     expected_value: value,
                 },
@@ -780,9 +780,9 @@ where
                         case_sensitivity,
                         ref expected_value,
                     } => AttrSelectorOperation::WithValue {
-                        operator: operator,
+                        operator,
                         case_sensitivity: case_sensitivity.to_unconditional(is_html),
-                        expected_value: expected_value,
+                        expected_value,
                     },
                 },
             )
@@ -853,14 +853,13 @@ where
             }
             false
         }),
-        Component::Negation(ref negated) => context.shared.nest_for_negation(|context| {
-            let mut local_context = LocalMatchingContext {
-                matches_hover_and_active_quirk: MatchesHoverAndActiveQuirk::No,
-                shared: context,
-            };
-            !negated
-                .iter()
-                .all(|ss| matches_simple_selector(ss, element, &mut local_context, flags_setter))
+        Component::Negation(ref list) => context.shared.nest_for_negation(|context| {
+            for selector in &**list {
+                if matches_complex_selector(selector.iter(), element, context, flags_setter) {
+                    return false;
+                }
+            }
+            true
         }),
     }
 }

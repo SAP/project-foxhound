@@ -425,6 +425,12 @@ void IProtocol::HandleFatalError(const char* aErrorMsg) const {
 bool IProtocol::AllocShmem(size_t aSize,
                            Shmem::SharedMemory::SharedMemoryType aType,
                            Shmem* aOutMem) {
+  if (!CanSend()) {
+    NS_WARNING(
+        "Shmem not allocated.  Cannot communicate with the other actor.");
+    return false;
+  }
+
   Shmem::id_t id;
   Shmem::SharedMemory* rawmem(CreateSharedMemory(aSize, aType, false, &id));
   if (!rawmem) {
@@ -438,6 +444,12 @@ bool IProtocol::AllocShmem(size_t aSize,
 bool IProtocol::AllocUnsafeShmem(size_t aSize,
                                  Shmem::SharedMemory::SharedMemoryType aType,
                                  Shmem* aOutMem) {
+  if (!CanSend()) {
+    NS_WARNING(
+        "Shmem not allocated.  Cannot communicate with the other actor.");
+    return false;
+  }
+
   Shmem::id_t id;
   Shmem::SharedMemory* rawmem(CreateSharedMemory(aSize, aType, true, &id));
   if (!rawmem) {
@@ -631,7 +643,9 @@ bool IToplevelProtocol::OpenOnSameThread(MessageChannel* aChannel, Side aSide) {
 }
 
 void IToplevelProtocol::NotifyImpendingShutdown() {
-  GetIPCChannel()->NotifyImpendingShutdown();
+  if (CanRecv()) {
+    GetIPCChannel()->NotifyImpendingShutdown();
+  }
 }
 
 void IToplevelProtocol::Close() { GetIPCChannel()->Close(); }

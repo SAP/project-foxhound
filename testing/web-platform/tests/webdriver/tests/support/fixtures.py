@@ -11,6 +11,7 @@ from six.moves.urllib.parse import urlunsplit
 
 from tests.support import defaults
 from tests.support.helpers import cleanup_session
+from tests.support.inline import inline
 from tests.support.http_request import HTTPRequest
 from tests.support.sync import Poll
 
@@ -212,15 +213,43 @@ def create_dialog(session):
 
 
 @pytest.fixture
-def closed_window(session):
+def closed_frame(session, url):
     original_handle = session.window_handle
     new_handle = session.new_window()
 
     session.window_handle = new_handle
 
+    session.url = url("/webdriver/tests/support/html/frames.html")
+
+    subframe = session.find.css("#sub-frame", all=False)
+    session.switch_frame(subframe)
+
+    deleteframe = session.find.css("#delete-frame", all=False)
+    session.switch_frame(deleteframe)
+
+    button = session.find.css("#remove-parent", all=False)
+    button.click()
+
+    yield
+
     session.window.close()
     assert new_handle not in session.handles, "Unable to close window {}".format(new_handle)
 
-    yield new_handle
+    session.window_handle = original_handle
+
+
+@pytest.fixture
+def closed_window(session):
+    original_handle = session.window_handle
+    new_handle = session.new_window()
+
+    session.window_handle = new_handle
+    session.url = inline("<input id='a' value='b'>")
+    element = session.find.css("input", all=False)
+
+    session.window.close()
+    assert new_handle not in session.handles, "Unable to close window {}".format(new_handle)
+
+    yield (original_handle, element)
 
     session.window_handle = original_handle

@@ -13,7 +13,7 @@ toolkit.jar:
   skin/classic/global/dropmarker.css
 * skin/classic/global/findBar.css
 * skin/classic/global/global.css
-  skin/classic/global/menu.css
+* skin/classic/global/menu.css
   skin/classic/global/menulist.css
   skin/classic/global/netError.css
   skin/classic/global/popup.css
@@ -40,9 +40,7 @@ toolkit.jar:
   skin/classic/global/icons/search-textbox.svg                       (icons/search-textbox.svg)
   skin/classic/global/icons/warning-64.png                           (icons/warning-64.png)
   skin/classic/global/icons/warning-large.png                        (icons/warning-large.png)
-  skin/classic/global/icons/error-16.png                             (icons/error-16.png)
   skin/classic/global/icons/error-64.png                             (icons/error-64.png)
-  skin/classic/global/icons/question-16.png                          (icons/question-16.png)
   skin/classic/global/icons/question-64.png                          (icons/question-64.png)
   skin/classic/global/icons/sslWarning.png                           (icons/sslWarning.png)
 * skin/classic/global/in-content/common.css                          (in-content/common.css)

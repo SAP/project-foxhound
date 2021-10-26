@@ -60,9 +60,8 @@ bool DocumentChannelParent::Init(dom::CanonicalBrowsingContext* aContext,
       promise = mDocumentLoadListener->OpenDocument(
           loadState, aArgs.cacheKey(), Some(aArgs.channelId()),
           aArgs.asyncOpenTime(), aArgs.timing().refOr(nullptr),
-          std::move(clientInfo), aArgs.hasValidTransientUserAction(),
-          Some(docArgs.uriModified()), Some(docArgs.isXFOError()),
-          IProtocol::OtherPid(), &rv);
+          std::move(clientInfo), Some(docArgs.uriModified()),
+          Some(docArgs.isXFOError()), IProtocol::OtherPid(), &rv);
     } else {
       const ObjectCreationArgs& objectArgs = aArgs.elementCreationArgs();
 
@@ -71,8 +70,8 @@ bool DocumentChannelParent::Init(dom::CanonicalBrowsingContext* aContext,
           aArgs.asyncOpenTime(), aArgs.timing().refOr(nullptr),
           std::move(clientInfo), objectArgs.embedderInnerWindowId(),
           objectArgs.loadFlags(), objectArgs.contentPolicyType(),
-          aArgs.hasValidTransientUserAction(), objectArgs.isUrgentStart(),
-          IProtocol::OtherPid(), &rv);
+          objectArgs.isUrgentStart(), IProtocol::OtherPid(),
+          this /* ObjectUpgradeHandler */, &rv);
     }
 
     if (NS_FAILED(rv)) {
@@ -106,6 +105,22 @@ bool DocumentChannelParent::Init(dom::CanonicalBrowsingContext* aContext,
       });
 
   return true;
+}
+
+auto DocumentChannelParent::UpgradeObjectLoad()
+    -> RefPtr<ObjectUpgradePromise> {
+  return SendUpgradeObjectLoad()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [](const UpgradeObjectLoadPromise::ResolveOrRejectValue& aValue) {
+        if (!aValue.IsResolve() || aValue.ResolveValue().IsNullOrDiscarded()) {
+          LOG(("DocumentChannelParent object load upgrade failed"));
+          return ObjectUpgradePromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                       __func__);
+        }
+
+        return ObjectUpgradePromise::CreateAndResolve(
+            aValue.ResolveValue().get_canonical(), __func__);
+      });
 }
 
 RefPtr<PDocumentChannelParent::RedirectToRealChannelPromise>

@@ -335,29 +335,37 @@ nsresult nsTextControlFrame::EnsureEditorInitialized() {
   return NS_OK;
 }
 
-already_AddRefed<Element> nsTextControlFrame::CreateEmptyAnonymousDiv(
-    PseudoStyleType aPseudoType) const {
+already_AddRefed<Element> nsTextControlFrame::MakeAnonElement(
+    PseudoStyleType aPseudoType, Element* aParent, nsAtom* aTag) const {
   MOZ_ASSERT(aPseudoType != PseudoStyleType::NotPseudo);
   Document* doc = PresContext()->Document();
-  RefPtr<NodeInfo> nodeInfo = doc->NodeInfoManager()->GetNodeInfo(
-      nsGkAtoms::div, nullptr, kNameSpaceID_XHTML, nsINode::ELEMENT_NODE);
-  RefPtr<Element> div = NS_NewHTMLDivElement(nodeInfo.forget());
-  div->SetPseudoElementType(aPseudoType);
+  RefPtr<Element> element = doc->CreateHTMLElement(aTag);
+  element->SetPseudoElementType(aPseudoType);
   if (aPseudoType == PseudoStyleType::mozTextControlEditingRoot) {
     // Make our root node editable
-    div->SetFlags(NODE_IS_EDITABLE);
+    element->SetFlags(NODE_IS_EDITABLE);
   }
-  return div.forget();
+
+  if (aPseudoType == PseudoStyleType::mozNumberSpinDown ||
+      aPseudoType == PseudoStyleType::mozNumberSpinUp) {
+    element->SetAttr(kNameSpaceID_None, nsGkAtoms::aria_hidden, u"true"_ns,
+                     false);
+  }
+
+  if (aParent) {
+    aParent->AppendChildTo(element, false);
+  }
+
+  return element.forget();
 }
 
-already_AddRefed<Element>
-nsTextControlFrame::CreateEmptyAnonymousDivWithTextNode(
+already_AddRefed<Element> nsTextControlFrame::MakeAnonDivWithTextNode(
     PseudoStyleType aPseudoType) const {
-  RefPtr<Element> divElement = CreateEmptyAnonymousDiv(aPseudoType);
+  RefPtr<Element> div = MakeAnonElement(aPseudoType);
 
   // Create the text node for the anonymous <div> element.
-  RefPtr<nsTextNode> textNode = new (divElement->OwnerDoc()->NodeInfoManager())
-      nsTextNode(divElement->OwnerDoc()->NodeInfoManager());
+  nsNodeInfoManager* nim = div->OwnerDoc()->NodeInfoManager();
+  RefPtr<nsTextNode> textNode = new (nim) nsTextNode(nim);
   // If the anonymous div element is not for the placeholder, we should
   // mark the text node as "maybe modified frequently" for avoiding ASCII
   // range checks at every input.
@@ -369,8 +377,8 @@ nsTextControlFrame::CreateEmptyAnonymousDivWithTextNode(
       textNode->MarkAsMaybeMasked();
     }
   }
-  divElement->AppendChildTo(textNode, false);
-  return divElement.forget();
+  div->AppendChildTo(textNode, false);
+  return div.forget();
 }
 
 nsresult nsTextControlFrame::CreateAnonymousContent(
@@ -383,8 +391,7 @@ nsresult nsTextControlFrame::CreateAnonymousContent(
   RefPtr<TextControlElement> textControlElement =
       TextControlElement::FromNode(GetContent());
   MOZ_ASSERT(textControlElement);
-  mRootNode =
-      CreateEmptyAnonymousDiv(PseudoStyleType::mozTextControlEditingRoot);
+  mRootNode = MakeAnonElement(PseudoStyleType::mozTextControlEditingRoot);
   if (NS_WARN_IF(!mRootNode)) {
     return NS_ERROR_FAILURE;
   }
@@ -469,22 +476,44 @@ void nsTextControlFrame::CreatePlaceholderIfNeeded() {
   MOZ_ASSERT(!mPlaceholderDiv);
 
   // Do we need a placeholder node?
-  nsAutoString placeholderTxt;
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::placeholder,
-                                 placeholderTxt);
-  if (IsTextArea()) {  // <textarea>s preserve newlines...
-    nsContentUtils::PlatformToDOMLineBreaks(placeholderTxt);
-  } else {  // ...<input>s don't
-    nsContentUtils::RemoveNewlines(placeholderTxt);
-  }
-
-  if (placeholderTxt.IsEmpty()) {
+  nsAutoString placeholder;
+  if (!mContent->AsElement()->GetAttr(nsGkAtoms::placeholder, placeholder)) {
     return;
   }
 
-  mPlaceholderDiv =
-      CreateEmptyAnonymousDivWithTextNode(PseudoStyleType::placeholder);
-  mPlaceholderDiv->GetFirstChild()->AsText()->SetText(placeholderTxt, false);
+  mPlaceholderDiv = MakeAnonDivWithTextNode(PseudoStyleType::placeholder);
+  UpdatePlaceholderText(placeholder, false);
+}
+
+void nsTextControlFrame::PlaceholderChanged(const nsAttrValue* aOld,
+                                            const nsAttrValue* aNew) {
+  if (!aOld || !aNew) {
+    return;  // This should be handled by GetAttributeChangeHint.
+  }
+
+  // If we've changed the attribute but we still haven't reframed, there's
+  // nothing to do either.
+  if (!mPlaceholderDiv) {
+    return;
+  }
+
+  nsAutoString placeholder;
+  aNew->ToString(placeholder);
+  UpdatePlaceholderText(placeholder, true);
+}
+
+void nsTextControlFrame::UpdatePlaceholderText(nsString& aPlaceholder,
+                                               bool aNotify) {
+  MOZ_DIAGNOSTIC_ASSERT(mPlaceholderDiv);
+  MOZ_DIAGNOSTIC_ASSERT(mPlaceholderDiv->GetFirstChild());
+
+  if (IsTextArea()) {  // <textarea>s preserve newlines...
+    nsContentUtils::PlatformToDOMLineBreaks(aPlaceholder);
+  } else {  // ...<input>s don't
+    nsContentUtils::RemoveNewlines(aPlaceholder);
+  }
+
+  mPlaceholderDiv->GetFirstChild()->AsText()->SetText(aPlaceholder, aNotify);
 }
 
 void nsTextControlFrame::CreatePreviewIfNeeded() {
@@ -495,8 +524,7 @@ void nsTextControlFrame::CreatePreviewIfNeeded() {
     return;
   }
 
-  mPreviewDiv = CreateEmptyAnonymousDivWithTextNode(
-      PseudoStyleType::mozTextControlPreview);
+  mPreviewDiv = MakeAnonDivWithTextNode(PseudoStyleType::mozTextControlPreview);
 }
 
 void nsTextControlFrame::AppendAnonymousContentTo(
@@ -532,8 +560,7 @@ nscoord nsTextControlFrame::GetMinISize(gfxContext* aRenderingContext) {
 LogicalSize nsTextControlFrame::ComputeAutoSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
-    ComputeSizeFlags aFlags) {
+    const LogicalSize& aBorderPadding, ComputeSizeFlags aFlags) {
   float inflation = nsLayoutUtils::FontSizeInflationFor(this);
   LogicalSize autoSize = CalcIntrinsicSize(aRenderingContext, aWM, inflation);
 
@@ -541,21 +568,21 @@ LogicalSize nsTextControlFrame::ComputeAutoSize(
   // only for 'auto'), the block-size it returns is always NS_UNCONSTRAINEDSIZE.
   const auto& iSizeCoord = StylePosition()->ISize(aWM);
   if (iSizeCoord.IsAuto()) {
-    if (aFlags & ComputeSizeFlags::eIClampMarginBoxMinSize) {
+    if (aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize)) {
       // CalcIntrinsicSize isn't aware of grid-item margin-box clamping, so we
       // fall back to nsContainerFrame's ComputeAutoSize to handle that.
       // XXX maybe a font-inflation issue here? (per the assertion below).
       autoSize.ISize(aWM) =
           nsContainerFrame::ComputeAutoSize(aRenderingContext, aWM, aCBSize,
-                                            aAvailableISize, aMargin, aBorder,
-                                            aPadding, aFlags)
+                                            aAvailableISize, aMargin,
+                                            aBorderPadding, aFlags)
               .ISize(aWM);
     }
 #ifdef DEBUG
     else {
       LogicalSize ancestorAutoSize = nsContainerFrame::ComputeAutoSize(
-          aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin, aBorder,
-          aPadding, aFlags);
+          aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin,
+          aBorderPadding, aFlags);
       // Disabled when there's inflation; see comment in GetXULPrefSize.
       MOZ_ASSERT(inflation != 1.0f ||
                      ancestorAutoSize.ISize(aWM) == autoSize.ISize(aWM),
@@ -586,7 +613,7 @@ void nsTextControlFrame::ComputeBaseline(const ReflowInput& aReflowInput,
       nsLayoutUtils::GetFontMetricsForFrame(this, inflation);
   mFirstBaseline = nsLayoutUtils::GetCenteredFontBaseline(fontMet, lineHeight,
                                                           wm.IsLineInverted()) +
-                   aReflowInput.ComputedLogicalBorderPadding().BStart(wm);
+                   aReflowInput.ComputedLogicalBorderPadding(wm).BStart(wm);
   aDesiredSize.SetBlockStartAscent(mFirstBaseline);
 }
 
@@ -606,13 +633,7 @@ void nsTextControlFrame::Reflow(nsPresContext* aPresContext,
 
   // set values of reflow's out parameters
   WritingMode wm = aReflowInput.GetWritingMode();
-  LogicalSize finalSize(
-      wm,
-      aReflowInput.ComputedISize() +
-          aReflowInput.ComputedLogicalBorderPadding().IStartEnd(wm),
-      aReflowInput.ComputedBSize() +
-          aReflowInput.ComputedLogicalBorderPadding().BStartEnd(wm));
-  aDesiredSize.SetSize(wm, finalSize);
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   ComputeBaseline(aReflowInput, aDesiredSize);
 
@@ -643,11 +664,11 @@ void nsTextControlFrame::ReflowTextControlChild(
   availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
 
   ReflowInput kidReflowInput(aPresContext, aReflowInput, aKid, availSize,
-                             Nothing(), ReflowInput::CALLER_WILL_INIT);
+                             Nothing(), ReflowInput::InitFlag::CallerWillInit);
   // Override padding with our computed padding in case we got it from theming
   // or percentage.
-  kidReflowInput.Init(aPresContext, Nothing(), nullptr,
-                      &aReflowInput.ComputedPhysicalPadding());
+  kidReflowInput.Init(aPresContext, Nothing(), Nothing(),
+                      Some(aReflowInput.ComputedLogicalPadding(wm)));
 
   // Set computed width and computed height for the child
   kidReflowInput.SetComputedWidth(aReflowInput.ComputedWidth());

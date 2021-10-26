@@ -66,11 +66,9 @@ static mozIExtensionProcessScript& ProcessScript() {
   static nsCOMPtr<mozIExtensionProcessScript> sProcessScript;
 
   if (MOZ_UNLIKELY(!sProcessScript)) {
-    nsCOMPtr<mozIExtensionProcessScriptJSM> jsm =
-        do_ImportModule("resource://gre/modules/ExtensionProcessScript.jsm");
-    MOZ_RELEASE_ASSERT(jsm);
-
-    Unused << jsm->GetExtensionProcessScript(getter_AddRefs(sProcessScript));
+    sProcessScript =
+        do_ImportModule("resource://gre/modules/ExtensionProcessScript.jsm",
+                        "ExtensionProcessScript");
     MOZ_RELEASE_ASSERT(sProcessScript);
     ClearOnShutdown(&sProcessScript);
   }
@@ -210,7 +208,7 @@ ExtensionPolicyService::CollectReports(nsIHandleReportCallback* aHandleReport,
     nsCString path("extensions/");
     path.Append(desc);
 
-    aHandleReport->Callback(EmptyCString(), path, KIND_NONHEAP, UNITS_COUNT, 1,
+    aHandleReport->Callback(""_ns, path, KIND_NONHEAP, UNITS_COUNT, 1,
                             "WebExtensions that are active in this session"_ns,
                             aData);
   }
@@ -427,9 +425,13 @@ static bool CheckParentFrames(nsPIDOMWindowOuter* aWindow,
     return false;
   }
 
-  auto* piWin = aWindow;
-  while ((piWin = piWin->GetInProcessScriptableParentOrNull())) {
-    auto* win = nsGlobalWindowOuter::Cast(piWin);
+  dom::WindowContext* wc = aWindow->GetCurrentInnerWindow()->GetWindowContext();
+  while ((wc = wc->GetParentWindowContext())) {
+    if (!wc->IsInProcess()) {
+      return false;
+    }
+
+    nsGlobalWindowInner* win = wc->GetInnerWindow();
 
     auto* principal = BasePrincipal::Cast(win->GetPrincipal());
     if (principal->IsSystemPrincipal()) {

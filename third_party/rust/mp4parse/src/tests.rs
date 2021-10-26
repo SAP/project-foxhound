@@ -5,19 +5,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::fallible::TryRead as _;
 use super::read_mp4;
 use super::Error;
 use super::MediaContext;
+use fallible_collections::TryRead as _;
 
-#[cfg(feature = "mp4parse_fallible")]
 use std::convert::TryInto as _;
 use std::io::Cursor;
 use std::io::Read as _;
 extern crate test_assembler;
 use self::test_assembler::*;
 
-use boxes::{BoxType, FourCC};
+use boxes::BoxType;
 
 enum BoxSize {
     Short(u32),
@@ -181,11 +180,11 @@ fn read_ftyp() {
     assert_eq!(stream.head.name, BoxType::FileTypeBox);
     assert_eq!(stream.head.size, 24);
     let parsed = super::read_ftyp(&mut stream).unwrap();
-    assert_eq!(parsed.major_brand, FourCC::from(*b"mp42")); // mp42
+    assert_eq!(parsed.major_brand, b"mp42"); // mp42
     assert_eq!(parsed.minor_version, 0);
     assert_eq!(parsed.compatible_brands.len(), 2);
-    assert_eq!(parsed.compatible_brands[0], FourCC::from(*b"isom")); // isom
-    assert_eq!(parsed.compatible_brands[1], FourCC::from(*b"mp42")); // mp42
+    assert_eq!(parsed.compatible_brands[0], b"isom"); // isom
+    assert_eq!(parsed.compatible_brands[1], b"mp42"); // mp42
 }
 
 #[test]
@@ -223,11 +222,11 @@ fn read_ftyp_case() {
     assert_eq!(stream.head.name, BoxType::FileTypeBox);
     assert_eq!(stream.head.size, 24);
     let parsed = super::read_ftyp(&mut stream).unwrap();
-    assert_eq!(parsed.major_brand, FourCC::from(*b"MP42"));
+    assert_eq!(parsed.major_brand, b"MP42");
     assert_eq!(parsed.minor_version, 0);
     assert_eq!(parsed.compatible_brands.len(), 2);
-    assert_eq!(parsed.compatible_brands[0], FourCC::from(*b"ISOM")); // ISOM
-    assert_eq!(parsed.compatible_brands[1], FourCC::from(*b"MP42")); // MP42
+    assert_eq!(parsed.compatible_brands[0], b"ISOM"); // ISOM
+    assert_eq!(parsed.compatible_brands[1], b"MP42"); // MP42
 }
 
 #[test]
@@ -474,7 +473,7 @@ fn read_hdlr() {
     assert_eq!(stream.head.name, BoxType::HandlerBox);
     assert_eq!(stream.head.size, 45);
     let parsed = super::read_hdlr(&mut stream).unwrap();
-    assert_eq!(parsed.handler_type, FourCC::from(*b"vide"));
+    assert_eq!(parsed.handler_type, b"vide");
 }
 
 #[test]
@@ -487,7 +486,7 @@ fn read_hdlr_short_name() {
     assert_eq!(stream.head.name, BoxType::HandlerBox);
     assert_eq!(stream.head.size, 33);
     let parsed = super::read_hdlr(&mut stream).unwrap();
-    assert_eq!(parsed.handler_type, FourCC::from(*b"vide"));
+    assert_eq!(parsed.handler_type, b"vide");
 }
 
 #[test]
@@ -500,7 +499,7 @@ fn read_hdlr_zero_length_name() {
     assert_eq!(stream.head.name, BoxType::HandlerBox);
     assert_eq!(stream.head.size, 32);
     let parsed = super::read_hdlr(&mut stream).unwrap();
-    assert_eq!(parsed.handler_type, FourCC::from(*b"vide"));
+    assert_eq!(parsed.handler_type, b"vide");
 }
 
 fn flac_streaminfo() -> Vec<u8> {
@@ -1297,11 +1296,10 @@ fn read_to_end_() {
     let mut src = b"1234567890".take(5);
     let buf = src.read_into_try_vec().unwrap();
     assert_eq!(buf.len(), 5);
-    assert_eq!(buf.into_inner(), b"12345");
+    assert_eq!(buf, b"12345".as_ref());
 }
 
 #[test]
-#[cfg(feature = "mp4parse_fallible")]
 fn read_to_end_oom() {
     let mut src = b"1234567890".take(std::usize::MAX.try_into().expect("usize < u64"));
     assert!(src.read_into_try_vec().is_err());

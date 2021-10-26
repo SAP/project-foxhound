@@ -448,9 +448,10 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
       nsIDNSService::RESOLVE_PRIORITY_MEDIUM |
       nsIDNSService::GetFlagsFromTRRMode(nsIRequest::TRR_DISABLED_MODE);
 
-  if (NS_FAILED(dns->AsyncResolveNative(aHostName, flags, helper,
-                                        GetCurrentEventTarget(), attrs,
-                                        getter_AddRefs(helper->mRequest)))) {
+  if (NS_FAILED(dns->AsyncResolveNative(
+          aHostName, nsIDNSService::RESOLVE_TYPE_DEFAULT, flags, nullptr,
+          helper, GetCurrentEventTarget(), attrs,
+          getter_AddRefs(helper->mRequest)))) {
     return false;
   }
 
@@ -478,9 +479,15 @@ bool ProxyAutoConfig::ResolveAddress(const nsCString& aHostName,
     return false;
   });
 
-  if (NS_FAILED(helper->mStatus) ||
-      NS_FAILED(helper->mResponse->GetNextAddr(0, aNetAddr)))
+  if (NS_FAILED(helper->mStatus)) {
     return false;
+  }
+
+  nsCOMPtr<nsIDNSAddrRecord> rec = do_QueryInterface(helper->mResponse);
+  if (!rec || NS_FAILED(rec->GetNextAddr(0, aNetAddr))) {
+    return false;
+  }
+
   return true;
 }
 
@@ -491,7 +498,7 @@ static bool PACResolveToString(const nsCString& aHostName,
   if (!PACResolve(aHostName, &netAddr, aTimeout)) return false;
 
   char dottedDecimal[128];
-  if (!NetAddrToString(&netAddr, dottedDecimal, sizeof(dottedDecimal)))
+  if (!netAddr.ToStringBuffer(dottedDecimal, sizeof(dottedDecimal)))
     return false;
 
   aDottedDecimal.Assign(dottedDecimal);
@@ -743,7 +750,7 @@ nsresult ProxyAutoConfig::SetupJS() {
     // and otherwise inflate Latin-1 to UTF-16 and compile that.
     const char* scriptData = this->mConcatenatedPACData.get();
     size_t scriptLength = this->mConcatenatedPACData.Length();
-    if (mozilla::IsUtf8(mozilla::MakeSpan(scriptData, scriptLength))) {
+    if (mozilla::IsUtf8(mozilla::Span(scriptData, scriptLength))) {
       JS::SourceText<Utf8Unit> srcBuf;
       if (!srcBuf.init(cx, scriptData, scriptLength,
                        JS::SourceOwnership::Borrowed)) {

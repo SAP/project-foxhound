@@ -101,6 +101,7 @@ namespace TelemetryIPCAccumulator = mozilla::TelemetryIPCAccumulator;
 namespace {
 
 const uint32_t kMaximumNumberOfKeys = 100;
+const uint32_t kMaxEventSummaryKeys = 500;
 const uint32_t kMaximumKeyStringLength = 72;
 const uint32_t kMaximumStringValueLength = 50;
 // The category and scalar name maximum lengths are used by the dynamic
@@ -286,9 +287,10 @@ ScalarResult GetVariantFromIVariant(nsIVariant* aInput, uint32_t aScalarKind,
 /**
  * Write a nsIVariant with a JSONWriter, used for GeckoView persistence.
  */
-nsresult WriteVariantToJSONWriter(uint32_t aScalarType, nsIVariant* aInputValue,
-                                  const char* aPropertyName,
-                                  mozilla::JSONWriter& aWriter) {
+nsresult WriteVariantToJSONWriter(
+    uint32_t aScalarType, nsIVariant* aInputValue,
+    const mozilla::Span<const char>& aPropertyName,
+    mozilla::JSONWriter& aWriter) {
   MOZ_ASSERT(aInputValue);
 
   switch (aScalarType) {
@@ -303,7 +305,7 @@ nsresult WriteVariantToJSONWriter(uint32_t aScalarType, nsIVariant* aInputValue,
       nsCString val;
       nsresult rv = aInputValue->GetAsACString(val);
       NS_ENSURE_SUCCESS(rv, rv);
-      aWriter.StringProperty(aPropertyName, val.get());
+      aWriter.StringProperty(aPropertyName, val);
       break;
     }
     case nsITelemetry::SCALAR_TYPE_BOOLEAN: {
@@ -1931,21 +1933,16 @@ void internal_DynamicScalarToIPC(
  * content processes.
  */
 void internal_BroadcastDefinitions(
-    const StaticMutexAutoLock& lock,
-    const nsTArray<DynamicScalarInfo>& scalarInfos) {
+    const nsTArray<DynamicScalarDefinition>& scalarDefs) {
   nsTArray<mozilla::dom::ContentParent*> parents;
   mozilla::dom::ContentParent::GetAll(parents);
   if (!parents.Length()) {
     return;
   }
 
-  // Convert the internal scalar representation to a stripped down IPC one.
-  nsTArray<DynamicScalarDefinition> ipcDefinitions;
-  internal_DynamicScalarToIPC(lock, scalarInfos, ipcDefinitions);
-
   // Broadcast the definitions to the other content processes.
   for (auto parent : parents) {
-    mozilla::Unused << parent->SendAddDynamicScalars(ipcDefinitions);
+    mozilla::Unused << parent->SendAddDynamicScalars(scalarDefs);
   }
 }
 
@@ -3473,14 +3470,19 @@ nsresult TelemetryScalar::RegisterScalars(const nsACString& aCategoryName,
   }
 
   // Register the dynamic definition on the parent process.
+  nsTArray<DynamicScalarDefinition> ipcDefinitions;
   {
     StaticMutexAutoLock locker(gTelemetryScalarsMutex);
     ::internal_RegisterScalars(locker, newScalarInfos);
 
-    // Propagate the registration to all the content-processes. Please note that
-    // this does not require to hold the mutex.
-    ::internal_BroadcastDefinitions(locker, newScalarInfos);
+    // Convert the internal scalar representation to a stripped down IPC one.
+    ::internal_DynamicScalarToIPC(locker, newScalarInfos, ipcDefinitions);
   }
+
+  // Propagate the registration to all the content-processes.
+  // Do not hold the mutex while calling IPC.
+  ::internal_BroadcastDefinitions(ipcDefinitions);
+
   return NS_OK;
 }
 
@@ -3526,11 +3528,8 @@ void TelemetryScalar::SummarizeEvent(const nsCString& aUniqueEventName,
     return;
   }
 
-  static uint32_t sMaxEventSummaryKeys =
-      Preferences::GetUint("toolkit.telemetry.maxEventSummaryKeys", 500);
-
   // Set this each time as it may have been cleared and recreated between calls
-  scalar->SetMaximumNumberOfKeys(sMaxEventSummaryKeys);
+  scalar->SetMaximumNumberOfKeys(kMaxEventSummaryKeys);
 
   scalar->AddValue(lock, NS_ConvertASCIItoUTF16(aUniqueEventName), 1);
 }
@@ -3804,13 +3803,14 @@ nsresult TelemetryScalar::SerializeScalars(mozilla::JSONWriter& aWriter) {
     ScalarTupleArray& processScalars = iter.Data();
     const char* processName = GetNameForProcessID(ProcessID(iter.Key()));
 
-    aWriter.StartObjectProperty(processName);
+    aWriter.StartObjectProperty(mozilla::MakeStringSpan(processName));
 
     for (const ScalarDataTuple& scalar : processScalars) {
       nsresult rv = WriteVariantToJSONWriter(
           mozilla::Get<2>(scalar) /*aScalarType*/,
           mozilla::Get<1>(scalar) /*aInputValue*/,
-          mozilla::Get<0>(scalar) /*aPropertyName*/, aWriter /*aWriter*/);
+          mozilla::MakeStringSpan(mozilla::Get<0>(scalar)) /*aPropertyName*/,
+          aWriter /*aWriter*/);
       if (NS_FAILED(rv)) {
         // Skip this scalar if we failed to write it. We don't bail out just
         // yet as we may salvage other scalars. We eventually need to call
@@ -3854,10 +3854,11 @@ nsresult TelemetryScalar::SerializeKeyedScalars(mozilla::JSONWriter& aWriter) {
     KeyedScalarTupleArray& processScalars = iter.Data();
     const char* processName = GetNameForProcessID(ProcessID(iter.Key()));
 
-    aWriter.StartObjectProperty(processName);
+    aWriter.StartObjectProperty(mozilla::MakeStringSpan(processName));
 
     for (const KeyedScalarDataTuple& keyedScalarData : processScalars) {
-      aWriter.StartObjectProperty(mozilla::Get<0>(keyedScalarData));
+      aWriter.StartObjectProperty(
+          mozilla::MakeStringSpan(mozilla::Get<0>(keyedScalarData)));
 
       // Define a property for each scalar key, then add it to the keyed scalar
       // object.
@@ -3867,8 +3868,7 @@ nsresult TelemetryScalar::SerializeKeyedScalars(mozilla::JSONWriter& aWriter) {
         nsresult rv = WriteVariantToJSONWriter(
             mozilla::Get<2>(keyedScalarData) /*aScalarType*/,
             keyData.second /*aInputValue*/,
-            PromiseFlatCString(keyData.first).get() /*aOutKey*/,
-            aWriter /*aWriter*/);
+            PromiseFlatCString(keyData.first) /*aOutKey*/, aWriter /*aWriter*/);
         if (NS_FAILED(rv)) {
           // Skip this scalar if we failed to write it. We don't bail out just
           // yet as we may salvage other scalars. We eventually need to call

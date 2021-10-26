@@ -6,9 +6,11 @@
 
 #include "jit/TypePolicy.h"
 
+#include "jit/JitAllocPolicy.h"
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 
 #include "jit/shared/Lowering-shared-inl.h"
 
@@ -969,18 +971,6 @@ bool CallSetElementPolicy::adjustInputs(TempAllocator& alloc,
   return true;
 }
 
-bool InstanceOfPolicy::adjustInputs(TempAllocator& alloc,
-                                    MInstruction* def) const {
-  // Box first operand if it isn't object
-  if (def->getOperand(0)->type() != MIRType::Object) {
-    if (!BoxPolicy<0>::staticAdjustInputs(alloc, def)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 bool StoreUnboxedScalarPolicy::adjustValueInput(TempAllocator& alloc,
                                                 MInstruction* ins,
                                                 Scalar::Type writeType,
@@ -1232,7 +1222,6 @@ bool TypedArrayIndexPolicy::adjustInputs(TempAllocator& alloc,
   _(ClampPolicy)                \
   _(ComparePolicy)              \
   _(FilterTypeSetPolicy)        \
-  _(InstanceOfPolicy)           \
   _(PowPolicy)                  \
   _(SameValuePolicy)            \
   _(SignPolicy)                 \
@@ -1300,6 +1289,7 @@ bool TypedArrayIndexPolicy::adjustInputs(TempAllocator& alloc,
   _(MixPolicy<StringPolicy<0>, StringPolicy<1>>)                              \
   _(MixPolicy<BoxPolicy<0>, BoxPolicy<1>>)                                    \
   _(MixPolicy<ObjectPolicy<0>, BoxPolicy<2>, ObjectPolicy<3>>)                \
+  _(MixPolicy<BoxExceptPolicy<0, MIRType::Object>, ObjectPolicy<1>>)          \
   _(NoFloatPolicy<0>)                                                         \
   _(NoFloatPolicy<1>)                                                         \
   _(NoFloatPolicy<2>)                                                         \

@@ -9,12 +9,14 @@ import hashlib
 import io
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
 from collections import OrderedDict
 from distutils.version import LooseVersion
 from itertools import dropwhile
+from datetime import datetime
 
 import pytoml
 import mozpack.path as mozpath
@@ -71,13 +73,21 @@ class VendorRust(MozbuildObject):
 
             cargo = which("cargo")
             if not cargo:
-                raise OSError(errno.ENOENT, "Could not find 'cargo' on your $PATH.")
+                raise OSError(
+                    errno.ENOENT,
+                    (
+                        "Could not find 'cargo' on your $PATH. "
+                        "Hint: have you run `mach build` or `mach configure`?"
+                    ),
+                )
             return cargo
 
     def check_cargo_version(self, cargo):
         """
         Ensure that cargo is new enough. cargo 1.42 fixed some issue with
-        the vendor command.
+        the vendor command. cargo 1.47 similarly did so for windows, but as of
+        this writing is the current nightly, so we restrict this check only to
+        the platform it's actually required on
         """
         out = (
             subprocess.check_output([cargo, "--version"])
@@ -86,7 +96,41 @@ class VendorRust(MozbuildObject):
         )
         if not out.startswith("cargo"):
             return False
-        return LooseVersion(out.split()[1]) >= "1.42"
+        version = LooseVersion(out.split()[1])
+        if platform.system() == "Windows":
+            if version >= "1.47" and "nightly" in out:
+                # parsing the date from "cargo 1.47.0-nightly (aa6872140 2020-07-23)"
+                date_format = "%Y-%m-%d"
+                req_nightly = datetime.strptime("2020-07-23", date_format)
+                nightly = datetime.strptime(
+                    out.rstrip(")").rsplit(" ", 1)[1], date_format
+                )
+                if nightly < req_nightly:
+                    self.log(
+                        logging.ERROR,
+                        "cargo_version",
+                        {},
+                        "Cargo >= 1.47.0-nightly (2020-07-23) required (update your nightly)",
+                    )
+                    return False
+            elif version < "1.47":
+                self.log(
+                    logging.ERROR,
+                    "cargo_version",
+                    {},
+                    "Cargo >= 1.47 required (install Rust 1.47 or newer)",
+                )
+                return False
+        elif version < "1.42":
+            self.log(
+                logging.ERROR,
+                "cargo_version",
+                {},
+                "Cargo >= 1.42 required (install Rust 1.42 or newer)",
+            )
+            return False
+        self.log(logging.DEBUG, "cargo_version", {}, "cargo is new enough")
+        return True
 
     def check_modified_files(self):
         """
@@ -154,16 +198,7 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
         """
         cargo = self.get_cargo_path()
         if not self.check_cargo_version(cargo):
-            self.log(
-                logging.ERROR,
-                "cargo_version",
-                {},
-                "Cargo >= 1.37 required (install Rust 1.37 or newer)",
-            )
             return None
-        else:
-            self.log(logging.DEBUG, "cargo_version", {}, "cargo is new enough")
-
         return cargo
 
     # A whitelist of acceptable license identifiers for the
@@ -205,21 +240,21 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
             "fuchsia-zircon-sys",
             "fuchsia-cprng",
             "glsl",
+            "instant",
         ]
     }
 
     # This whitelist should only be used for packages that use an acceptable
     # license, but that also need to explicitly mentioned in about:license.
     RUNTIME_LICENSE_PACKAGE_WHITELIST = {
-        'BSD-2-Clause': [
-            'arrayref',
-            'cloudabi',
-            'Inflector',
-            'mach',
-            'qlog',
+        "BSD-2-Clause": [
+            "arrayref",
+            "cloudabi",
+            "Inflector",
+            "mach",
+            "qlog",
         ],
-        'BSD-3-Clause': [
-        ]
+        "BSD-3-Clause": [],
     }
 
     # This whitelist should only be used for packages that use a

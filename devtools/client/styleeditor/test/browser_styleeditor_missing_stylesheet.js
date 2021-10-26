@@ -14,7 +14,8 @@ add_task(async function() {
   // below because the test-page is loaded with chrome:// URL and, right now,
   // that means UA stylesheets are shown. So we avoid hardcoding the number of
   // stylesheets here.
-  ok(ui.editors.length, "The UI contains style sheets.");
+  await waitUntil(() => ui.editors.length);
+  ok(true, "The UI contains style sheets.");
 
   const rootEl = panel.panelWindow.document.getElementById(
     "style-editor-chrome"
@@ -22,6 +23,7 @@ add_task(async function() {
   ok(!rootEl.classList.contains("loading"), "The loading indicator is hidden");
 
   const notifBox = toolbox.getNotificationBox();
+  await waitUntil(() => notifBox.getCurrentNotification());
   const notif = notifBox.getCurrentNotification();
   ok(notif, "The notification box contains a message");
   ok(

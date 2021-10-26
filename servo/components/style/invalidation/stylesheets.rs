@@ -16,9 +16,25 @@ use crate::selector_map::{MaybeCaseInsensitiveHashMap, PrecomputedHashMap};
 use crate::selector_parser::{SelectorImpl, Snapshot, SnapshotMap};
 use crate::shared_lock::SharedRwLockReadGuard;
 use crate::stylesheets::{CssRule, StylesheetInDocument};
+use crate::stylesheets::{EffectiveRules, EffectiveRulesIterator};
 use crate::Atom;
 use crate::LocalName as SelectorLocalName;
 use selectors::parser::{Component, LocalName, Selector};
+
+/// The kind of change that happened for a given rule.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+pub enum RuleChangeKind {
+    /// The rule was inserted.
+    Insertion,
+    /// The rule was removed.
+    Removal,
+    /// Some change in the rule which we don't know about, and could have made
+    /// the rule change in any way.
+    Generic,
+    /// A change in the declarations of a style rule.
+    StyleRuleDeclarations,
+}
 
 /// A style sheet invalidation represents a kind of element or subtree that may
 /// need to be restyled. Whether it represents a whole subtree or just a single
@@ -124,7 +140,7 @@ impl StylesheetInvalidationSet {
             return; // Nothing to do here.
         }
 
-        let quirks_mode = stylesheet.quirks_mode(guard);
+        let quirks_mode = device.quirks_mode();
         for rule in stylesheet.effective_rules(device, guard) {
             self.collect_invalidations_for_rule(rule, guard, device, quirks_mode);
             if self.fully_invalid {
@@ -162,7 +178,8 @@ impl StylesheetInvalidationSet {
         have_invalidations
     }
 
-    fn is_empty(&self) -> bool {
+    /// Returns whether there's no invalidation to process.
+    pub fn is_empty(&self) -> bool {
         !self.fully_invalid &&
             self.classes.is_empty() &&
             self.ids.is_empty() &&
@@ -340,6 +357,8 @@ impl StylesheetInvalidationSet {
         data.hint.contains(RestyleHint::RESTYLE_SELF) || any_children_invalid
     }
 
+    /// TODO(emilio): Reuse the bucket stuff from selectormap? That handles
+    /// :is() / :where() etc.
     fn scan_component(
         component: &Component<SelectorImpl>,
         invalidation: &mut Option<Invalidation>,
@@ -349,7 +368,7 @@ impl StylesheetInvalidationSet {
                 ref name,
                 ref lower_name,
             }) => {
-                if invalidation.as_ref().map_or(true, |s| !s.is_id_or_class()) {
+                if invalidation.is_none() {
                     *invalidation = Some(Invalidation::LocalName {
                         name: name.clone(),
                         lower_name: lower_name.clone(),
@@ -357,12 +376,12 @@ impl StylesheetInvalidationSet {
                 }
             },
             Component::Class(ref class) => {
-                if invalidation.as_ref().map_or(true, |s| !s.is_id()) {
+                if invalidation.as_ref().map_or(true, |s| !s.is_id_or_class()) {
                     *invalidation = Some(Invalidation::Class(class.clone()));
                 }
             },
             Component::ID(ref id) => {
-                if invalidation.is_none() {
+                if invalidation.as_ref().map_or(true, |s| !s.is_id()) {
                     *invalidation = Some(Invalidation::ID(id.clone()));
                 }
             },
@@ -480,6 +499,78 @@ impl StylesheetInvalidationSet {
         }
 
         true
+    }
+
+    /// Collects invalidations for a given CSS rule, if not fully invalid
+    /// already.
+    ///
+    /// TODO(emilio): we can't check whether the rule is inside a non-effective
+    /// subtree, we potentially could do that.
+    pub fn rule_changed<S>(
+        &mut self,
+        stylesheet: &S,
+        rule: &CssRule,
+        guard: &SharedRwLockReadGuard,
+        device: &Device,
+        quirks_mode: QuirksMode,
+        change_kind: RuleChangeKind,
+    ) where
+        S: StylesheetInDocument,
+    {
+        use crate::stylesheets::CssRule::*;
+
+        debug!("StylesheetInvalidationSet::rule_changed");
+        if self.fully_invalid {
+            return;
+        }
+
+        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
+            debug!(" > Stylesheet was not effective");
+            return; // Nothing to do here.
+        }
+
+        let is_generic_change = change_kind == RuleChangeKind::Generic;
+
+        match *rule {
+            Namespace(..) => {
+                // It's not clear what handling changes for this correctly would
+                // look like.
+            },
+            CounterStyle(..) |
+            Page(..) |
+            Viewport(..) |
+            FontFeatureValues(..) |
+            FontFace(..) |
+            Keyframes(..) |
+            Style(..) => {
+                if is_generic_change {
+                    // TODO(emilio): We need to do this for selector / keyframe
+                    // name / font-face changes, because we don't have the old
+                    // selector / name.  If we distinguish those changes
+                    // specially, then we can at least use this invalidation for
+                    // style declaration changes.
+                    return self.invalidate_fully();
+                }
+
+                self.collect_invalidations_for_rule(rule, guard, device, quirks_mode)
+            },
+            Document(..) | Import(..) | Media(..) | Supports(..) => {
+                if !is_generic_change &&
+                    !EffectiveRules::is_effective(guard, device, quirks_mode, rule)
+                {
+                    return;
+                }
+
+                let rules =
+                    EffectiveRulesIterator::effective_children(device, quirks_mode, guard, rule);
+                for rule in rules {
+                    self.collect_invalidations_for_rule(rule, guard, device, quirks_mode);
+                    if self.fully_invalid {
+                        break;
+                    }
+                }
+            },
+        }
     }
 
     /// Collects invalidations for a given CSS rule.

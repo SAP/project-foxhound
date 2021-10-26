@@ -4,7 +4,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["CustomizeMode"];
+var EXPORTED_SYMBOLS = ["CustomizeMode", "_defaultImportantThemes"];
 
 const kPrefCustomizationDebug = "browser.uiCustomization.debug";
 const kPaletteId = "customization-palette";
@@ -12,6 +12,7 @@ const kDragDataTypePrefix = "text/toolbarwrapper-id/";
 const kSkipSourceNodePref = "browser.uiCustomization.skipSourceNodeCheck";
 const kDrawInTitlebarPref = "browser.tabs.drawInTitlebar";
 const kExtraDragSpacePref = "browser.tabs.extraDragSpace";
+const kBookmarksToolbarPref = "browser.toolbars.bookmarks.visibility";
 const kKeepBroadcastAttributes = "keepbroadcastattributeswhencustomizing";
 
 const kPanelItemContextMenu = "customizationPanelItemContextMenu";
@@ -88,6 +89,18 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   return new scope.ConsoleAPI(consoleOptions);
 });
 
+const DEFAULT_THEME_ID = "default-theme@mozilla.org";
+const LIGHT_THEME_ID = "firefox-compact-light@mozilla.org";
+const DARK_THEME_ID = "firefox-compact-dark@mozilla.org";
+const ALPENGLOW_THEME_ID = "firefox-alpenglow@mozilla.org";
+
+const _defaultImportantThemes = [
+  DEFAULT_THEME_ID,
+  LIGHT_THEME_ID,
+  DARK_THEME_ID,
+  ALPENGLOW_THEME_ID,
+];
+
 var gDraggingInToolbars;
 
 var gTab;
@@ -135,6 +148,9 @@ function CustomizeMode(aWindow) {
   this.browser = aWindow.gBrowser;
   this.areas = new Set();
 
+  this._translationObserver = new aWindow.MutationObserver(mutations =>
+    this._onTranslations(mutations)
+  );
   this._ensureCustomizationPanels();
 
   let content = this.$("customization-content-container");
@@ -163,6 +179,12 @@ function CustomizeMode(aWindow) {
     this.$("customization-extra-drag-space-checkbox").hidden = true;
   }
 
+  // Observe pref changes to the bookmarks toolbar visibility,
+  // since we won't get a toolbarvisibilitychange event if the
+  // toolbar is changing from 'newtab' to 'always' in Customize mode
+  // since the toolbar is shown with the 'newtab' setting.
+  Services.prefs.addObserver(kBookmarksToolbarPref, this);
+
   this.window.addEventListener("unload", this);
 }
 
@@ -186,6 +208,25 @@ CustomizeMode.prototype = {
   _skipSourceNodeCheck: null,
   _mainViewContext: null,
 
+  // These are the commands we continue to leave enabled while in customize mode.
+  // All other commands are disabled, and we remove the disabled attribute when
+  // leaving customize mode.
+  _enabledCommands: new Set([
+    "cmd_newNavigator",
+    "cmd_newNavigatorTab",
+    "cmd_newNavigatorTabNoEvent",
+    "cmd_close",
+    "cmd_closeWindow",
+    "cmd_quitApplication",
+    "View:FullScreen",
+    "Browser:NextTab",
+    "Browser:PrevTab",
+    "Browser:NewUserContextTab",
+    "Tools:PrivateBrowsing",
+    "minimizeWindow",
+    "zoomWindow",
+  ]),
+
   get _handler() {
     return this.window.CustomizationHandler;
   },
@@ -195,6 +236,7 @@ CustomizeMode.prototype = {
       Services.prefs.removeObserver(kDrawInTitlebarPref, this);
       Services.prefs.removeObserver(kExtraDragSpacePref, this);
     }
+    Services.prefs.removeObserver(kBookmarksToolbarPref, this);
   },
 
   $(id) {
@@ -463,6 +505,8 @@ CustomizeMode.prototype = {
     }
 
     this._handler.isExitingCustomizeMode = true;
+
+    this._translationObserver.disconnect();
 
     this._teardownDownloadAutoHideToggle();
 
@@ -816,6 +860,11 @@ CustomizeMode.prototype = {
       this.visiblePalette.appendChild(fragment);
       this._stowedPalette = this.window.gNavToolbox.palette;
       this.window.gNavToolbox.palette = this.visiblePalette;
+
+      // Now that the palette items are all here, disable all commands.
+      // We do this here rather than directly in `enter` because we
+      // need to do/undo this when we're called from reset(), too.
+      this._updateCommandsDisabledState(true);
     } catch (ex) {
       log.error(ex);
     }
@@ -844,6 +893,9 @@ CustomizeMode.prototype = {
   },
 
   _depopulatePalette() {
+    // Quick, undo the command disabling before we depopulate completely:
+    this._updateCommandsDisabledState(false);
+
     this.visiblePalette.hidden = true;
     let paletteChild = this.visiblePalette.firstElementChild;
     let nextChild;
@@ -866,6 +918,24 @@ CustomizeMode.prototype = {
     }
     this.visiblePalette.hidden = false;
     this.window.gNavToolbox.palette = this._stowedPalette;
+  },
+
+  _updateCommandsDisabledState(shouldBeDisabled) {
+    for (let command of this.document.querySelectorAll("command")) {
+      if (!command.id || !this._enabledCommands.has(command.id)) {
+        if (shouldBeDisabled) {
+          if (command.getAttribute("disabled") != "true") {
+            command.setAttribute("disabled", true);
+          } else {
+            command.setAttribute("wasdisabled", true);
+          }
+        } else if (command.getAttribute("wasdisabled") != "true") {
+          command.removeAttribute("disabled");
+        } else {
+          command.removeAttribute("wasdisabled");
+        }
+      }
+    }
   },
 
   isCustomizableItem(aNode) {
@@ -907,6 +977,40 @@ CustomizeMode.prototype = {
     }
     wrapper.appendChild(aNode);
     return wrapper;
+  },
+
+  /**
+   * Helper to set the label, either directly or to set up the translation
+   * observer so we can set the label once it's available.
+   */
+  _updateWrapperLabel(aNode, aIsUpdate, aWrapper = aNode.parentElement) {
+    if (aNode.hasAttribute("label")) {
+      aWrapper.setAttribute("title", aNode.getAttribute("label"));
+      aWrapper.setAttribute("tooltiptext", aNode.getAttribute("label"));
+    } else if (aNode.hasAttribute("title")) {
+      aWrapper.setAttribute("title", aNode.getAttribute("title"));
+      aWrapper.setAttribute("tooltiptext", aNode.getAttribute("title"));
+    } else if (aNode.hasAttribute("data-l10n-id") && !aIsUpdate) {
+      this._translationObserver.observe(aNode, {
+        attributes: true,
+        attributeFilter: ["label", "title"],
+      });
+    }
+  },
+
+  /**
+   * Called when a node without a label or title is updated.
+   */
+  _onTranslations(aMutations) {
+    for (let mut of aMutations) {
+      let { target } = mut;
+      if (
+        target.parentElement?.localName == "toolbarpaletteitem" &&
+        (target.hasAttribute("label") || mut.target.hasAttribute("title"))
+      ) {
+        this._updateWrapperLabel(target, true);
+      }
+    }
   },
 
   createOrUpdateWrapper(aNode, aPlace, aIsUpdate) {
@@ -953,13 +1057,7 @@ CustomizeMode.prototype = {
       wrapper.setAttribute("id", "wrapper-" + aNode.getAttribute("id"));
     }
 
-    if (aNode.hasAttribute("label")) {
-      wrapper.setAttribute("title", aNode.getAttribute("label"));
-      wrapper.setAttribute("tooltiptext", aNode.getAttribute("label"));
-    } else if (aNode.hasAttribute("title")) {
-      wrapper.setAttribute("title", aNode.getAttribute("title"));
-      wrapper.setAttribute("tooltiptext", aNode.getAttribute("title"));
-    }
+    this._updateWrapperLabel(aNode, aIsUpdate, wrapper);
 
     if (aNode.hasAttribute("flex")) {
       wrapper.setAttribute("flex", aNode.getAttribute("flex"));
@@ -1462,9 +1560,6 @@ CustomizeMode.prototype = {
   },
 
   async onThemesMenuShowing(aEvent) {
-    const DEFAULT_THEME_ID = "default-theme@mozilla.org";
-    const LIGHT_THEME_ID = "firefox-compact-light@mozilla.org";
-    const DARK_THEME_ID = "firefox-compact-dark@mozilla.org";
     const MAX_THEME_COUNT = 6;
 
     this._clearThemesMenu(aEvent.target);
@@ -1504,12 +1599,8 @@ CustomizeMode.prototype = {
     let themes = await AddonManager.getAddonsByTypes(["theme"]);
     let currentTheme = themes.find(theme => theme.isActive);
 
-    // Move the current theme (if any) and the light/dark themes to the start:
-    let importantThemes = new Set([
-      DEFAULT_THEME_ID,
-      LIGHT_THEME_ID,
-      DARK_THEME_ID,
-    ]);
+    // Move the current theme (if any) and the default themes to the start:
+    let importantThemes = new Set(_defaultImportantThemes);
     if (currentTheme) {
       importantThemes.add(currentTheme.id);
     }

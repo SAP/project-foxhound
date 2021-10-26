@@ -4,22 +4,19 @@
 
 # Spoof a stub of `js/moz.configure` for the included scripts.
 @dependable
-def building_js():
+def js_standalone():
     return False
-
-
-option(env='JS_STANDALONE', default=building_js,
-       help='Reserved for internal use')
 
 
 @depends(target)
 def fold_libs(target):
-    return target.os in ('WINNT', 'OSX', 'Android')
-
-set_config('MOZ_FOLD_LIBS', fold_libs)
+    return target.os in ("WINNT", "OSX", "Android")
 
 
-include('../../build/moz.configure/rust.configure')
-include('../../build/moz.configure/nspr.configure')
-include('../../build/moz.configure/nss.configure')
-include('../../build/moz.configure/update-programs.configure')
+set_config("MOZ_FOLD_LIBS", fold_libs)
+
+
+include("../../build/moz.configure/rust.configure")
+include("../../build/moz.configure/nspr.configure")
+include("../../build/moz.configure/nss.configure")
+include("../../build/moz.configure/update-programs.configure")

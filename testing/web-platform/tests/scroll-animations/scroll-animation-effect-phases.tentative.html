@@ -92,7 +92,7 @@
   function create_scroll_timeline_fill_test(delay, scroll_percentage, expected){
     return async t => {
       const target = createDiv(t);
-      const timeline = createScrollTimelineWithOffsets(t, "20%", "80%");
+      const timeline = createScrollTimelineWithOffsets(t, CSS.percent(20), CSS.percent(80));
       const effect = new KeyframeEffect(
         target,
         {
@@ -151,4 +151,201 @@
       );
     }
   }
+
+  function createKeyframeEffectOpacity(test){
+    return new KeyframeEffect(
+      createDiv(test),
+      {
+        opacity: [0.3, 0.7]
+      },
+      {
+        duration: 1000
+      }
+    );
+  }
+
+  function verifyTimelineBeforePhase(animation){
+    assert_equals(animation.timeline.phase, "before");
+    assert_equals(animation.timeline.currentTime, 0);
+    assert_equals(animation.currentTime, 0);
+    assert_equals(
+      animation.effect.getComputedTiming().localTime,
+      0,
+      "effect local time in timeline before phase");
+  }
+
+  function verifyEffectBeforePhase(animation){
+    // progress == null AND opacity == 1 implies we are in the effect before
+    // phase
+    assert_equals(
+      animation.effect.getComputedTiming().progress,
+      null
+    );
+    assert_equals(
+      window.getComputedStyle(animation.effect.target).getPropertyValue("opacity"),
+      "1"
+    );
+  }
+
+  promise_test(async t => {
+    const animation = new Animation(
+      createKeyframeEffectOpacity(t),
+      createScrollTimelineWithOffsets(t, CSS.percent(20), CSS.percent(80))
+    );
+
+    const scroller = animation.timeline.scrollSource;
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+
+    animation.play();
+    await animation.ready;
+
+    verifyTimelineBeforePhase(animation);
+    verifyEffectBeforePhase(animation);
+
+    animation.pause();
+    await waitForNextFrame();
+
+    verifyTimelineBeforePhase(animation);
+    verifyEffectBeforePhase(animation);
+
+    animation.play();
+    await waitForNextFrame();
+
+    verifyTimelineBeforePhase(animation);
+    verifyEffectBeforePhase(animation);
+  }, 'Verify that (play -> pause -> play) doesn\'t change phase/progress.');
+
+  promise_test(async t => {
+    const animation = new Animation(
+      createKeyframeEffectOpacity(t),
+      createScrollTimelineWithOffsets(t, CSS.percent(20), CSS.percent(80))
+    );
+
+    const scroller = animation.timeline.scrollSource;
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+
+    animation.play();
+    await animation.ready;
+
+    verifyTimelineBeforePhase(animation);
+    verifyEffectBeforePhase(animation);
+
+    animation.pause();
+    await waitForNextFrame();
+
+    verifyTimelineBeforePhase(animation);
+    verifyEffectBeforePhase(animation);
+
+    // Scrolling should not cause the animation effect to change.
+    scroller.scrollTop = 0.5 * maxScroll;
+    await waitForNextFrame();
+
+    // Check timeline phase
+    assert_equals(animation.timeline.phase, "active");
+    assert_equals(animation.timeline.currentTime, 500);
+    assert_equals(animation.currentTime, 0);
+    assert_equals(
+      animation.effect.getComputedTiming().localTime,
+      0,
+      "effect local time"
+    );
+
+    // Make sure the effect is still in the before phase even though the
+    // timeline is not.
+    verifyEffectBeforePhase(animation);
+  }, 'Pause in before phase, scroll timeline into active phase, animation ' +
+  'should remain in the before phase');
+
+promise_test(async t => {
+  const animation = new Animation(
+    createKeyframeEffectOpacity(t),
+    createScrollTimelineWithOffsets(t, CSS.percent(20), CSS.percent(80))
+  );
+  const scroller = animation.timeline.scrollSource;
+  const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+
+  animation.play();
+  await animation.ready;
+
+  // Causes the timeline to be inactive
+  scroller.style.overflow = "visible";
+  await waitForNextFrame();
+  await waitForNextFrame();
+
+  // Check timeline phase
+  assert_equals(animation.timeline.phase, "inactive");
+  assert_equals(animation.timeline.currentTime, null);
+  assert_equals(animation.currentTime, null);
+  assert_equals(
+    animation.effect.getComputedTiming().localTime,
+    null,
+    "effect local time with inactive timeline"
+  );
+
+  verifyEffectBeforePhase(animation);
+
+  // Setting the current time while timeline is inactive should cause hold phase
+  // and hold time to be populated
+  animation.currentTime = 500;
+  await waitForNextFrame();
+  await waitForNextFrame();
+
+  // Check timeline phase
+  assert_equals(animation.timeline.phase, "inactive");
+  assert_equals(animation.timeline.currentTime, null);
+  assert_equals(animation.currentTime, 500);
+  assert_equals(
+    animation.effect.getComputedTiming().localTime,
+    500,
+    "effect local time after setting animation current time"
+  );
+
+  // Check effect phase
+  // progress == 0.5 AND opacity == 0.5 shows we are in the effect active phase
+  assert_equals(
+    animation.effect.getComputedTiming().progress,
+    0.5,
+    "effect progress"
+  );
+  assert_equals(
+    window.getComputedStyle(animation.effect.target).getPropertyValue("opacity"),
+    "0.5",
+    "effect opacity after setting animation current time"
+  );
+}, 'Make scroller inactive, then set current time to an in range time');
+
+promise_test(async t => {
+  const animation = new Animation(
+    createKeyframeEffectOpacity(t),
+    createScrollTimelineWithOffsets(t, CSS.percent(20), CSS.percent(80))
+  );
+  const scroller = animation.timeline.scrollSource;
+  const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+  scroller.scrollTop = 0.5 * maxScroll;
+  // allow the scroll to finish.
+  await waitForNextFrame();
+
+  animation.pause();
+  await animation.ready;
+  // verify effect is applied.
+  const expected_progress = 0.5;
+  assert_equals(
+    animation.effect.getComputedTiming().progress,
+    expected_progress,
+    "Verify effect progress after pausing."
+  );
+
+  // cause the timeline to become inactive
+  scroller.style.overflow = 'visible';
+  await waitForAnimationFrames(2);
+  assert_equals(animation.timeline.currentTime, null,
+    'Sanity check the timeline is inactive.');
+  assert_equals(
+    animation.effect.getComputedTiming().progress,
+    expected_progress,
+    "Verify effect progress after the timeline goes inactive."
+  );
+}, 'Animation effect is still applied after pausing and making timeline ' +
+   'inactive.');
+
 </script>

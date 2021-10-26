@@ -11,29 +11,28 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   translateNodeFrontToGrip,
 } = require("devtools/client/inspector/shared/utils");
-const { REPS, MODE } = require("devtools/client/shared/components/reps/reps");
+const { REPS, MODE } = require("devtools/client/shared/components/reps/index");
 const { Rep } = REPS;
 const ElementNode = REPS.ElementNode;
 
 const Types = require("devtools/client/inspector/compatibility/types");
 
+const {
+  highlightNode,
+  unhighlightNode,
+} = require("devtools/client/inspector/boxmodel/actions/box-model-highlighter");
+
 class NodeItem extends PureComponent {
   static get propTypes() {
     return {
+      dispatch: PropTypes.func.isRequired,
       node: Types.node.isRequired,
-      hideBoxModelHighlighter: PropTypes.func.isRequired,
       setSelectedNode: PropTypes.func.isRequired,
-      showBoxModelHighlighterForNode: PropTypes.func.isRequired,
     };
   }
 
   render() {
-    const {
-      node,
-      hideBoxModelHighlighter,
-      setSelectedNode,
-      showBoxModelHighlighterForNode,
-    } = this.props;
+    const { dispatch, node, setSelectedNode } = this.props;
 
     return dom.li(
       { className: "compatibility-node-item" },
@@ -43,10 +42,10 @@ class NodeItem extends PureComponent {
         object: translateNodeFrontToGrip(node),
         onDOMNodeClick: () => {
           setSelectedNode(node);
-          hideBoxModelHighlighter();
+          dispatch(unhighlightNode());
         },
-        onDOMNodeMouseOut: () => hideBoxModelHighlighter(),
-        onDOMNodeMouseOver: () => showBoxModelHighlighterForNode(node),
+        onDOMNodeMouseOut: () => dispatch(unhighlightNode()),
+        onDOMNodeMouseOver: () => dispatch(highlightNode(node)),
       })
     );
   }

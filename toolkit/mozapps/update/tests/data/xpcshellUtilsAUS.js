@@ -44,6 +44,12 @@ ChromeUtils.defineModuleGetter(
   "resource://testing-common/MockRegistrar.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "updateAppInfo",
+  "resource://testing-common/AppInfo.jsm"
+);
+
 const Cm = Components.manager;
 
 /* global MOZ_APP_VENDOR, MOZ_APP_BASENAME */
@@ -1264,6 +1270,10 @@ function checkUpdateManager(
   aUpdateErrCode,
   aUpdateCount
 ) {
+  let activeUpdate =
+    aUpdateStatusState == STATE_DOWNLOADING
+      ? gUpdateManager.downloadingUpdate
+      : gUpdateManager.readyUpdate;
   Assert.equal(
     readStatusState(),
     aStatusFileState,
@@ -1271,16 +1281,17 @@ function checkUpdateManager(
   );
   let msgTags = [" after startup ", " after a file reload "];
   for (let i = 0; i < msgTags.length; ++i) {
-    logTestInfo("checking Update Manager updates" + msgTags[i]) +
-      "is performed";
+    logTestInfo(
+      "checking Update Manager updates" + msgTags[i] + "is performed"
+    );
     if (aHasActiveUpdate) {
       Assert.ok(
-        !!gUpdateManager.activeUpdate,
+        !!activeUpdate,
         msgTags[i] + "the active update should be defined"
       );
     } else {
       Assert.ok(
-        !gUpdateManager.activeUpdate,
+        !activeUpdate,
         msgTags[i] + "the active update should not be defined"
       );
     }
@@ -2220,10 +2231,7 @@ function setupActiveUpdate() {
   writeVersionFile(DEFAULT_UPDATE_VERSION);
   writeStatusFile(pendingState);
   reloadUpdateManagerData();
-  Assert.ok(
-    !!gUpdateManager.activeUpdate,
-    "the active update should be defined"
-  );
+  Assert.ok(!!gUpdateManager.readyUpdate, "the ready update should be defined");
 }
 
 /**
@@ -2285,7 +2293,7 @@ async function stageUpdate(
     );
 
     Assert.equal(
-      gUpdateManager.activeUpdate.state,
+      gUpdateManager.readyUpdate.state,
       aStateAfterStage,
       "the update state" + MSG_SHOULD_EQUAL
     );
@@ -4100,7 +4108,7 @@ function waitForUpdateDownload(aUpdates, aExpectedStatus) {
       onStartRequest: aRequest => {},
       onProgress: (aRequest, aContext, aProgress, aMaxProgress) => {},
       onStatus: (aRequest, aStatus, aStatusText) => {},
-      onStopRequest: (request, status) => {
+      onStopRequest(request, status) {
         gAUS.removeDownloadListener(this);
         Assert.equal(
           aExpectedStatus,
@@ -4181,15 +4189,7 @@ function stop_httpserver(aCallback) {
  *          The gecko version of the application
  */
 function createAppInfo(aID, aName, aVersion, aPlatformVersion) {
-  const XULAPPINFO_CONTRACTID = "@mozilla.org/xre/app-info;1";
-  const XULAPPINFO_CID = Components.ID(
-    "{c763b610-9d49-455a-bbd2-ede71682a1ac}"
-  );
-  let ifaces = [Ci.nsIXULAppInfo, Ci.nsIPlatformInfo, Ci.nsIXULRuntime];
-  if (AppConstants.platform == "win") {
-    ifaces.push(Ci.nsIWinAppHelper);
-  }
-  const XULAppInfo = {
+  updateAppInfo({
     vendor: APP_INFO_VENDOR,
     name: aName,
     ID: aID,
@@ -4201,26 +4201,7 @@ function createAppInfo(aID, aName, aVersion, aPlatformVersion) {
     logConsoleErrors: true,
     OS: "XPCShell",
     XPCOMABI: "noarch-spidermonkey",
-
-    QueryInterface: ChromeUtils.generateQI(ifaces),
-  };
-
-  const XULAppInfoFactory = {
-    createInstance(aOuter, aIID) {
-      if (aOuter == null) {
-        return XULAppInfo.QueryInterface(aIID);
-      }
-      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
-    },
-  };
-
-  let registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
-  registrar.registerFactory(
-    XULAPPINFO_CID,
-    "XULAppInfo",
-    XULAPPINFO_CONTRACTID,
-    XULAppInfoFactory
-  );
+  });
 }
 
 /**

@@ -81,11 +81,9 @@ class nsPrintSettingsService : public nsIPrintSettingsService {
    *
    * @return             printer settings instance
    */
-  virtual nsresult _CreatePrintSettings(nsIPrintSettings** _retval);
+  virtual nsresult _CreatePrintSettings(nsIPrintSettings** _retval) = 0;
 
   // Members
-  nsCOMPtr<nsIPrintSettings> mGlobalPrintSettings;
-
   nsCString mPrefName;
 };
 

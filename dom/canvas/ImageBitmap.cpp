@@ -6,10 +6,17 @@
 
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/CanvasUtils.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLMediaElementBinding.h"
+#include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
+#include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/StructuredCloneTags.h"
+#include "mozilla/dom/SVGImageElement.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -17,7 +24,10 @@
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ScopeExit.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIAsyncInputStream.h"
 #include "nsNetUtil.h"
+#include "nsLayoutUtils.h"
 #include "nsStreamUtils.h"
 #include "ImageUtils.h"
 #include "imgLoader.h"
@@ -28,8 +38,7 @@ using namespace mozilla::layers;
 using mozilla::dom::HTMLMediaElement_Binding::HAVE_METADATA;
 using mozilla::dom::HTMLMediaElement_Binding::NETWORK_EMPTY;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ImageBitmap, mParent)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ImageBitmap)
@@ -417,9 +426,8 @@ template <class ElementType>
 static already_AddRefed<SourceSurface> GetSurfaceFromElement(
     nsIGlobalObject* aGlobal, ElementType& aElement, bool* aWriteOnly,
     ErrorResult& aRv) {
-  nsLayoutUtils::SurfaceFromElementResult res =
-      nsLayoutUtils::SurfaceFromElement(
-          &aElement, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE);
+  SurfaceFromElementResult res = nsLayoutUtils::SurfaceFromElement(
+      &aElement, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE);
 
   RefPtr<SourceSurface> surface = res.GetSourceSurface();
   if (NS_WARN_IF(!surface)) {
@@ -438,7 +446,7 @@ ImageBitmap::ImageBitmap(nsIGlobalObject* aGlobal, layers::Image* aData,
       mData(aData),
       mSurface(nullptr),
       mDataWrapper(new ImageUtils(mData)),
-      mPictureRect(0, 0, aData->GetSize().width, aData->GetSize().height),
+      mPictureRect(aData->GetPictureRect()),
       mAlphaType(aAlphaType),
       mAllocatedImageData(false),
       mWriteOnly(aWriteOnly) {
@@ -660,9 +668,8 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateFromOffscreenCanvas(
   // Check write-only mode.
   bool writeOnly = aOffscreenCanvas.IsWriteOnly();
 
-  nsLayoutUtils::SurfaceFromElementResult res =
-      nsLayoutUtils::SurfaceFromOffscreenCanvas(
-          &aOffscreenCanvas, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE);
+  SurfaceFromElementResult res = nsLayoutUtils::SurfaceFromOffscreenCanvas(
+      &aOffscreenCanvas, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE);
 
   RefPtr<SourceSurface> surface = res.GetSourceSurface();
 
@@ -777,8 +784,8 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   nsCOMPtr<nsIPrincipal> principal = aVideoEl.GetCurrentVideoPrincipal();
   bool hadCrossOriginRedirects = aVideoEl.HadCrossOriginRedirects();
   bool CORSUsed = aVideoEl.GetCORSMode() != CORS_NONE;
-  bool writeOnly =
-      CheckWriteOnlySecurity(CORSUsed, principal, hadCrossOriginRedirects);
+  bool writeOnly = CanvasUtils::CheckWriteOnlySecurity(CORSUsed, principal,
+                                                       hadCrossOriginRedirects);
 
   // Create ImageBitmap.
   RefPtr<layers::Image> data = aVideoEl.GetCurrentImage();
@@ -1703,5 +1710,4 @@ void CreateImageBitmapFromBlob::WorkerShuttingDown() {
   mGlobalObject = nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -13,11 +13,10 @@
 #include <initializer_list>
 #include <stdint.h>
 
-#include "jsfriendapi.h"
 #include "jstypes.h"
 
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/Value.h"
-#include "vm/StringType.h"
 
 namespace js {
 
@@ -121,6 +120,15 @@ enum class BailoutKind : uint8_t {
   // Symbol was not equal the expected JS::Symbol.
   SpecificSymbolGuard,
 
+  // Bailout triggered by MGuardStringToIndex.
+  StringToIndexGuard,
+
+  // Bailout triggered by MGuardStringToInt32.
+  StringToInt32Guard,
+
+  // Bailout triggered by MGuardStringToDouble.
+  StringToDoubleGuard,
+
   // Unbox expects a given type, bails out if it doesn't get it.
   NonInt32Input,
   NonNumericInput,  // unboxing a double works with int32 too
@@ -138,6 +146,16 @@ enum class BailoutKind : uint8_t {
 
   // Array length did not fit in int32.
   NonInt32ArrayLength,
+
+  // Function length not available ("length" property was redefined or function
+  // has a lazy script) or did not fit in int32.
+  FunctionLength,
+
+  // Function name not available ("name" property was redefined)
+  FunctionName,
+
+  // Bailout triggered by MFromCodePoint
+  InvalidCodePoint,
 
   // END Normal bailouts
 
@@ -170,11 +188,68 @@ enum class BailoutKind : uint8_t {
   // Bailout triggered by MGuardProto or MGuardNullProto.
   ProtoGuard,
 
+  // Bailout triggered by MGuardIsProxy.
+  ProxyGuard,
+
+  // Bailout triggered by MGuardIsNotProxy.
+  NotProxyGuard,
+
+  // Bailout triggered by MGuardIsNotDOMProxy.
+  NotDOMProxyGuard,
+
+  // Bailout triggered by MGuardIsNotArrayBufferMaybeShared.
+  NotArrayBufferMaybeSharedGuard,
+
+  // Bailout triggered by MGuardIsTypedArray.
+  TypedArrayGuard,
+
+  // Bailout triggered by a megamorphic load or store.
+  MegamorphicAccess,
+
+  // Bailout triggered by MLoadArgumentsObjectArg and MArgumentsObjectLength.
+  ArgumentsObjectAccess,
+
+  // Bailout triggered by MArrayPopShift.
+  ArrayPopShift,
+
+  // Bailout triggered by MArraySlice.
+  ArraySlice,
+
   // Bailout triggered by MGuardValue.
   ValueGuard,
 
+  // Bailout triggered by MGuardNotOptimizedArguments.
+  NotOptimizedArgumentsGuard,
+
   // Bailout triggered by MGuardNullOrUndefined.
   NullOrUndefinedGuard,
+
+  // Bailout triggered by MGuardTagNotEqual.
+  TagNotEqualGuard,
+
+  // Bailout triggered by MGuardFunctionFlags.
+  FunctionFlagsGuard,
+
+  // Bailout triggered by MGuardFunctionIsNonBuiltinCtor.
+  FunctionIsNonBuiltinCtorGuard,
+
+  // Bailout triggered by MGuardFunctionKind.
+  FunctionKindGuard,
+
+  // Bailout triggered by MGuardFunctionScript.
+  FunctionScriptGuard,
+
+  // Bailout triggered by MGuardArrayIsPacked
+  PackedArrayGuard,
+
+  // Bailout triggered by MGuardHasGetterSetter
+  HasGetterSetterGuard,
+
+  // Bailout triggered by MLoadDOMExpandoValueGuardGeneration
+  DOMExpandoValueGenerationGuard,
+
+  // Bailout triggered by MGuardDOMExpandoMissingOrGuardShape
+  DOMExpandoMissingOrShapeGuard,
 
   // When we're trying to use an uninitialized lexical.
   UninitializedLexical,
@@ -189,81 +264,131 @@ inline const char* BailoutKindString(BailoutKind kind) {
   switch (kind) {
     // Normal bailouts.
     case BailoutKind::Inevitable:
-      return "BailoutKind::Inevitable";
+      return "Inevitable";
     case BailoutKind::DuringVMCall:
-      return "BailoutKind::DuringVMCall";
+      return "DuringVMCall";
     case BailoutKind::TooManyArguments:
-      return "BailoutKind::TooManyArguments";
+      return "TooManyArguments";
     case BailoutKind::DynamicNameNotFound:
-      return "BailoutKind::DynamicNameNotFound";
+      return "DynamicNameNotFound";
     case BailoutKind::Overflow:
-      return "BailoutKind::Overflow";
+      return "Overflow";
     case BailoutKind::Round:
-      return "BailoutKind::Round";
+      return "Round";
     case BailoutKind::NonPrimitiveInput:
-      return "BailoutKind::NonPrimitiveInput";
+      return "NonPrimitiveInput";
     case BailoutKind::PrecisionLoss:
-      return "BailoutKind::PrecisionLoss";
+      return "PrecisionLoss";
     case BailoutKind::TypeBarrierO:
-      return "BailoutKind::TypeBarrierO";
+      return "TypeBarrierO";
     case BailoutKind::TypeBarrierV:
-      return "BailoutKind::TypeBarrierV";
+      return "TypeBarrierV";
     case BailoutKind::Hole:
-      return "BailoutKind::Hole";
+      return "Hole";
     case BailoutKind::NoDenseElementsGuard:
-      return "BailoutKind::NoDenseElementsGuard";
+      return "NoDenseElementsGuard";
     case BailoutKind::NegativeIndex:
-      return "BailoutKind::NegativeIndex";
+      return "NegativeIndex";
     case BailoutKind::ObjectIdentityOrTypeGuard:
-      return "BailoutKind::ObjectIdentityOrTypeGuard";
+      return "ObjectIdentityOrTypeGuard";
     case BailoutKind::SpecificAtomGuard:
-      return "BailoutKind::SpecifcAtomGuard";
+      return "SpecifcAtomGuard";
     case BailoutKind::SpecificSymbolGuard:
-      return "BailoutKind::SpecifcSymbolGuard";
+      return "SpecificSymbolGuard";
+    case BailoutKind::StringToIndexGuard:
+      return "StringToIndexGuard";
+    case BailoutKind::StringToInt32Guard:
+      return "StringToInt32Guard";
+    case BailoutKind::StringToDoubleGuard:
+      return "StringToDoubleGuard";
     case BailoutKind::NonInt32Input:
-      return "BailoutKind::NonInt32Input";
+      return "NonInt32Input";
     case BailoutKind::NonNumericInput:
-      return "BailoutKind::NonNumericInput";
+      return "NonNumericInput";
     case BailoutKind::NonBooleanInput:
-      return "BailoutKind::NonBooleanInput";
+      return "NonBooleanInput";
     case BailoutKind::NonObjectInput:
-      return "BailoutKind::NonObjectInput";
+      return "NonObjectInput";
     case BailoutKind::NonStringInput:
-      return "BailoutKind::NonStringInput";
+      return "NonStringInput";
     case BailoutKind::NonSymbolInput:
-      return "BailoutKind::NonSymbolInput";
+      return "NonSymbolInput";
     case BailoutKind::NonBigIntInput:
-      return "BailoutKind::NonBigIntInput";
+      return "NonBigIntInput";
     case BailoutKind::Debugger:
-      return "BailoutKind::Debugger";
+      return "Debugger";
     case BailoutKind::FirstExecution:
-      return "BailoutKind::FirstExecution";
+      return "FirstExecution";
     case BailoutKind::NonInt32ArrayLength:
-      return "BailoutKind::NonInt32ArrayLength";
+      return "NonInt32ArrayLength";
+    case BailoutKind::FunctionLength:
+      return "FunctionLength";
+    case BailoutKind::FunctionName:
+      return "FunctionName";
+    case BailoutKind::InvalidCodePoint:
+      return "InvalidCodePoint";
 
     // Bailouts caused by invalid assumptions.
     case BailoutKind::OverflowInvalidate:
-      return "BailoutKind::OverflowInvalidate";
+      return "OverflowInvalidate";
     case BailoutKind::DoubleOutput:
-      return "BailoutKind::DoubleOutput";
+      return "DoubleOutput";
 
     // Other bailouts.
     case BailoutKind::ArgumentCheck:
-      return "BailoutKind::ArgumentCheck";
+      return "ArgumentCheck";
     case BailoutKind::BoundsCheck:
-      return "BailoutKind::BoundsCheck";
+      return "BoundsCheck";
     case BailoutKind::ShapeGuard:
-      return "BailoutKind::ShapeGuard";
+      return "ShapeGuard";
     case BailoutKind::ProtoGuard:
-      return "BailoutKind::ProtoGuard";
+      return "ProtoGuard";
+    case BailoutKind::ProxyGuard:
+      return "ProxyGuard";
+    case BailoutKind::NotProxyGuard:
+      return "NotProxyGuard";
+    case BailoutKind::NotDOMProxyGuard:
+      return "NotDOMProxyGuard";
+    case BailoutKind::NotArrayBufferMaybeSharedGuard:
+      return "NotArrayBufferMaybeSharedGuard";
+    case BailoutKind::TypedArrayGuard:
+      return "TypedArrayGuard";
+    case BailoutKind::MegamorphicAccess:
+      return "MegamorphicAccess";
+    case BailoutKind::ArgumentsObjectAccess:
+      return "ArgumentsObjectAccess";
+    case BailoutKind::ArrayPopShift:
+      return "ArrayPopShift";
+    case BailoutKind::ArraySlice:
+      return "ArraySlice";
     case BailoutKind::ValueGuard:
-      return "BailoutKind::ValueGuard";
+      return "ValueGuard";
+    case BailoutKind::NotOptimizedArgumentsGuard:
+      return "NotOptimizedArgumentsGuard";
     case BailoutKind::NullOrUndefinedGuard:
-      return "BailoutKind::NullOrUndefinedGuard";
+      return "NullOrUndefinedGuard";
+    case BailoutKind::TagNotEqualGuard:
+      return "TagNotEqualGuard";
+    case BailoutKind::FunctionFlagsGuard:
+      return "FunctionFlagsGuard";
+    case BailoutKind::FunctionIsNonBuiltinCtorGuard:
+      return "FunctionIsNonBuiltinCtorGuard";
+    case BailoutKind::FunctionKindGuard:
+      return "FunctionKindGuard";
+    case BailoutKind::FunctionScriptGuard:
+      return "FunctionScriptGuard";
+    case BailoutKind::PackedArrayGuard:
+      return "PackedArrayGuard";
+    case BailoutKind::HasGetterSetterGuard:
+      return "HasGetterSetterGuard";
+    case BailoutKind::DOMExpandoValueGenerationGuard:
+      return "DOMExpandoValueGenerationGuard";
+    case BailoutKind::DOMExpandoMissingOrShapeGuard:
+      return "DOMExpandoMissingOrShapeGuard";
     case BailoutKind::UninitializedLexical:
-      return "BailoutKind::UninitializedLexical";
+      return "UninitializedLexical";
     case BailoutKind::IonExceptionDebugMode:
-      return "BailoutKind::IonExceptionDebugMode";
+      return "IonExceptionDebugMode";
 
     case BailoutKind::Limit:
       break;
@@ -427,6 +552,16 @@ class SimdConstant {
     return type_;
   }
 
+  bool isFloatingType() const {
+    MOZ_ASSERT(defined());
+    return type_ >= Float32x4;
+  }
+
+  bool isIntegerType() const {
+    MOZ_ASSERT(defined());
+    return type_ <= Int64x2;
+  }
+
   // Get the raw bytes of the constant.
   const void* bytes() const { return u.i8x16; }
 
@@ -460,28 +595,32 @@ class SimdConstant {
     return u.f64x2;
   }
 
-  bool operator==(const SimdConstant& rhs) const {
+  bool bitwiseEqual(const SimdConstant& rhs) const {
     MOZ_ASSERT(defined() && rhs.defined());
-    if (type() != rhs.type()) {
-      return false;
-    }
-    // Takes negative zero into account, as it's a bit comparison.
     return memcmp(&u, &rhs.u, sizeof(u)) == 0;
   }
-  bool operator!=(const SimdConstant& rhs) const { return !operator==(rhs); }
 
-  bool isIntegerZero() const {
-    return type_ <= Int64x2 && u.i64x2[0] == 0 && u.i64x2[1] == 0;
+  bool isZeroBits() const {
+    MOZ_ASSERT(defined());
+    return u.i64x2[0] == 0 && u.i64x2[1] == 0;
   }
 
-  // SimdConstant is a HashPolicy
+  bool isOneBits() const {
+    MOZ_ASSERT(defined());
+    return ~u.i64x2[0] == 0 && ~u.i64x2[1] == 0;
+  }
+
+  // SimdConstant is a HashPolicy.  Currently we discriminate by type, but it
+  // may be that we should only be discriminating by int vs float.
   using Lookup = SimdConstant;
+
   static HashNumber hash(const SimdConstant& val) {
     uint32_t hash = mozilla::HashBytes(&val.u, sizeof(val.u));
     return mozilla::AddToHash(hash, val.type_);
   }
+
   static bool match(const SimdConstant& lhs, const SimdConstant& rhs) {
-    return lhs == rhs;
+    return lhs.type() == rhs.type() && lhs.bitwiseEqual(rhs);
   }
 };
 
@@ -793,7 +932,10 @@ static constexpr int MakeABIFunctionType(
 
 }  // namespace detail
 
-enum ABIFunctionType {
+enum ABIFunctionType : uint32_t {
+  // The enum must be explicitly typed to avoid UB: some validly constructed
+  // members are larger than any explicitly declared members.
+
   // VM functions that take 0-9 non-double arguments
   // and return a non-double value.
   Args_General0 = ArgType_General << RetType_Shift,
@@ -938,9 +1080,8 @@ enum ABIFunctionType {
       ArgType_General, {ArgType_General, ArgType_Int32}),
   Args_General_GeneralInt32Int32 = detail::MakeABIFunctionType(
       ArgType_General, {ArgType_General, ArgType_Int32, ArgType_Int32}),
-  Args_General_GeneralInt32Int32General = detail::MakeABIFunctionType(
-      ArgType_General,
-      {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General}),
+  Args_General_GeneralInt32General = detail::MakeABIFunctionType(
+      ArgType_General, {ArgType_General, ArgType_Int32, ArgType_General}),
 };
 
 static constexpr ABIFunctionType MakeABIFunctionType(

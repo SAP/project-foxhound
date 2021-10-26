@@ -165,7 +165,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    * Content Viewer that is currently loaded for this DocShell.  This may
    * change as the underlying content changes.
    */
-  readonly attribute nsIContentViewer contentViewer;
+  [infallible] readonly attribute nsIContentViewer contentViewer;
 
   /**
    * Get the id of the outer window that is or will be in this docshell.
@@ -460,7 +460,7 @@ interface nsIDocShell : nsIDocShellTreeItem
    * Find out whether the docshell is currently in the middle of a page
    * transition. This is set just before the pagehide/unload events fire.
    */
-  readonly attribute boolean isInUnload;
+  [infallible] readonly attribute boolean isInUnload;
 
   /**
    * Disconnects this docshell's editor from its window, and stores the
@@ -475,30 +475,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * and should be treated accordingly.
    **/
   attribute boolean isOffScreenBrowser;
-
-  /**
-   * Allows nsDocumentViewer to tell the top-level same-type docshell that
-   * one of the documents under it is printing.
-   */
-  [noscript, notxpcom] void setIsPrinting(in boolean aIsPrinting);
-
-  /**
-   * This method should only be called on a docShell that has been specifically
-   * created to display a print preview document.  If the current document
-   * viewer isn't initialized for print preview when this method is called, it
-   * is replaced with a new viewer with an about:blank document (with the URL
-   * about:printpreview).  The viewer is then returned, ready for the print
-   * preview document to be constructed when viewer.printPreview() is called.
-   *
-   * The same viewer will be returned on subsequent calls since various bits of
-   * code assume that, once created, the viewer is never replaced.  Note,
-   * however, that the viewer's document will be replaced with a new document
-   * each time printPreview() is called on it (which is what we do to take
-   * account of print preview settings changes).  Replacing the document
-   * viewer's document breaks the normally unchanging 1:1 relationship between
-   * a document and its viewer, but that seems to be okay.
-   */
-  nsIWebBrowserPrint initOrReusePrintPreviewViewer();
 
   /**
    * Propagated to the print preview document viewer.  Must only be called on
@@ -521,21 +497,14 @@ interface nsIDocShell : nsIDocShellTreeItem
   [infallible] attribute boolean isActive;
 
   /**
-   * Set if the media element in this docShell should be suspended when the
-   * docShell is inactive.
-   */
-  [infallible] attribute boolean suspendMediaWhenInactive;
-
-
-  /**
    * The ID of the docshell in the session history.
    */
-  readonly attribute nsIDPtr historyID;
+  readonly attribute nsIDRef historyID;
 
   /**
    * Helper method for accessing this value from C++
    */
-  [noscript, notxpcom] nsID HistoryID();
+  [noscript, notxpcom] nsIDRef HistoryID();
 
   /**
    * Sets whether a docshell is an app tab. An app tab docshell may behave
@@ -721,29 +690,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   void makeEditable(in boolean inWaitForUriLoad);
 
-
-  /**
-   * Add a Child SHEntry for a frameset page, given the child's loadtype.
-   * If aCloneChildren is true, then aCloneReference's children will be
-   * cloned onto aHistoryEntry.
-   */
-  void addChildSHEntry(in nsISHEntry aCloneReference,
-                       in nsISHEntry aHistoryEntry,
-                       in long aChildOffset,
-                       in unsigned long aLoadType,
-                       in boolean aCloneChilden);
-
-  /**
-   * Removes nsISHEntry objects related to this docshell from session history.
-   * Use this only with subdocuments, like iframes.
-   */
-  void removeFromSessionHistory();
-
-  /**
-   * Set when an iframe/frame is added dynamically.
-   */
-  [infallible] attribute boolean createdDynamically;
-
   /**
    * Returns false for mLSHE, true for mOSHE
    */
@@ -800,8 +746,6 @@ interface nsIDocShell : nsIDocShellTreeItem
                                                                   in string asyncCause);
   [noscript,notxpcom,nostdcall] void notifyJSRunToCompletionStop();
 
-  [noscript] void GetOSHEId(out uint32_t aSHEntryId);
-
   /**
    * This attribute determines whether a document which is not about:blank has
    * already be loaded by this docShell.
@@ -842,27 +786,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   [noscript,notxpcom,nostdcall] BrowserChildRef GetBrowserChild();
 
   [noscript,nostdcall,notxpcom] nsCommandManager GetCommandManager();
-
-  cenum TouchEventsOverride: 8 {
-    /**
-     * Override platform/pref default behaviour and force-disable touch events.
-     */
-    TOUCHEVENTS_OVERRIDE_DISABLED = 0,
-    /**
-     * Override platform/pref default behaviour and force-enable touch events.
-     */
-    TOUCHEVENTS_OVERRIDE_ENABLED = 1,
-    /**
-     * Don't override the platform/pref default behaviour for touch events.
-     */
-    TOUCHEVENTS_OVERRIDE_NONE = 2,
-  };
-
-  /**
-   * This allows chrome to override the default choice of whether touch events
-   * are available on a specific docshell. Possible values are listed below.
-   */
-  [infallible] attribute nsIDocShell_TouchEventsOverride touchEventsOverride;
 
   cenum MetaViewportOverride: 8 {
     /**
@@ -934,23 +857,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   mozilla::HTMLEditor* GetHTMLEditor();
   nsresult SetHTMLEditor(mozilla::HTMLEditor* aHTMLEditor);
 %}
-
-  /**
-   * Allowed CSS display modes. This needs to be kept in
-   * sync with similar values in ServoStyleConsts.h
-   */
-  cenum DisplayMode: 8 {
-    DISPLAY_MODE_BROWSER = 0,
-    DISPLAY_MODE_MINIMAL_UI = 1,
-    DISPLAY_MODE_STANDALONE = 2,
-    DISPLAY_MODE_FULLSCREEN = 3,
-  };
-
-  /**
-   * Display mode for this docshell. Defaults to DISPLAY_MODE_BROWSER.
-   * Media queries only look at the value in the top-most docshell.
-   */
-  [infallible] attribute nsIDocShell_DisplayMode displayMode;
 
   /**
    * The message manager for this docshell.  This does not throw, but

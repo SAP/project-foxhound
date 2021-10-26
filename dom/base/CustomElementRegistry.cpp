@@ -11,6 +11,7 @@
 #include "mozilla/dom/CustomElementRegistryBinding.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/HTMLElementBinding.h"
+#include "mozilla/dom/PrimitiveConversions.h"
 #include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/XULElementBinding.h"
 #include "mozilla/dom/Promise.h"
@@ -18,14 +19,14 @@
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/AutoRestore.h"
 #include "nsHTMLTags.h"
 #include "jsapi.h"
 #include "js/ForOfIterator.h"  // JS::ForOfIterator
 #include "xpcprivate.h"
 #include "nsGlobalWindow.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 //-----------------------------------------------------
 // CustomElementUpgradeReaction
@@ -847,13 +848,15 @@ void CustomElementRegistry::Define(
   auto callbacksHolder = MakeUnique<LifecycleCallbacks>();
   nsTArray<RefPtr<nsAtom>> observedAttributes;
   AutoTArray<RefPtr<nsAtom>, 2> disabledFeatures;
+  bool formAssociated = false;
   bool disableInternals = false;
   bool disableShadow = false;
   {  // Set mIsCustomDefinitionRunning.
     /**
      * 9. Set this CustomElementRegistry's element definition is running flag.
      */
-    AutoSetRunningFlag as(this);
+    AutoRestore<bool> restoreRunning(mIsCustomDefinitionRunning);
+    mIsCustomDefinitionRunning = true;
 
     /**
      * 14.1. Let prototype be Get(constructor, "prototype"). Rethrow any
@@ -921,7 +924,7 @@ void CustomElementRegistry::Define(
      *       disabledFeaturesIterable to a sequence<DOMString>.
      *       Rethrow any exceptions from the conversion.
      */
-    if (StaticPrefs::dom_webcomponents_elementInternals_enabled()) {
+    if (StaticPrefs::dom_webcomponents_formAssociatedCustomElement_enabled()) {
       if (!JSObjectToAtomArray(aCx, constructor, u"disabledFeatures"_ns,
                                disabledFeatures, aRv)) {
         return;
@@ -936,6 +939,24 @@ void CustomElementRegistry::Define(
       //        "shadow".
       disableShadow = disabledFeatures.Contains(
           static_cast<nsStaticAtom*>(nsGkAtoms::shadow));
+
+      // 14.11. Let formAssociatedValue be Get(constructor, "formAssociated").
+      //        Rethrow any exceptions.
+      JS::Rooted<JS::Value> formAssociatedValue(aCx);
+      if (!JS_GetProperty(aCx, constructor, "formAssociated",
+                          &formAssociatedValue)) {
+        aRv.NoteJSContextException(aCx);
+        return;
+      }
+
+      // 14.12. Set formAssociated to the result of converting
+      //        formAssociatedValue to a boolean. Rethrow any exceptions from
+      //        the conversion.
+      if (!ValueToPrimitive<bool, eDefault>(
+              aCx, formAssociatedValue, "formAssociated", &formAssociated)) {
+        aRv.NoteJSContextException(aCx);
+        return;
+      }
     }
   }  // Unset mIsCustomDefinitionRunning
 
@@ -958,7 +979,7 @@ void CustomElementRegistry::Define(
 
   RefPtr<CustomElementDefinition> definition = new CustomElementDefinition(
       nameAtom, localNameAtom, nameSpaceID, &aFunctionConstructor,
-      std::move(observedAttributes), std::move(callbacksHolder),
+      std::move(observedAttributes), std::move(callbacksHolder), formAssociated,
       disableInternals, disableShadow);
 
   CustomElementDefinition* def = definition.get();
@@ -983,7 +1004,7 @@ void CustomElementRegistry::Define(
   RefPtr<Promise> promise;
   mWhenDefinedPromiseMap.Remove(nameAtom, getter_AddRefs(promise));
   if (promise) {
-    promise->MaybeResolveWithUndefined();
+    promise->MaybeResolve(def->mConstructor);
   }
 
   // Dispatch a "customelementdefined" event for DevTools.
@@ -1077,8 +1098,9 @@ already_AddRefed<Promise> CustomElementRegistry::WhenDefined(
     return promise.forget();
   }
 
-  if (mCustomDefinitions.GetWeak(nameAtom)) {
-    promise->MaybeResolve(JS::UndefinedHandleValue);
+  if (CustomElementDefinition* definition =
+          mCustomDefinitions.GetWeak(nameAtom)) {
+    promise->MaybeResolve(definition->mConstructor);
     return promise.forget();
   }
 
@@ -1470,16 +1492,16 @@ CustomElementDefinition::CustomElementDefinition(
     nsAtom* aType, nsAtom* aLocalName, int32_t aNamespaceID,
     CustomElementConstructor* aConstructor,
     nsTArray<RefPtr<nsAtom>>&& aObservedAttributes,
-    UniquePtr<LifecycleCallbacks>&& aCallbacks, bool aDisableInternals,
-    bool aDisableShadow)
+    UniquePtr<LifecycleCallbacks>&& aCallbacks, bool aFormAssociated,
+    bool aDisableInternals, bool aDisableShadow)
     : mType(aType),
       mLocalName(aLocalName),
       mNamespaceID(aNamespaceID),
       mConstructor(aConstructor),
       mObservedAttributes(std::move(aObservedAttributes)),
       mCallbacks(std::move(aCallbacks)),
+      mFormAssociated(aFormAssociated),
       mDisableInternals(aDisableInternals),
       mDisableShadow(aDisableShadow) {}
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

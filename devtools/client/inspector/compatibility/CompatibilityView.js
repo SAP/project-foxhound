@@ -73,18 +73,9 @@ class CompatibilityView {
     return this.inspector.toolbox.resourceWatcher;
   }
 
-  _init() {
-    const {
-      onShowBoxModelHighlighterForNode: showBoxModelHighlighterForNode,
-      setSelectedNode,
-    } = this.inspector.getCommonComponentProps();
-    const {
-      onHideBoxModelHighlighter: hideBoxModelHighlighter,
-    } = this.inspector.getPanel("boxmodel").getComponentProps();
-
+  async _init() {
+    const { setSelectedNode } = this.inspector.getCommonComponentProps();
     const compatibilityApp = new CompatibilityApp({
-      hideBoxModelHighlighter,
-      showBoxModelHighlighterForNode,
       setSelectedNode,
     });
 
@@ -113,7 +104,7 @@ class CompatibilityView {
       this._onPanelSelected
     );
 
-    this.resourceWatcher.watchResources(
+    await this.resourceWatcher.watchResources(
       [this.resourceWatcher.TYPES.CSS_CHANGE],
       {
         onAvailable: this._onResourceAvailable,
@@ -122,6 +113,8 @@ class CompatibilityView {
         ignoreExistingResources: true,
       }
     );
+
+    this.inspector.emitForTests("compatibilityview-initialized");
   }
 
   _isAvailable() {
@@ -205,7 +198,7 @@ class CompatibilityView {
         continue;
       }
 
-      const retainedNodes = removed.filter(node => node?.actorID);
+      const retainedNodes = removed.filter(node => node && !node.isDestroyed());
       cleanupDestroyedNodes =
         cleanupDestroyedNodes || retainedNodes.length !== removed.length;
 
@@ -254,13 +247,15 @@ class CompatibilityView {
     );
   }
 
-  _onResourceAvailable({ resource }) {
-    // Style changes applied inline directly to
-    // the element and its changes are monitored by
-    // _onMarkupMutation via markupmutation events.
-    // Hence those changes can be ignored here
-    if (resource.source?.type !== "element") {
-      this._onChangeAdded(resource);
+  _onResourceAvailable(resources) {
+    for (const resource of resources) {
+      // Style changes applied inline directly to
+      // the element and its changes are monitored by
+      // _onMarkupMutation via markupmutation events.
+      // Hence those changes can be ignored here
+      if (resource.source?.type !== "element") {
+        this._onChangeAdded(resource);
+      }
     }
   }
 

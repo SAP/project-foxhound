@@ -20,6 +20,9 @@ module.exports = async function({ targetList, targetFront, onAvailable }) {
   }
 
   const webConsoleFront = await targetFront.getFront("console");
+  if (webConsoleFront.isDestroyed()) {
+    return;
+  }
 
   // Request notifying about new messages. Here the "PageError" type start listening for
   // both actual PageErrors (emitted as "pageError" events) as well as LogMessages (
@@ -29,19 +32,7 @@ module.exports = async function({ targetList, targetFront, onAvailable }) {
 
   // Fetch already existing messages
   // /!\ The actor implementation requires to call startListeners("PageError") first /!\
-  // On older server (< v77), cached messages have to be retrieved at the same time as
-  // PageError messages.
-  let { messages } = await webConsoleFront.getCachedMessages([
-    webConsoleFront.traits.newCacheStructure ? "LogMessage" : "PageError",
-  ]);
-
-  // On older server (< v77), we're also getting pageError cached messages, so we need
-  // to ignore those.
-  messages = messages.filter(message => {
-    return (
-      webConsoleFront.traits.newCacheStructure || message._type === "LogMessage"
-    );
-  });
+  const { messages } = await webConsoleFront.getCachedMessages(["LogMessage"]);
 
   for (const message of messages) {
     // Handling cached messages for servers older than Firefox 78.

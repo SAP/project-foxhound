@@ -24,7 +24,7 @@
 #define kMinUnwrittenChanges 300
 #define kMinDumpInterval 20000  // in milliseconds
 #define kMaxBufSize 16384
-#define kIndexVersion 0x00000009
+#define kIndexVersion 0x0000000A
 #define kUpdateIndexStartDelay 50000  // in milliseconds
 #define kTelemetryReportBytesLimit (2U * 1024U * 1024U * 1024U)  // 2GB
 
@@ -305,9 +305,6 @@ nsresult CacheIndex::InitInternal(nsIFile* aCacheDirectory) {
 
   mStartTime = TimeStamp::NowLoRes();
 
-  mTotalBytesWritten = CacheObserver::CacheAmountWritten();
-  mTotalBytesWritten <<= 10;
-
   ReadIndexFromDisk();
 
   return NS_OK;
@@ -424,8 +421,6 @@ nsresult CacheIndex::Shutdown() {
   }
 
   bool sanitize = CacheObserver::ClearCacheOnShutdown();
-
-  CacheObserver::SetCacheAmountWritten(index->mTotalBytesWritten >> 10);
 
   LOG(
       ("CacheIndex::Shutdown() - [state=%d, indexOnDiskIsValid=%d, "
@@ -1718,6 +1713,10 @@ void CacheIndex::WriteIndexToDisk() {
   // dirty flag
   NetworkEndian::writeUint32(mRWBuf + mRWBufPos, 1);
   mRWBufPos += sizeof(uint32_t);
+  // amount of data written to the cache
+  NetworkEndian::writeUint32(mRWBuf + mRWBufPos,
+                             static_cast<uint32_t>(mTotalBytesWritten >> 10));
+  mRWBufPos += sizeof(uint32_t);
 
   mSkipEntries = 0;
 }
@@ -2199,6 +2198,11 @@ void CacheIndex::ParseRecords() {
       }
     }
     pos += sizeof(uint32_t);
+
+    uint64_t dataWritten = NetworkEndian::readUint32(mRWBuf + pos);
+    pos += sizeof(uint32_t);
+    dataWritten <<= 10;
+    mTotalBytesWritten += dataWritten;
   }
 
   uint32_t hashOffset = pos;
@@ -3270,11 +3274,6 @@ void CacheIndex::ChangeState(EState aNewState) {
     return;
   }
 
-  if ((mState == READING || mState == BUILDING || mState == UPDATING) &&
-      aNewState == READY) {
-    ReportHashStats();
-  }
-
   // Try to evict entries over limit everytime we're leaving state READING,
   // BUILDING or UPDATING, but not during shutdown or when removing all
   // entries.
@@ -3803,73 +3802,6 @@ size_t CacheIndex::SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
   return mallocSizeOf(gInstance) + SizeOfExcludingThis(mallocSizeOf);
 }
 
-namespace {
-
-class HashComparator {
- public:
-  bool Equals(CacheIndexRecord* a, CacheIndexRecord* b) const {
-    return memcmp(&a->mHash, &b->mHash, sizeof(SHA1Sum::Hash)) == 0;
-  }
-  bool LessThan(CacheIndexRecord* a, CacheIndexRecord* b) const {
-    return memcmp(&a->mHash, &b->mHash, sizeof(SHA1Sum::Hash)) < 0;
-  }
-};
-
-void ReportHashSizeMatch(const SHA1Sum::Hash* aHash1,
-                         const SHA1Sum::Hash* aHash2) {
-  const uint32_t* h1 = reinterpret_cast<const uint32_t*>(aHash1);
-  const uint32_t* h2 = reinterpret_cast<const uint32_t*>(aHash2);
-
-  for (uint32_t i = 0; i < 5; ++i) {
-    if (h1[i] != h2[i]) {
-      uint32_t bitsDiff = h1[i] ^ h2[i];
-      bitsDiff = NetworkEndian::readUint32(&bitsDiff);
-
-      // count leading zeros in bitsDiff
-      static const uint8_t debruijn32[32] = {
-          0, 31, 9, 30, 3, 8,  13, 29, 2,  5,  7,  21, 12, 24, 28, 19,
-          1, 10, 4, 14, 6, 22, 25, 20, 11, 15, 23, 26, 16, 27, 17, 18};
-
-      bitsDiff |= bitsDiff >> 1;
-      bitsDiff |= bitsDiff >> 2;
-      bitsDiff |= bitsDiff >> 4;
-      bitsDiff |= bitsDiff >> 8;
-      bitsDiff |= bitsDiff >> 16;
-      bitsDiff++;
-
-      uint8_t hashSizeMatch =
-          debruijn32[bitsDiff * 0x076be629 >> 27] + (i << 5);
-      Telemetry::Accumulate(Telemetry::NETWORK_CACHE_HASH_STATS, hashSizeMatch);
-
-      return;
-    }
-  }
-
-  MOZ_ASSERT(false, "Found a collision in the index!");
-}
-
-}  // namespace
-
-void CacheIndex::ReportHashStats() {
-  // We're gathering the hash stats only once, exclude too small caches.
-  if (CacheObserver::HashStatsReported() || mFrecencyArray.Length() < 15000) {
-    return;
-  }
-
-  nsTArray<CacheIndexRecord*> records;
-  for (auto iter = mFrecencyArray.Iter(); !iter.Done(); iter.Next()) {
-    records.AppendElement(iter.Get());
-  }
-
-  records.Sort(HashComparator());
-
-  for (uint32_t i = 1; i < records.Length(); i++) {
-    ReportHashSizeMatch(&records[i - 1]->mHash, &records[i]->mHash);
-  }
-
-  CacheObserver::SetHashStatsReported();
-}
-
 // static
 void CacheIndex::UpdateTotalBytesWritten(uint32_t aBytesWritten) {
   StaticMutexAutoLock lock(sLock);
@@ -3888,16 +3820,8 @@ void CacheIndex::UpdateTotalBytesWritten(uint32_t aBytesWritten) {
       index->mState == READY && !index->mIndexNeedsUpdate &&
       !index->mShuttingDown) {
     index->DoTelemetryReport();
-
     index->mTotalBytesWritten = 0;
-    CacheObserver::SetCacheAmountWritten(0);
     return;
-  }
-
-  uint64_t writtenKB = index->mTotalBytesWritten >> 10;
-  // Store number of written kilobytes to prefs after writing at least 10MB.
-  if ((writtenKB - CacheObserver::CacheAmountWritten()) > (10 * 1024)) {
-    CacheObserver::SetCacheAmountWritten(writtenKB);
   }
 }
 

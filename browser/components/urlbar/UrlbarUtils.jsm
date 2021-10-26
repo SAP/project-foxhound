@@ -23,6 +23,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  FormHistory: "resource://gre/modules/FormHistory.jsm",
   Log: "resource://gre/modules/Log.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.jsm",
@@ -30,6 +31,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
+  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
+  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
 });
 
 var UrlbarUtils = {
@@ -100,12 +103,38 @@ var UrlbarUtils = {
     OTHER_NETWORK: 6,
   },
 
+  /**
+   * Buckets used for logging telemetry to the FX_URLBAR_SELECTED_RESULT_TYPE_2
+   * histogram.
+   */
+  SELECTED_RESULT_TYPES: {
+    autofill: 0,
+    bookmark: 1,
+    history: 2,
+    keyword: 3,
+    searchengine: 4,
+    searchsuggestion: 5,
+    switchtab: 6,
+    tag: 7,
+    visiturl: 8,
+    remotetab: 9,
+    extension: 10,
+    "preloaded-top-site": 11, // This is currently unused.
+    tip: 12,
+    topsite: 13,
+    formhistory: 14,
+    dynamic: 15,
+    tabtosearch: 16,
+    // n_values = 32, so you'll need to create a new histogram if you need more.
+  },
+
   // This defines icon locations that are commonly used in the UI.
   ICON: {
     // DEFAULT is defined lazily so it doesn't eagerly initialize PlacesUtils.
     EXTENSION: "chrome://browser/content/extension.svg",
     HISTORY: "chrome://browser/skin/history.svg",
     SEARCH_GLASS: "chrome://browser/skin/search-glass.svg",
+    SEARCH_GLASS_INVERTED: "chrome://browser/skin/search-glass-inverted.svg",
     TIP: "chrome://browser/skin/tip.svg",
   },
 
@@ -131,13 +160,14 @@ var UrlbarUtils = {
     SUGGESTED: 2,
   },
 
-  // Search results with keywords and empty queries are called "keyword offers".
-  // When the user selects a keyword offer, the keyword followed by a space is
-  // put in the input as a hint that the user can search using the keyword.
-  // Depending on the use case, keyword-offer results can show or not show the
-  // keyword itself.
+  // "Keyword offers" are search results with keywords that enter search mode
+  // when the user picks them.  Depending on the use case, a keyword offer can
+  // visually show or hide the keyword itself in its result.  For example,
+  // typing "@" by itself will show keyword offers for all engines with @
+  // aliases, and those results will preview their search modes. When a keyword
+  // offer is a heuristic -- like an autofilled @  alias -- usually it hides
+  // its keyword since the user is already typing it.
   KEYWORD_OFFER: {
-    NONE: 0,
     SHOW: 1,
     HIDE: 2,
   },
@@ -153,6 +183,40 @@ var UrlbarUtils = {
   // Regex matching single word hosts with an optional port; no spaces, auth or
   // path-like chars are admitted.
   REGEXP_SINGLE_WORD: /^[^\s@:/?#]+(:\d+)?$/,
+
+  // Names of engines shipped in Firefox that search the web in general.  These
+  // are used to update the input placeholder when entering search mode.
+  // TODO (Bug 1658661): Don't hardcode this list; store search engine category
+  // information someplace better.
+  WEB_ENGINE_NAMES: new Set([
+    "百度", // Baidu
+    "百度搜索", // "Baidu Search", the name of Baidu's OpenSearch engine.
+    "Bing",
+    "DuckDuckGo",
+    "Ecosia",
+    "Google",
+    "Qwant",
+    "Yandex",
+    "Яндекс", // Yandex, non-EN
+  ]),
+
+  // Valid entry points for search mode. If adding a value here, please update
+  // telemetry documentation and Scalars.yaml.
+  SEARCH_MODE_ENTRY: new Set([
+    "bookmarkmenu",
+    "handoff",
+    "keywordoffer",
+    "oneoff",
+    "other",
+    "shortcut",
+    "tabmenu",
+    "tabtosearch",
+    "tabtosearch_onboard",
+    "topsites_newtab",
+    "topsites_urlbar",
+    "touchbar",
+    "typed",
+  ]),
 
   /**
    * Returns the payload schema for the given type of result.
@@ -412,12 +476,15 @@ var UrlbarUtils = {
             : null,
         };
       case UrlbarUtils.RESULT_TYPE.SEARCH: {
-        const engine = Services.search.getEngineByName(result.payload.engine);
-        let [url, postData] = this.getSearchQueryUrl(
-          engine,
-          result.payload.suggestion || result.payload.query
-        );
-        return { url, postData };
+        if (result.payload.engine) {
+          const engine = Services.search.getEngineByName(result.payload.engine);
+          let [url, postData] = this.getSearchQueryUrl(
+            engine,
+            result.payload.suggestion || result.payload.query
+          );
+          return { url, postData };
+        }
+        break;
       }
       case UrlbarUtils.RESULT_TYPE.TIP: {
         // Return the button URL. Consumers must check payload.helpUrl
@@ -463,6 +530,9 @@ var UrlbarUtils = {
    *          dropdown.
    */
   getSpanForResult(result) {
+    if (result.resultSpan) {
+      return result.resultSpan;
+    }
     switch (result.type) {
       case UrlbarUtils.RESULT_TYPE.URL:
       case UrlbarUtils.RESULT_TYPE.BOOKMARKS:
@@ -476,6 +546,37 @@ var UrlbarUtils = {
         return 3;
     }
     return 1;
+  },
+
+  /**
+   * Returns a search mode object if a token should enter search mode when
+   * typed. This does not handle engine aliases.
+   *
+   * @param {UrlbarUtils.RESTRICT} token
+   *   A restriction token to convert to search mode.
+   * @returns {object}
+   *   A search mode object. Null if search mode should not be entered. See
+   *   setSearchMode documentation for details.
+   */
+  searchModeForToken(token) {
+    if (!UrlbarPrefs.get("update2")) {
+      return null;
+    }
+
+    switch (token) {
+      case UrlbarTokenizer.RESTRICT.BOOKMARK:
+        return { source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS };
+      case UrlbarTokenizer.RESTRICT.HISTORY:
+        return { source: UrlbarUtils.RESULT_SOURCE.HISTORY };
+      case UrlbarTokenizer.RESTRICT.OPENPAGE:
+        return { source: UrlbarUtils.RESULT_SOURCE.TABS };
+      case UrlbarTokenizer.RESTRICT.SEARCH:
+        return {
+          engineName: UrlbarSearchUtils.getDefaultEngine(this.isPrivate).name,
+        };
+    }
+
+    return null;
   },
 
   /**
@@ -571,6 +672,21 @@ var UrlbarUtils = {
       suffix = "/" + suffix;
     }
     return [spec, prefix, suffix];
+  },
+
+  /**
+   * Strips a PSL verified public suffix from an hostname.
+   * @param {string} host A host name.
+   * @returns {string} Host name without the public suffix.
+   * @note Because stripping the full suffix requires to verify it against the
+   *   Public Suffix List, this call is not the cheapest, and thus it should
+   *   not be used in hot paths.
+   */
+  stripPublicSuffixFromHost(host) {
+    return host.substring(
+      0,
+      host.length - Services.eTLD.getKnownPublicSuffixFromHost(host).length
+    );
   },
 
   /**
@@ -705,7 +821,8 @@ var UrlbarUtils = {
     if (!searchString) {
       throw new Error("Must pass a non-null search string");
     }
-    let context = new UrlbarQueryContext({
+
+    let options = {
       allowAutofill: false,
       isPrivate: PrivateBrowsingUtils.isWindowPrivate(window),
       maxResults: 1,
@@ -715,7 +832,15 @@ var UrlbarUtils = {
       ),
       allowSearchSuggestions: false,
       providers: ["UnifiedComplete", "HeuristicFallback"],
-    });
+    };
+    if (window.gURLBar.searchMode) {
+      let searchMode = window.gURLBar.searchMode;
+      options.searchMode = searchMode;
+      if (searchMode.source) {
+        options.sources = [searchMode.source];
+      }
+    }
+    let context = new UrlbarQueryContext(options);
     await UrlbarProvidersManager.startQuery(context);
     if (!context.heuristicResult) {
       throw new Error("There should always be an heuristic result");
@@ -745,6 +870,112 @@ var UrlbarUtils = {
       return Log.repository.getLoggerWithMessagePrefix("urlbar", prefix + "::");
     }
     return this._logger;
+  },
+
+  /**
+   * Returns the name of a result source.  The name is the lowercase name of the
+   * corresponding property in the RESULT_SOURCE object.
+   *
+   * @param {string} source A UrlbarUtils.RESULT_SOURCE value.
+   * @returns {string} The token's name, a lowercased name in the RESULT_SOURCE
+   *   object.
+   */
+  getResultSourceName(source) {
+    if (!this._resultSourceNamesBySource) {
+      this._resultSourceNamesBySource = new Map();
+      for (let [name, src] of Object.entries(this.RESULT_SOURCE)) {
+        this._resultSourceNamesBySource.set(src, name.toLowerCase());
+      }
+    }
+    return this._resultSourceNamesBySource.get(source);
+  },
+
+  /**
+   * Add the search to form history.  This also updates any existing form
+   * history for the search.
+   * @param {UrlbarInput} input The UrlbarInput object requesting the addition.
+   * @param {string} value The value to add.
+   * @param {string} [source] The source of the addition, usually
+   *        the name of the engine the search was made with.
+   * @returns {Promise} resolved once the operation is complete
+   */
+  addToFormHistory(input, value, source) {
+    // If the user types a search engine alias without a search string,
+    // we have an empty search string and we can't bump it.
+    // We also don't want to add history in private browsing mode.
+    if (!value || input.isPrivate) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      FormHistory.update(
+        {
+          op: "bump",
+          fieldname: input.formHistoryName,
+          value,
+          source,
+        },
+        {
+          handleError: reject,
+          handleCompletion: resolve,
+        }
+      );
+    });
+  },
+
+  /**
+   * Extracts a telemetry type from a result, used by scalars and event
+   * telemetry.
+   *
+   * @param {UrlbarResult} result The result to analyze.
+   * @returns {string} A string type for telemetry.
+   * @note New types should be added to Scalars.yaml under the urlbar.picked
+   *       category and documented in the in-tree documentation. A data-review
+   *       is always necessary.
+   */
+  telemetryTypeFromResult(result) {
+    if (!result) {
+      return "unknown";
+    }
+    switch (result.type) {
+      case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
+        return "switchtab";
+      case UrlbarUtils.RESULT_TYPE.SEARCH:
+        if (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY) {
+          return "formhistory";
+        }
+        if (result.providerName == "TabToSearch") {
+          return "tabtosearch";
+        }
+        return result.payload.suggestion ? "searchsuggestion" : "searchengine";
+      case UrlbarUtils.RESULT_TYPE.URL:
+        if (result.autofill) {
+          return "autofill";
+        }
+        if (
+          result.source == UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL &&
+          result.heuristic
+        ) {
+          return "visiturl";
+        }
+        return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
+          ? "bookmark"
+          : "history";
+      case UrlbarUtils.RESULT_TYPE.KEYWORD:
+        return "keyword";
+      case UrlbarUtils.RESULT_TYPE.OMNIBOX:
+        return "extension";
+      case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
+        return "remotetab";
+      case UrlbarUtils.RESULT_TYPE.TIP:
+        return "tip";
+      case UrlbarUtils.RESULT_TYPE.DYNAMIC:
+        if (result.providerName == "TabToSearch") {
+          // This is the onboarding result.
+          return "tabtosearch";
+        }
+        return "dynamic";
+    }
+    return "unknown";
   },
 };
 
@@ -805,9 +1036,6 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       isPrivateEngine: {
         type: "boolean",
       },
-      isSearchHistory: {
-        type: "boolean",
-      },
       keyword: {
         type: "string",
       },
@@ -853,7 +1081,10 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       isPinned: {
         type: "boolean",
       },
-      overriddenSearchTopSite: {
+      isSponsored: {
+        type: "boolean",
+      },
+      sendAttributionRequest: {
         type: "boolean",
       },
       tags: {
@@ -1041,10 +1272,9 @@ class UrlbarQueryContext {
    *   The container id where this context was generated, if any.
    * @param {array} [options.sources]
    *   A list of acceptable UrlbarUtils.RESULT_SOURCE for the context.
-   * @param {string} [options.engineName]
-   *   If sources is restricting to just SEARCH, this property can be used to
-   *   pick a specific search engine, by setting it to the name under which the
-   *   engine is registered with the search service.
+   * @param {object} [options.searchMode]
+   *   The input's current search mode.  See UrlbarInput.setSearchMode for a
+   *   description.
    * @param {boolean} [options.allowSearchSuggestions]
    *   Whether to allow search suggestions.  This is a veto, meaning that when
    *   false, suggestions will not be fetched, but when true, some other
@@ -1071,9 +1301,9 @@ class UrlbarQueryContext {
     for (let [prop, checkFn, defaultValue] of [
       ["allowSearchSuggestions", v => true, true],
       ["currentPage", v => typeof v == "string" && !!v.length],
-      ["engineName", v => typeof v == "string" && !!v.length],
       ["formHistoryName", v => typeof v == "string" && !!v.length],
       ["providers", v => Array.isArray(v) && v.length],
+      ["searchMode", v => v && typeof v == "object"],
       ["sources", v => Array.isArray(v) && v.length],
     ]) {
       if (prop in options) {
@@ -1087,8 +1317,11 @@ class UrlbarQueryContext {
     }
 
     this.lastResultCount = 0;
-    this.allHeuristicResults = [];
+    // Note that Set is not serializable through JSON, so these may not be
+    // easily shared with add-ons.
     this.pendingHeuristicProviders = new Set();
+    this.deferUserSelectionProviders = new Set();
+    this.trimmedSearchString = this.searchString.trim();
     this.userContextId =
       options.userContextId ||
       Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
@@ -1119,7 +1352,7 @@ class UrlbarQueryContext {
    * serializable so they can be sent to extensions.
    */
   get fixupInfo() {
-    if (this.searchString.trim() && !this._fixupInfo) {
+    if (this.trimmedSearchString && !this._fixupInfo) {
       let flags =
         Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
         Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -1129,7 +1362,7 @@ class UrlbarQueryContext {
 
       try {
         let info = Services.uriFixup.getFixupURIInfo(
-          this.searchString.trim(),
+          this.trimmedSearchString,
           flags
         );
         this._fixupInfo = {
@@ -1304,6 +1537,21 @@ class UrlbarProvider {
   onEngagement(isPrivate, state) {}
 
   /**
+   * Called when a result from the provider is selected. "Selected" refers to
+   * the user highlighing the result with the arrow keys/Tab, before it is
+   * picked. onSelection is also called when a user clicks a result. In the
+   * event of a click, onSelection is called just before pickResult. Note that
+   * this is called when heuristic results are pre-selected.
+   *
+   * @param {UrlbarResult} result
+   *   The result that was selected.
+   * @param {Element} element
+   *   The element in the result's view that was selected.
+   * @abstract
+   */
+  onSelection(result, element) {}
+
+  /**
    * This is called only for dynamic result types, when the urlbar view updates
    * the view of one of the results of the provider.  It should return an object
    * describing the view update that looks like this:
@@ -1364,6 +1612,20 @@ class UrlbarProvider {
    */
   getViewUpdate(result) {
     return null;
+  }
+
+  /**
+   * Defines whether the view should defer user selection events while waiting
+   * for the first result from this provider.
+   *
+   * @returns {boolean} Whether the provider wants to defer user selection
+   *          events.
+   * @see UrlbarEventBufferer
+   * @note UrlbarEventBufferer has a timeout after which user events will be
+   *       processed regardless.
+   */
+  get deferUserSelection() {
+    return false;
   }
 }
 

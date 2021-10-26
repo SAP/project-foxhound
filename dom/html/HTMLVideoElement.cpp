@@ -48,37 +48,7 @@ nsGenericHTMLElement* NS_NewHTMLVideoElement(
   return element;
 }
 
-namespace mozilla {
-namespace dom {
-
-class HTMLVideoElement::SecondaryVideoOutput : public VideoOutput {
-  // Main thread only.
-  WeakPtr<HTMLMediaElement> mElement;
-
- public:
-  SecondaryVideoOutput(HTMLMediaElement* aElement,
-                       VideoFrameContainer* aContainer,
-                       AbstractThread* aMainThread)
-      : VideoOutput(aContainer, aMainThread), mElement(aElement) {}
-
-  void Forget() {
-    MOZ_ASSERT(NS_IsMainThread());
-    mElement = nullptr;
-  }
-
-  void NotifyDirectListenerInstalled(InstallationResult aResult) override {
-    if (aResult == InstallationResult::SUCCESS) {
-      mMainThread->Dispatch(NS_NewRunnableFunction(
-          "HTMLMediaElement::OnSecondaryVideoContainerInstalled",
-          [self = RefPtr<SecondaryVideoOutput>(this), this] {
-            if (mElement) {
-              mElement->OnSecondaryVideoContainerInstalled(
-                  mVideoFrameContainer);
-            }
-          }));
-    }
-  }
-};
+namespace mozilla::dom {
 
 nsresult HTMLVideoElement::Clone(mozilla::dom::NodeInfo* aNodeInfo,
                                  nsINode** aResult) const {
@@ -103,14 +73,8 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLVideoElement)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(HTMLVideoElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualCloneTarget)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualCloneTargetPromise)
-  if (tmp->mSecondaryVideoOutput) {
-    MOZ_DIAGNOSTIC_ASSERT(tmp->mSelectedVideoStreamTrack);
-    tmp->mSelectedVideoStreamTrack->RemoveVideoOutput(
-        tmp->mSecondaryVideoOutput);
-    tmp->mSecondaryVideoOutput->Forget();
-    tmp->mSecondaryVideoOutput = nullptr;
-  }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualCloneSource)
+  tmp->mSecondaryVideoOutput = nullptr;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END_INHERITED(HTMLMediaElement)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLVideoElement,
@@ -121,11 +85,14 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLVideoElement,
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 HTMLVideoElement::HTMLVideoElement(already_AddRefed<NodeInfo>&& aNodeInfo)
-    : HTMLMediaElement(std::move(aNodeInfo)), mIsOrientationLocked(false) {
+    : HTMLMediaElement(std::move(aNodeInfo)),
+      mIsOrientationLocked(false),
+      mVideoWatchManager(this, mAbstractMainThread) {
   DecoderDoctorLogger::LogConstruction(this);
 }
 
 HTMLVideoElement::~HTMLVideoElement() {
+  mVideoWatchManager.Shutdown();
   DecoderDoctorLogger::LogDestruction(this);
 }
 
@@ -138,31 +105,32 @@ void HTMLVideoElement::UpdateMediaSize(const nsIntSize& aSize) {
   }
 }
 
-nsresult HTMLVideoElement::GetVideoSize(nsIntSize* size) {
+Maybe<CSSIntSize> HTMLVideoElement::GetVideoSize() const {
   if (!mMediaInfo.HasVideo()) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
   if (mDisableVideo) {
-    return NS_ERROR_FAILURE;
+    return Nothing();
   }
 
+  CSSIntSize size;
   switch (mMediaInfo.mVideo.mRotation) {
     case VideoInfo::Rotation::kDegree_90:
     case VideoInfo::Rotation::kDegree_270: {
-      size->width = mMediaInfo.mVideo.mDisplay.height;
-      size->height = mMediaInfo.mVideo.mDisplay.width;
+      size.width = mMediaInfo.mVideo.mDisplay.height;
+      size.height = mMediaInfo.mVideo.mDisplay.width;
       break;
     }
     case VideoInfo::Rotation::kDegree_0:
     case VideoInfo::Rotation::kDegree_180:
     default: {
-      size->height = mMediaInfo.mVideo.mDisplay.height;
-      size->width = mMediaInfo.mVideo.mDisplay.width;
+      size.height = mMediaInfo.mVideo.mDisplay.height;
+      size.width = mMediaInfo.mVideo.mDisplay.width;
       break;
     }
   }
-  return NS_OK;
+  return Some(size);
 }
 
 void HTMLVideoElement::Invalidate(bool aImageSizeChanged,
@@ -555,22 +523,23 @@ void HTMLVideoElement::MaybeBeginCloningVisually() {
   }
 
   if (mDecoder) {
-    VideoFrameContainer* container =
-        mVisualCloneTarget->GetVideoFrameContainer();
-    if (container) {
-      mDecoder->SetSecondaryVideoContainer(container);
-    }
+    mDecoder->SetSecondaryVideoContainer(
+        mVisualCloneTarget->GetVideoFrameContainer());
     UpdateMediaControlAfterPictureInPictureModeChanged();
+    OwnerDoc()->EnableChildElementInPictureInPictureMode();
   } else if (mSrcStream) {
     VideoFrameContainer* container =
         mVisualCloneTarget->GetVideoFrameContainer();
-    if (container && mSelectedVideoStreamTrack) {
-      MOZ_DIAGNOSTIC_ASSERT(!mSecondaryVideoOutput);
-      mSecondaryVideoOutput = MakeRefPtr<SecondaryVideoOutput>(
-          this, container, mAbstractMainThread);
-      mSelectedVideoStreamTrack->AddVideoOutput(mSecondaryVideoOutput);
+    if (container) {
+      mSecondaryVideoOutput =
+          MakeRefPtr<FirstFrameVideoOutput>(container, mAbstractMainThread);
+      mVideoWatchManager.Watch(
+          mSecondaryVideoOutput->mFirstFrameRendered,
+          &HTMLVideoElement::OnSecondaryVideoOutputFirstFrameRendered);
+      SetSecondaryMediaStreamRenderer(container, mSecondaryVideoOutput);
     }
     UpdateMediaControlAfterPictureInPictureModeChanged();
+    OwnerDoc()->EnableChildElementInPictureInPictureMode();
   }
 }
 
@@ -579,14 +548,16 @@ void HTMLVideoElement::EndCloningVisually() {
 
   if (mDecoder) {
     mDecoder->SetSecondaryVideoContainer(nullptr);
+    OwnerDoc()->DisableChildElementInPictureInPictureMode();
   } else if (mSrcStream) {
-    if (mSecondaryVideoOutput &&
-        mVisualCloneTarget->mSelectedVideoStreamTrack) {
-      mVisualCloneTarget->mSelectedVideoStreamTrack->RemoveVideoOutput(
-          mSecondaryVideoOutput);
-      mSecondaryVideoOutput->Forget();
+    if (mSecondaryVideoOutput) {
+      mVideoWatchManager.Unwatch(
+          mSecondaryVideoOutput->mFirstFrameRendered,
+          &HTMLVideoElement::OnSecondaryVideoOutputFirstFrameRendered);
       mSecondaryVideoOutput = nullptr;
     }
+    SetSecondaryMediaStreamRenderer(nullptr);
+    OwnerDoc()->DisableChildElementInPictureInPictureMode();
   }
 
   Unused << mVisualCloneTarget->SetVisualCloneSource(nullptr);
@@ -620,5 +591,9 @@ void HTMLVideoElement::OnSecondaryVideoContainerInstalled(
   mVisualCloneTargetPromise = nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+void HTMLVideoElement::OnSecondaryVideoOutputFirstFrameRendered() {
+  OnSecondaryVideoContainerInstalled(
+      mVisualCloneTarget->GetVideoFrameContainer());
+}
+
+}  // namespace mozilla::dom

@@ -10,6 +10,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Variant.h"
 
+#include "builtin/ModuleObject.h"
 #include "gc/Policy.h"
 #include "jit/JitAllocPolicy.h"
 #include "jit/JitContext.h"
@@ -18,6 +19,9 @@
 
 namespace js {
 
+class ArgumentsObject;
+class CallObject;
+class LexicalEnvironmentObject;
 class ModuleEnvironmentObject;
 
 namespace jit {
@@ -29,7 +33,7 @@ class WarpScriptSnapshot;
 #define WARP_OP_SNAPSHOT_LIST(_) \
   _(WarpArguments)               \
   _(WarpRegExp)                  \
-  _(WarpFunctionProto)           \
+  _(WarpBuiltinObject)           \
   _(WarpGetIntrinsic)            \
   _(WarpGetImport)               \
   _(WarpLambda)                  \
@@ -147,18 +151,18 @@ class WarpRegExp : public WarpOpSnapshot {
 #endif
 };
 
-// The proto for JSOp::FunctionProto if it exists at compile-time.
-class WarpFunctionProto : public WarpOpSnapshot {
-  WarpGCPtr<JSObject*> proto_;
+// The object for JSOp::BuiltinObject if it exists at compile-time.
+class WarpBuiltinObject : public WarpOpSnapshot {
+  WarpGCPtr<JSObject*> builtin_;
 
  public:
-  static constexpr Kind ThisKind = Kind::WarpFunctionProto;
+  static constexpr Kind ThisKind = Kind::WarpBuiltinObject;
 
-  WarpFunctionProto(uint32_t offset, JSObject* proto)
-      : WarpOpSnapshot(ThisKind, offset), proto_(proto) {
-    MOZ_ASSERT(proto);
+  WarpBuiltinObject(uint32_t offset, JSObject* builtin)
+      : WarpOpSnapshot(ThisKind, offset), builtin_(builtin) {
+    MOZ_ASSERT(builtin);
   }
-  JSObject* proto() const { return proto_; }
+  JSObject* builtin() const { return builtin_; }
 
   void traceData(JSTracer* trc);
 

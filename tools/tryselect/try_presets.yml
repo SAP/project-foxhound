@@ -9,6 +9,29 @@
 
 # yamllint disable rule:line-length
 
+builds:
+    selector: fuzzy
+    description: >-
+        Run builds without any of the extras.
+    query:
+        - "^build- !fuzzing !notarization !reproduced !rusttests !signing !upload-symbols"
+
+builds-debug:
+    selector: fuzzy
+    description: >-
+        Run the bare minimum of debug build jobs to ensure builds work on
+        all tier-1 platforms.
+    query:
+        - "^build- 'debug !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
+
+builds-debugopt:
+    selector: fuzzy
+    description: >-
+        Run the bare minimum of debug and opt build jobs to ensure builds work on
+        all tier-1 platforms.
+    query:
+        - "^build- !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
+
 debugger-tests:
     selector: fuzzy
     description: >-
@@ -28,9 +51,11 @@ devtools:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        - "'mochitest-devtools-chrome-e10s | 'mochitest-chrome-1proc 'windows10-64/ | 'macosx1014-64"
+        # 'mochitest-devtools-chrome should match the "-e10s" and "-fis-e10s" flavors
+        # explicitly target "'windows10-64(-shippable)?/" to avoid duplicate jobs on -qr platforms
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'windows10-64/ | 'windows10-64-shippable/ | 'macosx1014-64"
         # Linux is being named "linux1804" and may change over time, so use a more flexible search
-        - "'mochitest-devtools-chrome-e10s | 'mochitest-chrome-1proc | 'mochitest-devtools-chrome-fis-e10s linux '64/"
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64/ | '64-shippable/"
         - "'xpcshell-e10s 'linux '64/"
 
 devtools-linux:
@@ -40,7 +65,7 @@ devtools-linux:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        - "'mochitest-devtools-chrome-e10s | 'mochitest-chrome-1proc 'linux '64/"
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64/ | '64-shippable/"
         - "'xpcshell-e10s 'linux '64/"
 
 fpush-linux-android:
@@ -59,6 +84,25 @@ fpush-linux-android:
         - "'test-linux1804 'debug- !-shippable !-asan !-fis-"
         - "'test-android-em 'debug"
         - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar-"
+
+marionette:
+    selector: fuzzy
+    description: >-
+        Runs the tests relevant to the Marionette protocol, which underpins
+        many test harnesses as well as our WebDriver implementation.
+        This preset can be filtered down further to limit it to a specific
+        platform or to opt/debug tasks only. For example:
+        |mach try --preset marionette -xq "'linux 'opt"|
+    query:
+        - "'marionette !asan !shippable !gpu !headless"
+        - "'awsy-base"
+        - "'firefox-ui !asan"
+        - "'platform 'wdspec !qr | fis"
+        - "'xpcshell !asan !qr !spi !tsan"
+        - "'platform 'reftest 'debug !qr | fis -1$"
+        - "'platform !reftest !wdspec 'debug -1$"
+        - "'mochitest-browser 'debug !spi -1$"
+        - "'reftest 'debug !platform !gpu !no-accel !qr -1$"
 
 perf:
     selector: fuzzy

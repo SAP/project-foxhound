@@ -21,9 +21,14 @@ function initPage() {
 
   document.l10n.setAttributes(
     explanation1,
-    "about-httpsonly-explanation-unavailable",
+    "about-httpsonly-explanation-unavailable2",
     { websiteUrl: pageUrl.host }
   );
+
+  const baseSupportURL = RPMGetFormatURLPref("app.support.baseURL");
+  document
+    .getElementById("learnMoreLink")
+    .setAttribute("href", baseSupportURL + "https-only-prefs");
 
   document
     .getElementById("openInsecure")
@@ -42,7 +47,9 @@ function initPage() {
 /*  Button Events  */
 
 function onOpenInsecureButtonClick() {
-  RPMSendAsyncMessage("openInsecure");
+  RPMSendAsyncMessage("openInsecure", {
+    inFrame: window.top != window,
+  });
 }
 
 function onReturnButtonClick() {

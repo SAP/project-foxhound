@@ -48,12 +48,13 @@ async function testLink(link, name) {
   is(
     win.document.getElementById("location").value,
     name,
-    "file name should match"
+    `file name should match (${link})`
   );
 
   await BrowserTestUtils.closeWindow(win);
 }
 
+// Cross-origin URL does not trigger a download
 async function testLocation(link, url) {
   let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
 
@@ -74,11 +75,22 @@ async function runTest(url) {
 
   await testLink("link1", "test.txt");
   await testLink("link2", "video.ogg");
-  await testLink("link3", "just some video");
+  await testLink("link3", "just some video.ogg");
   await testLink("link4", "with-target.txt");
-  await testLink("link5", "javascript.txt");
+  await testLink("link5", "javascript.html");
   await testLink("link6", "test.blob");
-  await testLocation("link7", "http://example.com/");
+  await testLink("link7", "test.file");
+  await testLink("link8", "download_page_3.txt");
+  await testLink("link9", "download_page_3.txt");
+  await testLink("link10", "download_page_4.txt");
+  await testLink("link11", "download_page_4.txt");
+  await testLocation("link12", "http://example.com/");
+
+  // Check that we enforce the correct extension if the website's
+  // is bogus or missing. These extensions can differ slightly (ogx vs ogg,
+  // htm vs html) on different OSes.
+  let oggExtension = getMIMEInfoForType("application/ogg").primaryExtension;
+  await testLink("link13", "no file extension." + oggExtension);
 
   BrowserTestUtils.removeTab(tab);
 }

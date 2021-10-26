@@ -147,9 +147,7 @@ function makeMultiLocaleExtension(version) {
 }
 
 add_task(async function setup() {
-  Services.prefs.setBoolPref("browser.search.gModernConfig", true);
-
-  await useTestEngines("test-extensions", null, TEST_CONFIG);
+  await SearchTestUtils.useTestEngines("test-extensions", null, TEST_CONFIG);
   await promiseStartupManager();
 
   registerCleanupFunction(promiseShutdownManager);

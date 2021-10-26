@@ -26,6 +26,7 @@
 #include "ds/Sort.h"
 #include "gc/FreeOp.h"
 #include "gc/Marking.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/Proxy.h"
 #include "util/Poison.h"
@@ -126,9 +127,12 @@ static inline bool Enumerate(JSContext* cx, HandleObject pobj, jsid id,
   // Symbol-keyed properties and nonenumerable properties are skipped unless
   // the caller specifically asks for them. A caller can also filter out
   // non-symbols by asking for JSITER_SYMBOLSONLY. PrivateName symbols are
-  // always skipped.
+  // skipped unless JSITER_PRIVATE is passed.
   if (JSID_IS_SYMBOL(id)) {
-    if (!(flags & JSITER_SYMBOLS) || JSID_TO_SYMBOL(id)->isPrivateName()) {
+    if (!(flags & JSITER_SYMBOLS)) {
+      return true;
+    }
+    if (!(flags & JSITER_PRIVATE) && id.isPrivateName()) {
       return true;
     }
   } else {
@@ -209,7 +213,7 @@ static bool EnumerateNativeProperties(JSContext* cx, HandleNativeObject pobj,
     // Collect any typed array or shared typed array elements from this
     // object.
     if (pobj->is<TypedArrayObject>()) {
-      size_t len = pobj->as<TypedArrayObject>().length();
+      size_t len = pobj->as<TypedArrayObject>().length().deprecatedGetUint32();
       for (size_t i = 0; i < len; i++) {
         if (!Enumerate<CheckForDuplicates>(cx, pobj, INT_TO_JSID(i),
                                            /* enumerable = */ true, flags,
@@ -401,8 +405,6 @@ struct SortComparatorIds {
     RootedString astr(cx), bstr(cx);
     if (JSID_IS_SYMBOL(a)) {
       MOZ_ASSERT(JSID_IS_SYMBOL(b));
-      MOZ_ASSERT(!JSID_TO_SYMBOL(a)->isPrivateName());
-      MOZ_ASSERT(!JSID_TO_SYMBOL(b)->isPrivateName());
       JS::SymbolCode ca = JSID_TO_SYMBOL(a)->code();
       JS::SymbolCode cb = JSID_TO_SYMBOL(b)->code();
       if (ca != cb) {
@@ -552,7 +554,7 @@ JS_FRIEND_API bool js::GetPropertyKeys(JSContext* cx, HandleObject obj,
                                        MutableHandleIdVector props) {
   return Snapshot(cx, obj,
                   flags & (JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS |
-                           JSITER_SYMBOLSONLY),
+                           JSITER_SYMBOLSONLY | JSITER_PRIVATE),
                   props);
 }
 
@@ -617,6 +619,11 @@ static inline size_t AllocationSize(size_t propertyCount, size_t guardCount) {
 static PropertyIteratorObject* CreatePropertyIterator(
     JSContext* cx, Handle<JSObject*> objBeingIterated, HandleIdVector props,
     uint32_t numGuards, uint32_t guardKey) {
+  if (props.length() > NativeIterator::PropCountLimit) {
+    ReportAllocationOverflow(cx);
+    return nullptr;
+  }
+
   Rooted<PropertyIteratorObject*> propIter(cx, NewPropertyIteratorObject(cx));
   if (!propIter) {
     return nullptr;
@@ -693,47 +700,29 @@ NativeIterator::NativeIterator(JSContext* cx,
           reinterpret_cast<GCPtrLinearString*>(guardsBegin() + numGuards)),
       propertiesEnd_(propertyCursor_),
       guardKey_(guardKey),
-      flagsAndCount_(0)  // note: no Flags::Initialized
+      flagsAndCount_(
+          initialFlagsAndCount(props.length()))  // note: no Flags::Initialized
 {
   MOZ_ASSERT(!*hadError);
 
-  // NOTE: This must be done first thing: PropertyIteratorObject::finalize
-  //       can only free |this| (and not leak it) if this has happened.
+  // NOTE: This must be done first thing: The caller can't free `this` on error
+  //       because it has GCPtr fields whose barriers have already fired; the
+  //       store buffer has pointers to them. Only the GC can free `this` (via
+  //       PropertyIteratorObject::finalize).
   propIter->setNativeIterator(this);
 
-  if (!setInitialPropertyCount(props.length())) {
-    ReportAllocationOverflow(cx);
-    *hadError = true;
-    return;
-  }
-
+  // The GC asserts on finalization that `this->allocationSize()` matches the
+  // `nbytes` passed to `AddCellMemory`. So once these lines run, we must make
+  // `this->allocationSize()` correct. That means infallibly initializing the
+  // guards. It's OK for the constructor to fail after that.
   size_t nbytes = AllocationSize(props.length(), numGuards);
   AddCellMemory(propIter, nbytes, MemoryUse::NativeIterator);
-
-  for (size_t i = 0, len = props.length(); i < len; i++) {
-    JSLinearString* str = IdToString(cx, props[i]);
-    if (!str) {
-      *hadError = true;
-      return;
-    }
-
-    // Placement-new the next property string at the end of the currently
-    // computed property strings.
-    GCPtrLinearString* loc = propertiesEnd_;
-
-    // Increase the overall property string count before initializing the
-    // property string, so this construction isn't on a location not known
-    // to the GC yet.
-    propertiesEnd_++;
-
-    new (loc) GCPtrLinearString(str);
-  }
 
   if (numGuards > 0) {
     // Construct guards into the guard array.  Also recompute the guard key,
     // which incorporates Shape* and ObjectGroup* addresses that could have
     // changed during a GC triggered in (among other places) |IdToString|
-    //. above.
+    // above.
     JSObject* pobj = objBeingIterated;
 #ifdef DEBUG
     uint32_t i = 0;
@@ -741,20 +730,11 @@ NativeIterator::NativeIterator(JSContext* cx,
     uint32_t key = 0;
     do {
       ReceiverGuard guard(pobj);
-
-      // Placement-new the next HeapReceiverGuard at the end of the
-      // currently initialized HeapReceiverGuards.
-      HeapReceiverGuard* loc = guardsEnd_;
-
-      // Increase the overall guard-count before initializing the
-      // HeapReceiverGuard, so this construction isn't on a location not
-      // known to the GC.
+      new (guardsEnd_) HeapReceiverGuard(guard);
       guardsEnd_++;
 #ifdef DEBUG
       i++;
 #endif
-
-      new (loc) HeapReceiverGuard(guard);
 
       key = mozilla::AddToHash(key, guard.hash());
 
@@ -767,10 +747,18 @@ NativeIterator::NativeIterator(JSContext* cx,
     guardKey_ = key;
     MOZ_ASSERT(i == numGuards);
   }
-
-  // |guardsEnd_| is now guaranteed to point at the start of properties, so
-  // we can mark this initialized.
   MOZ_ASSERT(static_cast<void*>(guardsEnd_) == propertyCursor_);
+
+  for (size_t i = 0, len = props.length(); i < len; i++) {
+    JSLinearString* str = IdToString(cx, props[i]);
+    if (!str) {
+      *hadError = true;
+      return;
+    }
+    new (propertiesEnd_) GCPtrLinearString(str);
+    propertiesEnd_++;
+  }
+
   markInitialized();
 
   MOZ_ASSERT(!*hadError);
@@ -908,6 +896,22 @@ bool js::EnumerateProperties(JSContext* cx, HandleObject obj,
   return Snapshot(cx, obj, 0, props);
 }
 
+#ifdef DEBUG
+static bool PrototypeMayHaveIndexedProperties(NativeObject* nobj) {
+  JSObject* proto = nobj->staticPrototype();
+  if (!proto) {
+    return false;
+  }
+
+  if (proto->is<NativeObject>() &&
+      proto->as<NativeObject>().getDenseInitializedLength() > 0) {
+    return true;
+  }
+
+  return ObjectMayHaveExtraIndexedProperties(proto);
+}
+#endif
+
 static JSObject* GetIterator(JSContext* cx, HandleObject obj) {
   MOZ_ASSERT(!obj->is<PropertyIteratorObject>());
   MOZ_ASSERT(cx->compartment() == obj->compartment(),
@@ -931,10 +935,29 @@ static JSObject* GetIterator(JSContext* cx, HandleObject obj) {
     return nullptr;
   }
 
-  if (obj->isSingleton() && !JSObject::setIteratedSingleton(cx, obj)) {
-    return nullptr;
+  if (IsTypeInferenceEnabled()) {
+    if (obj->isSingleton() && !JSObject::setIteratedSingleton(cx, obj)) {
+      return nullptr;
+    }
+    MarkObjectGroupFlags(cx, obj, OBJECT_FLAG_ITERATED);
   }
-  MarkObjectGroupFlags(cx, obj, OBJECT_FLAG_ITERATED);
+
+  // If the object has dense elements, mark the dense elements as
+  // maybe-in-iteration.
+  //
+  // The iterator is a snapshot so if indexed properties are added after this
+  // point we don't need to do anything. However, the object might have sparse
+  // elements now that can be densified later. To account for this, we set the
+  // maybe-in-iteration flag also in NativeObject::maybeDensifySparseElements.
+  //
+  // In debug builds, AssertDenseElementsNotIterated is used to check the flag
+  // is set correctly.
+  if (obj->is<NativeObject>() &&
+      obj->as<NativeObject>().getDenseInitializedLength() > 0) {
+    if (!obj->as<NativeObject>().markDenseElementsMaybeInIteration(cx)) {
+      return nullptr;
+    }
+  }
 
   PropertyIteratorObject* iterobj =
       CreatePropertyIterator(cx, obj, keys, numGuards, 0);
@@ -943,6 +966,14 @@ static JSObject* GetIterator(JSContext* cx, HandleObject obj) {
   }
 
   cx->check(iterobj);
+
+#ifdef DEBUG
+  if (obj->is<NativeObject>()) {
+    if (PrototypeMayHaveIndexedProperties(&obj->as<NativeObject>())) {
+      iterobj->getNativeIterator()->setMaybeHasIndexedPropertiesFromProto();
+    }
+  }
+#endif
 
   // Cache the iterator object.
   if (numGuards > 0) {
@@ -1504,6 +1535,42 @@ bool js::SuppressDeletedElement(JSContext* cx, HandleObject obj,
   }
   return SuppressDeletedPropertyHelper(cx, obj, str);
 }
+
+#ifdef DEBUG
+void js::AssertDenseElementsNotIterated(NativeObject* obj) {
+  // Search for active iterators for |obj| and assert they don't contain any
+  // property keys that are dense elements. This is used to check correctness
+  // of the MAYBE_IN_ITERATION flag on ObjectElements.
+  //
+  // Ignore iterators that may contain indexed properties from objects on the
+  // prototype chain, as that can result in false positives. See bug 1656744.
+
+  // Limit the number of properties we check to avoid slowing down debug builds
+  // too much.
+  static constexpr uint32_t MaxPropsToCheck = 10;
+  uint32_t propsChecked = 0;
+
+  NativeIterator* enumeratorList = ObjectRealm::get(obj).enumerators;
+  NativeIterator* ni = enumeratorList->next();
+
+  while (ni != enumeratorList) {
+    if (ni->objectBeingIterated() == obj &&
+        !ni->maybeHasIndexedPropertiesFromProto()) {
+      for (GCPtrLinearString* idp = ni->nextProperty();
+           idp < ni->propertiesEnd(); ++idp) {
+        uint32_t index;
+        if (idp->get()->isIndex(&index)) {
+          MOZ_ASSERT(!obj->containsDenseElement(index));
+        }
+        if (++propsChecked > MaxPropsToCheck) {
+          return;
+        }
+      }
+    }
+    ni = ni->next();
+  }
+}
+#endif
 
 static const JSFunctionSpec iterator_methods[] = {
     JS_SELF_HOSTED_SYM_FN(iterator, "IteratorIdentity", 0, 0), JS_FS_END};

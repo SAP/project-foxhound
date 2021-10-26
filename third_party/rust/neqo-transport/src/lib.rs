@@ -9,6 +9,7 @@
 
 use neqo_common::qinfo;
 
+mod addr_valid;
 mod cc;
 mod cid;
 mod connection;
@@ -24,26 +25,30 @@ mod qlog;
 mod recovery;
 mod recv_stream;
 mod send_stream;
+mod sender;
 pub mod server;
 mod stats;
 mod stream_id;
 pub mod tparams;
 mod tracking;
 
+pub use self::cc::CongestionControlAlgorithm;
 pub use self::cid::{ConnectionId, ConnectionIdManager};
 pub use self::connection::{Connection, FixedConnectionIdManager, Output, State, ZeroRttState};
 pub use self::events::{ConnectionEvent, ConnectionEvents};
 pub use self::frame::CloseError;
 pub use self::frame::StreamType;
 pub use self::packet::QuicVersion;
+pub use self::sender::PacketSender;
+pub use self::stats::Stats;
 pub use self::stream_id::StreamId;
 
-const LOCAL_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30); // 30 second
 pub use self::recv_stream::RECV_BUFFER_SIZE;
 pub use self::send_stream::SEND_BUFFER_SIZE;
 
 type TransportError = u64;
 const ERROR_APPLICATION_CLOSE: TransportError = 12;
+const ERROR_AEAD_LIMIT_REACHED: TransportError = 15;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 #[allow(clippy::pub_enum_variant_names)]
@@ -78,11 +83,12 @@ pub enum Error {
     InvalidResumptionToken,
     InvalidRetry,
     InvalidStreamId,
+    KeysDiscarded,
     /// Packet protection keys are exhausted.
     /// Also used when too many key updates have happened.
     KeysExhausted,
-    /// Packet protection keys aren't available yet, or they have been discarded.
-    KeysNotFound,
+    /// Packet protection keys aren't available yet for the identified space.
+    KeysPending(crypto::CryptoSpace),
     /// An attempt to update keys can be blocked if
     /// a packet sent with the current keys hasn't been acknowledged.
     KeyUpdateBlocked,
@@ -115,6 +121,7 @@ impl Error {
             Self::TransportParameterError => 8,
             Self::ProtocolViolation => 10,
             Self::InvalidToken => 11,
+            Self::KeysExhausted => ERROR_AEAD_LIMIT_REACHED,
             Self::ApplicationError => ERROR_APPLICATION_CLOSE,
             Self::CryptoAlert(a) => 0x100 + u64::from(*a),
             // All the rest are internal errors.

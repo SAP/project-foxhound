@@ -1,6 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+let engine;
+
 add_task(async function test_searchEngine_autoFill() {
   Services.prefs.setBoolPref("browser.urlbar.autoFill.searchEngines", true);
   Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
@@ -8,7 +10,7 @@ add_task(async function test_searchEngine_autoFill() {
     method: "GET",
     template: "http://my.search.com/",
   });
-  let engine = Services.search.getEngineByName("MySearchEngine");
+  engine = Services.search.getEngineByName("MySearchEngine");
   registerCleanupFunction(async () => {
     Services.prefs.clearUserPref("browser.urlbar.autoFill.searchEngines");
     Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
@@ -51,6 +53,12 @@ add_task(async function test_searchEngine_autoFill() {
 });
 
 add_task(async function test_searchEngine_noautoFill() {
+  Services.prefs.setBoolPref("browser.urlbar.update2", true);
+  Services.prefs.setBoolPref("browser.urlbar.update2.tabToComplete", true);
+  Services.prefs.setIntPref(
+    "browser.urlbar.tabToSearch.onboard.interactionsLeft",
+    0
+  );
   await PlacesTestUtils.addVisits(
     Services.io.newURI("http://my.search.com/samplepage/")
   );
@@ -68,6 +76,14 @@ add_task(async function test_searchEngine_noautoFill() {
         title: "my.search.com",
         heuristic: true,
       }),
+      makeSearchResult(context, {
+        engineName: engine.name,
+        engineIconUri: UrlbarUtils.ICON.SEARCH_GLASS_INVERTED,
+        uri: UrlbarUtils.stripPublicSuffixFromHost(engine.getResultDomain()),
+        keywordOffer: UrlbarUtils.KEYWORD_OFFER.SHOW,
+        query: "",
+        providerName: "TabToSearch",
+      }),
       makeVisitResult(context, {
         uri: "http://my.search.com/samplepage/",
         title: "test visit for http://my.search.com/samplepage/",
@@ -77,4 +93,9 @@ add_task(async function test_searchEngine_noautoFill() {
   });
 
   await cleanupPlaces();
+  Services.prefs.clearUserPref(
+    "browser.urlbar.tabToSearch.onboard.interactionsLeft"
+  );
+  Services.prefs.clearUserPref("browser.urlbar.update2.tabToComplete");
+  Services.prefs.clearUserPref("browser.urlbar.update2");
 });

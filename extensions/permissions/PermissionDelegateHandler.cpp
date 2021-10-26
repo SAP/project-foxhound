@@ -108,8 +108,7 @@ PermissionDelegateHandler::MaybeUnsafePermissionDelegate(
 NS_IMETHODIMP
 PermissionDelegateHandler::GetPermissionDelegateFPEnabled(bool* aEnabled) {
   MOZ_ASSERT(NS_IsMainThread());
-  *aEnabled = StaticPrefs::permissions_delegation_enabled() &&
-              StaticPrefs::dom_security_featurePolicy_enabled();
+  *aEnabled = StaticPrefs::permissions_delegation_enabled();
   return NS_OK;
 }
 
@@ -131,8 +130,7 @@ nsresult PermissionDelegateHandler::GetDelegatePrincipal(
   }
 
   if (info->mPolicy == DelegatePolicy::eDelegateUseTopOrigin ||
-      (info->mPolicy == DelegatePolicy::eDelegateUseFeaturePolicy &&
-       StaticPrefs::dom_security_featurePolicy_enabled())) {
+      info->mPolicy == DelegatePolicy::eDelegateUseFeaturePolicy) {
     return aRequest->GetTopLevelPrincipal(aResult);
   }
 
@@ -257,12 +255,11 @@ nsresult PermissionDelegateHandler::GetPermission(const nsACString& aType,
   RefPtr<BrowsingContext> bc = mDocument->GetBrowsingContext();
 
   if ((info->mPolicy == DelegatePolicy::eDelegateUseTopOrigin ||
-       (info->mPolicy == DelegatePolicy::eDelegateUseFeaturePolicy &&
-        StaticPrefs::dom_security_featurePolicy_enabled())) &&
+       info->mPolicy == DelegatePolicy::eDelegateUseFeaturePolicy) &&
       bc) {
     RefPtr<WindowContext> topWC = bc->GetTopWindowContext();
 
-    if (topWC->IsInProcess()) {
+    if (topWC && topWC->IsInProcess()) {
       // If the top-level window context is in the same process, we directly get
       // the node principal from the top-level document to test the permission.
       // We cannot check the lists in the window context in this case since the
@@ -276,7 +273,7 @@ nsresult PermissionDelegateHandler::GetPermission(const nsACString& aType,
       if (topDoc) {
         principal = topDoc->NodePrincipal();
       }
-    } else {
+    } else if (topWC) {
       // Get the delegated permissions from the top-level window context.
       DelegatedPermissionList list =
           aExactHostMatch ? topWC->GetDelegatedExactHostMatchPermissions()
@@ -305,7 +302,7 @@ void PermissionDelegateHandler::PopulateAllDelegatedPermissions() {
   }
 
   RefPtr<WindowContext> wc = mDocument->GetWindowContext();
-  NS_ENSURE_TRUE_VOID(wc);
+  NS_ENSURE_TRUE_VOID(wc && !wc->IsDiscarded());
 
   DelegatedPermissionList list;
   DelegatedPermissionList exactHostMatchList;
@@ -330,7 +327,7 @@ void PermissionDelegateHandler::PopulateAllDelegatedPermissions() {
   WindowContext::Transaction txn;
   txn.SetDelegatedPermissions(list);
   txn.SetDelegatedExactHostMatchPermissions(exactHostMatchList);
-  txn.Commit(wc);
+  MOZ_ALWAYS_SUCCEEDS(txn.Commit(wc));
 }
 
 void PermissionDelegateHandler::UpdateDelegatedPermission(
@@ -374,7 +371,7 @@ void PermissionDelegateHandler::UpdateDelegatedPermission(
 
   // We only commit if there is any change of permissions.
   if (changed) {
-    txn.Commit(wc);
+    MOZ_ALWAYS_SUCCEEDS(txn.Commit(wc));
   }
 }
 

@@ -8,6 +8,7 @@
 #include "mozilla/PRDDParent.h"
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/media/MediaUtils.h"
 
 namespace mozilla {
 
@@ -21,6 +22,8 @@ class RDDParent final : public PRDDParent {
 
   static RDDParent* GetSingleton();
 
+  AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
+
   bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
             MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
 
@@ -33,11 +36,13 @@ class RDDParent final : public PRDDParent {
   mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
       Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVideoBridge(
-      Endpoint<PVideoBridgeChild>&& aEndpoint);
+      Endpoint<PVideoBridgeChild>&& aEndpoint,
+      const ContentDeviceData& aContentDeviceData);
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,
-      const Maybe<ipc::FileDescriptor>& DMDFile);
+      const Maybe<ipc::FileDescriptor>& DMDFile,
+      const RequestMemoryReportResolver& aResolver);
   mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
       GetUntrustedModulesDataResolver&& aResolver);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
@@ -50,6 +55,7 @@ class RDDParent final : public PRDDParent {
 #ifdef MOZ_GECKO_PROFILER
   RefPtr<ChildProfilerController> mProfilerController;
 #endif
+  AsyncBlockers mShutdownBlockers;
 };
 
 }  // namespace mozilla

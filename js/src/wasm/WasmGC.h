@@ -19,10 +19,19 @@
 #ifndef wasm_gc_h
 #define wasm_gc_h
 
-#include "jit/MacroAssembler.h"
+#include "mozilla/BinarySearch.h"
+
+#include "jit/MacroAssembler.h"  // For ABIArgIter
+#include "js/AllocPolicy.h"
+#include "js/Vector.h"
 #include "util/Memory.h"
 
 namespace js {
+
+namespace jit {
+class MacroAssembler;
+}  // namespace jit
+
 namespace wasm {
 
 using namespace js::jit;
@@ -227,8 +236,8 @@ class StackMaps {
     };
 
     size_t result;
-    if (BinarySearchIf(mapping_, 0, mapping_.length(), Comparator(nextInsnAddr),
-                       &result)) {
+    if (mozilla::BinarySearchIf(mapping_, 0, mapping_.length(),
+                                Comparator(nextInsnAddr), &result)) {
       return mapping_[result].map;
     }
 
@@ -252,7 +261,7 @@ class StackMaps {
 // the complete native-ABI-level call signature.
 template <class T>
 static inline size_t StackArgAreaSizeUnaligned(const T& argTypes) {
-  ABIArgIter<const T> i(argTypes);
+  WasmABIArgIter<const T> i(argTypes);
   while (!i.done()) {
     i++;
   }
@@ -261,7 +270,7 @@ static inline size_t StackArgAreaSizeUnaligned(const T& argTypes) {
 
 static inline size_t StackArgAreaSizeUnaligned(
     const SymbolicAddressSignature& saSig) {
-  // ABIArgIter::ABIArgIter wants the items to be iterated over to be
+  // WasmABIArgIter::ABIArgIter wants the items to be iterated over to be
   // presented in some type that has methods length() and operator[].  So we
   // have to wrap up |saSig|'s array of types in this API-matching class.
   class MOZ_STACK_CLASS ItemsAndLength {

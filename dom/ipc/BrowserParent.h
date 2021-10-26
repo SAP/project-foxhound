@@ -32,7 +32,6 @@
 #include "nsIKeyEventInPluginCallback.h"
 #include "nsIWidget.h"
 #include "nsIXULBrowserWindow.h"
-#include "nsRefreshDriver.h"
 #include "nsWeakReference.h"
 
 class nsFrameLoader;
@@ -111,9 +110,6 @@ class BrowserParent final : public PBrowserParent,
                 CanonicalBrowsingContext* aBrowsingContext,
                 uint32_t aChromeFlags);
 
-  // Call from LayoutStatics only
-  static void InitializeStatics();
-
   /**
    * Returns the focused BrowserParent or nullptr if chrome or another app
    * is focused.
@@ -121,6 +117,8 @@ class BrowserParent final : public PBrowserParent,
   static BrowserParent* GetFocused();
 
   static BrowserParent* GetLastMouseRemoteTarget();
+
+  static BrowserParent* GetPointerLockedRemoteTarget();
 
   static BrowserParent* GetFrom(nsFrameLoader* aFrameLoader);
 
@@ -338,6 +336,10 @@ class BrowserParent final : public PBrowserParent,
       const bool aNeedCollectSHistory, const uint32_t& aFlushId,
       const bool& aIsFinal, const uint32_t& aEpoch);
 
+  mozilla::ipc::IPCResult RecvIntrinsicSizeOrRatioChanged(
+      const Maybe<IntrinsicSize>& aIntrinsicSize,
+      const Maybe<AspectRatio>& aIntrinsicRatio);
+
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsString& aMessage, const ClonedMessageData& aData,
       nsTArray<ipc::StructuredCloneData>* aRetVal);
@@ -484,7 +486,7 @@ class BrowserParent final : public PBrowserParent,
       const uint64_t& aOuterWindowID,
       IsWindowSupportingWebVRResolver&& aResolve);
 
-  void LoadURL(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal);
+  void LoadURL(nsDocShellLoadState* aLoadState);
 
   void ResumeLoad(uint64_t aPendingSwitchID);
 
@@ -680,7 +682,8 @@ class BrowserParent final : public PBrowserParent,
       nsTArray<IPCDataTransfer>&& aTransfers, const uint32_t& aAction,
       Maybe<Shmem>&& aVisualDnDData, const uint32_t& aStride,
       const gfx::SurfaceFormat& aFormat, const LayoutDeviceIntRect& aDragRect,
-      nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp);
+      nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
+      const CookieJarSettingsArgs& aCookieJarSettingsArgs);
 
   void AddInitialDnDDataTo(DataTransfer* aDataTransfer,
                            nsIPrincipal** aPrincipal);
@@ -703,9 +706,6 @@ class BrowserParent final : public PBrowserParent,
   bool GetDocShellIsActive();
   void SetDocShellIsActive(bool aDocShellIsActive);
 
-  bool GetSuspendMediaWhenInactive() const;
-  void SetSuspendMediaWhenInactive(bool aSuspendMediaWhenInactive);
-
   bool GetHasPresented();
   bool GetHasLayers();
   bool GetRenderLayers();
@@ -727,6 +727,10 @@ class BrowserParent final : public PBrowserParent,
     mSuspendedProgressEvents = true;
   }
 
+  bool CanCancelContentJS(nsIRemoteTab::NavigationType aNavigationType,
+                          int32_t aNavigationIndex,
+                          nsIURI* aNavigationURI) const;
+
  protected:
   friend BrowserBridgeParent;
   friend BrowserHost;
@@ -747,8 +751,6 @@ class BrowserParent final : public PBrowserParent,
   virtual void ActorDestroy(ActorDestroyReason why) override;
 
   mozilla::ipc::IPCResult RecvRemotePaintIsReady();
-
-  mozilla::ipc::IPCResult RecvNotifyCompositorTransaction();
 
   mozilla::ipc::IPCResult RecvRemoteIsReadyToHandleInputEvents();
 
@@ -773,6 +775,15 @@ class BrowserParent final : public PBrowserParent,
 
   mozilla::ipc::IPCResult RecvMaybeFireEmbedderLoadEvents(
       EmbedderElementEventType aFireEventAtEmbeddingElement);
+
+  bool SetPointerLock();
+  mozilla::ipc::IPCResult RecvRequestPointerLock(
+      RequestPointerLockResolver&& aResolve);
+  mozilla::ipc::IPCResult RecvReleasePointerLock();
+
+  mozilla::ipc::IPCResult RecvRequestPointerCapture(
+      const uint32_t& aPointerId, RequestPointerCaptureResolver&& aResolve);
+  mozilla::ipc::IPCResult RecvReleasePointerCapture(const uint32_t& aPointerId);
 
  private:
   void SuppressDisplayport(bool aEnabled);
@@ -844,6 +855,13 @@ class BrowserParent final : public PBrowserParent,
   // Unsetter for LastMouseRemoteTarget; only unsets if argument matches
   // current sLastMouseRemoteTarget.
   static void UnsetLastMouseRemoteTarget(BrowserParent* aBrowserParent);
+
+  // Keeps track of which BrowserParent requested pointer lock.
+  static BrowserParent* sPointerLockedRemoteTarget;
+
+  // Unsetter for sPointerLockedRemoteTarget; only unsets if argument matches
+  // current sPointerLockedRemoteTarget.
+  static void UnsetPointerLockedRemoteTarget(BrowserParent* aBrowserParent);
 
   struct APZData {
     bool operator==(const APZData& aOther) {
@@ -925,10 +943,8 @@ class BrowserParent final : public PBrowserParent,
   // receiving a LoadURL message before returning from ProvideWindow.
   //
   // The mCreatingWindow flag is set while dispatching CreateWindow. During
-  // that time, any LoadURL calls are skipped and the URL is stored in
-  // mSkippedURL.
+  // that time, any LoadURL calls are skipped.
   bool mCreatingWindow;
-  nsCString mDelayedURL;
 
   // When loading a new tab or window via window.open, we want to ensure that
   // frame scripts for that tab are loaded before any scripts start to run in
@@ -997,30 +1013,19 @@ class BrowserParent final : public PBrowserParent,
   // (for something that isn't the initial about:blank) and then start
   // allowing future events.
   bool mSuspendedProgressEvents : 1;
-
-  // True if the media in the remote docshell should be suspended when the
-  // remote docshell is inactive.
-  bool mSuspendMediaWhenInactive : 1;
 };
 
 struct MOZ_STACK_CLASS BrowserParent::AutoUseNewTab final {
  public:
-  AutoUseNewTab(BrowserParent* aNewTab, nsCString* aURLToLoad)
-      : mNewTab(aNewTab), mURLToLoad(aURLToLoad) {
+  explicit AutoUseNewTab(BrowserParent* aNewTab) : mNewTab(aNewTab) {
     MOZ_ASSERT(!aNewTab->mCreatingWindow);
-
     aNewTab->mCreatingWindow = true;
-    aNewTab->mDelayedURL.Truncate();
   }
 
-  ~AutoUseNewTab() {
-    mNewTab->mCreatingWindow = false;
-    *mURLToLoad = mNewTab->mDelayedURL;
-  }
+  ~AutoUseNewTab() { mNewTab->mCreatingWindow = false; }
 
  private:
   RefPtr<BrowserParent> mNewTab;
-  nsCString* mURLToLoad;
 };
 
 }  // namespace dom

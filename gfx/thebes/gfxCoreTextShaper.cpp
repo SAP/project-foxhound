@@ -78,7 +78,8 @@ static bool IsBuggyIndicScript(unicode::Script aScript) {
 bool gfxCoreTextShaper::ShapeText(DrawTarget* aDrawTarget,
                                   const char16_t* aText, uint32_t aOffset,
                                   uint32_t aLength, Script aScript,
-                                  bool aVertical, RoundingFlags aRounding,
+                                  nsAtom* aLanguage, bool aVertical,
+                                  RoundingFlags aRounding,
                                   gfxShapedText* aShapedText) {
   // Create a CFAttributedString with text and style info, so we can use
   // CoreText to lay it out.
@@ -517,11 +518,9 @@ nsresult gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedText* aShapedText,
         advance = int32_t(toNextGlyph * appUnitsPerDevUnit);
       }
 
-      bool isClusterStart = charGlyphs[baseCharIndex].IsClusterStart();
-      aShapedText->SetGlyphs(aOffset + baseCharIndex,
-                             CompressedGlyph::MakeComplex(
-                                 isClusterStart, true, detailedGlyphs.Length()),
-                             detailedGlyphs.Elements());
+      aShapedText->SetDetailedGlyphs(aOffset + baseCharIndex,
+                                     detailedGlyphs.Length(),
+                                     detailedGlyphs.Elements());
 
       detailedGlyphs.Clear();
     }
@@ -533,7 +532,7 @@ nsresult gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedText* aShapedText,
       NS_ASSERTION(!shapedTextGlyph.IsSimpleGlyph(),
                    "overwriting a simple glyph");
       shapedTextGlyph.SetComplex(inOrder && shapedTextGlyph.IsClusterStart(),
-                                 false, 0);
+                                 false);
     }
 
     glyphStart = glyphEnd;

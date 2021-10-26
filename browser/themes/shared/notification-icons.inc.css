@@ -73,6 +73,14 @@
   list-style-image: url(chrome://browser/skin/notification-icons/geo-detailed.svg);
 }
 
+.open-protocol-handler-icon {
+  list-style-image: url(chrome://browser/skin/open-in-new.svg);
+}
+
+.open-protocol-handler-icon:-moz-locale-dir(rtl) {
+  transform: scaleX(-1);
+}
+
 .xr-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/xr.svg);
 }
@@ -177,10 +185,6 @@
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
 }
 
-.https-only-load-insecure-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/https-only-load-insecure-blocked.svg);
-}
-
 #canvas-notification-icon,
 .popup-notification-icon[popupid="canvas-permissions-prompt"],
 .canvas-icon {
@@ -246,8 +250,9 @@ html|*#webRTC-previewVideo {
   margin-inline-start: 42px;
   width: 16px;
   height: 16px;
-  -moz-context-properties: fill;
+  -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
+  fill-opacity: 0.6;
 }
 
 .popup-subitem:-moz-locale-dir(rtl) {

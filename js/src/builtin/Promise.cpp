@@ -15,7 +15,9 @@
 #include "jsfriendapi.h"
 
 #include "js/Debug.h"
-#include "js/ForOfIterator.h"  // JS::ForOfIterator
+#include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
+#include "js/ForOfIterator.h"         // JS::ForOfIterator
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
 #include "vm/ArrayObject.h"
 #include "vm/AsyncFunction.h"
@@ -5802,11 +5804,8 @@ MOZ_MUST_USE bool js::TrySkipAwait(JSContext* cx, HandleValue val,
   return true;
 }
 
-JS::AutoDebuggerJobQueueInterruption::AutoDebuggerJobQueueInterruption(
-    MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
-    : cx(nullptr) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-}
+JS::AutoDebuggerJobQueueInterruption::AutoDebuggerJobQueueInterruption()
+    : cx(nullptr) {}
 
 JS::AutoDebuggerJobQueueInterruption::~AutoDebuggerJobQueueInterruption() {
   MOZ_ASSERT_IF(initialized(), cx->jobQueue->empty());

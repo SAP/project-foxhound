@@ -102,7 +102,7 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
                 AsHyperText()->OffsetToDOMPoint(caretEvent->GetCaretOffset());
             if (Accessible* newPos =
                     doc->GetAccessibleOrContainer(point.node)) {
-              static_cast<AccessibleWrap*>(newPos)->Pivot(
+              static_cast<AccessibleWrap*>(newPos)->PivotTo(
                   java::SessionAccessibility::HTML_GRANULARITY_DEFAULT, true,
                   true);
             }
@@ -111,8 +111,8 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
         break;
       }
       case nsIAccessibleEvent::EVENT_SCROLLING_START: {
-        accessible->Pivot(java::SessionAccessibility::HTML_GRANULARITY_DEFAULT,
-                          true, true);
+        accessible->PivotTo(
+            java::SessionAccessibility::HTML_GRANULARITY_DEFAULT, true, true);
         break;
       }
       default:
@@ -294,12 +294,15 @@ bool AccessibleWrap::GetSelectionBounds(int32_t* aStartOffset,
   return false;
 }
 
-void AccessibleWrap::Pivot(int32_t aGranularity, bool aForward,
-                           bool aInclusive) {
-  a11y::Pivot pivot(RootAccessible());
+void AccessibleWrap::PivotTo(int32_t aGranularity, bool aForward,
+                             bool aInclusive) {
+  AccessibleOrProxy accOrProxyRoot = AccessibleOrProxy(RootAccessible());
+  a11y::Pivot pivot(accOrProxyRoot);
   TraversalRule rule(aGranularity);
-  Accessible* result = aForward ? pivot.Next(this, rule, aInclusive)
-                                : pivot.Prev(this, rule, aInclusive);
+  AccessibleOrProxy accOrProxy = AccessibleOrProxy(this);
+  Accessible* result =
+      aForward ? pivot.Next(accOrProxy, rule, aInclusive).AsAccessible()
+               : pivot.Prev(accOrProxy, rule, aInclusive).AsAccessible();
   if (result && (result != this || aInclusive)) {
     PivotMoveReason reason = aForward ? nsIAccessiblePivot::REASON_NEXT
                                       : nsIAccessiblePivot::REASON_PREV;
@@ -314,7 +317,7 @@ void AccessibleWrap::ExploreByTouch(float aX, float aY) {
   a11y::Pivot pivot(RootAccessible());
   TraversalRule rule;
 
-  Accessible* result = pivot.AtPoint(aX, aY, rule);
+  Accessible* result = pivot.AtPoint(aX, aY, rule).AsAccessible();
 
   if (result && result != this) {
     RefPtr<AccEvent> event =

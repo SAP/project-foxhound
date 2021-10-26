@@ -62,18 +62,12 @@ class DynamicFrameEventFilter final : public nsIDOMEventListener {
     }
 
     nsPIDOMWindowOuter* outer = target->GetOwnerGlobalForBindingsInternal();
-    if (!outer) {
+    if (!outer || !outer->GetDocShell()) {
       return false;
     }
 
-    nsIDocShell* docShell = outer->GetDocShell();
-    if (!docShell) {
-      return false;
-    }
-
-    bool isDynamic = false;
-    nsresult rv = docShell->GetCreatedDynamically(&isDynamic);
-    return NS_SUCCEEDED(rv) && !isDynamic;
+    RefPtr<BrowsingContext> context = outer->GetBrowsingContext();
+    return context && !context->CreatedDynamically();
   }
 
   RefPtr<EventListener> mListener;
@@ -120,21 +114,24 @@ void SessionStoreUtils::ForEachNonDynamicChildFrame(
       return;
     }
 
+    RefPtr<BrowsingContext> context = item->GetBrowsingContext();
+    if (!context) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return;
+    }
+
+    if (context->CreatedDynamically()) {
+      continue;
+    }
+
     nsCOMPtr<nsIDocShell> childDocShell(do_QueryInterface(item));
     if (!childDocShell) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
 
-    bool isDynamic = false;
-    nsresult rv = childDocShell->GetCreatedDynamically(&isDynamic);
-    if (NS_SUCCEEDED(rv) && isDynamic) {
-      continue;
-    }
-
     int32_t childOffset = childDocShell->GetChildOffset();
-    aCallback.Call(WindowProxyHolder(item->GetWindow()->GetBrowsingContext()),
-                   childOffset);
+    aCallback.Call(WindowProxyHolder(context.forget()), childOffset);
   }
 }
 
@@ -528,7 +525,7 @@ static void AppendValueToCollectedData(nsINode* aNode, const nsAString& aId,
   if (aValueType.EqualsLiteral("file")) {
     CollectedFileListValue val;
     val.mType = aValueType;
-    val.mFileList.SwapElements(aValue);
+    val.mFileList = std::move(aValue);
     if (!ToJSValue(aCx, val, &jsval)) {
       JS_ClearPendingException(aCx);
       return;
@@ -1164,27 +1161,16 @@ void SessionStoreUtils::CollectedSessionStorage(
   ReadAllEntriesFromStorage(window, aOrigins, aKeys, aValues);
 
   /* Collect session storage from all child frame */
-  nsCOMPtr<nsIDocShell> docShell = window->GetDocShell();
-  if (!docShell) {
+  if (!window->GetDocShell()) {
     return;
   }
 
   // This is not going to work for fission. Bug 1572084 for tracking it.
   for (BrowsingContext* child : aBrowsingContext->Children()) {
-    window = child->GetDOMWindow();
-    if (!window) {
-      return;
+    if (!child->CreatedDynamically()) {
+      SessionStoreUtils::CollectedSessionStorage(child, aOrigins, aKeys,
+                                                 aValues);
     }
-    docShell = window->GetDocShell();
-    if (!docShell) {
-      return;
-    }
-    bool isDynamic = false;
-    nsresult rv = docShell->GetCreatedDynamically(&isDynamic);
-    if (NS_SUCCEEDED(rv) && isDynamic) {
-      continue;
-    }
-    SessionStoreUtils::CollectedSessionStorage(child, aOrigins, aKeys, aValues);
   }
 }
 
@@ -1235,9 +1221,8 @@ void SessionStoreUtils::RestoreSessionStorage(
     // followup bug to bug 600307.
     // Null window because the current window doesn't match the principal yet
     // and loads about:blank.
-    storageManager->CreateStorage(nullptr, principal, storagePrincipal,
-                                  EmptyString(), false,
-                                  getter_AddRefs(storage));
+    storageManager->CreateStorage(nullptr, principal, storagePrincipal, u""_ns,
+                                  false, getter_AddRefs(storage));
     if (!storage) {
       continue;
     }
@@ -1262,13 +1247,12 @@ static void CollectFrameTreeData(JSContext* aCx,
                                  BrowsingContext* aBrowsingContext,
                                  Nullable<CollectedData>& aRetVal,
                                  CollectorFunc aFunc) {
-  nsPIDOMWindowOuter* window = aBrowsingContext->GetDOMWindow();
-  if (!window) {
+  if (aBrowsingContext->CreatedDynamically()) {
     return;
   }
 
-  nsIDocShell* docShell = window->GetDocShell();
-  if (!docShell || docShell->GetCreatedDynamically()) {
+  nsPIDOMWindowOuter* window = aBrowsingContext->GetDOMWindow();
+  if (!window || !window->GetDocShell()) {
     return;
   }
 
@@ -1305,7 +1289,7 @@ static void CollectFrameTreeData(JSContext* aCx,
 
   if (trailingNullCounter != childrenData.Length()) {
     childrenData.TruncateLength(childrenData.Length() - trailingNullCounter);
-    aRetVal.SetValue().mChildren.Construct().SwapElements(childrenData);
+    aRetVal.SetValue().mChildren.Construct() = std::move(childrenData);
   }
 }
 

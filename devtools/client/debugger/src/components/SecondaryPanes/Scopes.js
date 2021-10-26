@@ -4,7 +4,7 @@
 
 // @flow
 import React, { PureComponent } from "react";
-import { showMenu } from "devtools-contextmenu";
+import { showMenu } from "../../context-menu/menu";
 import { connect } from "../../utils/connect";
 import actions from "../../actions";
 import { features } from "../../utils/prefs";
@@ -22,8 +22,8 @@ import {
 import { getScopes } from "../../utils/pause/scopes";
 import { getScopeItemPath } from "../../utils/pause/scopes/utils";
 
-// eslint-disable-next-line import/named
-import { objectInspector } from "devtools-reps";
+// $FlowIgnore
+import { objectInspector } from "devtools/client/shared/components/reps/index";
 
 import type { ThreadContext, Why } from "../../types";
 import type { NamedValue } from "../../utils/pause/scopes/types";

@@ -19,6 +19,7 @@
 #include "js/GCHashTable.h"
 #include "js/HeapAPI.h"
 #include "js/RootingAPI.h"
+#include "js/shadow/Symbol.h"  // JS::shadow::Symbol
 #include "js/Symbol.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
@@ -94,11 +95,8 @@ class Symbol
   }
   inline void finalize(JSFreeOp*) {}
 
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(Symbol* thing) {
-    if (thing && !thing->isWellKnownSymbol()) {
-      thing->asTenured().writeBarrierPre(thing);
-    }
-  }
+  // Override base class implementation to tell GC about well-known symbols.
+  bool isPermanentAndMayBeShared() const { return isWellKnownSymbol(); }
 
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return mallocSizeOf(this);

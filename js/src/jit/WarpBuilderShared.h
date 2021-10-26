@@ -7,13 +7,25 @@
 #ifndef jit_WarpBuilderShared_h
 #define jit_WarpBuilderShared_h
 
-#include "jit/MIR.h"
+#include "mozilla/Attributes.h"
+
+#include "js/Value.h"
 
 namespace js {
+
+class BytecodeLocation;
+
 namespace jit {
 
 class CallInfo;
+class MBasicBlock;
+class MCall;
+class MConstant;
+class MInstruction;
+class MIRGenerator;
+class TempAllocator;
 class WarpSnapshot;
+class WrappedFunction;
 
 // Base class for code sharing between WarpBuilder and WarpCacheIRTranspiler.
 // Because this code is used by WarpCacheIRTranspiler we should
@@ -29,17 +41,21 @@ class WarpBuilderShared {
   WarpBuilderShared(WarpSnapshot& snapshot, MIRGenerator& mirGen,
                     MBasicBlock* current_);
 
+  MOZ_MUST_USE bool resumeAfter(MInstruction* ins, BytecodeLocation loc);
+
+  MConstant* constant(const JS::Value& v);
+  void pushConstant(const JS::Value& v);
+
+  MCall* makeCall(CallInfo& callInfo, bool needsThisCheck,
+                  WrappedFunction* target = nullptr, bool isDOMCall = false);
+  MInstruction* makeSpreadCall(CallInfo& callInfo, bool isSameRealm = false,
+                               WrappedFunction* target = nullptr);
+
+ public:
+  MBasicBlock* currentBlock() const { return current; }
   WarpSnapshot& snapshot() const { return snapshot_; }
   MIRGenerator& mirGen() { return mirGen_; }
   TempAllocator& alloc() { return alloc_; }
-
-  MOZ_MUST_USE bool resumeAfter(MInstruction* ins, BytecodeLocation loc);
-
-  MConstant* constant(const Value& v);
-  void pushConstant(const Value& v);
-
-  MCall* makeCall(CallInfo& callInfo, bool needsThisCheck,
-                  WrappedFunction* target = nullptr);
 };
 
 }  // namespace jit

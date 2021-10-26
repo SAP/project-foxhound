@@ -1,7 +1,7 @@
 import os
 import sys
 
-here = os.path.abspath(os.path.split(__file__)[0])
+here = os.path.abspath(os.path.dirname(__file__))
 
 sys.path.insert(0, os.path.join(here))
 sys.path.insert(0, os.path.join(here, "wptserve"))
@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(here, "third_party", "html5lib"))
 sys.path.insert(0, os.path.join(here, "third_party", "more-itertools"))
 sys.path.insert(0, os.path.join(here, "third_party", "pluggy"))
 sys.path.insert(0, os.path.join(here, "third_party", "py"))
+sys.path.insert(0, os.path.join(here, "third_party", "pytest"))
 sys.path.insert(0, os.path.join(here, "third_party", "pytest", "src"))
 sys.path.insert(0, os.path.join(here, "third_party", "six"))
 sys.path.insert(0, os.path.join(here, "third_party", "webencodings"))

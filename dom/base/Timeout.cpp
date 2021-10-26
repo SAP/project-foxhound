@@ -9,8 +9,7 @@
 #include "mozilla/dom/TimeoutManager.h"
 #include "nsGlobalWindowInner.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 Timeout::Timeout()
     : mTimeoutId(0),
@@ -52,7 +51,7 @@ void Timeout::SetWhenOrTimeRemaining(const TimeStamp& aBaseTime,
   mSubmitTime = aBaseTime;
 #ifdef MOZ_GECKO_PROFILER
   if (profiler_is_active()) {
-    mCause = profiler_get_backtrace();
+    mCause = profiler_capture_backtrace();
   }
 #endif
 
@@ -89,5 +88,4 @@ const TimeDuration& Timeout::TimeRemaining() const {
   return mTimeRemaining;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

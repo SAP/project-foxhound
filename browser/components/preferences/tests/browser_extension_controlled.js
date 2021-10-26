@@ -109,6 +109,32 @@ async function openNotificationsPermissionDialog() {
   await sitePermissionsDialog.document.mozSubdialogReady;
 }
 
+async function disableExtensionViaClick(labelId, disableButtonId, doc) {
+  let controlledLabel = doc.getElementById(labelId);
+
+  let enableMessageShown = waitForEnableMessage(labelId, doc);
+  doc.getElementById(disableButtonId).click();
+  await enableMessageShown;
+
+  let controlledDescription = controlledLabel.querySelector("description");
+  is(
+    doc.l10n.getAttributes(controlledDescription.querySelector("label")).id,
+    "extension-controlled-enable",
+    "The user is notified of how to enable the extension again."
+  );
+
+  // The user can dismiss the enable instructions.
+  let hidden = waitForMessageHidden(labelId, doc);
+  controlledLabel.querySelector("image:last-of-type").click();
+  await hidden;
+}
+
+async function reEnableExtension(addon, labelId) {
+  let controlledMessageShown = waitForMessageShown(labelId);
+  await addon.enable();
+  await controlledMessageShown;
+}
+
 add_task(async function testExtensionControlledHomepage() {
   await openPreferencesViaOpenPreferencesAPI("paneHome", { leaveOpen: true });
   let doc = gBrowser.contentDocument;
@@ -613,139 +639,6 @@ add_task(async function testExtensionControlledWebNotificationsPermission() {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
-add_task(async function testExtensionControlledDefaultSearch() {
-  await openPreferencesViaOpenPreferencesAPI("paneSearch", { leaveOpen: true });
-  let doc = gBrowser.contentDocument;
-  let extensionId = "@set_default_search";
-  let manifest = {
-    manifest_version: 2,
-    name: "set_default_search",
-    applications: { gecko: { id: extensionId } },
-    description: "set_default_search description",
-    permissions: [],
-    chrome_settings_overrides: {
-      search_provider: {
-        name: "DuckDuckGo",
-        search_url: "https://duckduckgo.com/?q={searchTerms}",
-        is_default: true,
-      },
-    },
-  };
-
-  // This test is comparing nsISearchEngines by reference, so we need to initialize
-  // the SearchService here.
-  await Services.search.init();
-
-  function setEngine(engine) {
-    doc
-      .querySelector(`#defaultEngine menuitem[label="${engine.name}"]`)
-      .doCommand();
-  }
-
-  is(
-    gBrowser.currentURI.spec,
-    "about:preferences#search",
-    "#search should be in the URI for about:preferences"
-  );
-
-  let controlledContent = doc.getElementById(
-    "browserDefaultSearchExtensionContent"
-  );
-  let initialEngine = Services.search.defaultEngine;
-
-  // Ensure the controlled content is hidden when not controlled.
-  is(controlledContent.hidden, true, "The extension controlled row is hidden");
-
-  // Install an extension that will set the default search engine.
-  let originalExtension = ExtensionTestUtils.loadExtension({
-    useAddonManager: "permanent",
-    manifest: Object.assign({}, manifest, { version: "1.0" }),
-  });
-
-  let messageShown = waitForMessageShown(
-    "browserDefaultSearchExtensionContent"
-  );
-  await originalExtension.startup();
-  await AddonTestUtils.waitForSearchProviderStartup(originalExtension);
-  await messageShown;
-
-  let addon = await AddonManager.getAddonByID(extensionId);
-  is(addon.version, "1.0", "The addon has the expected version.");
-
-  // The default search engine has been set by the extension and the user is notified.
-  let controlledLabel = controlledContent.querySelector("description");
-  let extensionEngine = Services.search.defaultEngine;
-  ok(initialEngine != extensionEngine, "The default engine has changed.");
-  Assert.deepEqual(
-    doc.l10n.getAttributes(controlledLabel),
-    {
-      id: "extension-controlled-default-search",
-      args: {
-        name: "set_default_search",
-      },
-    },
-    "The user is notified that an extension is controlling the default search engine"
-  );
-  is(controlledContent.hidden, false, "The extension controlled row is shown");
-
-  // Set the engine back to the initial one, ensure the message is hidden.
-  setEngine(initialEngine);
-  await waitForMessageHidden(controlledContent.id);
-
-  is(
-    initialEngine,
-    Services.search.defaultEngine,
-    "default search engine is set back to default"
-  );
-  is(controlledContent.hidden, true, "The extension controlled row is hidden");
-
-  // Setting the engine back to the extension's engine does not show the message.
-  setEngine(extensionEngine);
-  // Wait a tick for the Search Service's promises to resolve.
-  await new Promise(resolve => executeSoon(resolve));
-
-  is(
-    extensionEngine,
-    Services.search.defaultEngine,
-    "default search engine is set back to extension"
-  );
-  is(
-    controlledContent.hidden,
-    true,
-    "The extension controlled row is still hidden"
-  );
-
-  // Set the engine to the initial one and verify an upgrade doesn't change it.
-  setEngine(initialEngine);
-  await waitForMessageHidden(controlledContent.id);
-
-  // Update the extension and wait for "ready".
-  let updatedExtension = ExtensionTestUtils.loadExtension({
-    useAddonManager: "permanent",
-    manifest: Object.assign({}, manifest, { version: "2.0" }),
-  });
-  await updatedExtension.startup();
-  await AddonTestUtils.waitForSearchProviderStartup(updatedExtension);
-  addon = await AddonManager.getAddonByID(extensionId);
-
-  // Verify the extension is updated and search engine didn't change.
-  is(addon.version, "2.0", "The updated addon has the expected version");
-  is(
-    controlledContent.hidden,
-    true,
-    "The extension controlled row is hidden after update"
-  );
-  is(
-    initialEngine,
-    Services.search.defaultEngine,
-    "default search engine is still the initial engine after update"
-  );
-
-  await originalExtension.unload();
-  await updatedExtension.unload();
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
-});
-
 add_task(async function testExtensionControlledHomepageUninstalledAddon() {
   async function checkHomepageEnabled() {
     await openPreferencesViaOpenPreferencesAPI("paneHome", { leaveOpen: true });
@@ -802,8 +695,9 @@ add_task(async function testExtensionControlledHomepageUninstalledAddon() {
     },
   };
   let jsonFileName = "extension-settings.json";
-  let storePath = OS.Path.join(OS.Constants.Path.profileDir, jsonFileName);
-  await OS.File.writeAtomic(storePath, JSON.stringify(storeData));
+  let storePath = PathUtils.join(await PathUtils.getProfileDir(), jsonFileName);
+
+  await IOUtils.writeAtomicUTF8(storePath, JSON.stringify(storeData));
 
   // Reload the ExtensionSettingsStore so it will read the file on disk. Don't
   // finalize the current store since it will overwrite our file.
@@ -819,7 +713,7 @@ add_task(async function testExtensionControlledHomepageUninstalledAddon() {
   await checkHomepageEnabled();
 
   // Remove the bad store file that we used.
-  await OS.File.remove(storePath);
+  await IOUtils.remove(storePath);
 
   // Reload the ExtensionSettingsStore again so it clears the data we added.
   // Don't finalize the current store since it will write out the bad data.
@@ -840,7 +734,6 @@ add_task(async function testExtensionControlledTrackingProtection() {
     "contentBlockingTrackingProtectionExtensionContentLabel";
   const CONTROLLED_BUTTON_ID =
     "contentBlockingDisableTrackingProtectionExtension";
-  const DISABLE_BUTTON_ID = "contentBlockingDisableTrackingProtectionExtension";
 
   let tpEnabledPref = () => Services.prefs.getBoolPref(TP_PREF);
 
@@ -887,35 +780,6 @@ add_task(async function testExtensionControlledTrackingProtection() {
     );
   }
 
-  async function disableViaClick() {
-    let labelId = CONTROLLED_LABEL_ID;
-    let disableId = DISABLE_BUTTON_ID;
-    let controlledLabel = doc.getElementById(labelId);
-
-    let enableMessageShown = waitForEnableMessage(labelId);
-    doc.getElementById(disableId).click();
-    await enableMessageShown;
-
-    // The user is notified how to enable the extension.
-    let controlledDesc = controlledLabel.querySelector("description");
-    is(
-      doc.l10n.getAttributes(controlledDesc.querySelector("label")).id,
-      "extension-controlled-enable",
-      "The user is notified of how to enable the extension again"
-    );
-
-    // The user can dismiss the enable instructions.
-    let hidden = waitForMessageHidden(labelId);
-    controlledLabel.querySelector("image:last-of-type").click();
-    await hidden;
-  }
-
-  async function reEnableExtension(addon) {
-    let controlledMessageShown = waitForMessageShown(CONTROLLED_LABEL_ID);
-    await addon.enable();
-    await controlledMessageShown;
-  }
-
   await openPreferencesViaOpenPreferencesAPI("panePrivacy", {
     leaveOpen: true,
   });
@@ -947,14 +811,131 @@ add_task(async function testExtensionControlledTrackingProtection() {
 
   verifyState(true);
 
-  await disableViaClick();
+  await disableExtensionViaClick(
+    CONTROLLED_LABEL_ID,
+    CONTROLLED_BUTTON_ID,
+    doc
+  );
 
   verifyState(false);
 
   // Enable the extension so we get the UNINSTALL event, which is needed by
   // ExtensionPreferencesManager to clean up properly.
   // TODO: BUG 1408226
-  await reEnableExtension(addon);
+  await reEnableExtension(addon, CONTROLLED_LABEL_ID);
+
+  await extension.unload();
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
+add_task(async function testExtensionControlledPasswordManager() {
+  const PASSWORD_MANAGER_ENABLED_PREF = "signon.rememberSignons";
+  const PASSWORD_MANAGER_ENABLED_DEFAULT = true;
+  const CONTROLLED_BUTTON_ID = "disablePasswordManagerExtension";
+  const CONTROLLED_LABEL_ID = "passwordManagerExtensionContent";
+  const EXTENSION_ID = "@remember_signons";
+  let manifest = {
+    manifest_version: 2,
+    name: "testPasswordManagerExtension",
+    version: "1.0",
+    description: "Testing rememberSignons",
+    applications: { gecko: { id: EXTENSION_ID } },
+    permissions: ["privacy"],
+    browser_action: {
+      default_title: "Testing rememberSignons",
+    },
+  };
+
+  let passwordManagerEnabledPref = () =>
+    Services.prefs.getBoolPref(PASSWORD_MANAGER_ENABLED_PREF);
+
+  await SpecialPowers.pushPrefEnv({
+    set: [[PASSWORD_MANAGER_ENABLED_PREF, PASSWORD_MANAGER_ENABLED_DEFAULT]],
+  });
+  is(
+    passwordManagerEnabledPref(),
+    true,
+    "Password manager is enabled by default."
+  );
+
+  function verifyState(isControlled) {
+    is(
+      passwordManagerEnabledPref(),
+      !isControlled,
+      "Password manager pref is set to the expected value."
+    );
+    let controlledLabel = gBrowser.contentDocument.getElementById(
+      CONTROLLED_LABEL_ID
+    );
+    let controlledButton = gBrowser.contentDocument.getElementById(
+      CONTROLLED_BUTTON_ID
+    );
+    is(
+      controlledLabel.hidden,
+      !isControlled,
+      "The extension's controlled row visibility is as expected."
+    );
+    is(
+      controlledButton.hidden,
+      !isControlled,
+      "The extension's controlled button visibility is as expected."
+    );
+    if (isControlled) {
+      let controlledDesc = controlledLabel.querySelector("description");
+      Assert.deepEqual(
+        gBrowser.contentDocument.l10n.getAttributes(controlledDesc),
+        {
+          id: "extension-controlled-password-saving",
+          args: {
+            name: "testPasswordManagerExtension",
+          },
+        },
+        "The user is notified that an extension is controlling the remember signons pref."
+      );
+    }
+  }
+
+  await openPreferencesViaOpenPreferencesAPI("panePrivacy", {
+    leaveOpen: true,
+  });
+
+  info("Verify that no extension is controlling the password manager pref.");
+  verifyState(false);
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest,
+    useAddonManager: "permanent",
+    background() {
+      browser.privacy.services.passwordSavingEnabled.set({ value: false });
+    },
+  });
+  let messageShown = waitForMessageShown(CONTROLLED_LABEL_ID);
+  await extension.startup();
+  await messageShown;
+
+  info(
+    "Verify that the test extension is controlling the password manager pref."
+  );
+  verifyState(true);
+
+  info("Verify that the extension shows as controlled when loaded again.");
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await openPreferencesViaOpenPreferencesAPI("panePrivacy", {
+    leaveOpen: true,
+  });
+  verifyState(true);
+
+  await disableExtensionViaClick(
+    CONTROLLED_LABEL_ID,
+    CONTROLLED_BUTTON_ID,
+    gBrowser.contentDocument
+  );
+
+  info(
+    "Verify that disabling the test extension removes the lock on the password manager pref."
+  );
+  verifyState(false);
 
   await extension.unload();
 
@@ -991,7 +972,7 @@ add_task(async function testExtensionControlledProxyConfig() {
     );
   }
 
-  function verifyState(doc, isControlled) {
+  function verifyProxyState(doc, isControlled) {
     let isPanel = doc.getElementById(CONTROLLED_BUTTON_ID);
     is(
       proxyType === proxySvc.PROXYCONFIG_DIRECT,
@@ -1084,29 +1065,7 @@ add_task(async function testExtensionControlledProxyConfig() {
     }
   }
 
-  async function disableViaClick() {
-    let sectionId = CONTROLLED_SECTION_ID;
-    let controlledSection = panelDoc.getElementById(sectionId);
-
-    let enableMessageShown = waitForEnableMessage(sectionId, panelDoc);
-    panelDoc.getElementById(CONTROLLED_BUTTON_ID).click();
-    await enableMessageShown;
-
-    // The user is notified how to enable the extension.
-    let controlledDesc = controlledSection.querySelector("description");
-    is(
-      panelDoc.l10n.getAttributes(controlledDesc.querySelector("label")).id,
-      "extension-controlled-enable",
-      "The user is notified of how to enable the extension again"
-    );
-
-    // The user can dismiss the enable instructions.
-    let hidden = waitForMessageHidden(sectionId, panelDoc);
-    controlledSection.querySelector("image:last-of-type").click();
-    return hidden;
-  }
-
-  async function reEnableExtension(addon) {
+  async function reEnableProxyExtension(addon) {
     let messageChanged = connectionSettingsMessagePromise(mainDoc, true);
     await addon.enable();
     await messageChanged;
@@ -1140,17 +1099,17 @@ add_task(async function testExtensionControlledProxyConfig() {
     "#general should be in the URI for about:preferences"
   );
 
-  verifyState(mainDoc, false);
+  verifyProxyState(mainDoc, false);
 
   // Open the connections panel.
   let panelObj = await openProxyPanel();
   let panelDoc = panelObj.panel.document;
 
-  verifyState(panelDoc, false);
+  verifyProxyState(panelDoc, false);
 
   await closeProxyPanel(panelObj);
 
-  verifyState(mainDoc, false);
+  verifyProxyState(mainDoc, false);
 
   // Install an extension that controls proxy settings. The extension needs
   // incognitoOverride because controlling the proxy.settings requires private
@@ -1171,46 +1130,54 @@ add_task(async function testExtensionControlledProxyConfig() {
   await messageChanged;
   let addon = await AddonManager.getAddonByID(EXTENSION_ID);
 
-  verifyState(mainDoc, true);
+  verifyProxyState(mainDoc, true);
   messageChanged = connectionSettingsMessagePromise(mainDoc, false);
 
   panelObj = await openProxyPanel();
   panelDoc = panelObj.panel.document;
 
-  verifyState(panelDoc, true);
+  verifyProxyState(panelDoc, true);
 
-  await disableViaClick();
+  await disableExtensionViaClick(
+    CONTROLLED_SECTION_ID,
+    CONTROLLED_BUTTON_ID,
+    panelDoc
+  );
 
-  verifyState(panelDoc, false);
+  verifyProxyState(panelDoc, false);
 
   await closeProxyPanel(panelObj);
   await messageChanged;
 
-  verifyState(mainDoc, false);
+  verifyProxyState(mainDoc, false);
 
-  await reEnableExtension(addon);
+  await reEnableProxyExtension(addon);
 
-  verifyState(mainDoc, true);
+  verifyProxyState(mainDoc, true);
   messageChanged = connectionSettingsMessagePromise(mainDoc, false);
 
   panelObj = await openProxyPanel();
   panelDoc = panelObj.panel.document;
 
-  verifyState(panelDoc, true);
+  verifyProxyState(panelDoc, true);
 
-  await disableViaClick();
+  await disableExtensionViaClick(
+    CONTROLLED_SECTION_ID,
+    CONTROLLED_BUTTON_ID,
+    panelDoc
+  );
 
-  verifyState(panelDoc, false);
+  verifyProxyState(panelDoc, false);
 
   await closeProxyPanel(panelObj);
   await messageChanged;
 
-  verifyState(mainDoc, false);
+  verifyProxyState(mainDoc, false);
 
   // Enable the extension so we get the UNINSTALL event, which is needed by
   // ExtensionPreferencesManager to clean up properly.
   // TODO: BUG 1408226
-  await reEnableExtension(addon);
+  await reEnableProxyExtension(addon);
 
   await extension.unload();
 

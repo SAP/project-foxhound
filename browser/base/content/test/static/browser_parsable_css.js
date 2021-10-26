@@ -24,7 +24,7 @@ let whitelist = [
   },
   // UA-only media features.
   {
-    sourceName: /\b(autocomplete-item|svg)\.css$/,
+    sourceName: /\b(autocomplete-item|svg|ua)\.css$/,
     errorMessage: /Expected media feature name but found \u2018-moz.*/i,
     isFromDevTools: false,
   },
@@ -35,7 +35,7 @@ let whitelist = [
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(html|mathml|ua|forms|svg)\.css$/i,
+    sourceName: /\b(minimal-xul|html|mathml|ua|forms|svg)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
@@ -61,6 +61,24 @@ let whitelist = [
   },
 ];
 
+if (!Services.prefs.getBoolPref("layout.css.math-depth.enabled")) {
+  // mathml.css UA sheet rule for math-depth.
+  whitelist.push({
+    sourceName: /\b(minimal-xul|mathml)\.css$/i,
+    errorMessage: /Unknown property .*\bmath-depth\b/i,
+    isFromDevTools: false,
+  });
+}
+
+if (!Services.prefs.getBoolPref("layout.css.math-style.enabled")) {
+  // mathml.css UA sheet rule for math-style.
+  whitelist.push({
+    sourceName: /(?:res|gre-resources)\/mathml\.css$/i,
+    errorMessage: /Unknown property .*\bmath-style\b/i,
+    isFromDevTools: false,
+  });
+}
+
 if (
   !Services.prefs.getBoolPref(
     "layout.css.xul-box-display-values.content.enabled"
@@ -74,7 +92,7 @@ if (
   });
 }
 
-if (Services.prefs.getBoolPref("layout.css.file-chooser-button.enabled")) {
+if (Services.prefs.getBoolPref("layout.css.file-selector-button.enabled")) {
   // System colors reserved to UA / chrome sheets
   whitelist.push({
     sourceName: /(?:res|gre-resources)\/forms\.css$/i,
@@ -86,7 +104,7 @@ if (Services.prefs.getBoolPref("layout.css.file-chooser-button.enabled")) {
   // Reserved to UA sheets, behind a pref for content.
   whitelist.push({
     sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Unknown pseudo-.*file-chooser-button/i,
+    errorMessage: /Unknown pseudo-.*file-selector-button/i,
     isFromDevTools: false,
   });
 }
@@ -489,9 +507,9 @@ add_task(async function checkAllTheCSS() {
   checkWhitelist(propNameWhitelist);
 
   // Clean up to avoid leaks:
-  iframe.remove();
   doc.head.innerHTML = "";
   doc = null;
+  iframe.remove();
   iframe = null;
   win = null;
   hiddenFrame.destroy();

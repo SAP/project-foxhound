@@ -21,13 +21,10 @@
 #include "nsIFileURL.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::dom::quota::AssertIsOnIOThread;
 using mozilla::dom::quota::Client;
-using mozilla::dom::quota::IntCString;
 using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
 using mozilla::dom::quota::PersistenceType;
 
@@ -209,7 +206,7 @@ nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBFile,
 
   const nsCString directoryLockIdClause =
       aQuotaInfo.mDirectoryLockId >= 0
-          ? "&directoryLockId="_ns + IntCString(aQuotaInfo.mDirectoryLockId)
+          ? "&directoryLockId="_ns + IntToCString(aQuotaInfo.mDirectoryLockId)
           : EmptyCString();
 
   rv = NS_MutateURI(mutator)
@@ -226,7 +223,7 @@ nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBFile,
   }
 
   nsCOMPtr<mozIStorageConnection> conn;
-  rv = ss->OpenDatabaseWithFileURL(dbFileUrl, getter_AddRefs(conn));
+  rv = ss->OpenDatabaseWithFileURL(dbFileUrl, ""_ns, getter_AddRefs(conn));
   if (rv == NS_ERROR_FILE_CORRUPTED) {
     NS_WARNING("Cache database corrupted. Recreating empty database.");
 
@@ -239,7 +236,7 @@ nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBFile,
       return rv;
     }
 
-    rv = ss->OpenDatabaseWithFileURL(dbFileUrl, getter_AddRefs(conn));
+    rv = ss->OpenDatabaseWithFileURL(dbFileUrl, ""_ns, getter_AddRefs(conn));
   }
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -258,13 +255,13 @@ nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBFile,
       return rv;
     }
 
-    rv = ss->OpenDatabaseWithFileURL(dbFileUrl, getter_AddRefs(conn));
+    rv = ss->OpenDatabaseWithFileURL(dbFileUrl, ""_ns, getter_AddRefs(conn));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
   }
 
-  rv = db::InitializeConnection(conn);
+  rv = db::InitializeConnection(*conn);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -274,6 +271,4 @@ nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBFile,
   return rv;
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

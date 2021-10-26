@@ -201,6 +201,10 @@ SearchSuggestionController.prototype = {
    * @param {boolean} privateMode - whether the request is being made in the context of private browsing
    * @param {nsISearchEngine} engine - search engine for the suggestions.
    * @param {int} userContextId - the userContextId of the selected tab.
+   * @param {boolean} restrictToEngine - whether to restrict local historical
+   *   suggestions to the ones registered under the given engine.
+   * @param {boolean} dedupeRemoteAndLocal - whether to remove remote
+   *   suggestions that dupe local suggestions
    *
    * @returns {Promise} resolving to an object with the following contents:
    * @returns {array<SearchSuggestionEntry>} results.local
@@ -208,7 +212,14 @@ SearchSuggestionController.prototype = {
    * @returns {array<SearchSuggestionEntry>} results.remote
    *   Contains remote search suggestions.
    */
-  fetch(searchTerm, privateMode, engine, userContextId = 0) {
+  fetch(
+    searchTerm,
+    privateMode,
+    engine,
+    userContextId = 0,
+    restrictToEngine = false,
+    dedupeRemoteAndLocal = true
+  ) {
     // There is no smart filtering from previous results here (as there is when looking through
     // history/form data) because the result set returned by the server is different for every typed
     // value - e.g. "ocean breathes" does not return a subset of the results returned for "ocean".
@@ -256,7 +267,12 @@ SearchSuggestionController.prototype = {
 
     // Local results from form history
     if (this.maxLocalResults) {
-      promises.push(this._fetchFormHistory(searchTerm));
+      promises.push(
+        this._fetchFormHistory(
+          searchTerm,
+          restrictToEngine ? engine.name : null
+        )
+      );
     }
 
     function handleRejection(reason) {
@@ -268,7 +284,7 @@ SearchSuggestionController.prototype = {
       return null;
     }
     return Promise.all(promises).then(
-      this._dedupeAndReturnResults.bind(this),
+      results => this._dedupeAndReturnResults(results, dedupeRemoteAndLocal),
       handleRejection
     );
   },
@@ -289,7 +305,7 @@ SearchSuggestionController.prototype = {
 
   // Private methods
 
-  _fetchFormHistory(searchTerm) {
+  _fetchFormHistory(searchTerm, source) {
     return new Promise(resolve => {
       let acSearchObserver = {
         // Implements nsIAutoCompleteSearch
@@ -336,11 +352,20 @@ SearchSuggestionController.prototype = {
       let formHistory = Cc[
         "@mozilla.org/autocomplete/search;1?name=form-history"
       ].createInstance(Ci.nsIAutoCompleteSearch);
+      let params = this.formHistoryParam || DEFAULT_FORM_HISTORY_PARAM;
+      let options = null;
+      if (source) {
+        options = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+          Ci.nsIWritablePropertyBag2
+        );
+        options.setPropertyAsAUTF8String("source", source);
+      }
       formHistory.startSearch(
         searchTerm,
-        this.formHistoryParam || DEFAULT_FORM_HISTORY_PARAM,
+        params,
         this._formHistoryResult,
-        acSearchObserver
+        acSearchObserver,
+        options
       );
     });
   },
@@ -536,9 +561,11 @@ SearchSuggestionController.prototype = {
 
   /**
    * @param {Array} suggestResults - an array of result objects from different sources (local or remote)
+   * @param {boolean} dedupeRemoteAndLocal - whether to remove remote
+   *   suggestions that dupe local suggestions
    * @returns {object}
    */
-  _dedupeAndReturnResults(suggestResults) {
+  _dedupeAndReturnResults(suggestResults, dedupeRemoteAndLocal) {
     if (this._searchString === null) {
       // _searchString can be null if stop() was called and remote suggestions
       // were disabled (stopping if we are fetching remote suggestions will
@@ -590,7 +617,7 @@ SearchSuggestionController.prototype = {
 
     // We don't want things to appear in both history and suggestions so remove
     // entries from remote results that are already in local.
-    if (results.remote.length && results.local.length) {
+    if (results.remote.length && results.local.length && dedupeRemoteAndLocal) {
       for (let i = 0; i < results.local.length; ++i) {
         let dupIndex = results.remote.findIndex(e =>
           e.equals(results.local[i])

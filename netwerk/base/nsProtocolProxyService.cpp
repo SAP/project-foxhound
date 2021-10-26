@@ -36,7 +36,9 @@
 #include "nsISystemProxySettings.h"
 #include "nsINetworkLinkService.h"
 #include "nsIHttpChannelInternal.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/Unused.h"
 
@@ -771,7 +773,6 @@ nsProtocolProxyService::nsProtocolProxyService()
       mSOCKSProxyRemoteDNS(false),
       mProxyOverTLS(true),
       mWPADOverDHCPEnabled(false),
-      mAllowHijackingLocalhost(false),
       mPACMan(nullptr),
       mSessionStart(PR_Now()),
       mFailedProxyTimeout(30 * 60)  // 30 minute default
@@ -1019,11 +1020,6 @@ void nsProtocolProxyService::PrefsChanged(nsIPrefBranch* prefBranch,
     reloadPAC = reloadPAC || mProxyConfig == PROXYCONFIG_WPAD;
   }
 
-  if (!pref || !strcmp(pref, PROXY_PREF("allow_hijacking_localhost"))) {
-    proxy_GetBoolPref(prefBranch, PROXY_PREF("allow_hijacking_localhost"),
-                      mAllowHijackingLocalhost);
-  }
-
   if (!pref || !strcmp(pref, PROXY_PREF("failover_timeout")))
     proxy_GetIntPref(prefBranch, PROXY_PREF("failover_timeout"),
                      mFailedProxyTimeout);
@@ -1097,9 +1093,12 @@ bool nsProtocolProxyService::CanUseProxy(nsIURI* aURI, int32_t defaultPort) {
 
   // Don't use proxy for local hosts (plain hostname, no dots)
   if ((!is_ipaddr && mFilterLocalHosts && !host.Contains('.')) ||
-      (!mAllowHijackingLocalhost &&
-       (host.EqualsLiteral("127.0.0.1") || host.EqualsLiteral("::1") ||
-        host.EqualsLiteral("localhost")))) {
+      // This method detects if we have network.proxy.allow_hijacking_localhost
+      // pref enabled. If it's true then this method will always return false
+      // otherwise it returns true if the host matches an address that's
+      // hardcoded to the loopback address.
+      (!StaticPrefs::network_proxy_allow_hijacking_localhost() &&
+       nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(host))) {
     LOG(("Not using proxy for this local host [%s]!\n", host.get()));
     return false;  // don't allow proxying
   }
@@ -1606,8 +1605,8 @@ nsProtocolProxyService::NewProxyInfo(
     const nsACString& aConnectionIsolationKey, uint32_t aFlags,
     uint32_t aFailoverTimeout, nsIProxyInfo* aFailoverProxy,
     nsIProxyInfo** aResult) {
-  return NewProxyInfoWithAuth(aType, aHost, aPort, EmptyCString(),
-                              EmptyCString(), aProxyAuthorizationHeader,
+  return NewProxyInfoWithAuth(aType, aHost, aPort, ""_ns, ""_ns,
+                              aProxyAuthorizationHeader,
                               aConnectionIsolationKey, aFlags, aFailoverTimeout,
                               aFailoverProxy, aResult);
 }
@@ -2206,8 +2205,7 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
   }
 
   if (type) {
-    rv = NewProxyInfo_Internal(type, *host, port, EmptyCString(),
-                               EmptyCString(), EmptyCString(), EmptyCString(),
+    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, ""_ns, ""_ns, ""_ns,
                                proxyFlags, UINT32_MAX, nullptr, flags, result);
     if (NS_FAILED(rv)) return rv;
   }

@@ -9,6 +9,7 @@ use crate::gecko::values::{convert_nscolor_to_rgba, convert_rgba_to_nscolor};
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs;
 use crate::media_queries::MediaType;
+use crate::context::QuirksMode;
 use crate::properties::ComputedValues;
 use crate::string_cache::Atom;
 use crate::values::computed::Length;
@@ -19,7 +20,7 @@ use cssparser::RGBA;
 use euclid::default::Size2D;
 use euclid::{Scale, SideOffsets2D};
 use servo_arc::Arc;
-use std::fmt;
+use std::{cmp, fmt};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use style_traits::viewport::ViewportConstraints;
 use style_traits::{CSSPixel, DevicePixel};
@@ -143,6 +144,11 @@ impl Device {
             .store(size.px().to_bits(), Ordering::Relaxed)
     }
 
+    /// The quirks mode of the document.
+    pub fn quirks_mode(&self) -> QuirksMode {
+        self.document().mCompatMode.into()
+    }
+
     /// Sets the body text color for the "inherit color from body" quirk.
     ///
     /// <https://quirks.spec.whatwg.org/#the-tables-inherit-color-from-body-quirk>
@@ -206,6 +212,15 @@ impl Device {
         self.reset_computed_values();
     }
 
+    /// Returns whether this document is in print preview.
+    pub fn is_print_preview(&self) -> bool {
+        let pc = match self.pres_context() {
+            Some(pc) => pc,
+            None => return false,
+        };
+        pc.mType == structs::nsPresContext_nsPresContextType_eContext_PrintPreview
+    }
+
     /// Returns the current media type of the device.
     pub fn media_type(&self) -> MediaType {
         let pc = match self.pres_context() {
@@ -223,12 +238,29 @@ impl Device {
         MediaType(CustomIdent(unsafe { Atom::from_raw(medium_to_use) }))
     }
 
+    // It may make sense to account for @page rule margins here somehow, however
+    // it's not clear how that'd work, see:
+    // https://github.com/w3c/csswg-drafts/issues/5437
+    fn page_size_minus_default_margin(&self, pc: &structs::nsPresContext) -> Size2D<Au> {
+        debug_assert!(pc.mIsRootPaginatedDocument() != 0);
+        let area = &pc.mPageSize;
+        let margin = &pc.mDefaultPageMargin;
+        let width = area.width - margin.left - margin.right;
+        let height = area.height - margin.top - margin.bottom;
+        Size2D::new(Au(cmp::max(width, 0)), Au(cmp::max(height, 0)))
+    }
+
     /// Returns the current viewport size in app units.
     pub fn au_viewport_size(&self) -> Size2D<Au> {
         let pc = match self.pres_context() {
             Some(pc) => pc,
             None => return Size2D::new(Au(0), Au(0)),
         };
+
+        if pc.mIsRootPaginatedDocument() != 0 {
+            return self.page_size_minus_default_margin(pc);
+        }
+
         let area = &pc.mVisibleArea;
         Size2D::new(Au(area.width), Au(area.height))
     }
@@ -237,11 +269,15 @@ impl Device {
     /// used for viewport unit resolution.
     pub fn au_viewport_size_for_viewport_unit_resolution(&self) -> Size2D<Au> {
         self.used_viewport_size.store(true, Ordering::Relaxed);
-
         let pc = match self.pres_context() {
             Some(pc) => pc,
             None => return Size2D::new(Au(0), Au(0)),
         };
+
+        if pc.mIsRootPaginatedDocument() != 0 {
+            return self.page_size_minus_default_margin(pc)
+        }
+
         let size = &pc.mSizeForViewportUnits;
         Size2D::new(Au(size.width), Au(size.height))
     }

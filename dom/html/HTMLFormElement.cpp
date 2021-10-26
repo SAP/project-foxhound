@@ -81,8 +81,7 @@
 // construction, destruction
 NS_IMPL_NS_NEW_HTML_ELEMENT(Form)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static const uint8_t NS_FORM_AUTOCOMPLETE_ON = 1;
 static const uint8_t NS_FORM_AUTOCOMPLETE_OFF = 0;
@@ -1693,9 +1692,13 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
 
   // Potentially the page uses the CSP directive 'upgrade-insecure-requests'. In
   // such a case we have to upgrade the action url from http:// to https://.
-  // If the actionURL is not http, then there is nothing to do.
-  bool isHttpScheme = actionURL->SchemeIs("http");
-  if (isHttpScheme && document->GetUpgradeInsecureRequests(false)) {
+  // The upgrade is only required if the actionURL is http and not a potentially
+  // trustworthy loopback URI.
+  bool needsUpgrade =
+      actionURL->SchemeIs("http") &&
+      !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(actionURL) &&
+      document->GetUpgradeInsecureRequests(false);
+  if (needsUpgrade) {
     // let's use the old specification before the upgrade for logging
     AutoTArray<nsString, 2> params;
     nsAutoCString spec;
@@ -1717,10 +1720,10 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
 
     CSP_LogLocalizedStr(
         "upgradeInsecureRequest", params,
-        EmptyString(),  // aSourceFile
-        EmptyString(),  // aScriptSample
-        0,              // aLineNumber
-        0,              // aColumnNumber
+        u""_ns,  // aSourceFile
+        u""_ns,  // aScriptSample
+        0,       // aLineNumber
+        0,       // aColumnNumber
         nsIScriptError::warningFlag, "upgradeInsecureRequest"_ns,
         document->InnerWindowID(),
         !!document->NodePrincipal()->OriginAttributesRef().mPrivateBrowsingId);
@@ -2109,7 +2112,7 @@ HTMLFormElement::WalkRadioGroup(const nsAString& aName,
         nsCOMPtr<Element> controlElement = do_QueryInterface(control);
         if (controlElement &&
             controlElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
-                                        EmptyString(), eCaseMatters) &&
+                                        u""_ns, eCaseMatters) &&
             !aVisitor->Visit(control)) {
           break;
         }
@@ -2424,5 +2427,4 @@ bool HTMLFormElement::IsSubmitting() const {
   return loading;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

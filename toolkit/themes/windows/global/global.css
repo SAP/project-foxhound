@@ -11,13 +11,14 @@
 :root {
   /* ::::: Variables ::::: */
   --arrowpanel-padding: 10px;
-  --default-arrowpanel-background: -moz-field;
-  --default-arrowpanel-color: -moz-fieldText;
+  --default-arrowpanel-background: Field;
+  --default-arrowpanel-color: FieldText;
   --default-arrowpanel-border-color: ThreeDShadow;
   --arrowpanel-background: var(--default-arrowpanel-background);
   --arrowpanel-color: var(--default-arrowpanel-color);
   --arrowpanel-border-color: var(--default-arrowpanel-border-color);
   --panel-disabled-color: GrayText;
+  --panel-description-color: GrayText;
   /* ::::: Styles ::::: */
   background-color: -moz-Dialog;
   color: -moz-DialogText;
@@ -33,6 +34,7 @@
 /* ::::: Alert icons :::::*/
 
 .message-icon,
+.alert-dialog #infoIcon,
 .alert-icon,
 .error-icon,
 .question-icon {
@@ -47,8 +49,6 @@
 .alert-dialog #infoIcon,
 .alert-icon {
   list-style-image: url("chrome://global/skin/icons/warning.svg");
-  width: 32px;
-  height: 32px;
 }
 
 .error-icon {
@@ -57,6 +57,9 @@
 
 .question-icon {
   list-style-image: url("chrome://global/skin/icons/help.svg");
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.8;
 }
 
 /* ::::: iframe ::::: */

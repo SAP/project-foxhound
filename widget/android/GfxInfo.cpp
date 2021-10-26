@@ -576,14 +576,23 @@ nsresult GfxInfo::GetFeatureStatusImpl(
       NS_LossyConvertUTF16toASCII model(mModel);
 
 #ifdef NIGHTLY_BUILD
-      // On nightly enable all Adreno 5xx GPUs
+      // On Nightly enable Webrender on all Adreno 5xx GPUs
       isUnblocked |= gpu.Find("Adreno (TM) 5", /*ignoreCase*/ true) >= 0;
+
+      // On Nightly enable Webrender on all Mali-Txxx GPUs
+      isUnblocked |= gpu.Find("Mali-T", /*ignoreCase*/ true) >= 0;
 #endif
-      // Enable Webrender on all pixel 2 models (Subset of Adreno 5xx)
-      isUnblocked |= model.Find("Pixel 2", /*ignoreCase*/ true) >= 0;
+      // Enable Webrender on all Adreno 5xx GPUs, excluding 505 and 506.
+      isUnblocked |=
+          gpu.Find("Adreno (TM) 5", /*ignoreCase*/ true) >= 0 &&
+          gpu.Find("Adreno (TM) 505", /*ignoreCase*/ true) == kNotFound &&
+          gpu.Find("Adreno (TM) 506", /*ignoreCase*/ true) == kNotFound;
 
       // Enable Webrender on all Adreno 6xx devices
       isUnblocked |= gpu.Find("Adreno (TM) 6", /*ignoreCase*/ true) >= 0;
+
+      // Enable Webrender on all Mali-Gxx GPUs
+      isUnblocked |= gpu.Find("Mali-G", /*ignoreCase*/ true) >= 0;
 
       if (!isUnblocked) {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
@@ -595,8 +604,13 @@ nsresult GfxInfo::GetFeatureStatusImpl(
     }
 
     if (aFeature == FEATURE_WEBRENDER_SCISSORED_CACHE_CLEARS) {
-      const bool isMali = false;  // TODO
-      if (isMali) {
+      // Emulator with SwiftShader is buggy when attempting to clear picture
+      // cache textures with a scissor rect set.
+      const bool isEmulatorSwiftShader =
+          mGLStrings->Renderer().Find(
+              "Android Emulator OpenGL ES Translator (Google SwiftShader)") >=
+          0;
+      if (isEmulatorSwiftShader) {
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_BUG_1603515";
       } else {

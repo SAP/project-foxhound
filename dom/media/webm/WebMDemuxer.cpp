@@ -23,6 +23,7 @@
 #include "prprf.h"  // leaving it for PR_vsnprintf()
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
+#include "VideoUtils.h"
 
 #include <algorithm>
 #include <numeric>
@@ -638,8 +639,8 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
             packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_UNENCRYPTED ||
                 packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_FALSE,
             "Unencrypted packet expected");
-        auto sample = MakeSpan(data, length);
-        auto alphaSample = MakeSpan(alphaData, alphaLength);
+        auto sample = Span(data, length);
+        auto alphaSample = Span(alphaData, alphaLength);
 
         switch (mVideoCodec) {
           case NESTEGG_CODEC_VP8:

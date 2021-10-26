@@ -22,6 +22,7 @@
 #include "LoadInfo.h"
 #include "nsServiceManagerUtils.h"
 #include "nsRedirectHistoryEntry.h"
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 
 using namespace mozilla;
@@ -101,7 +102,7 @@ nsresult nsBaseChannel::Redirect(nsIChannel* newChannel, uint32_t redirectFlags,
   // nsBaseChannel hst no thing to do with HttpBaseChannel, we would not care
   // about referrer and remote address in this case
   nsCOMPtr<nsIRedirectHistoryEntry> entry =
-      new net::nsRedirectHistoryEntry(uriPrincipal, nullptr, EmptyCString());
+      new net::nsRedirectHistoryEntry(uriPrincipal, nullptr, ""_ns);
 
   newLoadInfo->AppendRedirectHistoryEntry(entry, isInternalRedirect);
 
@@ -254,7 +255,7 @@ nsresult nsBaseChannel::BeginPumpingData() {
 
   mPumpingData = true;
   mRequest = mPump;
-  rv = mPump->AsyncRead(this, nullptr);
+  rv = mPump->AsyncRead(this);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -700,6 +701,8 @@ nsBaseChannel::AsyncOpen(nsIStreamListener* aListener) {
     mCallbacks = nullptr;
     return rv;
   }
+
+  AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(this);
 
   // Store the listener and context early so that OpenContentStream and the
   // stream's AsyncWait method (called by AsyncRead) can have access to them

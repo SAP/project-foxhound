@@ -48,8 +48,7 @@ static bool IsSiteSpecific() {
          mozilla::Preferences::GetBool("browser.zoom.siteSpecific", false);
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class ImageListener : public MediaDocumentStreamListener {
  public:
@@ -680,7 +679,8 @@ void ImageDocument::ResetZoomLevel() {
   }
 
   if (RefPtr<BrowsingContext> bc = GetBrowsingContext()) {
-    bc->SetFullZoom(mOriginalZoomLevel);
+    // Resetting the zoom level on a discarded browsing context has no effect.
+    Unused << bc->SetFullZoom(mOriginalZoomLevel);
   }
 }
 
@@ -698,8 +698,7 @@ float ImageDocument::GetResolution() {
   return mOriginalResolution;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 nsresult NS_NewImageDocument(mozilla::dom::Document** aResult) {
   auto* doc = new mozilla::dom::ImageDocument();

@@ -19,6 +19,7 @@
 #ifndef wasm_code_h
 #define wasm_code_h
 
+#include "gc/Memory.h"
 #include "jit/shared/Assembler-shared.h"
 #include "js/HashTable.h"
 #include "threading/ExclusiveData.h"
@@ -162,6 +163,8 @@ class CodeSegment {
 
 using UniqueModuleSegment = UniquePtr<ModuleSegment>;
 
+enum IsTier2 { Tier2, NotTier2 };
+
 class ModuleSegment : public CodeSegment {
   const Tier tier_;
   uint8_t* const trapCode_;
@@ -175,8 +178,9 @@ class ModuleSegment : public CodeSegment {
   static UniqueModuleSegment create(Tier tier, const Bytes& unlinkedBytes,
                                     const LinkData& linkData);
 
-  bool initialize(const CodeTier& codeTier, const LinkData& linkData,
-                  const Metadata& metadata, const MetadataTier& metadataTier);
+  bool initialize(IsTier2 compileMode, const CodeTier& codeTier,
+                  const LinkData& linkData, const Metadata& metadata,
+                  const MetadataTier& metadataTier);
 
   Tier tier() const { return tier_; }
 
@@ -519,7 +523,8 @@ class LazyStubTier {
   size_t lastStubSegmentIndex_;
 
   bool createMany(const Uint32Vector& funcExportIndices,
-                  const CodeTier& codeTier, size_t* stubSegmentIndex);
+                  const CodeTier& codeTier, bool flushAllThreadsIcaches,
+                  size_t* stubSegmentIndex);
 
  public:
   LazyStubTier() : lastStubSegmentIndex_(0) {}
@@ -579,7 +584,7 @@ class CodeTier {
         lazyStubs_(mutexForTier(segment_->tier())) {}
 
   bool initialized() const { return !!code_ && segment_->initialized(); }
-  bool initialize(const Code& code, const LinkData& linkData,
+  bool initialize(IsTier2 isTier2, const Code& code, const LinkData& linkData,
                   const Metadata& metadata);
 
   Tier tier() const { return segment_->tier(); }
@@ -622,6 +627,15 @@ class JumpTables {
     // to that effect.
     MOZ_ASSERT(i < numFuncs_);
     jit_.get()[i] = target;
+  }
+  void setJitEntryIfNull(size_t i, void* target) const {
+    // Make sure that compare-and-write is atomic; see comment in
+    // wasm::Module::finishTier2 to that effect.
+    MOZ_ASSERT(i < numFuncs_);
+    void* expected = nullptr;
+    (void)__atomic_compare_exchange_n(&jit_.get()[i], &expected, target,
+                                      /*weak=*/false, __ATOMIC_RELAXED,
+                                      __ATOMIC_RELAXED);
   }
   void** getAddressOfJitEntry(size_t i) const {
     MOZ_ASSERT(i < numFuncs_);
@@ -681,6 +695,9 @@ class Code : public ShareableBase<Code> {
 
   void setJitEntry(size_t i, void* target) const {
     jumpTables_.setJitEntry(i, target);
+  }
+  void setJitEntryIfNull(size_t i, void* target) const {
+    jumpTables_.setJitEntryIfNull(i, target);
   }
   void** getAddressOfJitEntry(size_t i) const {
     return jumpTables_.getAddressOfJitEntry(i);

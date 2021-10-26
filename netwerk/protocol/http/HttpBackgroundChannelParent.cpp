@@ -198,8 +198,15 @@ bool HttpBackgroundChannelParent::OnTransportAndData(
     return NS_SUCCEEDED(rv);
   }
 
-  return SendOnTransportAndData(aChannelStatus, aTransportStatus, aOffset,
-                                aCount, aData, false);
+  nsHttp::SendFunc<nsDependentCSubstring> sendFunc =
+      [self = UnsafePtr<HttpBackgroundChannelParent>(this), aChannelStatus,
+       aTransportStatus](const nsDependentCSubstring& aData, uint64_t aOffset,
+                         uint32_t aCount) {
+        return self->SendOnTransportAndData(aChannelStatus, aTransportStatus,
+                                            aOffset, aCount, aData, false);
+      };
+
+  return nsHttp::SendDataInChunks(aData, aOffset, aCount, sendFunc);
 }
 
 bool HttpBackgroundChannelParent::OnStopRequest(
@@ -236,7 +243,32 @@ bool HttpBackgroundChannelParent::OnStopRequest(
   TimeStamp lastActTabOpt = nsHttp::GetLastActiveTabLoadOptimizationHit();
 
   return SendOnStopRequest(aChannelStatus, aTiming, lastActTabOpt,
-                           aResponseTrailers, aConsoleReports);
+                           aResponseTrailers, aConsoleReports, false);
+}
+
+bool HttpBackgroundChannelParent::OnConsoleReport(
+    const nsTArray<ConsoleReportCollected>& aConsoleReports) {
+  LOG(("HttpBackgroundChannelParent::OnConsoleReport [this=%p]", this));
+  AssertIsInMainProcess();
+
+  if (NS_WARN_IF(!mIPCOpened)) {
+    return false;
+  }
+
+  if (!IsOnBackgroundThread()) {
+    MutexAutoLock lock(mBgThreadMutex);
+    nsresult rv = mBackgroundThread->Dispatch(
+        NewRunnableMethod<const CopyableTArray<ConsoleReportCollected>>(
+            "net::HttpBackgroundChannelParent::OnConsoleReport", this,
+            &HttpBackgroundChannelParent::OnConsoleReport, aConsoleReports),
+        NS_DISPATCH_NORMAL);
+
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+
+    return NS_SUCCEEDED(rv);
+  }
+
+  return SendOnConsoleReport(aConsoleReports);
 }
 
 bool HttpBackgroundChannelParent::OnAfterLastPart(const nsresult aStatus) {
@@ -310,39 +342,6 @@ bool HttpBackgroundChannelParent::OnStatus(const nsresult aStatus) {
   }
 
   return SendOnStatus(aStatus);
-}
-
-bool HttpBackgroundChannelParent::OnDiversion() {
-  LOG(("HttpBackgroundChannelParent::OnDiversion [this=%p]\n", this));
-  AssertIsInMainProcess();
-
-  if (NS_WARN_IF(!mIPCOpened)) {
-    return false;
-  }
-
-  if (!IsOnBackgroundThread()) {
-    MutexAutoLock lock(mBgThreadMutex);
-    nsresult rv = mBackgroundThread->Dispatch(
-        NewRunnableMethod("net::HttpBackgroundChannelParent::OnDiversion", this,
-                          &HttpBackgroundChannelParent::OnDiversion),
-        NS_DISPATCH_NORMAL);
-
-    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-
-    return NS_SUCCEEDED(rv);
-  }
-
-  if (!SendFlushedForDiversion()) {
-    return false;
-  }
-
-  // The listener chain should now be setup; tell HttpChannelChild to divert
-  // the OnDataAvailables and OnStopRequest to associated HttpChannelParent.
-  if (!SendDivertMessages()) {
-    return false;
-  }
-
-  return true;
 }
 
 bool HttpBackgroundChannelParent::OnNotifyClassificationFlags(

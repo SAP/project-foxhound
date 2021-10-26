@@ -49,10 +49,10 @@ Structure:
         defaultPrivateSearchEngine: {,
           // data about the current default engine for private browsing mode. Same as defaultSearchEngineData.
         },
-        searchCohort: <string>, // optional, contains an identifier for any active search A/B experiments
         launcherProcessState: <integer>, // optional, values correspond to values of mozilla::LauncherRegistryInfo::EnabledState enum
         e10sEnabled: <bool>, // whether e10s is on, i.e. browser tabs open by default in a different process
         e10sMultiProcesses: <integer>, // Maximum number of processes that will be launched for regular web content
+        fissionEnabled: <bool>, // whether fission is enabled this session, and subframes can load in a different process
         telemetryEnabled: <bool>, // false on failure
         locale: <string>, // e.g. "it", null on failure
         intl: {
@@ -243,6 +243,9 @@ Structure:
               wrCompositor: { // native OS compositor (CA, DComp, etc.)
                 status: <string>
               }
+              wrSoftware: { // Software backend for WebRender, only computed when 'compositor' is 'webrender'
+                status: <string>
+              }
               openglCompositing: { // OpenGL compositing.
                 status: <string>
               }
@@ -378,11 +381,6 @@ This object contains the same information as ``defaultSearchEngineData``. It
 is only reported if the ``browser.search.separatePrivateDefault`` preference is
 set to ``true``.
 
-searchCohort
-~~~~~~~~~~~~
-
-If the user has been enrolled into a search default change experiment, this contains the string identifying the experiment the user is taking part in. Most user profiles will never be part of any search default change experiment, and will not send this value.
-
 userPrefs
 ~~~~~~~~~
 
@@ -397,8 +395,6 @@ The following is a partial list of `collected preferences <https://searchfox.org
 - ``browser.urlbar.suggest.searches``: True if search suggestions are enabled in the urlbar. Defaults to false.
 
 - ``browser.zoom.full`` (deprecated): True if zoom is enabled for both text and images, that is if "Zoom Text Only" is not enabled. Defaults to true. This preference was collected in Firefox 50 to 52 (`Bug 979323 <https://bugzilla.mozilla.org/show_bug.cgi?id=979323>`_).
-
-- ``fission.autostart``: True if fission is enabled at startup. Default to false. For more information please visit `the project wiki page <https://wiki.mozilla.org/Project_Fission>`_.
 
 - ``security.tls.version.enable-deprecated``: True if deprecated versions of TLS (1.0 and 1.1) have been enabled by the user. Defaults to false.
 

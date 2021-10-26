@@ -59,6 +59,14 @@ ChromeUtils.defineModuleGetter(
   "pktApi",
   "chrome://pocket/content/pktApi.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "pktTelemetry",
+  "chrome://pocket/content/pktTelemetry.jsm"
+);
+
+const POCKET_ONSAVERECS_PREF = "extensions.pocket.onSaveRecs";
+const POCKET_ONSAVERECS_LOCLES_PREF = "extensions.pocket.onSaveRecs.locales";
 
 var pktUI = (function() {
   // -- Initialization (on startup and new windows) -- //
@@ -72,6 +80,20 @@ var pktUI = (function() {
   var overflowMenuHeight = 475;
   var savePanelWidth = 350;
   var savePanelHeights = { collapsed: 153, expanded: 272 };
+  var onSaveRecsEnabledPref;
+  var onSaveRecsLocalesPref;
+
+  function initPrefs() {
+    onSaveRecsEnabledPref = Services.prefs.getBoolPref(
+      POCKET_ONSAVERECS_PREF,
+      false
+    );
+    onSaveRecsLocalesPref = Services.prefs.getStringPref(
+      POCKET_ONSAVERECS_LOCLES_PREF,
+      ""
+    );
+  }
+  initPrefs();
 
   // -- Communication to API -- //
 
@@ -145,6 +167,8 @@ var pktUI = (function() {
       showPanel(
         "about:pocket-signup?pockethost=" +
           Services.prefs.getCharPref("extensions.pocket.site") +
+          "&loggedOutVariant=" +
+          Services.prefs.getCharPref("extensions.pocket.loggedOutVariant") +
           "&fxasignedin=" +
           fxasignedin +
           "&variant=" +
@@ -158,9 +182,39 @@ var pktUI = (function() {
         {
           width: inOverflowMenu ? overflowMenuWidth : 300,
           height: startheight,
+          onShow() {
+            // A successful button click, for logged out users.
+            pktTelemetry.sendStructuredIngestionEvent(
+              pktTelemetry.createPingPayload({
+                events: [
+                  {
+                    action: "click",
+                    source: "save_button",
+                  },
+                ],
+              })
+            );
+          },
         }
       );
     });
+  }
+
+  /**
+   * Get a list of recs for item and show them in the panel.
+   */
+  function getAndShowRecsForItem(item, options) {
+    var onSaveRecsEnabled =
+      onSaveRecsEnabledPref && onSaveRecsLocalesPref.includes(getUILocale());
+
+    if (
+      onSaveRecsEnabled &&
+      item &&
+      item.resolved_id &&
+      item.resolved_id !== "0"
+    ) {
+      pktApi.getRecsForItem(item.resolved_id, options);
+    }
   }
 
   /**
@@ -232,6 +286,18 @@ var pktUI = (function() {
               return;
             }
 
+            // A successful button click, for logged in users.
+            pktTelemetry.sendStructuredIngestionEvent(
+              pktTelemetry.createPingPayload({
+                events: [
+                  {
+                    action: "click",
+                    source: "save_button",
+                  },
+                ],
+              })
+            );
+
             // Add url
             var options = {
               success(data, request) {
@@ -252,6 +318,32 @@ var pktUI = (function() {
                   successResponse
                 );
                 getPanelFrame().setAttribute("itemAdded", "true");
+
+                getAndShowRecsForItem(item, {
+                  success(data) {
+                    pktUIMessaging.sendMessageToPanel(
+                      panelId,
+                      "renderItemRecs",
+                      data
+                    );
+                    if (data?.recommendations?.[0]?.experiment) {
+                      const payload = pktTelemetry.createPingPayload({
+                        // This is the ML model used to recommend the story.
+                        // Right now this value is the same for all three items returned together,
+                        // so we can just use the first item's value for all.
+                        model: data.recommendations[0].experiment,
+                        // Create an impression event for each item rendered.
+                        events: data.recommendations.map((item, index) => ({
+                          action: "impression",
+                          position: index,
+                          source: "on_save_recs",
+                        })),
+                      });
+                      // Send view impression ping.
+                      pktTelemetry.sendStructuredIngestionEvent(payload);
+                    }
+                  },
+                });
               },
               error(error, request) {
                 // If user is not authorized show singup page
@@ -396,6 +488,20 @@ var pktUI = (function() {
           return;
         }
 
+        // We don't track every click, only clicks with a known source.
+        if (data.source) {
+          const payload = pktTelemetry.createPingPayload({
+            events: [
+              {
+                action: "click",
+                source: data.source,
+              },
+            ],
+          });
+          // Send click event ping.
+          pktTelemetry.sendStructuredIngestionEvent(payload);
+        }
+
         var url = data.url;
         openTabWithUrl(url, contentPrincipal, csp);
         pktUIMessaging.sendResponseMessageToPanel(
@@ -403,6 +509,43 @@ var pktUI = (function() {
           _openTabWithUrlMessageId,
           url
         );
+      }
+    );
+
+    // Open a new tab with a Pocket story url
+    var _openTabWithPocketUrlMessageId = "openTabWithPocketUrl";
+    pktUIMessaging.addMessageListener(
+      iframe,
+      _openTabWithPocketUrlMessageId,
+      function(panelId, data, contentPrincipal, csp) {
+        try {
+          urlSecurityCheck(
+            data.url,
+            contentPrincipal,
+            Services.scriptSecurityManager.DISALLOW_INHERIT_PRINCIPAL
+          );
+        } catch (ex) {
+          return;
+        }
+
+        const { url, position, model } = data;
+        // Check to see if we need to and can fire valid telemetry.
+        if (model && (position || position === 0)) {
+          const payload = pktTelemetry.createPingPayload({
+            model,
+            events: [
+              {
+                action: "click",
+                position,
+                source: "on_save_recs",
+              },
+            ],
+          });
+          // Send click event ping.
+          pktTelemetry.sendStructuredIngestionEvent(payload);
+        }
+
+        openTabWithUrl(url, contentPrincipal, csp);
       }
     );
 
@@ -493,18 +636,6 @@ var pktUI = (function() {
       panelId,
       data
     ) {});
-
-    pktUIMessaging.addMessageListener(iframe, "collapseSavePanel", function(
-      panelId,
-      data
-    ) {
-      if (!pktApi.isPremiumUser() && !isInOverflowMenu()) {
-        resizePanel({
-          width: savePanelWidth,
-          height: savePanelHeights.collapsed,
-        });
-      }
-    });
 
     pktUIMessaging.addMessageListener(iframe, "expandSavePanel", function(
       panelId,
@@ -739,9 +870,11 @@ var pktUI = (function() {
   return {
     setPhotonPageActionPanelFrame,
     getPanelFrame,
+    initPrefs,
 
     openTabWithUrl,
 
+    getAndShowRecsForItem,
     tryToSaveUrl,
     tryToSaveCurrentPage,
   };
@@ -766,11 +899,7 @@ var pktUIMessaging = (function() {
       function(e) {
         var nodePrincipal = e.target.nodePrincipal;
         // ignore to ensure we do not pick up other events in the browser
-        if (
-          !nodePrincipal ||
-          !nodePrincipal.URI ||
-          !nodePrincipal.URI.spec.startsWith("about:pocket")
-        ) {
+        if (!nodePrincipal || !nodePrincipal.spec.startsWith("about:pocket")) {
           return;
         }
 

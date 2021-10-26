@@ -66,6 +66,7 @@ nsHttpResponseHead& nsHttpResponseHead::operator=(
   mContentLength = other.mContentLength;
   mContentType = other.mContentType;
   mContentCharset = other.mContentCharset;
+  mHasCacheControl = other.mHasCacheControl;
   mCacheControlPublic = other.mCacheControlPublic;
   mCacheControlPrivate = other.mCacheControlPrivate;
   mCacheControlNoStore = other.mCacheControlNoStore;
@@ -161,7 +162,7 @@ nsresult nsHttpResponseHead::SetHeader(nsHttpAtom hdr, const nsACString& val,
     return NS_ERROR_FAILURE;
   }
 
-  return SetHeader_locked(hdr, EmptyCString(), val, merge);
+  return SetHeader_locked(hdr, ""_ns, val, merge);
 }
 
 nsresult nsHttpResponseHead::SetHeader_locked(nsHttpAtom atom,

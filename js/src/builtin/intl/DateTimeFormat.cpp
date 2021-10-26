@@ -23,6 +23,8 @@
 #include "gc/FreeOp.h"
 #include "js/CharacterEncoding.h"
 #include "js/Date.h"
+#include "js/experimental/Intl.h"     // JS::AddMozDateTimeFormatConstructor
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/GCAPI.h"
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
@@ -209,7 +211,7 @@ void js::DateTimeFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
   }
 }
 
-bool js::AddMozDateTimeFormatConstructor(JSContext* cx,
+bool JS::AddMozDateTimeFormatConstructor(JSContext* cx,
                                          JS::Handle<JSObject*> intl) {
   RootedObject ctor(
       cx, GlobalObject::createConstructor(cx, MozDateTimeFormat,
@@ -1154,12 +1156,7 @@ static FieldType GetFieldTypeForFormatField(UDateFormatField fieldName) {
       return &JSAtomState::timeZoneName;
 
     case UDAT_FRACTIONAL_SECOND_FIELD:
-#ifdef NIGHTLY_BUILD
       return &JSAtomState::fractionalSecond;
-#else
-      // Currently restricted to Nightly.
-      return &JSAtomState::unknown;
-#endif
 
     case UDAT_FLEXIBLE_DAY_PERIOD_FIELD:
 #ifdef NIGHTLY_BUILD

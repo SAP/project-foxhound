@@ -9,6 +9,7 @@ use neqo_common::{
     hex_with_len, qtrace, Decoder, Encoder, IncrementalDecoderBuffer, IncrementalDecoderIgnore,
     IncrementalDecoderUint,
 };
+use neqo_crypto::random;
 use neqo_transport::Connection;
 use std::convert::TryFrom;
 use std::mem;
@@ -20,15 +21,17 @@ pub(crate) type HFrameType = u64;
 pub(crate) const H3_FRAME_TYPE_DATA: HFrameType = 0x0;
 pub(crate) const H3_FRAME_TYPE_HEADERS: HFrameType = 0x1;
 const H3_FRAME_TYPE_CANCEL_PUSH: HFrameType = 0x3;
-const H3_FRAME_TYPE_SETTINGS: HFrameType = 0x4;
+pub(crate) const H3_FRAME_TYPE_SETTINGS: HFrameType = 0x4;
 const H3_FRAME_TYPE_PUSH_PROMISE: HFrameType = 0x5;
 const H3_FRAME_TYPE_GOAWAY: HFrameType = 0x7;
 const H3_FRAME_TYPE_MAX_PUSH_ID: HFrameType = 0xd;
 
+pub const H3_RESERVED_FRAME_TYPES: &[HFrameType] = &[0x2, 0x6, 0x8, 0x9];
+
 const MAX_READ_SIZE: usize = 4096;
 // data for DATA frame is not read into HFrame::Data.
 #[derive(PartialEq, Debug)]
-pub(crate) enum HFrame {
+pub enum HFrame {
     Data {
         len: u64, // length of the data
     },
@@ -51,6 +54,7 @@ pub(crate) enum HFrame {
     MaxPushId {
         push_id: u64,
     },
+    Grease,
 }
 
 impl HFrame {
@@ -63,6 +67,10 @@ impl HFrame {
             Self::PushPromise { .. } => H3_FRAME_TYPE_PUSH_PROMISE,
             Self::Goaway { .. } => H3_FRAME_TYPE_GOAWAY,
             Self::MaxPushId { .. } => H3_FRAME_TYPE_MAX_PUSH_ID,
+            Self::Grease => {
+                let r = random(7);
+                Decoder::from(&r).decode_uint(7).unwrap() * 0x1f + 0x21
+            }
         }
     }
 
@@ -103,6 +111,11 @@ impl HFrame {
                     enc_inner.encode_varint(*push_id);
                 });
             }
+            Self::Grease => {
+                // Encode some number of random bytes.
+                let r = random(8);
+                enc.encode_vvec(&r[1..usize::from(1 + (r[0] & 0x7))]);
+            }
         }
     }
 }
@@ -116,7 +129,7 @@ enum HFrameReaderState {
 }
 
 #[derive(Debug)]
-pub(crate) struct HFrameReader {
+pub struct HFrameReader {
     state: HFrameReaderState,
     hframe_type: u64,
     hframe_len: u64,
@@ -166,7 +179,6 @@ impl HFrameReader {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     /// returns true if quic stream was closed.
     /// # Errors
     /// May return `HttpFrame` if a frame cannot be decoded.
@@ -222,6 +234,9 @@ impl HFrameReader {
                 if let Some(v) = decoder.consume(&mut input) {
                     qtrace!("HFrameReader::receive: read frame type {}", v);
                     self.hframe_type = v;
+                    if H3_RESERVED_FRAME_TYPES.contains(&self.hframe_type) {
+                        return Err(Error::HttpFrameUnexpected);
+                    }
                     self.state = HFrameReaderState::GetLength {
                         decoder: IncrementalDecoderUint::default(),
                     };
@@ -312,9 +327,13 @@ impl HFrameReader {
             },
             H3_FRAME_TYPE_SETTINGS => {
                 let mut settings = HSettings::default();
-                settings
-                    .decode_frame_contents(&mut dec)
-                    .map_err(|_| Error::HttpFrame)?;
+                settings.decode_frame_contents(&mut dec).map_err(|e| {
+                    if e == Error::HttpSettings {
+                        e
+                    } else {
+                        Error::HttpFrame
+                    }
+                })?;
                 HFrame::Settings { settings }
             }
             H3_FRAME_TYPE_PUSH_PROMISE => HFrame::PushPromise {
@@ -336,12 +355,11 @@ impl HFrameReader {
 
 #[cfg(test)]
 mod tests {
-    use super::{Encoder, Error, HFrame, HFrameReader, HSettings};
+    use super::{Decoder, Encoder, Error, HFrame, HFrameReader, HSettings};
     use crate::settings::{HSetting, HSettingType};
     use neqo_crypto::AuthenticationStatus;
     use neqo_transport::{Connection, StreamType};
-    use num_traits::Num;
-    use test_fixture::{connect, default_client, default_server, now};
+    use test_fixture::{connect, default_client, default_server, fixture_init, now};
 
     #[allow(clippy::many_single_char_names)]
     fn enc_dec(f: &HFrame, st: &str, remaining: usize) {
@@ -369,16 +387,8 @@ mod tests {
         let mut fr: HFrameReader = HFrameReader::new();
 
         // conver string into u8 vector
-        let mut buf: Vec<u8> = Vec::new();
-        if st.len() % 2 != 0 {
-            panic!("Needs to be even length");
-        }
-        for i in 0..st.len() / 2 {
-            let x = st.get(i * 2..i * 2 + 2);
-            let v = <u8 as Num>::from_str_radix(x.unwrap(), 16).unwrap();
-            buf.push(v);
-        }
-        conn_s.stream_send(stream_id, &buf).unwrap();
+        let buf = Encoder::from_hex(st);
+        conn_s.stream_send(stream_id, &buf[..]).unwrap();
         let out = conn_s.process(None, now());
         let _ = conn_c.process(out.dgram(), now());
 
@@ -440,6 +450,25 @@ mod tests {
     fn test_max_push_id_frame4() {
         let f = HFrame::MaxPushId { push_id: 5 };
         enc_dec(&f, "0d0105", 0);
+    }
+
+    #[test]
+    fn grease() {
+        fn make_grease() -> u64 {
+            let mut enc = Encoder::default();
+            HFrame::Grease.encode(&mut enc);
+            let mut dec = Decoder::from(&enc);
+            let ft = dec.decode_varint().unwrap();
+            assert_eq!((ft - 0x21) % 0x1f, 0);
+            let body = dec.decode_vvec().unwrap();
+            assert!(body.len() <= 7);
+            ft
+        }
+
+        fixture_init();
+        let t1 = make_grease();
+        let t2 = make_grease();
+        assert_ne!(t1, t2);
     }
 
     struct HFrameReaderTest {

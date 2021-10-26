@@ -26,6 +26,7 @@
 #include "nsSimpleEnumerator.h"
 #include "nsStringStream.h"
 #include "mozilla/BinarySearch.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/ResultExtensions.h"
@@ -389,14 +390,14 @@ nsStringBundleBase::CollectReports(nsIHandleReportCallback* aHandleReport,
       "localized) .properties file. Data may be shared between "
       "processes."_ns;
 
-  aHandleReport->Callback(EmptyCString(), path, KIND_HEAP, UNITS_BYTES,
-                          heapSize, desc, aData);
+  aHandleReport->Callback(""_ns, path, KIND_HEAP, UNITS_BYTES, heapSize, desc,
+                          aData);
 
   if (sharedSize) {
     path.ReplaceLiteral(0, sizeof("explicit/") - 1, "shared-");
 
-    aHandleReport->Callback(EmptyCString(), path, KIND_OTHER, UNITS_BYTES,
-                            sharedSize, desc, aData);
+    aHandleReport->Callback(""_ns, path, KIND_OTHER, UNITS_BYTES, sharedSize,
+                            desc, aData);
   }
 
   return NS_OK;
@@ -468,6 +469,12 @@ nsresult nsStringBundleBase::ParseProperties(nsIPersistentProperties** aProps) {
 }
 
 nsresult nsStringBundle::LoadProperties() {
+  // Something such as Necko might use string bundle after ClearOnShutdown is
+  // called. LocaleService etc is already down, so we cannot get bundle data.
+  if (PastShutdownPhase(ShutdownPhase::Shutdown)) {
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
+  }
+
   if (mProps) {
     return NS_OK;
   }
@@ -481,6 +488,19 @@ nsresult SharedStringBundle::LoadProperties() {
     mStringMap = new SharedStringMap(mMapFile.ref(), mMapSize);
     mMapFile.reset();
     return NS_OK;
+  }
+
+  MOZ_ASSERT(NS_IsMainThread(),
+             "String bundles must be initialized on the main thread "
+             "before they may be used off-main-thread");
+
+  // We can't access the locale service after shutdown has started, which
+  // means we can't attempt to load chrome: locale resources (which most of
+  // our string bundles come from). Since shared string bundles won't be
+  // useful after shutdown has started anyway (and we almost certainly got
+  // here from a pre-load attempt in an idle task), just bail out.
+  if (PastShutdownPhase(ShutdownPhase::Shutdown)) {
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
 
   // We should only populate shared memory string bundles in the parent

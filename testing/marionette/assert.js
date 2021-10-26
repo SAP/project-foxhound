@@ -4,30 +4,21 @@
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.import(
-  "resource://gre/modules/AppConstants.jsm"
-);
+const EXPORTED_SYMBOLS = ["assert"];
+
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-const {
-  InvalidArgumentError,
-  InvalidSessionIDError,
-  JavaScriptError,
-  NoSuchWindowError,
-  UnexpectedAlertOpenError,
-  UnsupportedOperationError,
-} = ChromeUtils.import("chrome://marionette/content/error.js");
-const { pprint } = ChromeUtils.import("chrome://marionette/content/format.js");
-
 XPCOMUtils.defineLazyModuleGetters(this, {
-  evaluate: "chrome://marionette/content/evaluate.js",
-  browser: "chrome://marionette/content/browser.js",
-});
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
 
-this.EXPORTED_SYMBOLS = ["assert"];
+  browser: "chrome://marionette/content/browser.js",
+  error: "chrome://marionette/content/error.js",
+  evaluate: "chrome://marionette/content/evaluate.js",
+  pprint: "chrome://marionette/content/format.js",
+});
 
 const isFennec = () => AppConstants.platform == "android";
 const isFirefox = () =>
@@ -56,9 +47,9 @@ this.assert = {};
  * @throws {JavaScriptError}
  *     If the object is cyclic.
  */
-assert.acyclic = function(obj, msg = "", error = JavaScriptError) {
+assert.acyclic = function(obj, msg = "", err = error.JavaScriptError) {
   if (evaluate.isCyclic(obj)) {
-    throw new error(msg || "Cyclic object value");
+    throw new err(msg || "Cyclic object value");
   }
 };
 
@@ -80,7 +71,7 @@ assert.session = function(driver, msg = "") {
   assert.that(
     sessionID => sessionID,
     msg,
-    InvalidSessionIDError
+    error.InvalidSessionIDError
   )(driver.sessionID);
   return driver.sessionID;
 };
@@ -96,7 +87,7 @@ assert.session = function(driver, msg = "") {
  */
 assert.firefox = function(msg = "") {
   msg = msg || "Only supported in Firefox";
-  assert.that(isFirefox, msg, UnsupportedOperationError)();
+  assert.that(isFirefox, msg, error.UnsupportedOperationError)();
 };
 
 /**
@@ -113,7 +104,7 @@ assert.desktop = function(msg = "") {
   assert.that(
     obj => isFirefox(obj) || isThunderbird(obj),
     msg,
-    UnsupportedOperationError
+    error.UnsupportedOperationError
   )();
 };
 
@@ -128,7 +119,7 @@ assert.desktop = function(msg = "") {
  */
 assert.fennec = function(msg = "") {
   msg = msg || "Only supported in Fennec";
-  assert.that(isFennec, msg, UnsupportedOperationError)();
+  assert.that(isFennec, msg, error.UnsupportedOperationError)();
 };
 
 /**
@@ -150,45 +141,31 @@ assert.content = function(context, msg = "") {
   assert.that(
     c => c.toString() == "content",
     msg,
-    UnsupportedOperationError
+    error.UnsupportedOperationError
   )(context);
 };
 
 /**
- * Asserts that the {@link ChromeWindow} is open or that the {@link
- * browser.Context} has a content browser attached.
+ * Asserts that the {@link CanonicalBrowsingContext} is open.
  *
- * When passed in a {@link ChromeContext} this is equivalent to
- * testing that the associated <code>window</code> global is open,
- * and when given {@link browser.Context} it will test that the content
- * frame, represented by <code>&lt;xul:browser&gt;</code>, is
- * connected.
- *
- * @param {(ChromeWindow|browser.Context)} context
- *     Browsing context to test.
+ * @param {CanonicalBrowsingContext} browsingContext
+ *     Canonical browsing context to check.
  * @param {string=} msg
  *     Custom error message.
  *
- * @return {(ChromeWindow|browser.Context)}
- *     <var>context</var> is returned unaltered.
+ * @return {CanonicalBrowsingContext}
+ *     <var>browsingContext</var> is returned unaltered.
  *
  * @throws {NoSuchWindowError}
- *     If <var>context</var>'s <code>window</code> has been closed.
+ *     If <var>browsingContext</var> is no longer open.
  */
-assert.open = function(context, msg = "") {
-  // TODO: The contentBrowser uses a cached tab, which is only updated when
-  // switchToTab is called. Because of that an additional check is needed to
-  // make sure that the chrome window has not already been closed.
-  if (context instanceof browser.Context) {
-    assert.open(context.window);
-  }
-
+assert.open = function(browsingContext, msg = "") {
   msg = msg || "Browsing context has been discarded";
   return assert.that(
-    ctx => ctx && !ctx.closed,
+    browsingContext => !!browsingContext?.currentWindowGlobal,
     msg,
-    NoSuchWindowError
-  )(context);
+    error.NoSuchWindowError
+  )(browsingContext);
 };
 
 /**
@@ -206,7 +183,7 @@ assert.noUserPrompt = function(dialog, msg = "") {
   assert.that(
     d => d === null || typeof d == "undefined",
     msg,
-    UnexpectedAlertOpenError
+    error.UnexpectedAlertOpenError
   )(dialog);
 };
 
@@ -473,10 +450,14 @@ assert.array = function(obj, msg = "") {
  *     and which may throw <var>error</var> with <var>message</var>
  *     if <var>predicate</var> evaluates to false.
  */
-assert.that = function(predicate, message = "", error = InvalidArgumentError) {
+assert.that = function(
+  predicate,
+  message = "",
+  err = error.InvalidArgumentError
+) {
   return obj => {
     if (!predicate(obj)) {
-      throw new error(message);
+      throw new err(message);
     }
     return obj;
   };

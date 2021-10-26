@@ -15,7 +15,7 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.IgnoreCrash
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.Callbacks
 
-import android.support.annotation.AnyThread
+import androidx.annotation.AnyThread
 import androidx.test.filters.MediumTest
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.view.Surface
@@ -78,11 +78,39 @@ class ContentDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Test fun downloadOneRequest() {
+        // disable test on pgo for frequently failing Bug 1543355
+        assumeThat(sessionRule.env.isDebugBuild, equalTo(true))
+
+        sessionRule.session.loadTestPath(DOWNLOAD_HTML_PATH)
+
+        sessionRule.waitUntilCalled(object : Callbacks.NavigationDelegate, Callbacks.ContentDelegate {
+
+            @AssertCalled(count = 2)
+            override fun onLoadRequest(session: GeckoSession, request: LoadRequest): GeckoResult<AllowOrDeny>? {
+                return null
+            }
+
+            @AssertCalled(false)
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                return null
+            }
+
+            @AssertCalled(count = 1)
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
+                assertThat("Uri should start with data:", response.uri, startsWith("blob:"))
+                assertThat("We should download the thing", String(response.body?.readBytes()!!), equalTo("Downloaded Data"))
+                // The headers below are special headers that we try to get for responses of any kind (http, blob, etc.)
+                // Note the case of the header keys. In the WebResponse object, all of them are lower case.
+                assertThat("Content type should match", response.headers.get("content-type"), equalTo("text/plain"))
+                assertThat("Content length should be non-zero", response.headers.get("Content-Length")!!.toLong(), greaterThan(0L))
+                assertThat("Filename should match", response.headers.get("cONTent-diSPOsiTion"), equalTo("attachment; filename=\"download.txt\""))
+            }
+        })
+    }
+
     @IgnoreCrash
     @Test fun crashContent() {
-        // This test doesn't make sense without multiprocess
-        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-
         mainSession.loadUri(CONTENT_CRASH_URL)
         mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
             @AssertCalled(count = 1)
@@ -106,9 +134,6 @@ class ContentDelegateTest : BaseSessionTest() {
     @IgnoreCrash
     @WithDisplay(width = 10, height = 10)
     @Test fun crashContent_tapAfterCrash() {
-        // This test doesn't make sense without multiprocess
-        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-
         mainSession.delegateUntilTestEnd(object : Callbacks.ContentDelegate {
             override fun onCrash(session: GeckoSession) {
                 mainSession.open()
@@ -139,8 +164,6 @@ class ContentDelegateTest : BaseSessionTest() {
 
     @IgnoreCrash
     @Test fun killContent() {
-        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-
         killAllContentProcesses()
         mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
             @AssertCalled(count = 1)
@@ -312,12 +335,56 @@ class ContentDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Test fun closeRequest() {
+        if (!sessionRule.env.isAutomation) {
+            sessionRule.setPrefsUntilTestEnd(mapOf("dom.allow_scripts_to_close_windows" to true))
+        }
+
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        mainSession.evaluateJS("window.close()")
+        mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onCloseRequest(session: GeckoSession) {
+            }
+        })
+    }
+
+    @Test fun windowOpenClose() {
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to false))
+
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        val newSession = sessionRule.createClosedSession()
+        mainSession.delegateDuringNextWait(object : Callbacks.NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
+                return GeckoResult.fromValue(newSession)
+            }
+        })
+
+        mainSession.evaluateJS("const w = window.open('about:blank'); w.close()")
+
+        newSession.waitUntilCalled(object : Callbacks.All {
+            @AssertCalled(count = 1)
+            override fun onCloseRequest(session: GeckoSession) {
+            }
+
+            @AssertCalled(count = 1)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+            }
+        })
+    }
+
     /**
      * Preferences to induce wanted behaviour.
      */
     private fun setHangReportTestPrefs(timeout: Int = 20000) {
         sessionRule.setPrefsUntilTestEnd(mapOf(
                 "dom.max_script_run_time" to 1,
+                "dom.max_script_run_time_without_important_user_input" to 1,
                 "dom.max_chrome_script_run_time" to 1,
                 "dom.max_ext_content_script_run_time" to 1,
                 "dom.ipc.cpow.timeout" to 100,

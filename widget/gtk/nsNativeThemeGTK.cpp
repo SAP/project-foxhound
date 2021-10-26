@@ -43,6 +43,7 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "nsWindow.h"
+#include "nsLayoutUtils.h"
 #include "nsNativeBasicTheme.h"
 
 #ifdef MOZ_X11
@@ -219,6 +220,9 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
                                             WidgetNodeType& aGtkWidgetType,
                                             GtkWidgetState* aState,
                                             gint* aWidgetFlags) {
+  if (aWidgetFlags) {
+    *aWidgetFlags = 0;
+  }
   if (aState) {
     memset(aState, 0, sizeof(GtkWidgetState));
 
@@ -1860,8 +1864,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
     case StyleAppearance::SpinnerTextfield:
-      // case StyleAppearance::Scrollbar:  (n/a for gtk)
-      // case StyleAppearance::ScrollbarSmall: (n/a for gtk)
     case StyleAppearance::ScrollbarbuttonUp:
     case StyleAppearance::ScrollbarbuttonDown:
     case StyleAppearance::ScrollbarbuttonLeft:

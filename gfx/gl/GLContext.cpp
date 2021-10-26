@@ -163,6 +163,7 @@ static const char* const sExtensionNames[] = {
     "GL_EXT_texture_compression_s3tc_srgb",
     "GL_EXT_texture_filter_anisotropic",
     "GL_EXT_texture_format_BGRA8888",
+    "GL_EXT_texture_norm16",
     "GL_EXT_texture_sRGB",
     "GL_EXT_texture_storage",
     "GL_EXT_timer_query",
@@ -538,6 +539,12 @@ bool GLContext::InitImpl() {
     mProfile = ContextProfile::OpenGLES;
   }
 
+  if (versionStr.empty()) {
+    // This can happen with Pernosco.
+    NS_WARNING("Empty GL version string");
+    return false;
+  }
+
   uint32_t majorVer, minorVer;
   if (!ParseVersion(versionStr, &majorVer, &minorVer)) {
     MOZ_ASSERT(false, "Failed to parse GL_VERSION");
@@ -696,6 +703,11 @@ bool GLContext::InitImpl() {
   if (WorkAroundDriverBugs()) {
     if (Renderer() == GLRenderer::AdrenoTM320) {
       MarkUnsupported(GLFeature::standard_derivatives);
+    }
+
+    if (Renderer() == GLRenderer::AndroidEmulator) {
+      // Bug 1665300
+      mSymbols.fGetGraphicsResetStatus = 0;
     }
 
     if (Vendor() == GLVendor::Vivante) {

@@ -139,9 +139,8 @@ function acceptAppMenuNotificationWhenShown(
     let permissionChangePromise = null;
     function appMenuPopupHidden() {
       PanelUI.panel.removeEventListener("popuphidden", appMenuPopupHidden);
-      is(
-        PanelUI.menuButton.getAttribute("badge-status"),
-        false,
+      ok(
+        !PanelUI.menuButton.hasAttribute("badge-status"),
         "badge is not set after addon-installed"
       );
       resolve(permissionChangePromise);
@@ -374,6 +373,10 @@ var TESTS = [
   },
 
   async function test_blockedInstall() {
+    SpecialPowers.pushPrefEnv({
+      set: [["extensions.postDownloadThirdPartyPrompt", false]],
+    });
+
     let notificationPromise = waitForNotification("addon-install-blocked");
     let triggers = encodeURIComponent(
       JSON.stringify({
@@ -404,6 +407,7 @@ var TESTS = [
     let dialogPromise = waitForInstallDialog();
     // Click on Allow
     EventUtils.synthesizeMouse(notification.button, 20, 10, {});
+
     // Notification should have changed to progress notification
     ok(PopupNotifications.isPanelOpen, "Notification should still be open");
     notification = panel.childNodes[0];
@@ -432,6 +436,101 @@ var TESTS = [
     await addon.uninstall();
 
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  },
+
+  async function test_blockedPostDownload() {
+    SpecialPowers.pushPrefEnv({
+      set: [["extensions.postDownloadThirdPartyPrompt", true]],
+    });
+
+    let notificationPromise = waitForNotification("addon-install-blocked");
+    let triggers = encodeURIComponent(
+      JSON.stringify({
+        XPI: "amosigned.xpi",
+      })
+    );
+    BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      TESTROOT + "installtrigger.html?" + triggers
+    );
+    let panel = await notificationPromise;
+
+    let notification = panel.childNodes[0];
+    is(
+      notification.button.label,
+      "Continue to Installation",
+      "Should have seen the right button"
+    );
+    let message = panel.ownerDocument.getElementById(
+      "addon-install-blocked-message"
+    );
+    is(
+      message.textContent,
+      "You are attempting to install an add-on from example.com. Make sure you trust this site before continuing.",
+      "Should have seen the right message"
+    );
+
+    let dialogPromise = waitForInstallDialog();
+    // Click on Allow
+    EventUtils.synthesizeMouse(notification.button, 20, 10, {});
+
+    let installDialog = await dialogPromise;
+
+    notificationPromise = acceptAppMenuNotificationWhenShown(
+      "addon-installed",
+      "amosigned-xpi@tests.mozilla.org"
+    );
+
+    installDialog.button.click();
+    await notificationPromise;
+
+    let installs = await AddonManager.getAllInstalls();
+    is(installs.length, 0, "Should be no pending installs");
+
+    let addon = await AddonManager.getAddonByID(
+      "amosigned-xpi@tests.mozilla.org"
+    );
+    await addon.uninstall();
+
+    await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+    await SpecialPowers.popPrefEnv();
+  },
+
+  async function test_recommendedPostDownload() {
+    SpecialPowers.pushPrefEnv({
+      set: [["extensions.postDownloadThirdPartyPrompt", true]],
+    });
+
+    let triggers = encodeURIComponent(
+      JSON.stringify({
+        XPI: "recommended.xpi",
+      })
+    );
+    BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      TESTROOT + "installtrigger.html?" + triggers
+    );
+
+    let installDialog = await waitForInstallDialog();
+
+    let notificationPromise = acceptAppMenuNotificationWhenShown(
+      "addon-installed",
+      "{811d77f1-f306-4187-9251-b4ff99bad60b}"
+    );
+
+    installDialog.button.click();
+    await notificationPromise;
+
+    let installs = await AddonManager.getAllInstalls();
+    is(installs.length, 0, "Should be no pending installs");
+
+    let addon = await AddonManager.getAddonByID(
+      "{811d77f1-f306-4187-9251-b4ff99bad60b}"
+    );
+    await addon.uninstall();
+
+    await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+    await SpecialPowers.popPrefEnv();
   },
 
   async function test_permaBlockInstall() {

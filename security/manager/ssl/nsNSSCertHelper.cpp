@@ -17,7 +17,6 @@
 #include "mozilla/net/DNS.h"
 #include "nsCOMPtr.h"
 #include "nsIStringBundle.h"
-#include "nsNSSCertValidity.h"
 #include "nsNSSCertificate.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
@@ -91,7 +90,7 @@ nsresult PIPBundleFormatStringFromName(const char* stringName,
 
 void LossyUTF8ToUTF16(const char* str, uint32_t len,
                       /*out*/ nsAString& result) {
-  auto span = MakeSpan(str, len);
+  auto span = Span(str, len);
   if (IsUtf8(span)) {
     CopyUTF8toUTF16(span, result);
   } else {
@@ -102,12 +101,15 @@ void LossyUTF8ToUTF16(const char* str, uint32_t len,
 
 nsresult GetCertFingerprintByOidTag(CERTCertificate* nsscert, SECOidTag aOidTag,
                                     nsCString& fp) {
-  Digest digest;
-  nsresult rv =
-      digest.DigestBuf(aOidTag, nsscert->derCert.data, nsscert->derCert.len);
+  nsTArray<uint8_t> digestArray;
+  nsresult rv = Digest::DigestBuf(aOidTag, nsscert->derCert.data,
+                                  nsscert->derCert.len, digestArray);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  UniquePORTString tmpstr(CERT_Hexify(const_cast<SECItem*>(&digest.get()), 1));
+  SECItem digestItem = {siBuffer, digestArray.Elements(),
+                        static_cast<unsigned int>(digestArray.Length())};
+
+  UniquePORTString tmpstr(CERT_Hexify(&digestItem, 1));
   NS_ENSURE_TRUE(tmpstr, NS_ERROR_OUT_OF_MEMORY);
 
   fp.Assign(tmpstr.get());

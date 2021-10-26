@@ -24,6 +24,12 @@ function convertEntries(entries) {
 function parseRect(str) {
   var pieces = str.replace(/[()\s]+/g, "").split(",");
   SimpleTest.is(pieces.length, 4, "expected string of form (x,y,w,h)");
+  for (var i = 0; i < 4; i++) {
+    var eq = pieces[i].indexOf("=");
+    if (eq >= 0) {
+      pieces[i] = pieces[i].substring(eq + 1);
+    }
+  }
   return {
     x: parseInt(pieces[0]),
     y: parseInt(pieces[1]),
@@ -311,9 +317,10 @@ async function promiseApzFlushedRepaints() {
 //     { 'file': 'file_3.html', 'onload': function(w) { w.subtestDone(); } }
 //   ];
 //
-// Each subtest should call the subtestDone() function when it is done, to
-// indicate that the window should be torn down and the next text should run.
-// The subtestDone() function is injected into the subtest's window by this
+// Each subtest should call one of the subtestDone() or subtestFailed()
+// functions when it is done, to indicate that the window should be torn
+// down and the next test should run.
+// These functions are injected into the subtest's window by this
 // function prior to loading the subtest. For convenience, the |is| and |ok|
 // functions provided by SimpleTest are also mapped into the subtest's window.
 // For other things from the parent, the subtest can use window.opener.<whatever>
@@ -329,6 +336,11 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
       "apz.subtest",
       /* default = */ ""
     );
+
+    function advanceSubtestExecutionWithFailure(msg) {
+      SimpleTest.ok(false, msg);
+      advanceSubtestExecution();
+    }
 
     function advanceSubtestExecution() {
       var test = aSubtests[testIndex];
@@ -411,6 +423,7 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
       function spawnTest(aFile) {
         w = window.open("", "_blank");
         w.subtestDone = advanceSubtestExecution;
+        w.subtestFailed = advanceSubtestExecutionWithFailure;
         w.isApzSubtest = true;
         w.SimpleTest = SimpleTest;
         w.dump = function(msg) {
@@ -1133,4 +1146,41 @@ function visualViewportAsZoomedRect() {
     h: vv.height,
     z: vv.scale,
   };
+}
+
+// Pulls the latest compositor APZ test data and checks to see if the
+// scroller with id `scrollerId` was checkerboarding. It also ensures that
+// a scroller with id `scrollerId` was actually found in the test data.
+// This function requires that "apz.test.logging_enabled" be set to true,
+// in order for the test data to be logged.
+function assertNotCheckerboarded(utils, scrollerId, msgPrefix) {
+  utils.advanceTimeAndRefresh(0);
+  var data = utils.getCompositorAPZTestData();
+  //dump(JSON.stringify(data, null, 4));
+  var found = false;
+  for (apzcData of data.additionalData) {
+    if (apzcData.key == scrollerId) {
+      var checkerboarding = apzcData.value
+        .split(",")
+        .includes("checkerboarding");
+      ok(!checkerboarding, `${msgPrefix}: scroller is not checkerboarding`);
+      found = true;
+    }
+  }
+  ok(found, `${msgPrefix}: Found the scroller in the APZ data`);
+  utils.restoreNormalRefresh();
+}
+
+function waitToClearOutAnyPotentialScrolls(aWindow) {
+  return new Promise(resolve => {
+    aWindow.requestAnimationFrame(() => {
+      aWindow.requestAnimationFrame(() => {
+        flushApzRepaints(() => {
+          aWindow.requestAnimationFrame(() => {
+            aWindow.requestAnimationFrame(resolve);
+          });
+        }, aWindow);
+      });
+    });
+  });
 }

@@ -16,14 +16,12 @@
 
 namespace mozilla {
 
-struct GMPVideoDecoderParams {
+struct MOZ_STACK_CLASS GMPVideoDecoderParams {
   explicit GMPVideoDecoderParams(const CreateDecoderParams& aParams);
 
   const VideoInfo& mConfig;
-  TaskQueue* mTaskQueue;
   layers::ImageContainer* mImageContainer;
-  layers::LayersBackend mLayersBackend;
-  RefPtr<GMPCrashHelper> mCrashHelper;
+  GMPCrashHelper* mCrashHelper;
 };
 
 DDLoggedTypeDeclNameAndBase(GMPVideoDecoder, MediaDataDecoder);

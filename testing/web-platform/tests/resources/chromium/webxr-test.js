@@ -13,6 +13,8 @@ const default_stage_parameters = {
   bounds: null
 };
 
+const default_framebuffer_scale = 0.7;
+
 function getMatrixFromTransform(transform) {
   const x = transform.orientation[0];
   const y = transform.orientation[1];
@@ -63,6 +65,21 @@ class ChromeXRTest {
   }
 
   simulateUserActivation(callback) {
+    if (window.top !== window) {
+      // test_driver.click only works for the toplevel frame. This alternate
+      // Chrome-specific method is sufficient for starting an XR session in an
+      // iframe, and is used in platform-specific tests.
+      //
+      // TODO(https://github.com/web-platform-tests/wpt/issues/20282): use
+      // a cross-platform method if available.
+      xr_debug('simulateUserActivation', 'use eventSender');
+      document.addEventListener('click', callback);
+      eventSender.mouseMoveTo(0, 0);
+      eventSender.mouseDown();
+      eventSender.mouseUp();
+      document.removeEventListener('click', callback);
+      return;
+    }
     const button = document.createElement('button');
     button.textContent = 'click to continue test';
     button.style.display = 'block';
@@ -202,8 +219,13 @@ class MockVRService {
   // Only handles asynchronous calls to makeXrCompatible. Synchronous calls are
   // not supported in Javascript.
   makeXrCompatible() {
+    if (this.runtimes_.length == 0) {
+      return Promise.resolve({
+        xrCompatibleResult: device.mojom.XrCompatibleResult.kNoDeviceAvailable
+      });
+    }
     return Promise.resolve({
-      xr_compatible_result: device.mojom.XrCompatibleResult.kAlreadyCompatible
+      xrCompatibleResult: device.mojom.XrCompatibleResult.kAlreadyCompatible
     });
   }
 }
@@ -279,6 +301,23 @@ class FakeXRAnchorController {
   }
 }
 
+// Internal only for now, needs to be moved into WebXR Test API.
+class FakeXRHitTestSourceController {
+  constructor(id) {
+    this.id_ = id;
+    this.deleted_ = false;
+  }
+
+  get deleted() {
+    return this.deleted_;
+  }
+
+  // Internal setter:
+  set deleted(value) {
+    this.deleted_ = value;
+  }
+}
+
 // Implements XRFrameDataProvider and XRPresentationProvider. Maintains a mock
 // for XRPresentationProvider. Implements FakeXRDevice test API.
 class MockRuntime {
@@ -302,6 +341,17 @@ class MockRuntime {
     "immersive-ar": device.mojom.XRSessionMode.kImmersiveAr,
   };
 
+  static environmentBlendModeToMojoMap = {
+    "opaque": device.mojom.XREnvironmentBlendMode.kOpaque,
+    "alpha-blend": device.mojom.XREnvironmentBlendMode.kAlphaBlend,
+    "additive": device.mojom.XREnvironmentBlendMode.kAdditive,
+  };
+
+  static interactionModeToMojoMap = {
+    "screen-space": device.mojom.XRInteractionMode.kScreenSpace,
+    "world-space": device.mojom.XRInteractionMode.kWorldSpace,
+  };
+
   constructor(fakeDeviceInit, service) {
     this.sessionClient_ = new device.mojom.XRSessionClientPtr();
     this.presentation_provider_ = new MockXRPresentationProvider();
@@ -311,7 +361,7 @@ class MockRuntime {
     this.bounds_ = null;
     this.send_mojo_space_reset_ = false;
     this.stageParameters_ = null;
-    this.stageParametersUpdated_ = false;
+    this.stageParametersId_ = 1;
 
     this.service_ = service;
 
@@ -379,6 +429,10 @@ class MockRuntime {
       this.world_ = fakeDeviceInit.world;
     }
 
+    this.defaultFramebufferScale_ = default_framebuffer_scale;
+    this.enviromentBlendMode_ = this._convertBlendModeToEnum(fakeDeviceInit.environmentBlendMode);
+    this.interactionMode_ = this._convertInteractionModeToEnum(fakeDeviceInit.interactionMode);
+
     // This appropriately handles if the coordinates are null
     this.setBoundsGeometry(fakeDeviceInit.boundsCoordinates);
 
@@ -398,6 +452,26 @@ class MockRuntime {
 
   _convertModesToEnum(sessionModes) {
     return sessionModes.map(mode => this._convertModeToEnum(mode));
+  }
+
+  _convertBlendModeToEnum(blendMode) {
+    if (blendMode in MockRuntime.environmentBlendModeToMojoMap) {
+      return MockRuntime.environmentBlendModeToMojoMap[blendMode];
+    } else {
+      if (this.supportedModes_.includes(device.mojom.XRSessionMode.kImmersiveAr)) {
+        return device.mojom.XREnvironmentBlendMode.kAdditive;
+      } else if (this.supportedModes_.includes(device.mojom.XRSessionMode.kImmersiveVr)) {
+        return device.mojom.XREnvironmentBlendMode.kOpaque;
+      }
+    }
+  }
+
+  _convertInteractionModeToEnum(interactionMode) {
+    if (interactionMode in MockRuntime.interactionModeToMojoMap) {
+      return MockRuntime.interactionModeToMojoMap[interactionMode];
+    } else {
+      return device.mojom.XRInteractionMode.kWorldSpace;
+    }
   }
 
   // Test API methods.
@@ -511,11 +585,7 @@ class MockRuntime {
 
   onStageParametersUpdated() {
     // Indicate for the frame loop that the stage parameters have been updated.
-    this.stageParametersUpdated_ = true;
-    this.displayInfo_.stageParameters = this.stageParameters_;
-    if (this.sessionClient_.ptr.isBound()) {
-      this.sessionClient_.onChanged(this.displayInfo_);
-    }
+    this.stageParametersId_++;
   }
 
   simulateResetPose() {
@@ -533,6 +603,10 @@ class MockRuntime {
 
   setAnchorCreationCallback(callback) {
     this.anchor_creation_callback_ = callback;
+  }
+
+  setHitTestSourceCreationCallback(callback) {
+    this.hit_test_source_creation_callback_ = callback;
   }
 
   // Helper methods
@@ -584,8 +658,7 @@ class MockRuntime {
         }),
         renderWidth: 20,
         renderHeight: 20
-      },
-      webxrDefaultFramebufferScale: 0.7,
+      }
     };
   }
 
@@ -679,8 +752,6 @@ class MockRuntime {
         const mojo_space_reset = this.send_mojo_space_reset_;
         this.send_mojo_space_reset_ = false;
 
-        const stage_parameters_updated = this.stageParametersUpdated_;
-        this.stageParametersUpdated_ = false;
         if (this.pose_) {
           this.pose_.poseIndex++;
         }
@@ -709,7 +780,7 @@ class MockRuntime {
           bufferHolder: null,
           bufferSize: {},
           stageParameters: this.stageParameters_,
-          stageParametersUpdated: stage_parameters_updated,
+          stageParametersId: this.stageParametersId_,
         };
 
         this.next_frame_id_++;
@@ -772,14 +843,29 @@ class MockRuntime {
       });
     }
 
-    // Store the subscription information as-is:
+    // Reserve the id for hit test source:
     const id = this.next_hit_test_id_++;
-    this.hitTestSubscriptions_.set(id, { nativeOriginInformation, entityTypes, ray });
+    const hitTestParameters = { isTransient: false, profileName: null };
+    const controller = new FakeXRHitTestSourceController(id);
 
-    return Promise.resolve({
-      result : device.mojom.SubscribeToHitTestResult.SUCCESS,
-      subscriptionId : id
-    });
+
+    return this._shouldHitTestSourceCreationSucceed(hitTestParameters, controller)
+      .then((succeeded) => {
+        if(succeeded) {
+          // Store the subscription information as-is (including controller):
+          this.hitTestSubscriptions_.set(id, { nativeOriginInformation, entityTypes, ray, controller });
+
+          return Promise.resolve({
+            result : device.mojom.SubscribeToHitTestResult.SUCCESS,
+            subscriptionId : id
+          });
+        } else {
+          return Promise.resolve({
+            result : device.mojom.SubscribeToHitTestResult.FAILURE_GENERIC,
+            subscriptionId : 0
+          });
+        }
+      });
   }
 
   subscribeToHitTestForTransientInput(profileName, entityTypes, ray){
@@ -791,14 +877,45 @@ class MockRuntime {
       });
     }
 
-    // Store the subscription information as-is:
     const id = this.next_hit_test_id_++;
-    this.transientHitTestSubscriptions_.set(id, { profileName, entityTypes, ray });
+    const hitTestParameters = { isTransient: true, profileName: profileName };
+    const controller = new FakeXRHitTestSourceController(id);
 
-    return Promise.resolve({
-      result : device.mojom.SubscribeToHitTestResult.SUCCESS,
-      subscriptionId : id
-    });
+    // Check if we have hit test source creation callback.
+    // If yes, ask it if the hit test source creation should succeed.
+    // If no, for back-compat, assume the hit test source creation succeeded.
+    return this._shouldHitTestSourceCreationSucceed(hitTestParameters, controller)
+      .then((succeeded) => {
+        if(succeeded) {
+          // Store the subscription information as-is (including controller):
+          this.transientHitTestSubscriptions_.set(id, { profileName, entityTypes, ray, controller });
+
+          return Promise.resolve({
+            result : device.mojom.SubscribeToHitTestResult.SUCCESS,
+            subscriptionId : id
+          });
+        } else {
+          return Promise.resolve({
+            result : device.mojom.SubscribeToHitTestResult.FAILURE_GENERIC,
+            subscriptionId : 0
+          });
+        }
+      });
+  }
+
+  unsubscribeFromHitTest(subscriptionId) {
+    let controller = null;
+    if(this.transientHitTestSubscriptions_.has(subscriptionId)){
+      controller = this.transientHitTestSubscriptions_.get(subscriptionId).controller;
+      this.transientHitTestSubscriptions_.delete(subscriptionId);
+    } else if(this.hitTestSubscriptions_.has(subscriptionId)){
+      controller = this.hitTestSubscriptions_.get(subscriptionId).controller;
+      this.hitTestSubscriptions_.delete(subscriptionId);
+    }
+
+    if(controller) {
+      controller.deleted = true;
+    }
   }
 
   createAnchor(nativeOriginInformation, nativeOriginFromAnchor) {
@@ -926,6 +1043,12 @@ class MockRuntime {
             clientReceiver: clientReceiver,
             displayInfo: this.displayInfo_,
             enabledFeatures: enabled_features,
+            deviceConfig: {
+              defaultFramebufferScale: this.defaultFramebufferScale_,
+              supportsViewportScaling: true
+            },
+            enviromentBlendMode: this.enviromentBlendMode_,
+            interactionMode: this.interactionMode_
           }
         });
       } else {
@@ -996,6 +1119,17 @@ class MockRuntime {
   }
 
   // Private functions - hit test implementation:
+
+  // Returns a Promise<bool> that signifies whether hit test source creation should succeed.
+  // If we have a hit test source creation callback installed, invoke it and return its result.
+  // If it's not installed, for back-compat just return a promise that resolves to true.
+  _shouldHitTestSourceCreationSucceed(hitTestParameters, controller) {
+    if(this.hit_test_source_creation_callback_) {
+      return this.hit_test_source_creation_callback_(hitTestParameters, controller);
+    } else {
+      return Promise.resolve(true);
+    }
+  }
 
   // Modifies passed in frameData to add hit test results.
   _calculateHitTestResults(frameData) {

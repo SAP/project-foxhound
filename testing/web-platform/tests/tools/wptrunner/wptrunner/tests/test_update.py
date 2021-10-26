@@ -442,7 +442,7 @@ def test_update_reorder_expected():
 
     assert not new_manifest.is_empty
     assert new_manifest.get_test(test_id).children[0].get(
-        "expected", default_run_info) == ["FAIL", "PASS"]
+        "expected", default_run_info) == ["PASS", "FAIL"]
 
 
 def test_update_and_preserve_unchanged_expected_intermittent():
@@ -1535,8 +1535,7 @@ def test_update_wptreport_0():
                 "subtests": [{"name": "test1",
                               "status": "PASS",
                               "expected": "FAIL"}],
-                "status": "OK"}
-           ]}
+                "status": "OK"}]}
 
     updated = update(tests, log)
 

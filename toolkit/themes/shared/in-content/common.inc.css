@@ -64,6 +64,7 @@
   --grey-20: #ededf0;
   --grey-30: #d7d7db;
   --grey-40: #b1b1b3;
+  --grey-50: #737373;
   --grey-60: #4a4a4f;
   --grey-90: #0c0c0d;
   --grey-90-a10: rgba(12, 12, 13, 0.1);
@@ -253,9 +254,7 @@ html|button {
   margin-inline: 4px;
 }
 
-html|button::-moz-focus-inner,
-html|select::-moz-focus-inner,
-html|input[type="color"]::-moz-focus-inner {
+::-moz-focus-inner {
   border: none;
 }
 
@@ -323,6 +322,7 @@ xul|menulist[disabled="true"] {
 
 html|button[autofocus],
 html|button[type="submit"],
+xul|button[default],
 button.primary {
   background-color: var(--in-content-primary-button-background);
   color: var(--in-content-selected-text) !important;
@@ -331,6 +331,7 @@ button.primary {
 html|button[autofocus]:enabled:hover,
 html|button[type="submit"]:enabled:hover,
 html|button.primary:enabled:hover,
+xul|button[default]:not([disabled="true"]):hover,
 xul|button.primary:not([disabled="true"]):hover {
   background-color: var(--in-content-primary-button-background-hover);
 }
@@ -338,6 +339,7 @@ xul|button.primary:not([disabled="true"]):hover {
 html|button[autofocus]:enabled:hover:active,
 html|button[type="submit"]:enabled:hover:active,
 html|button.primary:enabled:hover:active,
+xul|button[default]:not([disabled="true"]):hover:active,
 xul|button.primary:not([disabled="true"]):hover:active {
   background-color: var(--in-content-primary-button-background-active);
 }
@@ -498,6 +500,7 @@ xul|search-textbox[focused] {
   border-color: var(--in-content-border-active);
   box-shadow: 0 0 0 1px var(--in-content-border-active),
     0 0 0 4px var(--in-content-border-active-shadow);
+  outline: none;
 }
 
 html|input[type="email"]:-moz-ui-invalid,
@@ -735,7 +738,7 @@ html|*#categories[last-input-type="mouse"] > html|button.category:-moz-focusring
   line-height: 1.4em;
   padding-inline-start: 9px;
   margin: 0;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .category-icon {
@@ -800,7 +803,7 @@ html|*#categories[last-input-type="mouse"] > html|button.category:-moz-focusring
   font-weight: 300;
   line-height: 1.3em;
   margin: 0;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 /* List boxes */
@@ -1126,7 +1129,7 @@ html|*.help-icon {
 .sidebar-footer-label {
   margin: 0 4px;
   font-size: .9em;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 @media (max-width: 830px) {

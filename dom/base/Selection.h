@@ -181,25 +181,29 @@ class Selection final : public nsSupportsWeakReference,
    *                  containing it. -1 if mStyledRanges.mRanges was empty and
    * no range was added.
    */
-  // TODO: annotate with `MOZ_CAN_RUN_SCRIPT` instead.
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
-  AddRangesForSelectableNodes(
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult AddRangesForSelectableNodes(
       nsRange* aRange, int32_t* aOutIndex,
       DispatchSelectstartEvent aDispatchSelectstartEvent);
 
  public:
   nsresult RemoveCollapsedRanges();
   nsresult Clear(nsPresContext* aPresContext);
-  nsresult Collapse(nsINode* aContainer, int32_t aOffset) {
+  MOZ_CAN_RUN_SCRIPT nsresult CollapseInLimiter(nsINode* aContainer,
+                                                int32_t aOffset) {
     if (!aContainer) {
       return NS_ERROR_INVALID_ARG;
     }
-    return Collapse(RawRangeBoundary(aContainer, aOffset));
+    return CollapseInLimiter(RawRangeBoundary(aContainer, aOffset));
   }
-  nsresult Collapse(const RawRangeBoundary& aPoint) {
+  MOZ_CAN_RUN_SCRIPT nsresult
+  CollapseInLimiter(const RawRangeBoundary& aPoint) {
     ErrorResult result;
-    Collapse(aPoint, result);
+    CollapseInLimiter(aPoint, result);
     return result.StealNSResult();
+  }
+  MOZ_CAN_RUN_SCRIPT void CollapseInLimiter(const RawRangeBoundary& aPoint,
+                                            ErrorResult& aRv) {
+    CollapseInternal(InLimiter::eYes, aPoint, aRv);
   }
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
@@ -244,22 +248,42 @@ class Selection final : public nsSupportsWeakReference,
                        JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL methods
-  nsINode* GetAnchorNode() const {
+  nsINode* GetAnchorNode(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& anchor = AnchorRef();
-    return anchor.IsSet() ? anchor.Container() : nullptr;
+    nsINode* anchorNode = anchor.IsSet() ? anchor.Container() : nullptr;
+    if (!anchorNode || aCallerType == CallerType::System ||
+        !anchorNode->ChromeOnlyAccess()) {
+      return anchorNode;
+    }
+    // anchor is nsIContent as ChromeOnlyAccess is nsIContent-only
+    return anchorNode->AsContent()->FindFirstNonChromeOnlyAccessContent();
   }
-  uint32_t AnchorOffset() const {
+  uint32_t AnchorOffset(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& anchor = AnchorRef();
+    if (aCallerType != CallerType::System && anchor.IsSet() &&
+        anchor.Container()->ChromeOnlyAccess()) {
+      return 0;
+    }
     const Maybe<uint32_t> offset =
         anchor.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
     return offset ? *offset : 0;
   }
-  nsINode* GetFocusNode() const {
+  nsINode* GetFocusNode(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& focus = FocusRef();
-    return focus.IsSet() ? focus.Container() : nullptr;
+    nsINode* focusNode = focus.IsSet() ? focus.Container() : nullptr;
+    if (!focusNode || aCallerType == CallerType::System ||
+        !focusNode->ChromeOnlyAccess()) {
+      return focusNode;
+    }
+    // focus is nsIContent as ChromeOnlyAccess is nsIContent-only
+    return focusNode->AsContent()->FindFirstNonChromeOnlyAccessContent();
   }
-  uint32_t FocusOffset() const {
+  uint32_t FocusOffset(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& focus = FocusRef();
+    if (aCallerType != CallerType::System && focus.IsSet() &&
+        focus.Container()->ChromeOnlyAccess()) {
+      return 0;
+    }
     const Maybe<uint32_t> offset =
         focus.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
     return offset ? *offset : 0;
@@ -296,10 +320,10 @@ class Selection final : public nsSupportsWeakReference,
   // *JS() methods are mapped to Selection.*().
   // They may move focus only when the range represents normal selection.
   // These methods shouldn't be used by non-JS callers.
-  void CollapseJS(nsINode* aContainer, uint32_t aOffset,
-                  mozilla::ErrorResult& aRv);
-  void CollapseToStartJS(mozilla::ErrorResult& aRv);
-  void CollapseToEndJS(mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void CollapseJS(nsINode* aContainer, uint32_t aOffset,
+                                     mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void CollapseToStartJS(mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void CollapseToEndJS(mozilla::ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void ExtendJS(nsINode& aContainer, uint32_t aOffset,
@@ -310,9 +334,8 @@ class Selection final : public nsSupportsWeakReference,
   /**
    * Deletes this selection from document the nodes belong to.
    * Only if this has `SelectionType::eNormal`.
-   * TODO: mark as `MOZ_CAN_RUN_SCRIPT`.
    */
-  void DeleteFromDocument(mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void DeleteFromDocument(mozilla::ErrorResult& aRv);
 
   uint32_t RangeCount() const { return mStyledRanges.Length(); }
 
@@ -373,11 +396,10 @@ class Selection final : public nsSupportsWeakReference,
    * "documentboundary".  Throws NS_ERROR_INVALID_ARG if alter, direction,
    * or granularity has an unrecognized value.
    */
-  // TODO: replace with `MOZ_CAN_RUN_SCRIPT`.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Modify(const nsAString& aAlter,
-                                          const nsAString& aDirection,
-                                          const nsAString& aGranularity,
-                                          mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void Modify(const nsAString& aAlter,
+                                 const nsAString& aDirection,
+                                 const nsAString& aGranularity,
+                                 mozilla::ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT
   void SetBaseAndExtentJS(nsINode& aAnchorNode, uint32_t aAnchorOffset,
@@ -433,32 +455,40 @@ class Selection final : public nsSupportsWeakReference,
    * @param offset      Where in given dom node to place the selection (the
    *                    offset into the given node)
    */
-  // TODO: mark as `MOZ_CAN_RUN_SCRIPT`
-  // (https://bugzilla.mozilla.org/show_bug.cgi?id=1615296).
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Collapse(nsINode& aContainer,
+  MOZ_CAN_RUN_SCRIPT void CollapseInLimiter(nsINode& aContainer,
                                             uint32_t aOffset,
                                             ErrorResult& aRv) {
-    Collapse(RawRangeBoundary(&aContainer, aOffset), aRv);
+    CollapseInternal(InLimiter::eYes, RawRangeBoundary(&aContainer, aOffset),
+                     aRv);
   }
 
-  // TODO: this should be `MOZ_CAN_RUN_SCRIPT` instead
-  // (https://bugzilla.mozilla.org/show_bug.cgi?id=1615296).
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void Collapse(const RawRangeBoundary& aPoint, ErrorResult& aRv);
+ private:
+  enum class InLimiter {
+    // If eYes, the method may reset selection limiter and move focus if the
+    // given range is out of the limiter.
+    eYes,
+    // If eNo, the method won't reset selection limiter.  So, if given range
+    // is out of bounds, the method may return error.
+    eNo,
+  };
+  MOZ_CAN_RUN_SCRIPT
+  void CollapseInternal(InLimiter aInLimiter, const RawRangeBoundary& aPoint,
+                        ErrorResult& aRv);
 
+ public:
   /**
    * Collapses the whole selection to a single point at the start
    * of the current selection (irrespective of direction).  If content
    * is focused and editable, the caret will blink there.
    */
-  void CollapseToStart(mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void CollapseToStart(mozilla::ErrorResult& aRv);
 
   /**
    * Collapses the whole selection to a single point at the end
    * of the current selection (irrespective of direction).  If content
    * is focused and editable, the caret will blink there.
    */
-  void CollapseToEnd(mozilla::ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void CollapseToEnd(mozilla::ErrorResult& aRv);
 
   /**
    * Extends the selection by moving the selection end to the specified node and
@@ -541,7 +571,7 @@ class Selection final : public nsSupportsWeakReference,
   }
 
   /**
-   * SetBaseAndExtentInLimier() is similar to SetBaseAndExtent(), but this
+   * SetBaseAndExtentInLimiter() is similar to SetBaseAndExtent(), but this
    * respects the selection limiter.  If all or part of given range is not in
    * the limiter, this returns error.
    */
@@ -642,14 +672,6 @@ class Selection final : public nsSupportsWeakReference,
   nsresult GetCachedFrameOffset(nsIFrame* aFrame, int32_t inOffset,
                                 nsPoint& aPoint);
 
-  enum class InLimiter {
-    // If eYes, the method may reset selection limiter and move focus if the
-    // given range is out of the limiter.
-    eYes,
-    // If eNo, the method won't reset selection limiter.  So, if given range
-    // is out of bounds, the method may return error.
-    eNo,
-  };
   MOZ_CAN_RUN_SCRIPT
   void SetStartAndEndInternal(InLimiter aInLimiter,
                               const RawRangeBoundary& aStartRef,
@@ -671,14 +693,11 @@ class Selection final : public nsSupportsWeakReference,
 
   friend struct AutoUserInitiated;
   struct MOZ_RAII AutoUserInitiated {
-    explicit AutoUserInitiated(
-        Selection* aSelection MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    explicit AutoUserInitiated(Selection* aSelection)
         : mSavedValue(aSelection->mUserInitiated) {
-      MOZ_GUARD_OBJECT_NOTIFIER_INIT;
       aSelection->mUserInitiated = true;
     }
     AutoRestore<bool> mSavedValue;
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
   };
 
  private:
@@ -920,14 +939,12 @@ class MOZ_STACK_CLASS SelectionBatcher final {
 class MOZ_RAII AutoHideSelectionChanges final {
  private:
   RefPtr<Selection> mSelection;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+
  public:
   explicit AutoHideSelectionChanges(const nsFrameSelection* aFrame);
 
-  explicit AutoHideSelectionChanges(
-      Selection* aSelection MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+  explicit AutoHideSelectionChanges(Selection* aSelection)
       : mSelection(aSelection) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     mSelection = aSelection;
     if (mSelection) {
       mSelection->AddSelectionChangeBlocker();

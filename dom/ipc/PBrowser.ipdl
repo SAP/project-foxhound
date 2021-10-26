@@ -22,6 +22,7 @@ include protocol PWindowGlobal;
 include protocol PBrowserBridge;
 
 include DOMTypes;
+include NeckoChannelParams;
 include WindowGlobalTypes;
 include IPCBlob;
 include IPCStream;
@@ -33,6 +34,7 @@ include PBackgroundSharedTypes;
 include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
 include "mozilla/GfxMessageUtils.h";
+include "mozilla/LayoutMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 
@@ -98,6 +100,9 @@ using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.
 using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
 using CallerType from "mozilla/dom/BindingDeclarations.h";
 using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageTypes.h";
+using refcounted class nsDocShellLoadState from "nsDocShellLoadState.h";
+using mozilla::IntrinsicSize from "nsIFrame.h";
+using mozilla::AspectRatio from "mozilla/AspectRatio.h";
 
 namespace mozilla {
 namespace dom {
@@ -144,6 +149,17 @@ struct WebProgressLocationChangeData
   nsIContentSecurityPolicy csp;
   nsIReferrerInfo referrerInfo;
   uint64_t? requestContextID;
+};
+
+/**
+ * If creating the print preview document or updating it with new print
+ * settings fails, sheetCount will be zero.
+ */
+struct PrintPreviewResultInfo
+{
+  uint32_t sheetCount;
+  uint32_t totalPageCount;
+  bool hasSelection;
 };
 
 /**
@@ -585,11 +601,32 @@ parent:
                              bool aNeedCollectSHistory, uint32_t aFlushId,
                              bool aIsFinal, uint32_t aEpoch);
 
+    async IntrinsicSizeOrRatioChanged(IntrinsicSize? aIntrinsicSize,
+                                      AspectRatio? aIntrinsicRatio);
+
+    /**
+     * Child informs the parent that a pointer lock has requested/released.
+     */
+    async RequestPointerLock() returns (nsCString error);
+    async ReleasePointerLock();
+
+    /**
+     * Child informs the parent that a pointer capture has requested/released.
+     */
+    async RequestPointerCapture(uint32_t aPointerId) returns (bool aSuccess);
+    async ReleasePointerCapture(uint32_t aPointerId);
+
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
     async FlushTabState(uint32_t aFlushId, bool aIsFinal);
     async UpdateEpoch(uint32_t aEpoch);
     async UpdateSHistory(bool aImmediately);
+    async CloneDocumentTreeIntoSelf(MaybeDiscardedBrowsingContext aBc);
+
+    /**
+     * Parent informs the child to release all pointer capture.
+     */
+    async ReleaseAllPointerCapture();
 
 parent:
 
@@ -601,11 +638,6 @@ parent:
      * @see RequestNotifyAfterRemotePaint
      */
     async RemotePaintIsReady();
-
-    /**
-     * Child informs the parent that a compositor transaction has ocurred.
-     */
-    async NotifyCompositorTransaction();
 
     /**
      * Child informs the parent that the content is ready to handle input
@@ -642,7 +674,8 @@ parent:
                             Shmem? visualData,
                             uint32_t stride, SurfaceFormat format,
                             LayoutDeviceIntRect dragRect,
-                            nsIPrincipal principal, nsIContentSecurityPolicy csp);
+                            nsIPrincipal principal, nsIContentSecurityPolicy csp,
+                            CookieJarSettingsArgs cookieJarSettings);
 
     // After a compositor reset, it is necessary to reconnect each layers ID to
     // the compositor of the widget that will render those layers. Note that
@@ -698,9 +731,7 @@ child:
 
     async CompositorOptionsChanged(CompositorOptions newOptions);
 
-    async LoadURL(nsCString uri,
-                  nsIPrincipal triggeringPrincipal,
-                  ParentShowInfo info);
+    async LoadURL(nsDocShellLoadState loadState, ParentShowInfo info);
 
     async ResumeLoad(uint64_t pendingSwitchID, ParentShowInfo info);
 
@@ -864,15 +895,6 @@ child:
     async SetDocShellIsActive(bool aIsActive);
 
     /**
-     * Update docshell's flag which is used to determine if the media in that
-     * docshell should be suspended when the docshell is inactive.
-     *
-     * @param aSuspendMediaWhenInactive
-     *        If the media should be suspended when docshell is inactive.
-     */
-    async SetSuspendMediaWhenInactive(bool aSuspendMediaWhenInactive);
-
-    /**
      * If aEnabled is true, tells the child to paint and upload layers to
      * the compositor. If aEnabled is false, the child stops painting and
      * clears the layers from the compositor.
@@ -955,6 +977,26 @@ child:
      */
     async HandledWindowedPluginKeyEvent(NativeEventData aKeyEventData,
                                         bool aIsConsumed);
+
+    /**
+     * Tell the child to create a print preview document in this browser, or
+     * to update the existing print preview document with new print settings.
+     *
+     * @param aPrintData The serialized print settings to use to layout the
+     *   print preview document.
+     * @param aSourceOuterWindowID Optionally, the ID of the nsGlobalWindowOuter
+     *   that contains the document from which the print preview is to be
+     *   generated.  This should only be passed on the first call.  It should
+     *   not be passed for any subsequent calls that are made to update the
+     *   existing print preview document with a new print settings object.
+     */
+    async PrintPreview(PrintData aPrintData,
+                       uint64_t? aSourceOuterWindowID) returns (PrintPreviewResultInfo aInfo);
+
+    /**
+     * Inform the print preview document that we're done with it.
+     */
+    async ExitPrintPreview();
 
     /**
      * Tell the child to print the current page with the given settings.

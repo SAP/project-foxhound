@@ -44,6 +44,25 @@ const SUBMISSION_PURPOSES = [
 let engineSelector;
 
 /**
+ * This function is used to override the remote settings configuration
+ * if the SEARCH_CONFIG environment variable is set. This allows testing
+ * against a remote server.
+ */
+async function maybeSetupConfig() {
+  const SEARCH_CONFIG = gEnvironment.get("SEARCH_CONFIG");
+  if (SEARCH_CONFIG) {
+    if (!(SEARCH_CONFIG in SearchUtils.ENGINES_URLS)) {
+      throw new Error(`Invalid value for SEARCH_CONFIG`);
+    }
+    const url = SearchUtils.ENGINES_URLS[SEARCH_CONFIG];
+    const response = await fetch(url);
+    const config = await response.json();
+    const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
+    sinon.stub(settings, "get").returns(config.data);
+  }
+}
+
+/**
  * This class implements the test harness for search configuration tests.
  * These tests are designed to ensure that the correct search engines are
  * loaded for the various region/locale configurations.
@@ -103,17 +122,7 @@ class SearchConfigTest {
       "42"
     );
 
-    const SEARCH_CONFIG = gEnvironment.get("SEARCH_CONFIG");
-    if (SEARCH_CONFIG) {
-      if (!(SEARCH_CONFIG in SearchUtils.ENGINES_URLS)) {
-        throw new Error(`Invalid value for SEARCH_CONFIG`);
-      }
-      const url = SearchUtils.ENGINES_URLS[SEARCH_CONFIG];
-      const response = await fetch(url);
-      const config = await response.json();
-      const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
-      sinon.stub(settings, "get").returns(config.data);
-    }
+    await maybeSetupConfig();
 
     // Disable region checks.
     Services.prefs.setBoolPref("browser.search.geoSpecificDefaults", false);
@@ -127,15 +136,6 @@ class SearchConfigTest {
     Services.prefs.setBoolPref(
       SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault",
       true
-    );
-
-    // We need to force modern config off before we start. Modern config uses
-    // the results from the engine selector directly, whereas the legacy
-    // config uses the search service which needs to know we want to run
-    // it in legacy mode.
-    Services.prefs.setBoolPref(
-      SearchUtils.BROWSER_SEARCH_PREF + "modernConfig",
-      false
     );
 
     await AddonTestUtils.promiseStartupManager();
@@ -158,11 +158,8 @@ class SearchConfigTest {
 
   /**
    * Runs the test.
-   * @param {boolean} useEngineSelector
-   *   Flag to run the tests against the SearchEngineSelector or use
-   *   existing list.json.
    */
-  async run(useEngineSelector = false) {
+  async run() {
     const locales = await this._getLocales();
     const regions = this._regions;
 
@@ -170,14 +167,7 @@ class SearchConfigTest {
     // when updating the requested/available locales.
     for (let region of regions) {
       for (let locale of locales) {
-        if (!useEngineSelector) {
-          await this._reinit(region, locale);
-        }
-        const engines = await this._getEngines(
-          useEngineSelector,
-          region,
-          locale
-        );
+        const engines = await this._getEngines(region, locale);
         this._assertEngineRules([engines[0]], region, locale, "default");
         const isPresent = this._assertAvailableEngines(region, locale, engines);
         if (isPresent) {
@@ -187,56 +177,22 @@ class SearchConfigTest {
     }
   }
 
-  async _getEngines(useEngineSelector, region, locale) {
-    if (useEngineSelector) {
-      let engines = [];
-      let configs = await engineSelector.fetchEngineConfiguration(
-        locale,
-        region || "default",
-        AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
-          ? "esr"
-          : AppConstants.MOZ_UPDATE_CHANNEL
+  async _getEngines(region, locale) {
+    let engines = [];
+    let configs = await engineSelector.fetchEngineConfiguration({
+      locale,
+      region: region || "default",
+      channel: AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
+        ? "esr"
+        : AppConstants.MOZ_UPDATE_CHANNEL,
+    });
+    for (let config of configs.engines) {
+      let engine = await Services.search.wrappedJSObject.makeEngineFromConfig(
+        config
       );
-      for (let config of configs.engines) {
-        let engine = await Services.search.wrappedJSObject.makeEngineFromConfig(
-          config
-        );
-        engines.push(engine);
-      }
-      return engines;
+      engines.push(engine);
     }
-    return Services.search.getVisibleEngines();
-  }
-
-  /**
-   * Causes re-initialization of the SearchService with the new region and locale.
-   *
-   * @param {string} region
-   *   The two-letter region code.
-   * @param {string} locale
-   *   The two-letter locale code.
-   */
-  async _reinit(region, locale) {
-    region = region?.toUpperCase();
-    if (region != Region.home) {
-      Region._setHomeRegion(region, true);
-      if (region) {
-        await SearchTestUtils.promiseSearchNotification("engines-reloaded");
-      }
-    }
-
-    const reinitCompletePromise = SearchTestUtils.promiseSearchNotification(
-      "reinit-complete"
-    );
-    Services.locale.availableLocales = [locale];
-    Services.locale.requestedLocales = [locale];
-    Services.search.reInit();
-    await reinitCompletePromise;
-
-    this.assertOk(
-      Services.search.isInitialized,
-      "Should have completely re-initialization, if it fails check logs for if reinit was successful"
-    );
+    return engines;
   }
 
   /**
@@ -250,15 +206,7 @@ class SearchConfigTest {
     if (TEST_DEBUG) {
       return new Set(["by", "cn", "kz", "us", "ru", "tr", null]);
     }
-    const chunk =
-      Services.prefs.getIntPref("browser.search.config.test.section", -1) - 1;
-    const regions = [
-      ...Services.intl.getAvailableLocaleDisplayNames("region"),
-      null,
-    ];
-    const chunkSize = Math.ceil(regions.length / 4);
-    const startPoint = chunk * chunkSize;
-    return regions.slice(startPoint, startPoint + chunkSize);
+    return [...Services.intl.getAvailableLocaleDisplayNames("region"), null];
   }
 
   /**
@@ -480,7 +428,7 @@ class SearchConfigTest {
 
     if (this._config.aliases) {
       this.assertDeepEqual(
-        engine._internalAliases,
+        engine.aliases,
         this._config.aliases,
         "Should have the correct aliases for the engine"
       );
@@ -498,7 +446,7 @@ class SearchConfigTest {
       }
       if (rule.aliases) {
         this.assertDeepEqual(
-          engine._internalAliases,
+          engine.aliases,
           rule.aliases,
           "Should have the correct aliases for the engine"
         );

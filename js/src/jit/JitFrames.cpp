@@ -10,6 +10,7 @@
 
 #include <algorithm>
 
+#include "builtin/ModuleObject.h"
 #include "gc/Marking.h"
 #include "jit/BaselineDebugModeOSR.h"
 #include "jit/BaselineFrame.h"
@@ -18,17 +19,20 @@
 #include "jit/Ion.h"
 #include "jit/IonScript.h"
 #include "jit/JitcodeMap.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
-#include "jit/MacroAssembler.h"
+#include "jit/LIR.h"
 #include "jit/PcScriptCache.h"
 #include "jit/Recover.h"
 #include "jit/Safepoints.h"
+#include "jit/ScriptFromCalleeToken.h"
 #include "jit/Snapshots.h"
 #include "jit/VMFunctions.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpObject, js::DumpValue
 #include "vm/ArgumentsObject.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/Interpreter.h"
+#include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
@@ -1326,6 +1330,20 @@ void UpdateJitActivationsForMinorGC(JSRuntime* rt) {
   }
 }
 
+JSScript* GetTopJitJSScript(JSContext* cx) {
+  JSJitFrameIter frame(cx->activation()->asJit());
+  MOZ_ASSERT(frame.type() == FrameType::Exit);
+  ++frame;
+
+  if (frame.isBaselineStub()) {
+    ++frame;
+    MOZ_ASSERT(frame.isBaselineJS());
+  }
+
+  MOZ_ASSERT(frame.isScripted());
+  return frame.script();
+}
+
 void GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes) {
   JitSpew(JitSpew_IonSnapshots, "Recover PC & Script from the last frame.");
 
@@ -1402,13 +1420,6 @@ void GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes) {
   if (cx->ionPcScriptCache.ref()) {
     cx->ionPcScriptCache->add(hash, retAddr, *pcRes, *scriptRes);
   }
-}
-
-uint32_t OsiIndex::returnPointDisplacement() const {
-  // In general, pointer arithmetic on code is bad, but in this case,
-  // getting the return address from a call instruction, stepping over pools
-  // would be wrong.
-  return callPointDisplacement_ + Assembler::PatchWrite_NearCallSize();
 }
 
 RInstructionResults::RInstructionResults(JitFrameLayout* fp)
@@ -2050,8 +2061,9 @@ void InlineFrameIterator::findNextFrame() {
       numActualArgs_ = GET_ARGC(pc_);
     }
     if (JSOp(*pc_) == JSOp::FunCall) {
-      MOZ_ASSERT(GET_ARGC(pc_) > 0);
-      numActualArgs_ = GET_ARGC(pc_) - 1;
+      if (numActualArgs_ > 0) {
+        numActualArgs_--;
+      }
     } else if (IsGetPropPC(pc_) || IsGetElemPC(pc_)) {
       numActualArgs_ = 0;
     } else if (IsSetPropPC(pc_)) {
@@ -2215,9 +2227,7 @@ MachineState MachineState::FromBailout(RegisterDump::GPRArray& regs,
     machine.setRegisterLocation(
         FloatRegister(FloatRegisters::Encoding(i), FloatRegisters::Double),
         &fpregs[i]);
-#  ifdef ENABLE_WASM_SIMD
-#    error "More care needed here"
-#  endif
+    // No SIMD support in bailouts, SIMD is internal to wasm
   }
 
 #elif defined(JS_CODEGEN_NONE)

@@ -16,8 +16,7 @@
 
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -96,7 +95,7 @@ class TemporaryFileInputStream final : public nsFileInputStream {
 
 TemporaryFileBlobImpl::TemporaryFileBlobImpl(nsIFile* aFile,
                                              const nsAString& aContentType)
-    : FileBlobImpl(aFile, EmptyString(), aContentType)
+    : FileBlobImpl(aFile, u""_ns, aContentType)
 #ifdef DEBUG
       ,
       mInputStreamCreated(false)
@@ -133,5 +132,4 @@ void TemporaryFileBlobImpl::CreateInputStream(nsIInputStream** aStream,
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

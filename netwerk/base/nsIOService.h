@@ -17,6 +17,7 @@
 #include "nsCategoryCache.h"
 #include "nsISpeculativeConnect.h"
 #include "nsDataHashtable.h"
+#include "nsWeakReference.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
@@ -102,8 +103,6 @@ class nsIOService final : public nsIIOService,
   void SetHttpHandlerAlreadyShutingDown();
 
   bool IsLinkUp();
-
-  static bool IsDataURIUniqueOpaqueOrigin();
 
   // Converts an internal URI (e.g. one that has a username and password in
   // it) into one which we can expose to the user, for example on the URL bar.

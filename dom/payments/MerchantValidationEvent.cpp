@@ -13,8 +13,7 @@
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(MerchantValidationEvent, Event,
                                    mValidationURL, mRequest)
@@ -72,7 +71,7 @@ void MerchantValidationEvent::init(
     return;
   }
 
-  Result<nsCOMPtr<nsIURI>, nsresult> rv =
+  Result<OwningNonNull<nsIURI>, nsresult> rv =
       doc->ResolveWithBaseURI(aEventInitDict.mValidationURL);
   if (rv.isErr()) {
     aRv.ThrowTypeError("validationURL cannot be parsed");
@@ -185,5 +184,4 @@ JSObject* MerchantValidationEvent::WrapObjectInternal(
   return MerchantValidationEvent_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

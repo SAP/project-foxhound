@@ -13,13 +13,16 @@ const { DevToolsServer } = require("devtools/server/devtools-server");
 const {
   ActorRegistry,
 } = require("devtools/server/actors/utils/actor-registry");
-const { TabSources } = require("devtools/server/actors/utils/TabSources");
+const {
+  SourcesManager,
+} = require("devtools/server/actors/utils/sources-manager");
 const makeDebugger = require("devtools/server/actors/utils/make-debugger");
 const protocol = require("devtools/shared/protocol");
 const {
   browsingContextTargetSpec,
 } = require("devtools/shared/specs/targets/browsing-context");
 const { tabDescriptorSpec } = require("devtools/shared/specs/descriptors/tab");
+const Targets = require("devtools/server/actors/targets/index");
 
 var gTestGlobals = new Set();
 DevToolsServer.addTestGlobal = function(global) {
@@ -166,6 +169,8 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     this.notifyResourceAvailable = this.notifyResourceAvailable.bind(this);
   },
 
+  targetType: Targets.TYPES.FRAME,
+
   get window() {
     return this._global;
   },
@@ -179,11 +184,11 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     return this._global.__name;
   },
 
-  get sources() {
-    if (!this._sources) {
-      this._sources = new TabSources(this.threadActor);
+  get sourcesManager() {
+    if (!this._sourcesManager) {
+      this._sourcesManager = new SourcesManager(this.threadActor);
     }
-    return this._sources;
+    return this._sourcesManager;
   },
 
   form: function() {
@@ -214,12 +219,12 @@ const TestTargetActor = protocol.ActorClassWithSpec(browsingContextTargetSpec, {
     if (!this._attached) {
       return { error: "wrongState" };
     }
-    this.threadActor.exit();
+    this.threadActor.destroy();
     return { type: "detached" };
   },
 
   reload: function(request) {
-    this.sources.reset();
+    this.sourcesManager.reset();
     this.threadActor.clearDebuggees();
     this.threadActor.dbg.addDebuggees();
     return {};

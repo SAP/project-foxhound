@@ -22,28 +22,28 @@ leak_checks = []
 
 [build-dependencies]
 build-parallel = "0.1.1"
-glslopt = "0.1.2"
+glslopt = "0.1.7"
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
 
 [dependencies]
-base64 = { optional = true, version = "0.10" }
+base64 = { optional = true, version = "0.12" }
 bincode = "1.0"
 bitflags = "1.2"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 cstr = "0.1.2"
-euclid = { version = "0.20.0", features = ["serde"] }
+euclid = { version = "0.22.0", features = ["serde"] }
 fxhash = "0.2.1"
-gleam = "0.12.1"
+gleam = "0.13.1"
 image_loader = { optional = true, version = "0.23", package = "image", default-features = false, features = ["png"] }
 lazy_static = "1"
 log = "0.4"
 malloc_size_of_derive = "0.1"
 num-traits = "0.2"
-plane-split = "0.15"
+plane-split = "0.17"
 png = { optional = true, version = "0.16" }
 rayon = "1"
-ron = { optional = true, version = "0.5" }
+ron = { optional = true, version = "0.6.2" }
 serde = { optional = true, version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
 smallvec = "1"
@@ -54,7 +54,8 @@ webrender_build = { version = "0.0.1", path = "../webrender_build" }
 malloc_size_of = { version = "0.0.1", path = "../wr_malloc_size_of", package = "wr_malloc_size_of" }
 ws = { optional = true, version = "0.9" }
 svg_fmt = "0.4"
-tracy-rs = { version = "0.1" }
+tracy-rs = "0.1.2"
+derive_more = "0.99"
 
 [dev-dependencies]
 mozangle = "0.3.1"

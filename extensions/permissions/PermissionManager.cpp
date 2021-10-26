@@ -288,7 +288,7 @@ nsCString GetNextSubDomainForHost(const nsACString& aHost) {
   // We can fail if there is no more subdomain or if the host can't have a
   // subdomain.
   if (NS_FAILED(rv)) {
-    return EmptyCString();
+    return ""_ns;
   }
 
   return subDomain;
@@ -752,7 +752,9 @@ nsresult PermissionManager::OpenDatabase(nsIFile* aPermissionsFile) {
   }
   // cache a connection to the hosts database
   if (mMemoryOnlyDB) {
-    rv = storage->OpenSpecialDatabase("memory", getter_AddRefs(data->mDBConn));
+    rv =
+        storage->OpenSpecialDatabase(kMozStorageMemoryStorageKey, VoidCString(),
+                                     getter_AddRefs(data->mDBConn));
   } else {
     rv = storage->OpenDatabase(aPermissionsFile, getter_AddRefs(data->mDBConn));
   }
@@ -1745,8 +1747,8 @@ nsresult PermissionManager::AddInternal(
       if (aDBOperation == eWriteToDB)
         // We care only about the id here so we pass dummy values for all other
         // parameters.
-        UpdateDB(op, id, EmptyCString(), EmptyCString(), 0,
-                 nsIPermissionManager::EXPIRE_NEVER, 0, 0);
+        UpdateDB(op, id, ""_ns, ""_ns, 0, nsIPermissionManager::EXPIRE_NEVER, 0,
+                 0);
 
       if (aNotifyOperation == eNotify) {
         NotifyObserversWithPermission(
@@ -1806,7 +1808,7 @@ nsresult PermissionManager::AddInternal(
         if (!newIsPersistentExpire && oldIsPersistentExpire) {
           // Maybe we have to remove the previous permission if that was
           // persistent.
-          UpdateDB(eOperationRemoving, id, EmptyCString(), EmptyCString(), 0,
+          UpdateDB(eOperationRemoving, id, ""_ns, ""_ns, 0,
                    nsIPermissionManager::EXPIRE_NEVER, 0, 0);
         } else if (newIsPersistentExpire && !oldIsPersistentExpire) {
           // It could also be that the previous permission was session-only but
@@ -1818,8 +1820,8 @@ nsresult PermissionManager::AddInternal(
           // This is the a simple update.  We care only about the id, the
           // permission and expireType/expireTime/modificationTime here. We pass
           // dummy values for all other parameters.
-          UpdateDB(op, id, EmptyCString(), EmptyCString(), aPermission,
-                   aExpireType, aExpireTime, aModificationTime);
+          UpdateDB(op, id, ""_ns, ""_ns, aPermission, aExpireType, aExpireTime,
+                   aModificationTime);
         }
       }
 
@@ -2309,7 +2311,7 @@ PermissionManager::GetAllForPrincipal(
   aResult.Clear();
   EnsureReadCompleted();
 
-  MOZ_ASSERT(PermissionAvailable(aPrincipal, EmptyCString()));
+  MOZ_ASSERT(PermissionAvailable(aPrincipal, ""_ns));
 
   nsresult rv;
   RefPtr<PermissionKey> key =
@@ -2690,8 +2692,19 @@ nsresult PermissionManager::Read(const MonitorAutoLock& aProofOfLock) {
   auto data = mThreadBoundData.Access();
 
   nsresult rv;
-
+  bool hasResult;
   nsCOMPtr<mozIStorageStatement> stmt;
+
+  // Let's retrieve the last used ID.
+  rv = data->mDBConn->CreateStatement(
+      nsLiteralCString("SELECT MAX(id) FROM moz_perms"), getter_AddRefs(stmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  while (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
+    int64_t id = stmt->AsInt64(0);
+    mLargestID = id;
+  }
+
   rv = data->mDBConn->CreateStatement(
       nsLiteralCString(
           "SELECT id, origin, type, permission, expireType, "
@@ -2706,7 +2719,6 @@ nsresult PermissionManager::Read(const MonitorAutoLock& aProofOfLock) {
   rv = stmt->BindInt64ByIndex(1, EXPIRY_NOW);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  bool hasResult;
   bool readError = false;
 
   while (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
@@ -2715,7 +2727,7 @@ nsresult PermissionManager::Read(const MonitorAutoLock& aProofOfLock) {
     // explicitly set our entry id counter for use in AddInternal(),
     // and keep track of the largest id so we know where to pick up.
     entry.mId = stmt->AsInt64(0);
-    if (entry.mId > mLargestID) mLargestID = entry.mId;
+    MOZ_ASSERT(entry.mId <= mLargestID);
 
     rv = stmt->GetUTF8String(1, entry.mOrigin);
     if (NS_FAILED(rv)) {
@@ -2758,7 +2770,7 @@ void PermissionManager::CompleteMigrations() {
   nsTArray<MigrationEntry> entries;
   {
     MonitorAutoLock lock(mMonitor);
-    entries.SwapElements(mMigrationEntries);
+    entries = std::move(mMigrationEntries);
   }
 
   for (const MigrationEntry& entry : entries) {
@@ -2786,7 +2798,7 @@ void PermissionManager::CompleteRead() {
   nsTArray<ReadEntry> entries;
   {
     MonitorAutoLock lock(mMonitor);
-    entries.SwapElements(mReadEntries);
+    entries = std::move(mReadEntries);
   }
 
   for (const ReadEntry& entry : entries) {
@@ -3121,7 +3133,7 @@ PermissionManager::GetAllKeysForPrincipal(nsIPrincipal* aPrincipal) {
   while (prin) {
     // Add the pair to the list
     std::pair<nsCString, nsCString>* pair =
-        pairs.AppendElement(std::make_pair(EmptyCString(), EmptyCString()));
+        pairs.AppendElement(std::make_pair(""_ns, ""_ns));
     // We can't check for individual OA strip perms here.
     // Don't force strip origin attributes.
     GetKeyForPrincipal(prin, false, pair->first);

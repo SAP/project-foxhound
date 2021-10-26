@@ -35,6 +35,7 @@
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerControllerChild.h"
 #include "mozilla/dom/RemoteWorkerServiceChild.h"
+#include "mozilla/dom/ServiceWorkerChild.h"
 #include "mozilla/dom/SharedWorkerChild.h"
 #include "mozilla/dom/StorageIPC.h"
 #include "mozilla/dom/GamepadEventChannelChild.h"
@@ -42,6 +43,7 @@
 #include "mozilla/dom/LocalStorage.h"
 #include "mozilla/dom/MessagePortChild.h"
 #include "mozilla/dom/ServiceWorkerActors.h"
+#include "mozilla/dom/ServiceWorkerContainerChild.h"
 #include "mozilla/dom/ServiceWorkerManagerChild.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
@@ -139,12 +141,12 @@ void BackgroundChildImpl::ProcessingError(Result aCode, const char* aReason) {
     abortMessage.AssignLiteral(#_result); \
     break
 
-    HANDLE_CASE(MsgNotKnown);
-    HANDLE_CASE(MsgNotAllowed);
-    HANDLE_CASE(MsgPayloadError);
-    HANDLE_CASE(MsgProcessingError);
-    HANDLE_CASE(MsgRouteError);
-    HANDLE_CASE(MsgValueError);
+      HANDLE_CASE(MsgNotKnown);
+      HANDLE_CASE(MsgNotAllowed);
+      HANDLE_CASE(MsgPayloadError);
+      HANDLE_CASE(MsgProcessingError);
+      HANDLE_CASE(MsgRouteError);
+      HANDLE_CASE(MsgValueError);
 
 #undef HANDLE_CASE
 
@@ -282,7 +284,7 @@ bool BackgroundChildImpl::DeallocPBackgroundLSSimpleRequestChild(
 
 BackgroundChildImpl::PBackgroundStorageChild*
 BackgroundChildImpl::AllocPBackgroundStorageChild(
-    const nsString& aProfilePath) {
+    const nsString& aProfilePath, const uint32_t& aPrivateBrowsingId) {
   MOZ_CRASH("PBackgroundStorageChild actors should be manually constructed!");
 }
 
@@ -605,33 +607,6 @@ bool BackgroundChildImpl::DeallocPMIDIManagerChild(PMIDIManagerChild* aActor) {
   return true;
 }
 
-// Gamepad API Background IPC
-dom::PGamepadEventChannelChild*
-BackgroundChildImpl::AllocPGamepadEventChannelChild() {
-  MOZ_CRASH("PGamepadEventChannelChild actor should be manually constructed!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPGamepadEventChannelChild(
-    PGamepadEventChannelChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete static_cast<dom::GamepadEventChannelChild*>(aActor);
-  return true;
-}
-
-dom::PGamepadTestChannelChild*
-BackgroundChildImpl::AllocPGamepadTestChannelChild() {
-  MOZ_CRASH("PGamepadTestChannelChild actor should be manually constructed!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPGamepadTestChannelChild(
-    PGamepadTestChannelChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete static_cast<dom::GamepadTestChannelChild*>(aActor);
-  return true;
-}
-
 mozilla::dom::PClientManagerChild*
 BackgroundChildImpl::AllocPClientManagerChild() {
   return mozilla::dom::AllocClientManagerChild();
@@ -666,35 +641,23 @@ bool BackgroundChildImpl::DeallocPWebAuthnTransactionChild(
   return true;
 }
 
-PServiceWorkerChild* BackgroundChildImpl::AllocPServiceWorkerChild(
+already_AddRefed<PServiceWorkerChild>
+BackgroundChildImpl::AllocPServiceWorkerChild(
     const IPCServiceWorkerDescriptor&) {
-  return dom::AllocServiceWorkerChild();
+  MOZ_CRASH("Shouldn't be called.");
+  return {};
 }
 
-bool BackgroundChildImpl::DeallocPServiceWorkerChild(
-    PServiceWorkerChild* aActor) {
-  return dom::DeallocServiceWorkerChild(aActor);
-}
-
-PServiceWorkerContainerChild*
+already_AddRefed<PServiceWorkerContainerChild>
 BackgroundChildImpl::AllocPServiceWorkerContainerChild() {
-  return dom::AllocServiceWorkerContainerChild();
+  return mozilla::dom::ServiceWorkerContainerChild::Create();
 }
 
-bool BackgroundChildImpl::DeallocPServiceWorkerContainerChild(
-    PServiceWorkerContainerChild* aActor) {
-  return dom::DeallocServiceWorkerContainerChild(aActor);
-}
-
-PServiceWorkerRegistrationChild*
+already_AddRefed<PServiceWorkerRegistrationChild>
 BackgroundChildImpl::AllocPServiceWorkerRegistrationChild(
     const IPCServiceWorkerRegistrationDescriptor&) {
-  return dom::AllocServiceWorkerRegistrationChild();
-}
-
-bool BackgroundChildImpl::DeallocPServiceWorkerRegistrationChild(
-    PServiceWorkerRegistrationChild* aActor) {
-  return dom::DeallocServiceWorkerRegistrationChild(aActor);
+  MOZ_CRASH("Shouldn't be called.");
+  return {};
 }
 
 dom::PEndpointForReportChild* BackgroundChildImpl::AllocPEndpointForReportChild(

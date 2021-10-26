@@ -426,8 +426,8 @@ void CacheIOThread::ThreadFunc() {
     MOZ_ASSERT(mBlockingIOWatcher);
     mBlockingIOWatcher->InitThread();
 
-    auto queue = MakeRefPtr<ThreadEventQueue<mozilla::EventQueue>>(
-        MakeUnique<mozilla::EventQueue>());
+    auto queue =
+        MakeRefPtr<ThreadEventQueue>(MakeUnique<mozilla::EventQueue>());
     nsCOMPtr<nsIThread> xpcomThread =
         nsThreadManager::get().CreateCurrentThread(queue,
                                                    nsThread::NOT_MAIN_THREAD);
@@ -503,8 +503,7 @@ void CacheIOThread::ThreadFunc() {
 }
 
 void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
-  EventQueue events;
-  events.SwapElements(mEventQueue[aLevel]);
+  EventQueue events = std::move(mEventQueue[aLevel]);
   EventQueue::size_type length = events.Length();
 
   mCurrentlyExecutingLevel = aLevel;
@@ -570,7 +569,7 @@ void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
     // pretended earlier.
     events.AppendElements(std::move(mEventQueue[aLevel]));
     // And finally move everything back to the main queue.
-    events.SwapElements(mEventQueue[aLevel]);
+    mEventQueue[aLevel] = std::move(events);
   }
 }
 

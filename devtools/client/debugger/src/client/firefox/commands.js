@@ -4,16 +4,17 @@
 
 // @flow
 
-import { prepareSourcePayload, createThread, createFrame } from "./create";
+import { createThread, createFrame } from "./create";
 import {
   addThreadEventListeners,
   clientEvents,
   removeThreadEventListeners,
+  ensureSourceActor,
 } from "./events";
 import { makePendingLocationId } from "../../utils/breakpoint";
 
-import Reps from "devtools-reps";
-import type { Node } from "devtools-reps";
+// $FlowIgnore
+import Reps from "devtools/client/shared/components/reps/index";
 
 import type {
   ActorId,
@@ -22,7 +23,7 @@ import type {
   PendingLocation,
   Frame,
   FrameId,
-  GeneratedSourceData,
+  OINode,
   Script,
   SourceId,
   SourceActor,
@@ -39,23 +40,15 @@ import type {
   ThreadFront,
   ObjectFront,
   ExpressionResult,
-  SourcesPacket,
 } from "./types";
 
-import type {
-  EventListenerCategoryList,
-  EventListenerActiveList,
-} from "../../actions/types";
-
-// $FlowIgnore
-const { defaultThreadOptions } = require("devtools/client/shared/thread-utils");
+import type { EventListenerCategoryList } from "../../actions/types";
 
 let targets: { [string]: Target };
 let devToolsClient: DevToolsClient;
 let targetList: TargetList;
 let sourceActors: { [ActorId]: SourceId };
 let breakpoints: { [string]: Object };
-let eventBreakpoints: ?EventListenerActiveList;
 
 const CALL_STACK_PAGE_SIZE = 1000;
 
@@ -88,7 +81,7 @@ function createObjectFront(grip: Grip): ObjectFront {
   return devToolsClient.createObjectFront(grip, currentThreadFront());
 }
 
-async function loadObjectProperties(root: Node) {
+async function loadObjectProperties(root: OINode) {
   const { utils } = Reps.objectInspector;
   const properties = await utils.loadProperties.loadItemProperties(
     root,
@@ -325,6 +318,13 @@ function getProperties(thread: string, grip: Grip): Promise<*> {
 async function getFrames(thread: string) {
   const threadFront = lookupThreadFront(thread);
   const response = await threadFront.getFrames(0, CALL_STACK_PAGE_SIZE);
+
+  // Ensure that each frame has its source already available.
+  // Because of throttling, the source may be available a bit late.
+  await Promise.all(
+    response.frames.map(frame => ensureSourceActor(frame.where.actor))
+  );
+
   return response.frames.map<?Frame>((frame, i) =>
     createFrame(thread, frame, i)
   );
@@ -371,8 +371,6 @@ function interrupt(thread: string): Promise<*> {
 }
 
 function setEventListenerBreakpoints(ids: string[]) {
-  eventBreakpoints = ids;
-
   return forEachThread(thread => thread.setActiveEventBreakpoints(ids));
 }
 
@@ -405,14 +403,6 @@ function registerSourceActor(sourceActorId: string, sourceId: SourceId) {
   sourceActors[sourceActorId] = sourceId;
 }
 
-async function getSources(
-  client: ThreadFront
-): Promise<Array<GeneratedSourceData>> {
-  const { sources }: SourcesPacket = await client.getSources();
-
-  return sources.map(source => prepareSourcePayload(client, source));
-}
-
 async function toggleEventLogging(logEventBreakpoints: boolean) {
   return forEachThread(thread =>
     thread.toggleEventLogging(logEventBreakpoints)
@@ -425,21 +415,6 @@ function getAllThreadFronts(): ThreadFront[] {
     fronts.push(threadFront);
   }
   return fronts;
-}
-
-// Fetch the sources for all the targets
-async function fetchSources(): Promise<Array<GeneratedSourceData>> {
-  let sources = [];
-  for (const threadFront of getAllThreadFronts()) {
-    sources = sources.concat(await getSources(threadFront));
-  }
-  return sources;
-}
-
-async function fetchThreadSources(
-  thread: string
-): Promise<Array<GeneratedSourceData>> {
-  return getSources(lookupThreadFront(thread));
 }
 
 // Check if any of the targets were paused before we opened
@@ -461,51 +436,13 @@ function getSourceForActor(actor: ActorId) {
   return sourceActors[actor];
 }
 
-async function attachThread(targetFront: Target) {
-  const options = {
-    breakpoints,
-    eventBreakpoints,
-    observeAsmJS: true,
-  };
-
-  await attachTarget(targetFront, options);
-  const threadFront: ThreadFront = await targetFront.getFront("thread");
-
-  return createThread(threadFront.actorID, targetFront);
-}
-
-export async function attachTarget(targetFront: Target, options: Object) {
-  try {
-    await targetFront.attach();
-
-    const threadActorID = targetFront.targetForm.threadActor;
-    if (targets[threadActorID]) {
-      return;
-    }
+async function addThread(targetFront: Target) {
+  const threadActorID = targetFront.targetForm.threadActor;
+  if (!targets[threadActorID]) {
     targets[threadActorID] = targetFront;
-
-    // Content process targets have already been attached by the toolbox.
-    // And the thread front has been initialized from there.
-    // So we only need to retrieve it here.
-    let threadFront = targetFront.threadFront;
-
-    // But workers targets are still only managed by the debugger codebase
-    // and so we have to attach their thread actor
-    if (!threadFront) {
-      threadFront = await targetFront.attachThread({
-        ...defaultThreadOptions(),
-        ...options,
-      });
-      // NOTE: resume is not necessary for ProcessDescriptors and can be removed
-      // once we switch to WorkerDescriptors
-      threadFront.resume();
-    }
-
-    addThreadEventListeners(threadFront);
-  } catch (e) {
-    // If any of the workers have terminated since the list command initiated
-    // then we will get errors. Ignore these.
+    addThreadEventListeners(targetFront.threadFront);
   }
+  return createThread(threadActorID, targetFront);
 }
 
 function removeThread(thread: Thread) {
@@ -602,11 +539,9 @@ const clientCommands = {
   getFrames,
   pauseOnExceptions,
   toggleEventLogging,
-  fetchSources,
-  fetchThreadSources,
   checkIfAlreadyPaused,
   registerSourceActor,
-  attachThread,
+  addThread,
   removeThread,
   getMainThread,
   sendPacket,

@@ -29,14 +29,6 @@ async function createResourceWatcherForTarget(target) {
   const { TargetList } = require("devtools/shared/resources/target-list");
 
   const targetList = new TargetList(target.client.mainRoot, target);
-
-  await target.attach();
-  // Attach the thread actor in order to ensure having sources
-  // and have the `sourceId` attribute correctly set.
-  const threadFront = await target.attachThread({});
-  // Resume the thread, otherwise it stays pause and we prevent JS from running
-  await threadFront.resume();
-
   await targetList.startListening();
   return new ResourceWatcher(targetList);
 }
@@ -296,33 +288,16 @@ function getCleanedPacket(key, packet) {
     res.totalTime = existingPacket.totalTime;
   }
 
+  if (res.securityState && existingPacket.securityState) {
+    res.securityState = existingPacket.securityState;
+  }
+
   if (res.actor && existingPacket.actor) {
     res.actor = existingPacket.actor;
   }
 
-  if (res?.request?.headersSize && existingPacket?.request?.headersSize) {
-    res.request.headersSize = existingPacket.request.headersSize;
-  }
-
-  if (res?.response?.headersSize && existingPacket?.response?.headersSize) {
-    res.response.headersSize = existingPacket.response.headersSize;
-  }
-  if (res?.response?.bodySize && existingPacket?.response?.bodySize) {
-    res.response.bodySize = existingPacket.response.bodySize;
-  }
-  if (
-    res?.response?.transferredSize &&
-    existingPacket?.response?.transferredSize
-  ) {
-    res.response.transferredSize = existingPacket.response.transferredSize;
-  }
-
-  if (res?.response?.waitingTime && existingPacket?.response?.waitingTime) {
-    res.response.waitingTime = existingPacket.response.waitingTime;
-  }
-
-  if (res.updates && Array.isArray(res.updates)) {
-    res.updates.sort();
+  if (res.waitingTime && existingPacket.waitingTime) {
+    res.waitingTime = existingPacket.waitingTime;
   }
 
   if (res.helperResult) {
@@ -466,7 +441,38 @@ function getStubFile(fileName) {
   return require(CHROME_PREFIX + STUBS_FOLDER + fileName);
 }
 
-function getSerializedPacket(packet) {
+function sortObjectKeys(obj) {
+  const isArray = Array.isArray(obj);
+  const isObject = Object.prototype.toString.call(obj) === "[object Object]";
+  const isFront = obj?._grip;
+
+  if (isObject && !isFront) {
+    // Reorder keys for objects, but skip fronts to avoid infinite recursion.
+    const sortedKeys = Object.keys(obj).sort((k1, k2) => k1.localeCompare(k2));
+    const withSortedKeys = {};
+    sortedKeys.forEach(k => {
+      withSortedKeys[k] = k !== "stacktrace" ? sortObjectKeys(obj[k]) : obj[k];
+    });
+    return withSortedKeys;
+  } else if (isArray) {
+    return obj.map(item => sortObjectKeys(item));
+  }
+  return obj;
+}
+
+/**
+ * @param {Object} packet
+ *        The packet to serialize.
+ * @param {Object}
+ *        - {Boolean} sortKeys: pass true to sort all keys alphabetically in the
+ *          packet before serialization. For instance stub comparison should not
+ *          fail if the order of properties changed.
+ */
+function getSerializedPacket(packet, { sortKeys = false } = {}) {
+  if (sortKeys) {
+    packet = sortObjectKeys(packet);
+  }
+
   return JSON.stringify(
     packet,
     function(_, value) {
@@ -534,5 +540,6 @@ module.exports = {
   getCleanedPacket,
   getSerializedPacket,
   parsePacketsWithFronts,
+  parsePacketAndCreateFronts,
   writeStubsToFile,
 };

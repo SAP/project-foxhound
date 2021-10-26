@@ -33,14 +33,22 @@ def register_strategy(name, args=()):
     def wrap(cls):
         if name not in registry:
             registry[name] = cls(*args)
-            if not hasattr(registry[name], 'description'):
+            if not hasattr(registry[name], "description"):
                 registry[name].description = name
         return cls
+
     return wrap
 
 
-def optimize_task_graph(target_task_graph, requested_tasks, params, do_not_optimize,
-                        decision_task_id, existing_tasks=None, strategy_override=None):
+def optimize_task_graph(
+    target_task_graph,
+    requested_tasks,
+    params,
+    do_not_optimize,
+    decision_task_id,
+    existing_tasks=None,
+    strategy_override=None,
+):
     """
     Perform task optimization, returning a taskgraph and a map from label to
     assigned taskId, including replacement tasks.
@@ -61,7 +69,8 @@ def optimize_task_graph(target_task_graph, requested_tasks, params, do_not_optim
         requested_tasks=requested_tasks,
         optimizations=optimizations,
         params=params,
-        do_not_optimize=do_not_optimize)
+        do_not_optimize=do_not_optimize,
+    )
 
     replaced_tasks = replace_tasks(
         target_task_graph=target_task_graph,
@@ -70,11 +79,19 @@ def optimize_task_graph(target_task_graph, requested_tasks, params, do_not_optim
         do_not_optimize=do_not_optimize,
         label_to_taskid=label_to_taskid,
         existing_tasks=existing_tasks,
-        removed_tasks=removed_tasks)
+        removed_tasks=removed_tasks,
+    )
 
-    return get_subgraph(
-            target_task_graph, removed_tasks, replaced_tasks,
-            label_to_taskid, decision_task_id), label_to_taskid
+    return (
+        get_subgraph(
+            target_task_graph,
+            removed_tasks,
+            replaced_tasks,
+            label_to_taskid,
+            decision_task_id,
+        ),
+        label_to_taskid,
+    )
 
 
 def _get_optimizations(target_task_graph, strategies):
@@ -83,74 +100,170 @@ def _get_optimizations(target_task_graph, strategies):
         if task.optimization:
             opt_by, arg = list(task.optimization.items())[0]
             strategy = strategies[opt_by]
-            if hasattr(strategy, 'description'):
+            if hasattr(strategy, "description"):
                 opt_by += " ({})".format(strategy.description)
             return (opt_by, strategy, arg)
         else:
-            return ('never', strategies['never'], None)
+            return ("never", strategies["never"], None)
+
     return optimizations
 
 
-def _log_optimization(verb, opt_counts):
+def _log_optimization(verb, opt_counts, opt_reasons=None):
+    if opt_reasons:
+        message = "optimize: {label} {action} because of {reason}"
+        for label, (action, reason) in opt_reasons.items():
+            logger.debug(message.format(label=label, action=action, reason=reason))
+
     if opt_counts:
         logger.info(
-            '{} '.format(verb.title()) +
-            ', '.join(
-                '{} tasks by {}'.format(c, b)
-                for b, c in sorted(opt_counts.items())) +
-            ' during optimization.')
+            "{} ".format(verb.title())
+            + ", ".join(
+                "{} tasks by {}".format(c, b) for b, c in sorted(opt_counts.items())
+            )
+            + " during optimization."
+        )
     else:
-        logger.info('No tasks {} during optimization'.format(verb))
+        logger.info("No tasks {} during optimization".format(verb))
 
 
-def remove_tasks(target_task_graph, requested_tasks, params, optimizations, do_not_optimize):
+def remove_tasks(
+    target_task_graph, requested_tasks, params, optimizations, do_not_optimize
+):
     """
     Implement the "Removing Tasks" phase, returning a set of task labels of all removed tasks.
     """
     opt_counts = defaultdict(int)
+    opt_reasons = {}
     removed = set()
-    reverse_links_dict = target_task_graph.graph.reverse_links_dict()
+    dependents_of = target_task_graph.graph.reverse_links_dict()
+    tasks = target_task_graph.tasks
+    prune_candidates = set()
 
-    message = "optimize: {label} {verb} because of {reason}"
+    # Traverse graph so dependents (child nodes) are guaranteed to be processed
+    # first.
     for label in target_task_graph.graph.visit_preorder():
-        verb = "kept"
+        # Dependents that can be pruned away (shouldn't cause this task to run).
+        # Only dependents that either:
+        #   A) Explicitly reference this task in their 'if_dependencies' list, or
+        #   B) Don't have an 'if_dependencies' attribute (i.e are in 'prune_candidates'
+        #      because they should be removed but have prune_deps themselves)
+        # should be considered.
+        prune_deps = {
+            l
+            for l in dependents_of[label]
+            if l in prune_candidates
+            if not tasks[l].if_dependencies or label in tasks[l].if_dependencies
+        }
+
+        def _keep(reason):
+            """Mark a task as being kept in the graph. Also recursively removes
+            any dependents from `prune_candidates`, assuming they should be
+            kept because of this task.
+            """
+            opt_reasons[label] = ("kept", reason)
+
+            # Removes dependents that were in 'prune_candidates' from a task
+            # that ended up being kept (and therefore the dependents should
+            # also be kept).
+            queue = list(prune_deps)
+            while queue:
+                l = queue.pop()
+
+                # If l is a prune_dep of multiple tasks it could be queued up
+                # multiple times. Guard against it being already removed.
+                if l not in prune_candidates:
+                    continue
+
+                # If a task doesn't set 'if_dependencies' itself (rather it was
+                # added to 'prune_candidates' due to one of its depenendents),
+                # then we shouldn't remove it.
+                if not tasks[l].if_dependencies:
+                    continue
+
+                prune_candidates.remove(l)
+                queue.extend([r for r in dependents_of[l] if r in prune_candidates])
+
+        def _remove(reason):
+            """Potentially mark a task as being removed from the graph. If the
+            task has dependents that can be pruned, add this task to
+            `prune_candidates` rather than removing it.
+            """
+            if prune_deps:
+                # If there are prune_deps, unsure if we can remove this task yet.
+                prune_candidates.add(label)
+            else:
+                opt_reasons[label] = ("removed", reason)
+                opt_counts[reason] += 1
+                removed.add(label)
 
         # if we're not allowed to optimize, that's easy..
         if label in do_not_optimize:
-            logger.debug(message.format(label=label, verb=verb, reason="do not optimize"))
+            _keep("do not optimize")
             continue
 
-        # if there are remaining tasks depending on this one, do not remove..
-        if any(l not in removed for l in reverse_links_dict[label]):
-            logger.debug(message.format(label=label, verb=verb, reason="dependent tasks"))
+        # If there are remaining tasks depending on this one, do not remove.
+        if any(
+            l for l in dependents_of[label] if l not in removed and l not in prune_deps
+        ):
+            _keep("dependent tasks")
             continue
 
         # Some tasks in the task graph only exist because they were required
         # by a task that has just been optimized away. They can now be removed.
         if label not in requested_tasks:
-            reason = "downstreams-optimized"
-            verb = "removed"
-            removed.add(label)
-            opt_counts['downstreams-optimized'] += 1
-            logger.debug(message.format(label=label, verb=verb, reason=reason))
+            _remove("dependents optimized")
+            continue
 
-        # call the optimization strategy
-        task = target_task_graph.tasks[label]
+        # Call the optimization strategy.
+        task = tasks[label]
         opt_by, opt, arg = optimizations(label)
         if opt.should_remove_task(task, params, arg):
-            verb = "removed"
+            _remove(opt_by)
+            continue
+
+        # Some tasks should only run if their dependency was also run. Since we
+        # haven't processed dependencies yet, we add them to a list of
+        # candidate tasks for pruning.
+        if task.if_dependencies:
+            opt_reasons[label] = ("kept", opt_by)
+            prune_candidates.add(label)
+        else:
+            _keep(opt_by)
+
+    if prune_candidates:
+        reason = "if-dependencies pruning"
+        for label in prune_candidates:
+            # There's an edge case where a triangle graph can cause a
+            # dependency to stay in 'prune_candidates' when the dependent
+            # remains. Do a final check to ensure we don't create any bad
+            # edges.
+            dependents = any(
+                d
+                for d in dependents_of[label]
+                if d not in prune_candidates
+                if d not in removed
+            )
+            if dependents:
+                opt_reasons[label] = ("kept", "dependent tasks")
+                continue
             removed.add(label)
-            opt_counts[opt_by] += 1
+            opt_counts[reason] += 1
+            opt_reasons[label] = ("removed", reason)
 
-        reason = "'{}' strategy".format(opt_by)
-        logger.debug(message.format(label=label, verb=verb, reason=reason))
-
-    _log_optimization('removed', opt_counts)
+    _log_optimization("removed", opt_counts, opt_reasons)
     return removed
 
 
-def replace_tasks(target_task_graph, params, optimizations, do_not_optimize,
-                  label_to_taskid, removed_tasks, existing_tasks):
+def replace_tasks(
+    target_task_graph,
+    params,
+    optimizations,
+    do_not_optimize,
+    label_to_taskid,
+    removed_tasks,
+    existing_tasks,
+):
     """
     Implement the "Replacing Tasks" phase, returning a set of task labels of
     all replaced tasks. The replacement taskIds are added to label_to_taskid as
@@ -174,7 +287,7 @@ def replace_tasks(target_task_graph, params, optimizations, do_not_optimize,
         if repl:
             label_to_taskid[label] = repl
             replaced.add(label)
-            opt_counts['existing_tasks'] += 1
+            opt_counts["existing_tasks"] += 1
             continue
 
         # call the optimization strategy
@@ -192,12 +305,16 @@ def replace_tasks(target_task_graph, params, optimizations, do_not_optimize,
             opt_counts[opt_by] += 1
             continue
 
-    _log_optimization('replaced', opt_counts)
+    _log_optimization("replaced", opt_counts)
     return replaced
 
 
 def get_subgraph(
-    target_task_graph, removed_tasks, replaced_tasks, label_to_taskid, decision_task_id,
+    target_task_graph,
+    removed_tasks,
+    replaced_tasks,
+    label_to_taskid,
+    decision_task_id,
 ):
     """
     Return the subgraph of target_task_graph consisting only of
@@ -210,17 +327,24 @@ def get_subgraph(
     """
 
     # check for any dependency edges from included to removed tasks
-    bad_edges = [(l, r, n) for l, r, n in target_task_graph.graph.edges
-                 if l not in removed_tasks and r in removed_tasks]
+    bad_edges = [
+        (l, r, n)
+        for l, r, n in target_task_graph.graph.edges
+        if l not in removed_tasks and r in removed_tasks
+    ]
     if bad_edges:
-        probs = ', '.join('{} depends on {} as {} but it has been removed'.format(l, r, n)
-                          for l, r, n in bad_edges)
+        probs = ", ".join(
+            "{} depends on {} as {} but it has been removed".format(l, r, n)
+            for l, r, n in bad_edges
+        )
         raise Exception("Optimization error: " + probs)
 
     # fill in label_to_taskid for anything not removed or replaced
     assert replaced_tasks <= set(label_to_taskid)
-    for label in sorted(target_task_graph.graph.nodes - removed_tasks - set(label_to_taskid)):
-        label_to_taskid[label] = slugid().decode('ascii')
+    for label in sorted(
+        target_task_graph.graph.nodes - removed_tasks - set(label_to_taskid)
+    ):
+        label_to_taskid[label] = slugid().decode("ascii")
 
     # resolve labels to taskIds and populate task['dependencies']
     tasks_by_taskid = {}
@@ -232,15 +356,18 @@ def get_subgraph(
         task.task_id = label_to_taskid[label]
         named_task_dependencies = {
             name: label_to_taskid[label]
-            for name, label in named_links_dict.get(label, {}).items()}
+            for name, label in named_links_dict.get(label, {}).items()
+        }
 
         # Add remaining soft dependencies
         if task.soft_dependencies:
-            named_task_dependencies.update({
-                label: label_to_taskid[label]
-                for label in task.soft_dependencies
-                if label in label_to_taskid and label not in omit
-            })
+            named_task_dependencies.update(
+                {
+                    label: label_to_taskid[label]
+                    for label in task.soft_dependencies
+                    if label in label_to_taskid and label not in omit
+                }
+            )
 
         task.task = resolve_task_references(
             task.label,
@@ -249,7 +376,7 @@ def get_subgraph(
             decision_task_id=decision_task_id,
             dependencies=named_task_dependencies,
         )
-        deps = task.task.setdefault('dependencies', [])
+        deps = task.task.setdefault("dependencies", [])
         deps.extend(sorted(named_task_dependencies.values()))
         tasks_by_taskid[task.task_id] = task
 
@@ -266,12 +393,10 @@ def get_subgraph(
         if left in tasks_by_taskid and right in tasks_by_taskid
     )
 
-    return TaskGraph(
-        tasks_by_taskid,
-        Graph(set(tasks_by_taskid), edges_by_taskid))
+    return TaskGraph(tasks_by_taskid, Graph(set(tasks_by_taskid), edges_by_taskid))
 
 
-@register_strategy('never')
+@register_strategy("never")
 class OptimizationStrategy(object):
     def should_remove_task(self, task, params, arg):
         """Determine whether to optimize this task by removing it.  Returns
@@ -285,7 +410,7 @@ class OptimizationStrategy(object):
         return False
 
 
-@register_strategy('always')
+@register_strategy("always")
 class Always(OptimizationStrategy):
     def should_remove_task(self, task, params, arg):
         return True
@@ -293,7 +418,6 @@ class Always(OptimizationStrategy):
 
 @six.add_metaclass(ABCMeta)
 class CompositeStrategy(OptimizationStrategy):
-
     def __init__(self, *substrategies, **kwargs):
         self.substrategies = []
         missing = set()
@@ -307,12 +431,15 @@ class CompositeStrategy(OptimizationStrategy):
             self.substrategies.append(sub)
 
         if missing:
-            raise TypeError("substrategies aren't registered: {}".format(
-                ",  ".join(sorted(missing))))
+            raise TypeError(
+                "substrategies aren't registered: {}".format(
+                    ",  ".join(sorted(missing))
+                )
+            )
 
-        self.split_args = kwargs.pop('split_args', None)
+        self.split_args = kwargs.pop("split_args", None)
         if not self.split_args:
-            self.split_args = lambda arg: [arg] * len(substrategies)
+            self.split_args = lambda arg, substrategies: [arg] * len(substrategies)
         if kwargs:
             raise TypeError("unexpected keyword args")
 
@@ -328,15 +455,17 @@ class CompositeStrategy(OptimizationStrategy):
         pass
 
     def _generate_results(self, fname, task, params, arg):
-        for sub, arg in zip(self.substrategies, self.split_args(arg)):
+        for sub, arg in zip(
+            self.substrategies, self.split_args(arg, self.substrategies)
+        ):
             yield getattr(sub, fname)(task, params, arg)
 
     def should_remove_task(self, *args):
-        results = self._generate_results('should_remove_task', *args)
+        results = self._generate_results("should_remove_task", *args)
         return self.reduce(results)
 
     def should_replace_task(self, *args):
-        results = self._generate_results('should_replace_task', *args)
+        results = self._generate_results("should_replace_task", *args)
         return self.reduce(results)
 
 
@@ -367,6 +496,7 @@ class All(CompositeStrategy):
     Note the values used for replacement need not be the same, as long as they
     all say to replace.
     """
+
     @property
     def description(self):
         return "-and-".join([s.description for s in self.substrategies])
@@ -385,6 +515,7 @@ class Alias(CompositeStrategy):
     This can be useful to swap strategies in and out without needing to modify
     the task transforms.
     """
+
     def __init__(self, strategy):
         super(Alias, self).__init__(strategy)
 
@@ -396,14 +527,37 @@ class Alias(CompositeStrategy):
         return next(results)
 
 
-def split_bugbug_arg(arg):
+class Not(CompositeStrategy):
+    """Given a strategy, returns the opposite."""
+
+    def __init__(self, strategy):
+        super(Not, self).__init__(strategy)
+
+    @property
+    def description(self):
+        return "not-" + self.substrategies[0].description
+
+    def reduce(self, results):
+        return not next(results)
+
+
+def split_bugbug_arg(arg, substrategies):
+    """Split args for bugbug based strategies.
+
+    Many bugbug based optimizations require passing an empty dict by reference
+    to communicate to downstream strategies. This function passes the provided
+    arg to the first (non bugbug) strategies and a shared empty dict to the
+    bugbug strategy and all substrategies after it.
     """
-    The bugbug optimization strageies require passing an dict as
-    scratch space for communicating with downstream stratgies.
-    This function pass the provided argument to the first strategy,
-    and a fresh dictionary to the second stratgey.
-    """
-    return (arg, {})
+    from taskgraph.optimize.bugbug import BugBugPushSchedules
+
+    index = [
+        i
+        for i, strategy in enumerate(substrategies)
+        if isinstance(strategy, BugBugPushSchedules)
+    ][0]
+
+    return [arg] * index + [{}] * (len(substrategies) - index)
 
 
 # Trigger registration in sibling modules.
@@ -411,21 +565,77 @@ import_sibling_modules()
 
 
 # Register composite strategies.
-register_strategy('build', args=('skip-unless-schedules',))(Alias)
-register_strategy('build-optimized', args=(
-    Any('skip-unless-schedules', 'bugbug-reduced-fallback', split_args=split_bugbug_arg),
-    'backstop',
-))(All)
-register_strategy('build-fuzzing', args=('push-interval-10',))(Alias)
-register_strategy('test', args=(
-    Any('skip-unless-schedules', 'bugbug-reduced-fallback', split_args=split_bugbug_arg),
-    'backstop',
-))(All)
-register_strategy('test-inclusive', args=('skip-unless-schedules',))(Alias)
-register_strategy('test-try', args=('skip-unless-schedules',))(Alias)
+register_strategy("build", args=("skip-unless-schedules",))(Alias)
+register_strategy("test", args=("skip-unless-schedules",))(Alias)
+register_strategy("test-inclusive", args=("skip-unless-schedules",))(Alias)
+register_strategy("test-verify", args=("skip-unless-schedules",))(Alias)
+register_strategy("upload-symbols", args=("never",))(Alias)
 
 
-# Strategy overrides used by |mach try| and/or shadow-scheduler tasks.
+# Strategy overrides used to tweak the default strategies. These are referenced
+# by the `optimize_strategies` parameter.
+
+
+class project(object):
+    """Strategies that should be applied per-project."""
+
+    autoland = {
+        "test": Any(
+            # This `Any` strategy implements bi-modal behaviour. It allows different
+            # strategies on expanded pushes vs regular pushes.
+            # This first `All` handles "expanded" pushes.
+            All(
+                # There are three substrategies in this `All`, the first two act as barriers
+                # that help determine when to apply the third:
+                # 1. On backstop pushes, `skip-unless-backstop` returns False. Therefore
+                #    the overall composite strategy is False and we don't optimize.
+                # 2. On regular pushes, `Not('skip-unless-expanded')` returns False. Therefore
+                #    the overall composite strategy is False and we don't optimize.
+                # 3. On expanded pushes, the third strategy will determine whether or
+                #    not to optimize each individual task.
+                # The barrier strategies.
+                "skip-unless-backstop",
+                Not("skip-unless-expanded"),
+                # The actual test strategy applied to "expanded" pushes.
+                Any(
+                    "skip-unless-schedules",
+                    "bugbug-reduced-manifests-fallback-last-10-pushes",
+                    "platform-disperse",
+                    split_args=split_bugbug_arg,
+                ),
+            ),
+            # This second `All` handles regular (aka not expanded or backstop)
+            # pushes.
+            All(
+                # There are two substrategies in this `All`, the first acts as a barrier
+                # that determines when to apply the second:
+                # 1. On expanded pushes (which includes backstops), `skip-unless-expanded`
+                #    returns False. Therefore the overall composite strategy is False and we
+                #    don't optimize.
+                # 2. On regular pushes, the second strategy will determine whether or
+                #    not to optimize each individual task.
+                # The barrier strategy.
+                "skip-unless-expanded",
+                # The actual test strategy applied to regular pushes.
+                Any(
+                    "skip-unless-schedules",
+                    "bugbug-reduced-manifests-fallback-low",
+                    "platform-disperse",
+                    split_args=split_bugbug_arg,
+                ),
+            ),
+        ),
+        "build": All(
+            "skip-unless-expanded",
+            Any(
+                "skip-unless-schedules",
+                "bugbug-reduced-fallback",
+                split_args=split_bugbug_arg,
+            ),
+        ),
+    }
+    """Strategy overrides that apply to autoland."""
+
 
 class experimental(object):
     """Experimental strategies either under development or used as benchmarks.
@@ -437,100 +647,119 @@ class experimental(object):
     """
 
     bugbug_tasks_medium = {
-        'test': Any('skip-unless-schedules', 'bugbug-tasks-medium', split_args=split_bugbug_arg),
+        "test": Any(
+            "skip-unless-schedules", "bugbug-tasks-medium", split_args=split_bugbug_arg
+        ),
     }
     """Doesn't limit platforms, medium confidence threshold."""
 
     bugbug_tasks_high = {
-        'test': Any('skip-unless-schedules', 'bugbug-tasks-high', split_args=split_bugbug_arg),
+        "test": Any(
+            "skip-unless-schedules", "bugbug-tasks-high", split_args=split_bugbug_arg
+        ),
     }
     """Doesn't limit platforms, high confidence threshold."""
 
     bugbug_debug_disperse = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-low', 'platform-debug', 'platform-disperse'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-low",
+            "platform-debug",
+            "platform-disperse",
+            split_args=split_bugbug_arg,
         ),
     }
     """Restricts tests to debug platforms."""
 
     bugbug_disperse_low = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-low', 'platform-disperse'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-low",
+            "platform-disperse",
+            split_args=split_bugbug_arg,
         ),
     }
     """Disperse tests across platforms, low confidence threshold."""
 
     bugbug_disperse_medium = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-medium', 'platform-disperse'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-medium",
+            "platform-disperse",
+            split_args=split_bugbug_arg,
         ),
     }
     """Disperse tests across platforms, medium confidence threshold."""
 
     bugbug_disperse_reduced_medium = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-reduced-manifests', 'platform-disperse'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-reduced-manifests",
+            "platform-disperse",
+            split_args=split_bugbug_arg,
         ),
     }
     """Disperse tests across platforms, medium confidence threshold with reduced tasks."""
 
+    bugbug_reduced_manifests_config_selection_medium = {
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-reduced-manifests-config-selection",
+            split_args=split_bugbug_arg,
+        ),
+    }
+    """Choose configs selected by bugbug, medium confidence threshold with reduced tasks."""
+
     bugbug_disperse_medium_no_unseen = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-medium', 'platform-disperse-no-unseen'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-medium",
+            "platform-disperse-no-unseen",
+            split_args=split_bugbug_arg,
         ),
     }
     """Disperse tests across platforms (no modified for unseen configurations), medium confidence
     threshold."""
 
     bugbug_disperse_medium_only_one = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-medium', 'platform-disperse-only-one'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-medium",
+            "platform-disperse-only-one",
+            split_args=split_bugbug_arg,
         ),
     }
     """Disperse tests across platforms (one platform per group), medium confidence threshold."""
 
     bugbug_disperse_high = {
-        'test': Any(
-            'skip-unless-schedules',
-            Any('bugbug-high', 'platform-disperse'),
-            split_args=split_bugbug_arg
+        "test": Any(
+            "skip-unless-schedules",
+            "bugbug-high",
+            "platform-disperse",
+            split_args=split_bugbug_arg,
         ),
     }
     """Disperse tests across platforms, high confidence threshold."""
 
     bugbug_reduced = {
-        'test': Any('skip-unless-schedules', 'bugbug-reduced', split_args=split_bugbug_arg),
+        "test": Any(
+            "skip-unless-schedules", "bugbug-reduced", split_args=split_bugbug_arg
+        ),
     }
     """Use the reduced set of tasks (and no groups) chosen by bugbug."""
 
     bugbug_reduced_high = {
-        'test': Any('skip-unless-schedules', 'bugbug-reduced-high', split_args=split_bugbug_arg),
+        "test": Any(
+            "skip-unless-schedules", "bugbug-reduced-high", split_args=split_bugbug_arg
+        ),
     }
     """Use the reduced set of tasks (and no groups) chosen by bugbug, high
     confidence threshold."""
 
     relevant_tests = {
-        'test': Any('skip-unless-schedules', 'skip-unless-has-relevant-tests'),
+        "test": Any("skip-unless-schedules", "skip-unless-has-relevant-tests"),
     }
     """Runs task containing tests in the same directories as modified files."""
-
-    seta = {
-        'test': Any('skip-unless-schedules', 'seta'),
-    }
-    """Provides a stable history of SETA's performance in the event we make it
-    non-default in the future. Only useful as a benchmark."""
 
 
 class ExperimentalOverride(object):
@@ -544,17 +773,28 @@ class ExperimentalOverride(object):
         base (object): A container class supporting attribute access.
         overrides (dict): Values to update any accessed dictionaries with.
     """
+
     def __init__(self, base, overrides):
         self.base = base
         self.overrides = overrides
 
     def __getattr__(self, name):
         val = getattr(self.base, name).copy()
-        val.update(self.overrides)
+        for name, strategy in self.overrides.items():
+            if isinstance(strategy, str) and strategy.startswith("base:"):
+                strategy = val[strategy[len("base:") :]]
+
+            val[name] = strategy
         return val
 
 
-tryselect = ExperimentalOverride(experimental, {
-    'build': Any('skip-unless-schedules', 'bugbug-reduced', split_args=split_bugbug_arg),
-    'build-fuzzing': Alias('bugbug-reduced'),
-})
+tryselect = ExperimentalOverride(
+    experimental,
+    {
+        "build": Any(
+            "skip-unless-schedules", "bugbug-reduced", split_args=split_bugbug_arg
+        ),
+        "test-verify": "base:test",
+        "upload-symbols": Alias("always"),
+    },
+)

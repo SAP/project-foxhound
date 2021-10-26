@@ -52,6 +52,16 @@ class FirefoxConnector {
     return this.toolbox.targetList.targetFront;
   }
 
+  get hasWatcherSupport() {
+    return this.toolbox.resourceWatcher.hasWatcherSupport(
+      this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT
+    );
+  }
+
+  get currentWatcher() {
+    return this.toolbox.resourceWatcher.watcher;
+  }
+
   /**
    * Connect to the backend.
    *
@@ -140,72 +150,97 @@ class FirefoxConnector {
       webConsoleFront: this.webConsoleFront,
       actions: this.actions,
       owner: this.owner,
+      resourceWatcher: this.toolbox.resourceWatcher,
     });
 
-    // Register all listeners
-    await this.addListeners();
+    // Register target listeners if we switched to a new top level one
+    if (isTargetSwitching) {
+      await this.addTargetListeners();
+    } else {
+      // Otherwise, this is the first top level target, so register all the listeners
+      await this.addListeners();
+    }
 
     // Initialize Responsive Emulation front for network throttling.
     this.responsiveFront = await this.currentTarget.getFront("responsive");
   }
 
-  async onResourceAvailable({ resourceType, targetFront, resource }) {
-    const { TYPES } = this.toolbox.resourceWatcher;
-    if (resourceType === TYPES.DOCUMENT_EVENT) {
-      this.onDocEvent(resource);
-      return;
-    }
+  async onResourceAvailable(resources) {
+    for (const resource of resources) {
+      const { TYPES } = this.toolbox.resourceWatcher;
 
-    if (resourceType === TYPES.NETWORK_EVENT) {
-      this.dataProvider.onNetworkResourceAvailable(resource);
-      return;
-    }
+      if (resource.resourceType === TYPES.DOCUMENT_EVENT) {
+        this.onDocEvent(resource);
+        continue;
+      }
 
-    if (resourceType === TYPES.WEBSOCKET) {
-      const { wsMessageType } = resource;
+      if (resource.resourceType === TYPES.NETWORK_EVENT) {
+        this.dataProvider.onNetworkResourceAvailable(resource);
+        continue;
+      }
 
-      switch (wsMessageType) {
-        case "webSocketOpened": {
-          this.dataProvider.onWebSocketOpened(
-            resource.httpChannelId,
-            resource.effectiveURI,
-            resource.protocols,
-            resource.extensions
-          );
-          break;
-        }
-        case "webSocketClosed": {
-          this.dataProvider.onWebSocketClosed(
-            resource.httpChannelId,
-            resource.wasClean,
-            resource.code,
-            resource.reason
-          );
-          break;
-        }
-        case "frameReceived": {
-          this.dataProvider.onFrameReceived(
-            resource.httpChannelId,
-            resource.data
-          );
-          break;
-        }
-        case "frameSent": {
-          this.dataProvider.onFrameSent(resource.httpChannelId, resource.data);
-          break;
+      if (resource.resourceType === TYPES.NETWORK_EVENT_STACKTRACE) {
+        this.dataProvider.onStackTraceAvailable(resource);
+        continue;
+      }
+
+      if (resource.resourceType === TYPES.WEBSOCKET) {
+        const { wsMessageType } = resource;
+
+        switch (wsMessageType) {
+          case "webSocketOpened": {
+            this.dataProvider.onWebSocketOpened(
+              resource.httpChannelId,
+              resource.effectiveURI,
+              resource.protocols,
+              resource.extensions
+            );
+            break;
+          }
+          case "webSocketClosed": {
+            this.dataProvider.onWebSocketClosed(
+              resource.httpChannelId,
+              resource.wasClean,
+              resource.code,
+              resource.reason
+            );
+            break;
+          }
+          case "frameReceived": {
+            this.dataProvider.onFrameReceived(
+              resource.httpChannelId,
+              resource.data
+            );
+            break;
+          }
+          case "frameSent": {
+            this.dataProvider.onFrameSent(
+              resource.httpChannelId,
+              resource.data
+            );
+            break;
+          }
         }
       }
     }
   }
 
-  async onResourceUpdated({ resourceType, targetFront, resource }) {
-    if (resourceType === this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT) {
-      this.dataProvider.onNetworkResourceUpdated(resource);
+  async onResourceUpdated(updates) {
+    for (const { resource, update } of updates) {
+      if (
+        resource.resourceType ===
+        this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT
+      ) {
+        this.dataProvider.onNetworkResourceUpdated(resource, update);
+      }
     }
   }
 
   async addListeners(ignoreExistingResources = false) {
-    const targetResources = [this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT];
+    const targetResources = [
+      this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT,
+      this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT_STACKTRACE,
+    ];
     if (Services.prefs.getBoolPref("devtools.netmonitor.features.webSockets")) {
       targetResources.push(this.toolbox.resourceWatcher.TYPES.WEBSOCKET);
     }
@@ -216,6 +251,10 @@ class FirefoxConnector {
       ignoreExistingResources,
     });
 
+    await this.addTargetListeners();
+  }
+
+  async addTargetListeners() {
     // Support for EventSource monitoring is currently hidden behind this pref.
     if (
       Services.prefs.getBoolPref(
@@ -237,6 +276,7 @@ class FirefoxConnector {
     this.toolbox.resourceWatcher.unwatchResources(
       [
         this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT,
+        this.toolbox.resourceWatcher.TYPES.NETWORK_EVENT_STACKTRACE,
         this.toolbox.resourceWatcher.TYPES.WEBSOCKET,
       ],
       {
@@ -285,12 +325,12 @@ class FirefoxConnector {
   }
 
   navigate() {
-    if (this.dataProvider.isPayloadQueueEmpty()) {
+    if (!this.dataProvider.hasPendingRequests()) {
       this.onReloaded();
       return;
     }
     const listener = () => {
-      if (this.dataProvider && !this.dataProvider.isPayloadQueueEmpty()) {
+      if (this.dataProvider && this.dataProvider.hasPendingRequests()) {
         return;
       }
       if (this.owner) {
@@ -317,23 +357,28 @@ class FirefoxConnector {
   /**
    * The "DOMContentLoaded" and "Load" events sent by the console actor.
    *
-   * @param {object} marker
+   * @param {object} resource The DOCUMENT_EVENT resource
    */
-  onDocEvent(event) {
-    if (event.name === "dom-loading") {
+  onDocEvent(resource) {
+    if (!resource.targetFront.isTopLevel) {
+      // Only handle document events for the top level target.
+      return;
+    }
+
+    if (resource.name === "dom-loading") {
       // Netmonitor does not support dom-loading event yet.
       return;
     }
 
     if (this.actions) {
-      this.actions.addTimingMarker(event);
+      this.actions.addTimingMarker(resource);
     }
 
-    if (event.name === "dom-complete") {
+    if (resource.name === "dom-complete") {
       this.navigate();
     }
 
-    this.emitForTests(TEST_EVENTS.TIMELINE_EVENT, event);
+    this.emitForTests(TEST_EVENTS.TIMELINE_EVENT, resource);
   }
 
   /**
@@ -367,7 +412,11 @@ class FirefoxConnector {
   /*
    * Get the list of blocked URLs
    */
-  getBlockedUrls() {
+  async getBlockedUrls() {
+    if (this.hasWatcherSupport && this.currentWatcher) {
+      const network = await this.currentWatcher.getNetworkActor();
+      return network.getBlockedUrls();
+    }
     if (!this.webConsoleFront.traits.blockedUrls) {
       return [];
     }
@@ -379,7 +428,11 @@ class FirefoxConnector {
    *
    * @param {object} urls An array of URL strings
    */
-  setBlockedUrls(urls) {
+  async setBlockedUrls(urls) {
+    if (this.hasWatcherSupport && this.currentWatcher) {
+      const network = await this.currentWatcher.getNetworkActor();
+      return network.setBlockedUrls(urls);
+    }
     return this.webConsoleFront.setBlockedUrls(urls);
   }
 

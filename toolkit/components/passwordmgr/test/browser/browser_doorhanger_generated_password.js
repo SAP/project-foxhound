@@ -13,6 +13,8 @@ const FORM_PAGE_PATH =
 const passwordInputSelector = "#form-basic-password";
 const usernameInputSelector = "#form-basic-username";
 
+requestLongerTimeout(2);
+
 async function task_setup() {
   Services.logins.removeAllLogins();
   LoginTestUtils.resetGeneratedPasswordsCache();
@@ -265,10 +267,10 @@ async function submitForm(browser) {
   await SpecialPowers.spawn(browser, [], async function() {
     content.document.querySelector("form").submit();
 
+    let win = content;
     await ContentTaskUtils.waitForCondition(() => {
       return (
-        content.location.pathname == "/" &&
-        content.document.readyState == "complete"
+        win.location.pathname == "/" && win.document.readyState == "complete"
       );
     }, "Wait for form submission load");
   });

@@ -948,8 +948,12 @@ this.tabs = class extends ExtensionAPI {
           let nativeTab = getTabOrActive(tabId);
           await tabListener.awaitTabReady(nativeTab);
 
+          let browser = nativeTab.linkedBrowser;
+          let window = browser.ownerGlobal;
+          let zoom = window.ZoomManager.getZoomForBrowser(browser);
+
           let tab = tabManager.wrapTab(nativeTab);
-          return tab.capture(context, options);
+          return tab.capture(context, zoom, options);
         },
 
         async captureVisibleTab(windowId, options) {
@@ -961,7 +965,10 @@ this.tabs = class extends ExtensionAPI {
           let tab = tabManager.wrapTab(window.gBrowser.selectedTab);
           await tabListener.awaitTabReady(tab.nativeTab);
 
-          return tab.capture(context, options);
+          let zoom = window.ZoomManager.getZoomForBrowser(
+            tab.nativeTab.linkedBrowser
+          );
+          return tab.capture(context, zoom, options);
         },
 
         async detectLanguage(tabId) {
@@ -1256,32 +1263,23 @@ this.tabs = class extends ExtensionAPI {
         print() {
           let activeTab = getTabOrActive(null);
           let { PrintUtils } = activeTab.ownerGlobal;
-          PrintUtils.printWindow(activeTab.linkedBrowser.browsingContext);
+          PrintUtils.startPrintWindow(
+            "ext_tabs_print",
+            activeTab.linkedBrowser.browsingContext
+          );
         },
 
-        printPreview() {
+        async printPreview() {
           let activeTab = getTabOrActive(null);
           let { PrintUtils, PrintPreviewListener } = activeTab.ownerGlobal;
-
-          return new Promise((resolve, reject) => {
-            let ppBrowser = PrintUtils.shouldSimplify
-              ? PrintPreviewListener.getSimplifiedPrintPreviewBrowser()
-              : PrintPreviewListener.getPrintPreviewBrowser();
-
-            let mm = ppBrowser.messageManager;
-
-            let onEntered = message => {
-              mm.removeMessageListener("Printing:Preview:Entered", onEntered);
-              if (message.data.failed) {
-                reject({ message: "Print preview failed" });
-              }
-              resolve();
-            };
-
-            mm.addMessageListener("Printing:Preview:Entered", onEntered);
-
-            PrintUtils.printPreview(PrintPreviewListener);
-          });
+          try {
+            await PrintUtils.printPreview(
+              "ext_tabs_printpreview",
+              PrintPreviewListener
+            );
+          } catch (ex) {
+            return Promise.reject({ message: "Print preview failed" });
+          }
         },
 
         saveAsPDF(pageSettings) {
@@ -1292,11 +1290,6 @@ this.tabs = class extends ExtensionAPI {
           let title = strBundle.GetStringFromName(
             "saveaspdf.saveasdialog.title"
           );
-
-          if (AppConstants.platform === "macosx") {
-            return Promise.reject({ message: "Not supported on Mac OS X" });
-          }
-
           let filename;
           if (
             pageSettings.toFileName !== null &&

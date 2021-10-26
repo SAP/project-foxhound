@@ -14,42 +14,14 @@ them.
 Visual Studio Code
 ------------------
 
-For general information on using VS Code, see their
-`home page <https://code.visualstudio.com/>`__,
-`repo <https://github.com/Microsoft/vscode/>`__ and
-`guide to working with C++ <https://code.visualstudio.com/docs/languages/cpp>`__.
+.. toctree::
+   :hidden:
+   :maxdepth: 1
 
-For IntelliSense to work properly, a
-:ref:`compilation database <CompileDB back-end / compileflags>` as described
-below is required. When it is present when you open the mozilla source code
-folder, it will be automatically detected and Visual Studio Code will ask you
-if it should use it, which you should confirm.
-
-VS Code provides number of extensions for JavaScript, Rust, etc.
-
-Useful preferences
-~~~~~~~~~~~~~~~~~~
-
-When setting the preference
-
-.. code::
-
-  "editor.formatOnSave": true
-
-you might find that this isn't working on large source code files, but triggering formatting manually works. This is due to the default timeout for formatOnSave, which is quite short (750ms). You might want to increase this timeout, e.g.
-
-.. code::
-
-   "editor.formatOnSaveTimeout": 5000
+   vscode
 
 
-Recommended extensions
-~~~~~~~~~~~~~~~~~~~~~~
-
-By default, Firefox source tree comes with its own set of recommendations of Visual Studio Code extensions. They are listed in `.vscode/extensions.json <https://searchfox.org/mozilla-central/source/.vscode/extensions.json>`__.
-
-For Rust development, the `rust-analyzer <https://marketplace.visualstudio.com/items?itemName=matklad.rust-analyzer>`__ extension is recommended.
-`See the manual <https://rust-analyzer.github.io/manual.html>`__ for more information.
+Go to :doc:`Visual Studio Code <vscode>` dedicated page.
 
 VIM
 ---
@@ -99,17 +71,6 @@ Emacs
 
 Mozilla-specific packages
 ~~~~~~~~~~~~~~~~~~~~~~~~~
-
-dxr.el
-^^^^^^
-
-dxr.el is an elisp package that enables searching of DXR Code Indexer results
-from within emacs. Using this can sometimes be easier than doing localized code
-indexing with rtags, as rtags processing of code trees can be very processing
-intensive.
-
-dxr.el is available via `github repo <https://github.com/tromey/dxr.el>`__, or
-via the Marmalade package manager.
 
 ESLint
 ~~~~~~

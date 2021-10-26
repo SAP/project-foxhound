@@ -4,42 +4,44 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from taskgraph.optimize import OptimizationStrategy, register_strategy
-from taskgraph.util.attributes import match_run_on_projects
-from taskgraph.util.backstop import is_backstop, BACKSTOP_PUSH_INTERVAL, BACKSTOP_TIME_INTERVAL
+from taskgraph.optimize import All, OptimizationStrategy, register_strategy
+from taskgraph.util.backstop import BACKSTOP_PUSH_INTERVAL
 
 
-@register_strategy('backstop', args=(BACKSTOP_PUSH_INTERVAL, BACKSTOP_TIME_INTERVAL, {'all'}))
-@register_strategy("push-interval-10", args=(10, 0, {'try'}))
-@register_strategy("push-interval-25", args=(25, 0, {'try'}))
-class Backstop(OptimizationStrategy):
-    """Ensures that no task gets left behind.
+@register_strategy("skip-unless-backstop")
+class SkipUnlessBackstop(OptimizationStrategy):
+    """Always removes tasks except on backstop pushes."""
 
-    Will schedule all tasks either every Nth push, or M minutes. This behaviour
-    is only enabled on autoland. For all other projects, the
-    `remove_on_projects` flag determines what will happen.
+    def should_remove_task(self, task, params, _):
+        return not params["backstop"]
+
+
+class SkipUnlessPushInterval(OptimizationStrategy):
+    """Always removes tasks except every N pushes.
 
     Args:
         push_interval (int): Number of pushes
-        time_interval (int): Minutes between forced schedules.
-                             Use 0 to disable.
-        remove_on_projects (set): For non-autoland projects, the task will
-            be removed if we're running on one of these projects, otherwise
-            it will be kept.
     """
-    def __init__(self, push_interval, time_interval, remove_on_projects):
+
+    def __init__(self, push_interval, remove_on_projects=None):
         self.push_interval = push_interval
-        self.time_interval = time_interval
-        self.remove_on_projects = remove_on_projects
+
+    @property
+    def description(self):
+        return "skip-unless-push-interval-{}".format(self.push_interval)
 
     def should_remove_task(self, task, params, _):
-        project = params["project"]
+        # On every Nth push, want to run all tasks.
+        return int(params["pushlog_id"]) % self.push_interval != 0
 
-        # Scheduling on a backstop only makes sense on autoland. For other projects,
-        # remove the task if the project matches self.remove_on_projects.
-        if project != 'autoland':
-            return match_run_on_projects(project, self.remove_on_projects)
 
-        if is_backstop(params, self.push_interval, self.time_interval):
-            return False
-        return True
+# Strategy to run tasks on "expanded" pushes, currently defined as pushes that
+# are half the backstop interval. The 'All' composite strategy means that the
+# "backstop" strategy will prevent "expanded" from applying on backstop pushes.
+register_strategy(
+    "skip-unless-expanded",
+    args=(
+        "skip-unless-backstop",
+        SkipUnlessPushInterval(BACKSTOP_PUSH_INTERVAL / 2),
+    ),
+)(All)

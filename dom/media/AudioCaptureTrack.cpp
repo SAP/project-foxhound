@@ -101,6 +101,10 @@ void AudioCaptureTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
   }
 }
 
+uint32_t AudioCaptureTrack::NumberOfChannels() const {
+  return GetData<AudioSegment>()->MaxChannelCount();
+}
+
 void AudioCaptureTrack::MixerCallback(AudioDataValue* aMixedBuffer,
                                       AudioSampleFormat aFormat,
                                       uint32_t aChannels, uint32_t aFrames,
@@ -121,7 +125,7 @@ void AudioCaptureTrack::MixerCallback(AudioDataValue* aMixedBuffer,
   }
   AudioChunk chunk;
   chunk.mBuffer =
-      new mozilla::SharedChannelArrayBuffer<AudioDataValue>(&output);
+      new mozilla::SharedChannelArrayBuffer<AudioDataValue>(std::move(output));
   chunk.mDuration = aFrames;
   chunk.mBufferFormat = aFormat;
   chunk.mChannelData.SetLength(MONO);

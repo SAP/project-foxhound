@@ -53,14 +53,6 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
       dom::CanonicalBrowsingContext* aBrowsingContext,
       bool aUsePrivateBrowsing);
 
-  // For channel diversion from child to parent.
-  void DivertTo(nsIStreamListener* aListener);
-  [[nodiscard]] nsresult SuspendForDiversion();
-
-  void SetupInterception(const nsHttpResponseHead& aResponseHead);
-  void SetupInterceptionAfterRedirect(bool aShouldIntercept);
-  void ClearInterceptedChannel(nsIStreamListener* aListener);
-
   // Called to set a new listener which replaces the old one after a redirect.
   void SetListenerAfterRedirect(nsIStreamListener* aListener);
 
@@ -71,31 +63,11 @@ class ParentChannelListener final : public nsIInterfaceRequestor,
  private:
   virtual ~ParentChannelListener();
 
-  // Private partner function to SuspendForDiversion.
-  void ResumeForDiversion();
-
   // Can be the original HttpChannelParent that created this object (normal
   // case), a different {HTTP|FTP}ChannelParent that we've been redirected to,
   // or some other listener that we have been diverted to via
   // nsIDivertableChannel.
   nsCOMPtr<nsIStreamListener> mNextListener;
-  // When set, no OnStart/OnData/OnStop calls should be received.
-  bool mSuspendedForDiversion;
-
-  // Set if this channel should be intercepted before it sets up the HTTP
-  // transaction.
-  bool mShouldIntercept;
-  // Set if this channel should suspend on interception.
-  bool mShouldSuspendIntercept;
-  // Set if the channel interception has been canceled.  Can be set before
-  // interception first occurs.  In this case cancelation is deferred until
-  // the interception takes place.
-  bool mInterceptCanceled;
-
-  UniquePtr<nsHttpResponseHead> mSynthesizedResponseHead;
-
-  // Handle to the channel wrapper if this channel has been intercepted.
-  nsCOMPtr<nsIInterceptedChannel> mInterceptedChannel;
 
   // This will be populated with a real network controller if parent-side
   // interception is enabled.

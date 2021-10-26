@@ -10,8 +10,8 @@
 #include "mozilla/EditAction.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/EditorDOMPoint.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/RangeBoundary.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/StaticRange.h"
@@ -20,6 +20,7 @@
 #include "nsContentUtils.h"
 #include "nscore.h"
 #include "nsDebug.h"
+#include "nsDirection.h"
 #include "nsRange.h"
 #include "nsString.h"
 
@@ -700,9 +701,8 @@ class MOZ_STACK_CLASS SplitRangeOffResult final {
 class MOZ_RAII AutoTransactionBatchExternal final {
  public:
   MOZ_CAN_RUN_SCRIPT explicit AutoTransactionBatchExternal(
-      EditorBase& aEditorBase MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      EditorBase& aEditorBase)
       : mEditorBase(aEditorBase) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     MOZ_KnownLive(mEditorBase).BeginTransaction();
   }
 
@@ -712,12 +712,15 @@ class MOZ_RAII AutoTransactionBatchExternal final {
 
  private:
   EditorBase& mEditorBase;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class MOZ_STACK_CLASS AutoRangeArray final {
+/******************************************************************************
+ * AutoSelectionRangeArray stores all ranges in `aSelection`.
+ * Note that modifying the ranges means modifing the selection ranges.
+ *****************************************************************************/
+class MOZ_STACK_CLASS AutoSelectionRangeArray final {
  public:
-  explicit AutoRangeArray(dom::Selection* aSelection) {
+  explicit AutoSelectionRangeArray(dom::Selection* aSelection) {
     if (!aSelection) {
       return;
     }
@@ -731,13 +734,214 @@ class MOZ_STACK_CLASS AutoRangeArray final {
 };
 
 /******************************************************************************
+ * AutoRangeArray stores ranges which do no belong any `Selection`.
+ * So, different from `AutoSelectionRangeArray`, this can be used for
+ * ranges which may need to be modified before touching the DOM tree,
+ * but does not want to modify `Selection` for the performance.
+ *****************************************************************************/
+class MOZ_STACK_CLASS AutoRangeArray final {
+ public:
+  explicit AutoRangeArray(const dom::Selection& aSelection) {
+    Initialize(aSelection);
+  }
+
+  void Initialize(const dom::Selection& aSelection) {
+    mDirection = aSelection.GetDirection();
+    mRanges.Clear();
+    for (uint32_t i = 0; i < aSelection.RangeCount(); i++) {
+      mRanges.AppendElement(aSelection.GetRangeAt(i)->CloneRange());
+      if (aSelection.GetRangeAt(i) == aSelection.GetAnchorFocusRange()) {
+        mAnchorFocusRange = mRanges.LastElement();
+      }
+    }
+  }
+
+  auto& Ranges() { return mRanges; }
+  const auto& Ranges() const { return mRanges; }
+  auto& FirstRangeRef() { return mRanges[0]; }
+  const auto& FirstRangeRef() const { return mRanges[0]; }
+
+  template <template <typename> typename StrongPtrType>
+  AutoTArray<StrongPtrType<nsRange>, 8> CloneRanges() const {
+    AutoTArray<StrongPtrType<nsRange>, 8> ranges;
+    for (const auto& range : mRanges) {
+      ranges.AppendElement(range->CloneRange());
+    }
+    return ranges;
+  }
+
+  EditorDOMPoint GetStartPointOfFirstRange() const {
+    if (mRanges.IsEmpty() || !mRanges[0]->IsPositioned()) {
+      return EditorDOMPoint();
+    }
+    return EditorDOMPoint(mRanges[0]->StartRef());
+  }
+  EditorDOMPoint GetEndPointOfFirstRange() const {
+    if (mRanges.IsEmpty() || !mRanges[0]->IsPositioned()) {
+      return EditorDOMPoint();
+    }
+    return EditorDOMPoint(mRanges[0]->EndRef());
+  }
+
+  nsresult SelectNode(nsINode& aNode) {
+    mRanges.Clear();
+    if (!mAnchorFocusRange) {
+      mAnchorFocusRange = nsRange::Create(&aNode);
+      if (!mAnchorFocusRange) {
+        return NS_ERROR_FAILURE;
+      }
+    }
+    ErrorResult error;
+    mAnchorFocusRange->SelectNode(aNode, error);
+    if (error.Failed()) {
+      mAnchorFocusRange = nullptr;
+      return error.StealNSResult();
+    }
+    mRanges.AppendElement(*mAnchorFocusRange);
+    return NS_OK;
+  }
+
+  /**
+   * ExtendAnchorFocusRangeFor() extends the anchor-focus range for deleting
+   * content for aDirectionAndAmount.  The range won't be extended to outer of
+   * selection limiter.  Note that if a range is extened, the range is
+   * recreated.  Therefore, caller cannot cache pointer of any ranges before
+   * calling this.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<nsIEditor::EDirection, nsresult>
+  ExtendAnchorFocusRangeFor(const EditorBase& aEditorBase,
+                            nsIEditor::EDirection aDirectionAndAmount);
+
+  /**
+   * For compatiblity with the other browsers, we should shrink ranges to
+   * start from an atomic content and/or end after one instead of start
+   * from end of a preceding text node and end by start of a follwing text
+   * node.  Returns true if this modifies a range.
+   */
+  enum class IfSelectingOnlyOneAtomicContent {
+    Collapse,  // Collapse to the range selecting only one atomic content to
+               // start or after of it.  Whether to collapse start or after
+               // it depends on aDirectionAndAmount.  This is ignored if
+               // there are multiple ranges.
+    KeepSelecting,  // Won't collapse the range.
+  };
+  Result<bool, nsresult> ShrinkRangesIfStartFromOrEndAfterAtomicContent(
+      const HTMLEditor& aHTMLEditor, nsIEditor::EDirection aDirectionAndAmount,
+      IfSelectingOnlyOneAtomicContent aIfSelectingOnlyOneAtomicContent,
+      const dom::Element* aEditingHost);
+
+  /**
+   * The following methods are same as `Selection`'s methods.
+   */
+  bool IsCollapsed() const {
+    return mRanges.IsEmpty() ||
+           (mRanges.Length() == 1 && mRanges[0]->Collapsed());
+  }
+  template <typename PT, typename CT>
+  nsresult Collapse(const EditorDOMPointBase<PT, CT>& aPoint) {
+    mRanges.Clear();
+    if (!mAnchorFocusRange) {
+      ErrorResult error;
+      mAnchorFocusRange = nsRange::Create(aPoint.ToRawRangeBoundary(),
+                                          aPoint.ToRawRangeBoundary(), error);
+      if (error.Failed()) {
+        mAnchorFocusRange = nullptr;
+        return error.StealNSResult();
+      }
+    } else {
+      nsresult rv = mAnchorFocusRange->CollapseTo(aPoint.ToRawRangeBoundary());
+      if (NS_FAILED(rv)) {
+        mAnchorFocusRange = nullptr;
+        return rv;
+      }
+    }
+    mRanges.AppendElement(*mAnchorFocusRange);
+    return NS_OK;
+  }
+  template <typename SPT, typename SCT, typename EPT, typename ECT>
+  nsresult SetStartAndEnd(const EditorDOMPointBase<SPT, SCT>& aStart,
+                          const EditorDOMPointBase<EPT, ECT>& aEnd) {
+    mRanges.Clear();
+    if (!mAnchorFocusRange) {
+      ErrorResult error;
+      mAnchorFocusRange = nsRange::Create(aStart.ToRawRangeBoundary(),
+                                          aEnd.ToRawRangeBoundary(), error);
+      if (error.Failed()) {
+        mAnchorFocusRange = nullptr;
+        return error.StealNSResult();
+      }
+    } else {
+      nsresult rv = mAnchorFocusRange->SetStartAndEnd(
+          aStart.ToRawRangeBoundary(), aEnd.ToRawRangeBoundary());
+      if (NS_FAILED(rv)) {
+        mAnchorFocusRange = nullptr;
+        return rv;
+      }
+    }
+    mRanges.AppendElement(*mAnchorFocusRange);
+    return NS_OK;
+  }
+  const nsRange* GetAnchorFocusRange() const { return mAnchorFocusRange; }
+  nsDirection GetDirection() const { return mDirection; }
+
+  const RangeBoundary& AnchorRef() const {
+    if (!mAnchorFocusRange) {
+      static RangeBoundary sEmptyRangeBoundary;
+      return sEmptyRangeBoundary;
+    }
+    return mDirection == nsDirection::eDirNext ? mAnchorFocusRange->StartRef()
+                                               : mAnchorFocusRange->EndRef();
+  }
+  nsINode* GetAnchorNode() const {
+    return AnchorRef().IsSet() ? AnchorRef().Container() : nullptr;
+  }
+  uint32_t GetAnchorOffset() const {
+    return AnchorRef().IsSet()
+               ? AnchorRef()
+                     .Offset(RangeBoundary::OffsetFilter::kValidOffsets)
+                     .valueOr(0)
+               : 0;
+  }
+  nsIContent* GetChildAtAnchorOffset() const {
+    return AnchorRef().IsSet() ? AnchorRef().GetChildAtOffset() : nullptr;
+  }
+
+  const RangeBoundary& FocusRef() const {
+    if (!mAnchorFocusRange) {
+      static RangeBoundary sEmptyRangeBoundary;
+      return sEmptyRangeBoundary;
+    }
+    return mDirection == nsDirection::eDirNext ? mAnchorFocusRange->EndRef()
+                                               : mAnchorFocusRange->StartRef();
+  }
+  nsINode* GetFocusNode() const {
+    return FocusRef().IsSet() ? FocusRef().Container() : nullptr;
+  }
+  uint32_t FocusOffset() const {
+    return FocusRef().IsSet()
+               ? FocusRef()
+                     .Offset(RangeBoundary::OffsetFilter::kValidOffsets)
+                     .valueOr(0)
+               : 0;
+  }
+  nsIContent* GetChildAtFocusOffset() const {
+    return FocusRef().IsSet() ? FocusRef().GetChildAtOffset() : nullptr;
+  }
+
+ private:
+  AutoTArray<mozilla::OwningNonNull<nsRange>, 8> mRanges;
+  RefPtr<nsRange> mAnchorFocusRange;
+  nsDirection mDirection = nsDirection::eDirNext;
+};
+
+/******************************************************************************
  * some helper classes for iterating the dom tree
  *****************************************************************************/
 
 class MOZ_RAII DOMIterator {
  public:
-  explicit DOMIterator(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
-  explicit DOMIterator(nsINode& aNode MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  explicit DOMIterator();
+  explicit DOMIterator(nsINode& aNode);
   virtual ~DOMIterator() = default;
 
   nsresult Init(nsRange& aRange);
@@ -766,20 +970,18 @@ class MOZ_RAII DOMIterator {
  protected:
   ContentIteratorBase* mIter;
   PostContentIterator mPostOrderIter;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 class MOZ_RAII DOMSubtreeIterator final : public DOMIterator {
  public:
-  explicit DOMSubtreeIterator(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
+  explicit DOMSubtreeIterator();
   virtual ~DOMSubtreeIterator() = default;
 
   nsresult Init(nsRange& aRange);
 
  private:
   ContentSubtreeIterator mSubtreeIter;
-  explicit DOMSubtreeIterator(nsINode& aNode MOZ_GUARD_OBJECT_NOTIFIER_PARAM) =
-      delete;
+  explicit DOMSubtreeIterator(nsINode& aNode) = delete;
 };
 
 /**
@@ -965,8 +1167,10 @@ class EditorUtils final {
    * computed with nsFrameSelection that also requires flushed layout
    * information.
    */
+  template <typename SelectionOrAutoRangeArray>
   static bool IsFrameSelectionRequiredToExtendSelection(
-      nsIEditor::EDirection aDirectionAndAmount, Selection& aSelection) {
+      nsIEditor::EDirection aDirectionAndAmount,
+      SelectionOrAutoRangeArray& aSelectionOrAutoRangeArray) {
     switch (aDirectionAndAmount) {
       case nsIEditor::eNextWord:
       case nsIEditor::ePreviousWord:
@@ -975,7 +1179,7 @@ class EditorUtils final {
         return true;
       case nsIEditor::ePrevious:
       case nsIEditor::eNext:
-        return aSelection.IsCollapsed();
+        return aSelectionOrAutoRangeArray.IsCollapsed();
       default:
         return false;
     }

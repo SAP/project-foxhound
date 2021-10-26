@@ -64,9 +64,7 @@ namespace jit {
   _(SetIntrinsic)                        \
   _(ThrowMsg)                            \
   /* Private Fields */                   \
-  _(InitPrivateElem)                     \
-  _(GetPrivateElem)                      \
-  _(SetPrivateElem)                      \
+  _(InitLockedElem)                      \
   // === !! WARNING WARNING WARNING !! ===
   // Do you really want to sacrifice performance by not implementing this
   // operation in the optimizing compiler?
@@ -74,6 +72,8 @@ namespace jit {
 class MIRGenerator;
 class MIRGraph;
 class WarpSnapshot;
+
+enum class CacheKind : uint8_t;
 
 // Data that is shared across all WarpBuilders for a given compilation.
 class MOZ_STACK_CLASS WarpCompilation {
@@ -134,7 +134,6 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
 
   WarpBuilder* callerBuilder() const { return callerBuilder_; }
   MResumePoint* callerResumePoint() const { return callerResumePoint_; }
-  CallInfo* inlineCallInfo() const { return inlineCallInfo_; }
 
   BytecodeSite* newBytecodeSite(BytecodeLocation loc);
 
@@ -185,6 +184,8 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
   MConstant* globalLexicalEnvConstant();
   MDefinition* getCallee();
 
+  MDefinition* maybeGuardNotOptimizedArguments(MDefinition* def);
+
   MOZ_MUST_USE bool buildUnaryOp(BytecodeLocation loc);
   MOZ_MUST_USE bool buildBinaryOp(BytecodeLocation loc);
   MOZ_MUST_USE bool buildCompareOp(BytecodeLocation loc);
@@ -201,13 +202,19 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
   bool usesEnvironmentChain() const;
   MDefinition* walkEnvironmentChain(uint32_t numHops);
 
+  MOZ_MUST_USE bool transpileCall(BytecodeLocation loc,
+                                  const WarpCacheIR* cacheIRSnapshot,
+                                  CallInfo* callInfo);
+
   MOZ_MUST_USE bool buildInlinedCall(BytecodeLocation loc,
                                      const WarpInlinedCall* snapshot,
                                      CallInfo& callInfo);
 
-  MDefinition* patchInlinedReturns(CallInfo& callInfo, MIRGraphReturns& exits,
+  MDefinition* patchInlinedReturns(CompileInfo* calleeCompileInfo,
+                                   CallInfo& callInfo, MIRGraphReturns& exits,
                                    MBasicBlock* returnBlock);
-  MDefinition* patchInlinedReturn(CallInfo& callInfo, MBasicBlock* exit,
+  MDefinition* patchInlinedReturn(CompileInfo* calleeCompileInfo,
+                                  CallInfo& callInfo, MBasicBlock* exit,
                                   MBasicBlock* returnBlock);
 
 #define BUILD_OP(OP, ...) MOZ_MUST_USE bool build_##OP(BytecodeLocation loc);
@@ -223,6 +230,8 @@ class MOZ_STACK_CLASS WarpBuilder : public WarpBuilderShared {
 
   MOZ_MUST_USE bool build();
   MOZ_MUST_USE bool buildInline();
+
+  CallInfo* inlineCallInfo() const { return inlineCallInfo_; }
 };
 
 }  // namespace jit

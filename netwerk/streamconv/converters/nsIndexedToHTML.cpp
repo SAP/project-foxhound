@@ -151,10 +151,7 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
   if (NS_FAILED(rv)) return rv;
 
   nsCOMPtr<nsIURI> titleURL;
-  rv = NS_MutateURI(uri)
-           .SetQuery(EmptyCString())
-           .SetRef(EmptyCString())
-           .Finalize(titleURL);
+  rv = NS_MutateURI(uri).SetQuery(""_ns).SetRef(""_ns).Finalize(titleURL);
   if (NS_FAILED(rv)) {
     titleURL = uri;
   }
@@ -182,8 +179,7 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
     if (NS_FAILED(rv)) return rv;
     if (!pw.IsEmpty()) {
       nsCOMPtr<nsIURI> newUri;
-      rv =
-          NS_MutateURI(titleURL).SetPassword(EmptyCString()).Finalize(titleURL);
+      rv = NS_MutateURI(titleURL).SetPassword(""_ns).Finalize(titleURL);
       if (NS_FAILED(rv)) return rv;
     }
 
@@ -812,7 +808,7 @@ nsIndexedToHTML::OnIndexAvailable(nsIRequest* aRequest, nsISupports* aCtxt,
     FormatTime(kDateFormatShort, kTimeFormatNone, t, formatted);
     AppendNonAsciiToNCR(formatted, pushBuffer);
     pushBuffer.AppendLiteral("</td>\n <td>");
-    FormatTime(kDateFormatNone, kTimeFormatSeconds, t, formatted);
+    FormatTime(kDateFormatNone, kTimeFormatLong, t, formatted);
     // use NCR to show date in any doc charset
     AppendNonAsciiToNCR(formatted, pushBuffer);
   }

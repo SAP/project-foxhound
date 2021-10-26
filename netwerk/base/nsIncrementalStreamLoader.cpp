@@ -11,8 +11,7 @@
 
 #include <limits>
 
-nsIncrementalStreamLoader::nsIncrementalStreamLoader()
-    : mData(), mBytesConsumed(0) {}
+nsIncrementalStreamLoader::nsIncrementalStreamLoader() = default;
 
 NS_IMETHODIMP
 nsIncrementalStreamLoader::Init(nsIIncrementalStreamLoaderObserver* observer) {
@@ -35,7 +34,7 @@ NS_IMPL_ISUPPORTS(nsIncrementalStreamLoader, nsIIncrementalStreamLoader,
 
 NS_IMETHODIMP
 nsIncrementalStreamLoader::GetNumBytesRead(uint32_t* aNumBytes) {
-  *aNumBytes = mBytesConsumed + mData.length();
+  *aNumBytes = mBytesRead;
   return NS_OK;
 }
 
@@ -166,9 +165,7 @@ nsresult nsIncrementalStreamLoader::WriteSegmentFun(
     }
   }
 
-  self->mBytesConsumed += consumedCount;
   *writeCount = count;
-
   return NS_OK;
 }
 
@@ -224,6 +221,8 @@ nsIncrementalStreamLoader::OnDataAvailable(nsIRequest* request,
     rv = inStr->ReadSegments(WriteSegmentFunNoTaint, this, count, &countRead);
   }
   mRequest = nullptr;
+  NS_ENSURE_SUCCESS(rv, rv);
+  mBytesRead += countRead;
   return rv;
 }
 

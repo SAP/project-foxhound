@@ -13,9 +13,9 @@ body {
   height: 100%;
   margin: 0;
   font: message-box;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
-  -moz-user-select: none;
+  background-color: Field;
+  color: FieldText;
+  user-select: none;
 }
 
 /* The content-container holds the non-scrollable header and the scrollable

@@ -6,8 +6,10 @@
 
 #include "ProfileBufferEntry.h"
 
+#include "mozilla/ProfilerMarkers.h"
 #include "platform.h"
 #include "ProfileBuffer.h"
+#include "ProfilerBacktrace.h"
 #include "ProfilerMarkerPayload.h"
 
 #include "jsapi.h"
@@ -147,14 +149,8 @@ struct TypeInfo {
 //     The elements need to be added in-order.
 class MOZ_RAII AutoArraySchemaWriter {
  public:
-  AutoArraySchemaWriter(SpliceableJSONWriter& aWriter,
-                        UniqueJSONStrings& aStrings)
-      : mJSONWriter(aWriter), mStrings(&aStrings), mNextFreeIndex(0) {
-    mJSONWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
-  }
-
   explicit AutoArraySchemaWriter(SpliceableJSONWriter& aWriter)
-      : mJSONWriter(aWriter), mStrings(nullptr), mNextFreeIndex(0) {
+      : mJSONWriter(aWriter), mNextFreeIndex(0) {
     mJSONWriter.StartArrayElement(SpliceableJSONWriter::SingleLineStyle);
   }
 
@@ -178,64 +174,36 @@ class MOZ_RAII AutoArraySchemaWriter {
     mJSONWriter.BoolElement(aValue);
   }
 
-  void StringElement(uint32_t aIndex, const char* aValue) {
-    MOZ_RELEASE_ASSERT(mStrings);
-    FillUpTo(aIndex);
-    mStrings->WriteElement(mJSONWriter, aValue);
-  }
+ protected:
+  SpliceableJSONWriter& Writer() { return mJSONWriter; }
 
-  // Write an element using a callback that takes a JSONWriter& and a
-  // UniqueJSONStrings&.
-  template <typename LambdaT>
-  void FreeFormElement(uint32_t aIndex, LambdaT aCallback) {
-    MOZ_RELEASE_ASSERT(mStrings);
-    FillUpTo(aIndex);
-    aCallback(mJSONWriter, *mStrings);
-  }
-
- private:
   void FillUpTo(uint32_t aIndex) {
     MOZ_ASSERT(aIndex >= mNextFreeIndex);
     mJSONWriter.NullElements(aIndex - mNextFreeIndex);
     mNextFreeIndex = aIndex + 1;
   }
 
+ private:
   SpliceableJSONWriter& mJSONWriter;
-  UniqueJSONStrings* mStrings;
   uint32_t mNextFreeIndex;
 };
 
-UniqueJSONStrings::UniqueJSONStrings() { mStringTableWriter.StartBareList(); }
+// Same as AutoArraySchemaWriter, but this can also write strings (output as
+// indexes into the table of unique strings).
+class MOZ_RAII AutoArraySchemaWithStringsWriter : public AutoArraySchemaWriter {
+ public:
+  AutoArraySchemaWithStringsWriter(SpliceableJSONWriter& aWriter,
+                                   UniqueJSONStrings& aStrings)
+      : AutoArraySchemaWriter(aWriter), mStrings(aStrings) {}
 
-UniqueJSONStrings::UniqueJSONStrings(const UniqueJSONStrings& aOther) {
-  mStringTableWriter.StartBareList();
-  uint32_t count = mStringHashToIndexMap.count();
-  if (count != 0) {
-    MOZ_RELEASE_ASSERT(mStringHashToIndexMap.reserve(count));
-    for (auto iter = aOther.mStringHashToIndexMap.iter(); !iter.done();
-         iter.next()) {
-      mStringHashToIndexMap.putNewInfallible(iter.get().key(),
-                                             iter.get().value());
-    }
-    UniquePtr<char[]> stringTableJSON =
-        aOther.mStringTableWriter.WriteFunc()->CopyData();
-    mStringTableWriter.Splice(stringTableJSON.get());
-  }
-}
-
-uint32_t UniqueJSONStrings::GetOrAddIndex(const char* aStr) {
-  uint32_t count = mStringHashToIndexMap.count();
-  HashNumber hash = HashString(aStr);
-  auto entry = mStringHashToIndexMap.lookupForAdd(hash);
-  if (entry) {
-    MOZ_ASSERT(entry->value() < count);
-    return entry->value();
+  void StringElement(uint32_t aIndex, const Span<const char>& aValue) {
+    FillUpTo(aIndex);
+    mStrings.WriteElement(Writer(), aValue);
   }
 
-  MOZ_RELEASE_ASSERT(mStringHashToIndexMap.add(entry, hash, count));
-  mStringTableWriter.StringElement(aStr);
-  return count;
-}
+ private:
+  UniqueJSONStrings& mStrings;
+};
 
 UniqueStacks::StackKey UniqueStacks::BeginStack(const FrameKey& aFrame) {
   return StackKey(GetOrAddFrameIndex(aFrame));
@@ -357,7 +325,7 @@ UniqueStacks::LookupFramesForJITAddressFromBufferPos(void* aJITAddress,
       auto frameJSON =
           jitFrameInfoRange.mJITFrameToFrameJSONMap.lookup(jitFrameKey);
       MOZ_RELEASE_ASSERT(frameJSON, "Should have cached JSON for this frame");
-      mFrameTableWriter.Splice(frameJSON->value().get());
+      mFrameTableWriter.Splice(frameJSON->value());
       MOZ_RELEASE_ASSERT(mFrameToIndexMap.add(entry, frameKey, index));
     }
     MOZ_RELEASE_ASSERT(frameKeys.append(std::move(frameKey)));
@@ -380,18 +348,18 @@ uint32_t UniqueStacks::GetOrAddFrameIndex(const FrameKey& aFrame) {
 
 void UniqueStacks::SpliceFrameTableElements(SpliceableJSONWriter& aWriter) {
   mFrameTableWriter.EndBareList();
-  aWriter.TakeAndSplice(mFrameTableWriter.WriteFunc());
+  aWriter.TakeAndSplice(mFrameTableWriter.TakeChunkedWriteFunc());
 }
 
 void UniqueStacks::SpliceStackTableElements(SpliceableJSONWriter& aWriter) {
   mStackTableWriter.EndBareList();
-  aWriter.TakeAndSplice(mStackTableWriter.WriteFunc());
+  aWriter.TakeAndSplice(mStackTableWriter.TakeChunkedWriteFunc());
 }
 
 void UniqueStacks::StreamStack(const StackKey& aStack) {
   enum Schema : uint32_t { PREFIX = 0, FRAME = 1 };
 
-  AutoArraySchemaWriter writer(mStackTableWriter, *mUniqueStrings);
+  AutoArraySchemaWriter writer(mStackTableWriter);
   if (aStack.mPrefixStackIndex.isSome()) {
     writer.IntElement(PREFIX, *aStack.mPrefixStackIndex);
   }
@@ -413,10 +381,10 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
     SUBCATEGORY = 8
   };
 
-  AutoArraySchemaWriter writer(mFrameTableWriter, *mUniqueStrings);
+  AutoArraySchemaWithStringsWriter writer(mFrameTableWriter, *mUniqueStrings);
 
   const NormalFrameData& data = aFrame.mData.as<NormalFrameData>();
-  writer.StringElement(LOCATION, data.mLocation.get());
+  writer.StringElement(LOCATION, data.mLocation);
   writer.BoolElement(RELEVANT_FOR_JS, data.mRelevantForJS);
 
   // It's okay to convert uint64_t to double here because DOM always creates IDs
@@ -426,7 +394,7 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
   // The C++ interpreter is the default implementation so we only emit element
   // for Baseline Interpreter frames.
   if (data.mBaselineInterp) {
-    writer.StringElement(IMPLEMENTATION, "blinterp");
+    writer.StringElement(IMPLEMENTATION, MakeStringSpan("blinterp"));
   }
 
   if (data.mLine.isSome()) {
@@ -458,9 +426,9 @@ static void StreamJITFrame(JSContext* aContext, SpliceableJSONWriter& aWriter,
     SUBCATEGORY = 8
   };
 
-  AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
+  AutoArraySchemaWithStringsWriter writer(aWriter, aUniqueStrings);
 
-  writer.StringElement(LOCATION, aJITFrame.label());
+  writer.StringElement(LOCATION, MakeStringSpan(aJITFrame.label()));
   writer.BoolElement(RELEVANT_FOR_JS, false);
 
   // It's okay to convert uint64_t to double here because DOM always creates IDs
@@ -471,9 +439,10 @@ static void StreamJITFrame(JSContext* aContext, SpliceableJSONWriter& aWriter,
   JS::ProfilingFrameIterator::FrameKind frameKind = aJITFrame.frameKind();
   MOZ_ASSERT(frameKind == JS::ProfilingFrameIterator::Frame_Ion ||
              frameKind == JS::ProfilingFrameIterator::Frame_Baseline);
-  writer.StringElement(
-      IMPLEMENTATION,
-      frameKind == JS::ProfilingFrameIterator::Frame_Ion ? "ion" : "baseline");
+  writer.StringElement(IMPLEMENTATION,
+                       frameKind == JS::ProfilingFrameIterator::Frame_Ion
+                           ? MakeStringSpan("ion")
+                           : MakeStringSpan("baseline"));
 
   const JS::ProfilingCategoryPairInfo& info = JS::GetProfilingCategoryPairInfo(
       frameKind == JS::ProfilingFrameIterator::Frame_Ion
@@ -487,10 +456,7 @@ struct CStringWriteFunc : public JSONWriteFunc {
   nsACString& mBuffer;  // The struct must not outlive this buffer
   explicit CStringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
 
-  void Write(const char* aStr) override { mBuffer.Append(aStr); }
-  void Write(const char* aStr, size_t aLen) override {
-    mBuffer.Append(aStr, aLen);
-  }
+  void Write(const Span<const char>& aStr) override { mBuffer.Append(aStr); }
 };
 
 static nsCString JSONForJITFrame(JSContext* aContext,
@@ -557,7 +523,6 @@ struct ProfileSample {
 };
 
 static void WriteSample(SpliceableJSONWriter& aWriter,
-                        UniqueJSONStrings& aUniqueStrings,
                         const ProfileSample& aSample) {
   enum Schema : uint32_t {
     STACK = 0,
@@ -565,7 +530,7 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
     EVENT_DELAY = 2,
   };
 
-  AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
+  AutoArraySchemaWriter writer(aWriter);
 
   writer.IntElement(STACK, aSample.mStack);
 
@@ -672,6 +637,7 @@ class EntryGetter {
 //         */
 //   )
 //   | MarkerData
+//   | Marker
 //   | ( /* Counters */
 //       CounterId
 //       Time
@@ -788,15 +754,17 @@ class EntryGetter {
     continue;                                              \
   }
 
-void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
-                                        int aThreadId, double aSinceTime,
-                                        UniqueStacks& aUniqueStacks) const {
+int ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
+                                       int aThreadId, double aSinceTime,
+                                       UniqueStacks& aUniqueStacks) const {
   UniquePtr<char[]> dynStrBuf = MakeUnique<char[]>(kMaxFrameKeyLength);
 
-  mEntries.Read([&](ProfileChunkedBuffer::Reader* aReader) {
+  return mEntries.Read([&](ProfileChunkedBuffer::Reader* aReader) {
     MOZ_ASSERT(aReader,
                "ProfileChunkedBuffer cannot be out-of-session when sampler is "
                "running");
+
+    int processedThreadId = 0;
 
     EntryGetter e(*aReader);
 
@@ -823,19 +791,20 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
         break;
       }
 
-      if (e.Get().IsThreadId()) {
-        int threadId = e.Get().GetInt();
-        e.Next();
+      // Due to the skip_to_next_sample block above, if we have an entry here it
+      // must be a ThreadId entry.
+      MOZ_ASSERT(e.Get().IsThreadId());
 
-        // Ignore samples that are for the wrong thread.
-        if (threadId != aThreadId) {
-          continue;
-        }
-      } else {
-        // Due to the skip_to_next_sample block above, if we have an entry here
-        // it must be a ThreadId entry.
-        MOZ_CRASH();
+      int threadId = e.Get().GetInt();
+      e.Next();
+
+      // Ignore samples that are for the wrong thread.
+      if (threadId != aThreadId && aThreadId != 0) {
+        continue;
       }
+
+      MOZ_ASSERT(aThreadId != 0 || processedThreadId == 0,
+                 "aThreadId==0 should only be used with 1-sample buffer");
 
       ProfileSample sample;
 
@@ -1003,7 +972,9 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
           sample.mResponsiveness = unresponsiveDuration;
         }
 
-        WriteSample(aWriter, *aUniqueStacks.mUniqueStrings, sample);
+        WriteSample(aWriter, sample);
+
+        processedThreadId = threadId;
       };  // End of `ReadStack(EntryGetter&)` lambda.
 
       if (e.Has() && e.Get().IsTime()) {
@@ -1073,6 +1044,8 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
         ERROR_AND_CONTINUE("expected a Time entry");
       }
     }
+
+    return processedThreadId;
   });
 }
 
@@ -1181,34 +1154,78 @@ void ProfileBuffer::StreamMarkersToJSON(SpliceableJSONWriter& aWriter,
     MOZ_ASSERT(static_cast<ProfileBufferEntry::KindUnderlyingType>(type) <
                static_cast<ProfileBufferEntry::KindUnderlyingType>(
                    ProfileBufferEntry::Kind::MODERN_LIMIT));
-    if (type == ProfileBufferEntry::Kind::MarkerData &&
-        aER.ReadObject<int>() == aThreadId) {
-      // Schema:
-      //   [name, time, category, data]
-
-      aWriter.StartArrayElement();
-      {
-        std::string name = aER.ReadObject<std::string>();
-        const JS::ProfilingCategoryPairInfo& info =
-            GetProfilingCategoryPairInfo(static_cast<JS::ProfilingCategoryPair>(
-                aER.ReadObject<uint32_t>()));
-        auto payload = aER.ReadObject<UniquePtr<ProfilerMarkerPayload>>();
-        double time = aER.ReadObject<double>();
-        MOZ_ASSERT(aER.RemainingBytes() == 0);
-
-        aUniqueStacks.mUniqueStrings->WriteElement(aWriter, name.c_str());
-        aWriter.DoubleElement(time);
-        aWriter.IntElement(unsigned(info.mCategory));
-        if (payload) {
-          aWriter.StartObjectElement(SpliceableJSONWriter::SingleLineStyle);
-          { payload->StreamPayload(aWriter, aProcessStartTime, aUniqueStacks); }
-          aWriter.EndObject();
+    // Code should *return* from the switch if the entry was fully read.
+    // Code should *break* from the switch if the entry was not fully read (we
+    // then need to adjust the reader position to the end of the entry, as
+    // expected by the reader code.)
+    switch (type) {
+      case ProfileBufferEntry::Kind::MarkerData:
+        if (aER.ReadObject<int>() != aThreadId) {
+          break;  // Entry not fully read.
         }
-      }
-      aWriter.EndArray();
-    } else {
-      aER.SetRemainingBytes(0);
+        aWriter.StartArrayElement();
+        {
+          // Extract the information from the buffer:
+          // Each entry is made up of the following:
+          //
+          // [
+          //   ProfileBufferEntry::Kind::MarkerData, <- already read
+          //   threadId,                             <- already read
+          //   name,                                 <- next location in entries
+          //   startTime,
+          //   endTime,
+          //   phase,
+          //   categoryPair,
+          //   payload
+          // ]
+          auto name = aER.ReadObject<std::string>();
+          auto startTime = aER.ReadObject<double>();
+          auto endTime = aER.ReadObject<double>();
+          auto phase = aER.ReadObject<uint8_t>();
+          const JS::ProfilingCategoryPairInfo& info =
+              GetProfilingCategoryPairInfo(
+                  static_cast<JS::ProfilingCategoryPair>(
+                      aER.ReadObject<uint32_t>()));
+          auto payload = aER.ReadObject<UniquePtr<ProfilerMarkerPayload>>();
+
+          MOZ_ASSERT(aER.RemainingBytes() == 0);
+
+          // Now write this information to JSON with the following schema:
+          // [name, startTime, endTime, phase, category, data]
+          aUniqueStacks.mUniqueStrings->WriteElement(aWriter, name);
+          aWriter.DoubleElement(startTime);
+          aWriter.DoubleElement(endTime);
+          aWriter.IntElement(phase);
+          aWriter.IntElement(unsigned(info.mCategory));
+          if (payload) {
+            aWriter.StartObjectElement(SpliceableJSONWriter::SingleLineStyle);
+            {
+              payload->StreamPayload(aWriter, aProcessStartTime, aUniqueStacks);
+            }
+            aWriter.EndObject();
+          }
+        }
+        aWriter.EndArray();
+        return;  // Entry fully read.
+
+      case ProfileBufferEntry::Kind::Marker:
+        if (mozilla::base_profiler_markers_detail::
+                DeserializeAfterKindAndStream(
+                    aER, aWriter, aThreadId,
+                    [&](ProfileChunkedBuffer& aChunkedBuffer) {
+                      ProfilerBacktrace backtrace("", &aChunkedBuffer);
+                      backtrace.StreamJSON(aWriter, aProcessStartTime,
+                                           aUniqueStacks);
+                    })) {
+          return;  // Entry fully read.
+        }
+        break;  // Entry not fully read.
+
+      default:
+        break;  // Entry not fully read.
     }
+
+    aER.SetRemainingBytes(0);
   });
 }
 
@@ -1462,9 +1479,11 @@ void ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
           static_cast<const BaseProfilerCount*>(iter.get().key());
 
       aWriter.Start();
-      aWriter.StringProperty("name", base_counter->mLabel);
-      aWriter.StringProperty("category", base_counter->mCategory);
-      aWriter.StringProperty("description", base_counter->mDescription);
+      aWriter.StringProperty("name", MakeStringSpan(base_counter->mLabel));
+      aWriter.StringProperty("category",
+                             MakeStringSpan(base_counter->mCategory));
+      aWriter.StringProperty("description",
+                             MakeStringSpan(base_counter->mDescription));
 
       aWriter.StartArrayProperty("sample_groups");
       for (auto counter_iter = counter.iter(); !counter_iter.done();
@@ -1545,7 +1564,7 @@ static void AddPausedRange(SpliceableJSONWriter& aWriter, const char* aReason,
   } else {
     aWriter.NullProperty("endTime");
   }
-  aWriter.StringProperty("reason", aReason);
+  aWriter.StringProperty("reason", MakeStringSpan(aReason));
   aWriter.End();
 }
 

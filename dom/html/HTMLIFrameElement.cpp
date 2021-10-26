@@ -20,8 +20,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(IFrame)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLIFrameElement)
 
@@ -66,11 +65,8 @@ HTMLIFrameElement::~HTMLIFrameElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLIFrameElement)
 
-void HTMLIFrameElement::BindToBrowsingContext(
-    BrowsingContext* aBrowsingContext) {
-  if (StaticPrefs::dom_security_featurePolicy_enabled()) {
-    RefreshFeaturePolicy(true /* parse the feature policy attribute */);
-  }
+void HTMLIFrameElement::BindToBrowsingContext(BrowsingContext*) {
+  RefreshFeaturePolicy(true /* parse the feature policy attribute */);
 }
 
 bool HTMLIFrameElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -164,20 +160,6 @@ nsresult HTMLIFrameElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* 
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
-  
-bool HTMLIFrameElement::HasAllowFullscreenAttribute() const {
-  return GetBoolAttr(nsGkAtoms::allowfullscreen) ||
-         GetBoolAttr(nsGkAtoms::mozallowfullscreen);
-}
-
-bool HTMLIFrameElement::AllowFullscreen() const {
-  if (StaticPrefs::dom_security_featurePolicy_enabled()) {
-    // The feature policy check in Document::GetFullscreenError already accounts
-    // for the allow* attributes, so we're done.
-    return true;
-  }
-  return HasAllowFullscreenAttribute();
-}
 
 nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                          const nsAttrValue* aValue,
@@ -194,25 +176,13 @@ nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         // alreay been updated.
         mFrameLoader->ApplySandboxFlags(GetSandboxFlags());
       }
-    } else if (aName == nsGkAtoms::allowfullscreen ||
-               aName == nsGkAtoms::mozallowfullscreen) {
-      if (mFrameLoader) {
-        if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
-          // This can go away once we remove the featurePolicy pref.
-          bc->SetFullscreenAllowedByOwner(AllowFullscreen());
-        }
-      }
     }
 
-    if (StaticPrefs::dom_security_featurePolicy_enabled()) {
-      if (aName == nsGkAtoms::allow || aName == nsGkAtoms::src ||
-          aName == nsGkAtoms::srcdoc || aName == nsGkAtoms::sandbox) {
-        RefreshFeaturePolicy(true /* parse the feature policy attribute */);
-      } else if (aName == nsGkAtoms::allowfullscreen ||
-                 aName == nsGkAtoms::mozallowfullscreen ||
-                 aName == nsGkAtoms::allowpaymentrequest) {
-        RefreshFeaturePolicy(false /* parse the feature policy attribute */);
-      }
+    if (aName == nsGkAtoms::allow || aName == nsGkAtoms::src ||
+        aName == nsGkAtoms::srcdoc || aName == nsGkAtoms::sandbox) {
+      RefreshFeaturePolicy(true /* parse the feature policy attribute */);
+    } else if (aName == nsGkAtoms::allowfullscreen) {
+      RefreshFeaturePolicy(false /* parse the feature policy attribute */);
     }
   }
   return nsGenericHTMLFrameElement::AfterSetAttr(
@@ -290,7 +260,8 @@ void HTMLIFrameElement::MaybeStoreCrossOriginFeaturePolicy() {
     return;
   }
 
-  browsingContext->SetFeaturePolicy(mFeaturePolicy);
+  // Return value of setting synced field should be checked. See bug 1656492.
+  Unused << browsingContext->SetFeaturePolicy(mFeaturePolicy);
 }
 
 already_AddRefed<nsIPrincipal>
@@ -316,8 +287,6 @@ HTMLIFrameElement::GetFeaturePolicyDefaultOrigin() const {
 }
 
 void HTMLIFrameElement::RefreshFeaturePolicy(bool aParseAllowAttribute) {
-  MOZ_ASSERT(StaticPrefs::dom_security_featurePolicy_enabled());
-
   if (aParseAllowAttribute) {
     mFeaturePolicy->ResetDeclaredPolicy();
 
@@ -336,11 +305,7 @@ void HTMLIFrameElement::RefreshFeaturePolicy(bool aParseAllowAttribute) {
     }
   }
 
-  if (AllowPaymentRequest()) {
-    mFeaturePolicy->MaybeSetAllowedPolicy(u"payment"_ns);
-  }
-
-  if (HasAllowFullscreenAttribute()) {
+  if (AllowFullscreen()) {
     mFeaturePolicy->MaybeSetAllowedPolicy(u"fullscreen"_ns);
   }
 
@@ -348,5 +313,4 @@ void HTMLIFrameElement::RefreshFeaturePolicy(bool aParseAllowAttribute) {
   MaybeStoreCrossOriginFeaturePolicy();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

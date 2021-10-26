@@ -15,6 +15,7 @@
 #include "nsEscape.h"
 #include "nsHttpTransaction.h"
 #include "nsICancelable.h"
+#include "nsICachingChannel.h"
 #include "nsIHttpPushListener.h"
 #include "nsIProtocolProxyService2.h"
 #include "nsIOService.h"
@@ -389,20 +390,23 @@ nsresult TRRServiceChannel::BeginConnect() {
   mRequestHead.SetOrigin(scheme, host, port);
 
   RefPtr<nsHttpConnectionInfo> connInfo = new nsHttpConnectionInfo(
-      host, port, EmptyCString(), mUsername, GetTopWindowOrigin(), proxyInfo,
+      host, port, ""_ns, mUsername, GetTopWindowOrigin(), proxyInfo,
       OriginAttributes(), isHttps);
   // TODO: Bug 1622778 for using AltService in socket process.
-  mAllowAltSvc = XRE_IsParentProcess() &&
-                 (mAllowAltSvc && !gHttpHandler->IsSpdyBlacklisted(connInfo));
+  mAllowAltSvc = XRE_IsParentProcess() && mAllowAltSvc;
+  bool http2Allowed = !gHttpHandler->IsHttp2Excluded(connInfo);
+  bool http3Allowed = !mUpgradeProtocolCallback && !mProxyInfo &&
+                      !(mCaps & NS_HTTP_BE_CONSERVATIVE) && !mBeConservative;
 
   RefPtr<AltSvcMapping> mapping;
   if (!mConnectionInfo && mAllowAltSvc &&  // per channel
-      !(mLoadFlags & LOAD_FRESH_CONNECTION) &&
+      (http2Allowed || http3Allowed) && !(mLoadFlags & LOAD_FRESH_CONNECTION) &&
       AltSvcMapping::AcceptableProxy(proxyInfo) &&
       (scheme.EqualsLiteral("http") || scheme.EqualsLiteral("https")) &&
       (mapping = gHttpHandler->GetAltServiceMapping(
            scheme, host, port, mPrivateBrowsing, IsIsolated(),
-           GetTopWindowOrigin(), OriginAttributes(), false))) {
+           GetTopWindowOrigin(), OriginAttributes(), http2Allowed,
+           http3Allowed))) {
     LOG(("TRRServiceChannel %p Alt Service Mapping Found %s://%s:%d [%s]\n",
          this, scheme.get(), mapping->AlternateHost().get(),
          mapping->AlternatePort(), mapping->HashKey().get()));
@@ -438,7 +442,7 @@ nsresult TRRServiceChannel::BeginConnect() {
 
   // Need to re-ask the handler, since mConnectionInfo may not be the connInfo
   // we used earlier
-  if (gHttpHandler->IsSpdyBlacklisted(mConnectionInfo)) {
+  if (gHttpHandler->IsHttp2Excluded(mConnectionInfo)) {
     mAllowSpdy = 0;
     mCaps |= NS_HTTP_DISALLOW_SPDY;
     mConnectionInfo->SetNoSpdy(true);
@@ -556,6 +560,9 @@ nsresult TRRServiceChannel::SetupTransaction() {
 
   if (!mAllowSpdy) {
     mCaps |= NS_HTTP_DISALLOW_SPDY;
+  }
+  if (!mAllowHttp3) {
+    mCaps |= NS_HTTP_DISALLOW_HTTP3;
   }
   if (mBeConservative) {
     mCaps |= NS_HTTP_BE_CONSERVATIVE;
@@ -1268,6 +1275,11 @@ TRRServiceChannel::LogMimeTypeMismatch(const nsACString& aMessageName,
 
 NS_IMETHODIMP
 TRRServiceChannel::SetupFallbackChannel(const char* aFallbackKey) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRServiceChannel::GetIsAuthChannel(bool* aIsAuthChannel) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

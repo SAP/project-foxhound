@@ -1,21 +1,17 @@
 //! X86_64-bit Instruction Set Architecture.
 
-use alloc::boxed::Box;
-
-use regalloc::RealRegUniverse;
-use target_lexicon::Triple;
-
-use crate::ir::condcodes::IntCC;
-use crate::ir::Function;
+use super::TargetIsa;
+use crate::ir::{condcodes::IntCC, Function};
+use crate::isa::x64::{inst::regs::create_reg_universe_systemv, settings as x64_settings};
 use crate::isa::Builder as IsaBuilder;
-use crate::machinst::pretty_print::ShowWithRRU;
-use crate::machinst::{compile, MachBackend, MachCompileResult, TargetIsaAdapter, VCode};
+use crate::machinst::{
+    compile, pretty_print::ShowWithRRU, MachBackend, MachCompileResult, TargetIsaAdapter, VCode,
+};
 use crate::result::CodegenResult;
 use crate::settings::{self as shared_settings, Flags};
-
-use crate::isa::x64::{inst::regs::create_reg_universe_systemv, settings as x64_settings};
-
-use super::TargetIsa;
+use alloc::boxed::Box;
+use regalloc::RealRegUniverse;
+use target_lexicon::Triple;
 
 mod abi;
 mod inst;
@@ -45,7 +41,7 @@ impl X64Backend {
     fn compile_vcode(&self, func: &Function, flags: Flags) -> CodegenResult<VCode<inst::Inst>> {
         // This performs lowering to VCode, register-allocates the code, computes
         // block layout and finalizes branches. The result is ready for binary emission.
-        let abi = Box::new(abi::X64ABIBody::new(&func, flags)?);
+        let abi = Box::new(abi::X64ABICallee::new(&func, flags)?);
         compile::compile::<Self>(&func, self, abi)
     }
 }

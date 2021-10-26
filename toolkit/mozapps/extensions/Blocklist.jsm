@@ -790,7 +790,7 @@ this.PluginBlocklistRS = {
           blockedItems.push({
             name: plugin.name,
             version: plugin.version,
-            icon: "chrome://mozapps/skin/plugins/pluginGeneric.svg",
+            icon: "chrome://mozapps/skin/plugins/plugin.svg",
             disable: false,
             blocked: state == Ci.nsIBlocklistService.STATE_BLOCKED,
             item: plugin,
@@ -1662,6 +1662,15 @@ this.ExtensionBlocklistMLBF = {
       // The bloom filter only reports 100% accurate results for known add-ons.
       // Since the add-on was unknown when the bloom filter was generated, the
       // block decision is incorrect and should be treated as unblocked.
+      return null;
+    }
+
+    if (AppConstants.NIGHTLY_BUILD && addon.type === "locale") {
+      // Only Mozilla can create langpacks with a valid signature.
+      // Langpacks for Release, Beta and ESR are submitted to AMO.
+      // DevEd does not support external langpacks (bug 1563923), only builtins.
+      //   (and built-in addons are not subjected to the blocklist).
+      // Langpacks for Nightly are not known to AMO, so the MLBF cannot be used.
       return null;
     }
 

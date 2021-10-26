@@ -20,9 +20,12 @@ using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using moveonly mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
 using nscolor from "nsColor.h";
 using refcounted class nsDocShellLoadState from "nsDocShellLoadState.h";
+using mozilla::dom::XPCOMPermitUnloadAction from "mozilla/dom/DocShellMessageUtils.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using refcounted class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+using mozilla::UseCounters from "mozilla/UseCounter.h";
+using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 
 namespace mozilla {
 namespace dom {
@@ -74,9 +77,14 @@ child:
 
   async AddBlockedFrameNodeByClassifier(MaybeDiscardedBrowsingContext aNode);
 
+  /**
+   * Request from UI to reset the scaling zoom that is controlled by APZ.
+   */
+  async ResetScalingZoom();
+
 both:
-  async RawMessage(JSActorMessageMeta aMetadata, ClonedMessageData aData,
-                   ClonedMessageData aStack);
+  async RawMessage(JSActorMessageMeta aMetadata, ClonedMessageData? aData,
+                   ClonedMessageData? aStack);
 
 parent:
   // Load the given URI load state into the current owner process of the given
@@ -85,8 +93,7 @@ parent:
   async LoadURI(MaybeDiscardedBrowsingContext aTargetBC,
                 nsDocShellLoadState aLoadState, bool aSetNavigating);
 
-  async InternalLoad(MaybeDiscardedBrowsingContext aTargetBC,
-                     nsDocShellLoadState aLoadState);
+  async InternalLoad(nsDocShellLoadState aLoadState);
 
   /// Update the URI of the document in this WindowGlobal.
   async UpdateDocumentURI(nsIURI aUri);
@@ -123,10 +130,6 @@ parent:
   /// Send down initial document bit to the parent.
   async SetIsInitialDocument(bool aIsInitialDocument);
 
-  /// Tell the parent if this WindowGlobal has any "beforeunload" event
-  /// listeners.
-  async SetHasBeforeUnload(bool aHasBeforeUnload);
-
   // Attempts to perform a "Web Share".
   async Share(IPCWebShareData aData) returns (nsresult rv);
 
@@ -135,6 +138,55 @@ parent:
 
   // Send the ClientInfo associated with a top-level document load.
   async SetClientInfo(IPCClientInfo aClientInfo);
+
+  /**
+   * Inform the parent that the document will preload a resource if the
+   * network.preload pref is enabled.
+   */
+  async UpdateDocumentWouldPreloadResources();
+
+  /**
+   * Submit load event telemetry affiliated with whether or not the document
+   * tree preloaded any resources.
+   */
+  async SubmitLoadEventPreloadTelemetry(TimeStamp aNavigationStart,
+                                        TimeStamp aLoadStart,
+                                        TimeStamp aLoadEnd);
+
+
+  /**
+   * Submit Time-to-First-Interaction telemetry correlated with whether or not
+   * the document tree preloaded any resources.
+   */
+  async SubmitTimeToFirstInteractionPreloadTelemetry(uint32_t aMillis);
+
+  /**
+   * Submit Load Input Event Response time telemetry correlated with whether
+   * or not the document tree preloaded any resources.
+   */
+  async SubmitLoadInputEventResponsePreloadTelemetry(uint32_t aMillis);
+
+  // Checks whether any "beforeunload" event listener in the document subtree
+  // wants to block unload, and prompts the user to allow if any does (depending
+  // on the action specified, using nsIContentViewer::PermitUnloadAction
+  // values). The sender is responsible for checking documents in its own
+  // process, and passing true for `aHasInProcessBlocker` if any exist. Windows
+  // hosted outside of the caller process will be checked automatically.
+  async CheckPermitUnload(bool aHasInProcessBlocker, XPCOMPermitUnloadAction aAction)
+    returns (bool permitUnload);
+
+  /**
+   * Informs the parent process that the document in aTop should expect to
+   * receive page use counter contributions from the document in this
+   * WindowGlobal.
+   */
+  async ExpectPageUseCounters(MaybeDiscardedWindowContext aTop);
+
+  /**
+   * Accumulates use counter data from the document in this WindowGlobal into
+   * the document previously passed into the ExpectPageUseCounters call.
+   */
+  async AccumulatePageUseCounters(UseCounters aUseCounters);
 
   async Destroy();
 };

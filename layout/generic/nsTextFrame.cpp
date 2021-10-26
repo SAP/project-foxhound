@@ -801,12 +801,13 @@ static bool IsTrimmableSpace(char aCh) {
 }
 
 static bool IsTrimmableSpace(const nsTextFragment* aFrag, uint32_t aPos,
-                             const nsStyleText* aStyleText) {
+                             const nsStyleText* aStyleText,
+                             bool aAllowHangingWS = false) {
   NS_ASSERTION(aPos < aFrag->GetLength(), "No text for IsSpace!");
 
   switch (aFrag->CharAt(aPos)) {
     case ' ':
-      return !aStyleText->WhiteSpaceIsSignificant() &&
+      return (!aStyleText->WhiteSpaceIsSignificant() || aAllowHangingWS) &&
              !IsSpaceCombiningSequenceTail(aFrag, aPos + 1);
     case '\n':
       return !aStyleText->NewlineIsSignificantStyle() &&
@@ -814,18 +815,26 @@ static bool IsTrimmableSpace(const nsTextFragment* aFrag, uint32_t aPos,
     case '\t':
     case '\r':
     case '\f':
-      return !aStyleText->WhiteSpaceIsSignificant();
+      return !aStyleText->WhiteSpaceIsSignificant() || aAllowHangingWS;
     default:
       return false;
   }
 }
 
-static bool IsSelectionSpace(const nsTextFragment* aFrag, uint32_t aPos) {
-  NS_ASSERTION(aPos < aFrag->GetLength(), "No text for IsSpace!");
+static bool IsSelectionInlineWhitespace(const nsTextFragment* aFrag,
+                                        uint32_t aPos) {
+  NS_ASSERTION(aPos < aFrag->GetLength(),
+               "No text for IsSelectionInlineWhitespace!");
   char16_t ch = aFrag->CharAt(aPos);
   if (ch == ' ' || ch == CH_NBSP)
     return !IsSpaceCombiningSequenceTail(aFrag, aPos + 1);
-  return ch == '\t' || ch == '\n' || ch == '\f' || ch == '\r';
+  return ch == '\t' || ch == '\f';
+}
+
+static bool IsSelectionNewline(const nsTextFragment* aFrag, uint32_t aPos) {
+  NS_ASSERTION(aPos < aFrag->GetLength(), "No text for IsSelectionNewline!");
+  char16_t ch = aFrag->CharAt(aPos);
+  return ch == '\n' || ch == '\r';
 }
 
 // Count the amount of trimmable whitespace (as per CSS
@@ -3041,11 +3050,13 @@ gfxSkipCharsIterator nsTextFrame::EnsureTextRun(
 static uint32_t GetEndOfTrimmedText(const nsTextFragment* aFrag,
                                     const nsStyleText* aStyleText,
                                     uint32_t aStart, uint32_t aEnd,
-                                    gfxSkipCharsIterator* aIterator) {
+                                    gfxSkipCharsIterator* aIterator,
+                                    bool aAllowHangingWS = false) {
   aIterator->SetSkippedOffset(aEnd);
   while (aIterator->GetSkippedOffset() > aStart) {
     aIterator->AdvanceSkipped(-1);
-    if (!IsTrimmableSpace(aFrag, aIterator->GetOriginalOffset(), aStyleText))
+    if (!IsTrimmableSpace(aFrag, aIterator->GetOriginalOffset(), aStyleText,
+                          aAllowHangingWS))
       return aIterator->GetSkippedOffset() + 1;
   }
   return aStart;
@@ -3772,6 +3783,23 @@ void nsTextFrame::PropertyProvider::SetupJustificationSpacing(
     spacing->mBefore = state.Consume(assign.mGapsAtStart);
     spacing->mAfter = state.Consume(assign.mGapsAtEnd);
   }
+}
+
+void nsTextFrame::PropertyProvider::InitFontGroupAndFontMetrics() const {
+  if (!mFontMetrics) {
+    if (mWhichTextRun == nsTextFrame::eInflated) {
+      if (!mFrame->InflatedFontMetrics()) {
+        float inflation = mFrame->GetFontSizeInflation();
+        mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(mFrame, inflation);
+        mFrame->SetInflatedFontMetrics(mFontMetrics);
+      } else {
+        mFontMetrics = mFrame->InflatedFontMetrics();
+      }
+    } else {
+      mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(mFrame, 1.0f);
+    }
+  }
+  mFontGroup = mFontMetrics->GetThebesFontGroup();
 }
 
 //----------------------------------------------------------------------
@@ -4881,6 +4909,9 @@ void nsTextFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       TextDecorations textDecs;
       GetTextDecorations(PresContext(), eResolvedColors, textDecs);
       if (!textDecs.HasDecorationLines()) {
+        if (auto* currentPresContext = aBuilder->CurrentPresContext()) {
+          currentPresContext->SetBuiltInvisibleText();
+        }
         return;
       }
     }
@@ -7705,7 +7736,8 @@ class MOZ_STACK_CLASS ClusterIterator {
                   bool aTrimSpaces = true);
 
   bool NextCluster();
-  bool IsWhitespace() const;
+  bool IsInlineWhitespace() const;
+  bool IsNewline() const;
   bool IsPunctuation() const;
   bool HaveWordBreakBefore() const { return mHaveWordBreak; }
 
@@ -7850,9 +7882,14 @@ nsIFrame::FrameSearchResult nsTextFrame::PeekOffsetCharacter(
   return CONTINUE;
 }
 
-bool ClusterIterator::IsWhitespace() const {
+bool ClusterIterator::IsInlineWhitespace() const {
   NS_ASSERTION(mCharIndex >= 0, "No cluster selected");
-  return IsSelectionSpace(mFrag, mCharIndex);
+  return IsSelectionInlineWhitespace(mFrag, mCharIndex);
+}
+
+bool ClusterIterator::IsNewline() const {
+  NS_ASSERTION(mCharIndex >= 0, "No cluster selected");
+  return IsSelectionNewline(mFrag, mCharIndex);
 }
 
 bool ClusterIterator::IsPunctuation() const {
@@ -7907,7 +7944,10 @@ bool ClusterIterator::NextCluster() {
       mCharIndex = mIterator.GetOriginalOffset();
       mIterator.AdvanceOriginal(1);
     } else {
-      if (mIterator.GetOriginalOffset() <= mTrimmed.mStart) return false;
+      if (mIterator.GetOriginalOffset() <= mTrimmed.mStart) {
+        // Trimming can skip backward word breakers, see bug 1667138
+        return mHaveWordBreak;
+      }
       mIterator.AdvanceOriginal(-1);
       keepGoing = mIterator.IsOriginalCharSkipped() ||
                   mIterator.GetOriginalOffset() >= mTrimmed.GetEnd() ||
@@ -8035,8 +8075,12 @@ nsIFrame::FrameSearchResult nsTextFrame::PeekOffsetWord(
 
   do {
     bool isPunctuation = cIter.IsPunctuation();
-    bool isWhitespace = cIter.IsWhitespace();
+    bool isInlineWhitespace = cIter.IsInlineWhitespace();
+    bool isWhitespace = isInlineWhitespace || cIter.IsNewline();
     bool isWordBreakBefore = cIter.HaveWordBreakBefore();
+    if (!isWhitespace || isInlineWhitespace) {
+      aState->SetSawInlineCharacter();
+    }
     if (aWordSelectEatSpace == isWhitespace && !aState->mSawBeforeType) {
       aState->SetSawBeforeType();
       aState->Update(isPunctuation, isWhitespace);
@@ -8307,6 +8351,7 @@ void nsTextFrame::AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
   bool collapseWhitespace = !textStyle->WhiteSpaceIsSignificant();
   bool preformatNewlines = textStyle->NewlineIsSignificant(this);
   bool preformatTabs = textStyle->WhiteSpaceIsSignificant();
+  bool whitespaceCanHang = textStyle->WhiteSpaceCanHangOrVisuallyCollapse();
   gfxFloat tabWidth = -1;
   uint32_t start = FindStartAfterSkippingWhitespace(&provider, aData, textStyle,
                                                     &iter, flowEndInTextRun);
@@ -8367,9 +8412,9 @@ void nsTextFrame::AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
       aData->mCurrentLine = NSCoordSaturatingAdd(aData->mCurrentLine, width);
       aData->mAtStartOfLine = false;
 
-      if (collapseWhitespace) {
+      if (collapseWhitespace || whitespaceCanHang) {
         uint32_t trimStart =
-            GetEndOfTrimmedText(frag, textStyle, wordStart, i, &iter);
+            GetEndOfTrimmedText(frag, textStyle, wordStart, i, &iter, whitespaceCanHang);
         if (trimStart == start) {
           // This is *all* trimmable whitespace, so whatever trailingWhitespace
           // we saw previously is still trailing...
@@ -8409,7 +8454,13 @@ void nsTextFrame::AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
       } else {
         aData->OptionallyBreak();
       }
-      wordStart = i;
+      if (aData->mSkipWhitespace) {
+        iter.SetSkippedOffset(i);
+        wordStart = FindStartAfterSkippingWhitespace(
+            &provider, aData, textStyle, &iter, flowEndInTextRun);
+      } else {
+        wordStart = i;
+      }
     }
   }
 
@@ -8618,13 +8669,13 @@ void nsTextFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
 }
 
 /* virtual */
-LogicalSize nsTextFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsTextFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
-    ComputeSizeFlags aFlags) {
+    const LogicalSize& aBorderPadding, ComputeSizeFlags aFlags) {
   // Inlines and text don't compute size before reflow.
-  return LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+  return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
+          AspectRatioUsage::None};
 }
 
 static nsRect RoundOut(const gfxRect& aRect) {
@@ -9228,9 +9279,7 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
 
   bool isBreakSpaces = textStyle->mWhiteSpace == StyleWhiteSpace::BreakSpaces;
   // allow whitespace to overflow the container
-  bool whitespaceCanHang = !isBreakSpaces &&
-                           textStyle->WhiteSpaceCanWrapStyle() &&
-                           textStyle->WhiteSpaceIsSignificant();
+  bool whitespaceCanHang = textStyle->WhiteSpaceCanHangOrVisuallyCollapse();
   gfxBreakPriority breakPriority = aLineLayout.LastOptionalBreakPriority();
   gfxTextRun::SuppressBreak suppressBreak = gfxTextRun::eNoSuppressBreak;
   bool shouldSuppressLineBreak = ShouldSuppressLineBreak();
@@ -10035,6 +10084,15 @@ void nsTextFrame::List(FILE* out, const char* aPrefix, ListFlags aFlags) const {
     str += " SELECTED";
   }
   fprintf_stderr(out, "%s\n", str.get());
+}
+
+void nsTextFrame::ListTextRuns(FILE* out,
+                               nsTHashtable<nsVoidPtrHashKey>& aSeen) const {
+  if (!mTextRun || aSeen.Contains(mTextRun)) {
+    return;
+  }
+  aSeen.PutEntry(mTextRun);
+  mTextRun->Dump(out);
 }
 #endif
 

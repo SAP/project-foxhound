@@ -25,18 +25,19 @@ body {
   --newtab-button-primary-color: #0060DF;
   --newtab-button-secondary-color: #0060DF;
   --newtab-card-background-color: #FFF;
-  --newtab-card-shadow: 0 1px 4px 0 rgba(12, 12, 13, 0.1);
+  --newtab-card-shadow: 0 1px 4px 0 rgba(12, 12, 13, 0.4);
+  --tiles-theme-section-border-width: 1px;
   --welcome-header-text-color: #2B2156;
   --welcome-header-text-color-1: #20133A;
   --welcome-card-button-background-color: rgba(12, 12, 13, 0.1);
   --welcome-card-button-background-hover-color: rgba(12, 12, 13, 0.2);
   --welcome-card-button-background-active-color: rgba(12, 12, 13, 0.3);
-  --welcome-button-box-shadow-color: rgba(10, 132, 255, 0.3);
-  --welcome-button-box-shadow-inset-color: #0A84FF;
+  --welcome-button-box-shadow-color: #0A84FF;
+  --welcome-button-box-shadow-inset-color: rgba(10, 132, 255, 0.3);
   --welcome-button-text-color: #FFF;
   --welcome-button-background-hover-color: #003EAA;
   --welcome-button-background-active-color: #002275;
-  --about-welcome-media-fade: linear-gradient(transparent, transparent 40%, #F9F9FA);
+  --about-welcome-media-fade: linear-gradient(transparent, transparent 35%, #F9F9FA, #F9F9FA);
 
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Ubuntu',
   'Helvetica Neue', sans-serif;
@@ -56,13 +57,13 @@ body {
     --newtab-button-primary-color: #0060DF;
     --newtab-button-secondary-color: #FFF;
     --newtab-card-background-color: #38383D;
-    --newtab-card-shadow: 0 1px 8px 0 rgba(12, 12, 13, 0.2);
+    --newtab-card-shadow: 0 1px 8px 0 rgba(12, 12, 13, 0.4);
     --welcome-header-text-color: rgba(255, 255, 255, 0.6);
     --welcome-header-text-color-1: #7542E5;
     --welcome-card-button-background-color: rgba(12, 12, 13, 0.3);
     --welcome-card-button-background-hover-color: rgba(12, 12, 13, 0.5);
     --welcome-card-button-background-active-color: rgba(12, 12, 13, 0.7);
-    --welcome-button-box-shadow-color: rgba(249, 249, 250, 0.2);
+    --welcome-button-box-shadow-color: #0A84FF;
     --about-welcome-media-fade: linear-gradient(transparent, transparent 35%, #1D1133, #1D1133);
   }
 }
@@ -245,7 +246,7 @@ body {
 }
 
 
-.multistageContainer {
+.onboardingContainer {
   text-align: center;
   overflow-x: auto;
   height: 100vh;
@@ -272,19 +273,33 @@ body {
     span {
       position: relative;
       z-index: 1;
+      white-space: nowrap;
     }
 
-    span::after {
-      display: block;
-      background: center / contain no-repeat url('../data/content/assets/zap.svg');
-      content: '';
-      position: absolute;
-      top: calc(100% - 0.2em);
-      width: 100%;
-      height: 0.3em;
-      left: 0;
-      z-index: -1;
+    .zap {
+      &::after {
+        display: block;
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        content: '';
+        position: absolute;
+        top: calc(100% - 0.15em);
+        width: 100%;
+        height: 0.3em;
+        left: 0;
+        z-index: -1;
+      }
+
+      &.short::after {
+        background-image:  url('chrome://activity-stream/content/data/content/assets/short-zap.svg');
+      }
+
+      &.long::after {
+        background-image:  url('chrome://activity-stream/content/data/content/assets/long-zap.svg');
+      }
     }
+
+
   }
 
   .welcome-text {
@@ -323,6 +338,12 @@ body {
       max-width: 750px;
       letter-spacing: -0.01em;
     }
+
+    img {
+      margin-inline: 2px;
+      width: 20px;
+      height: 20px;
+    }
   }
 
   .tiles-theme-container {
@@ -344,15 +365,23 @@ body {
   .tiles-theme-section {
     display: grid;
     grid-gap: 21px;
-    grid-template-columns: repeat(3, auto);
-    border: 0;
+    grid-template-columns: repeat(4, auto);
+
+    /* --newtab-background-color-1 will be invisible, but it's necessary to
+     * keep the content from jumping around when it gets focus-within and
+     * does sprout a dotted border.  This way it keeps a 1 pixel wide border
+     * either way so things don't change position.
+     */
+    border: var(--tiles-theme-section-border-width)
+    solid
+    var(--newtab-background-color-1);
 
     @media (max-width: $break-point-medium) {
       grid-template-columns: repeat(2, auto);
     }
 
     &:focus-within {
-      border: 1px dotted;
+      border: var(--tiles-theme-section-border-width) dotted;
     }
 
     .theme {
@@ -363,7 +392,7 @@ body {
       height: 145px;
       color: #000;
       background-color: #FFF;
-      box-shadow: 0 1px 4px rgba(12, 12, 13, 0.1);
+      box-shadow: 0 1px 4px 0 rgba(12, 12, 13, 0.4);
       border-radius: 4px;
       cursor: pointer;
 
@@ -388,6 +417,10 @@ body {
         &.automatic {
           background-image: url('chrome://mozapps/content/extensions/default-theme.svg');
         }
+
+        &.alpenglow {
+          background-image: url('chrome://mozapps/content/extensions/firefox-alpenglow.svg');
+        }
       }
 
       .text {
@@ -397,14 +430,6 @@ body {
         line-height: 22px;
         margin-inline-start: 12px;
         margin-top: 9px;
-      }
-
-      .theme-desc {
-        display: flex;
-        font-size: 12px;
-        line-height: 18px;
-        margin-inline-start: 12px;
-        opacity: 0.5;
       }
 
       &.selected {
@@ -524,7 +549,7 @@ body {
       margin: 0;
 
       &.privacy {
-        background: top no-repeat url('../data/content/assets/firefox-protections.svg');
+        background: top no-repeat url('chrome://activity-stream/content/data/content/assets/firefox-protections.svg');
       }
 
       .media {
@@ -537,6 +562,7 @@ body {
     font-family: inherit;
     cursor: pointer;
     border: 0;
+    border-radius: 4px;
 
     &.primary {
       font-size: 16px;
@@ -546,15 +572,15 @@ body {
       white-space: nowrap;
       background-color: var(--newtab-button-primary-color);
       color: var(--welcome-button-text-color);
-      border-radius: 4px;
+      fill: currentColor;
       position: relative;
       z-index: 1;
+      // This transparent border will show up in Windows High Contrast Mode to improve accessibility.
+      border: 1px solid transparent;
 
       &:focus {
         background: var(--welcome-button-background-hover-color);
-        box-shadow: 0 0 0 1px var(--welcome-button-box-shadow-inset-color) inset,
-        0 0 0 1px var(--welcome-button-box-shadow-inset-color),
-        0 0 0 4px var(--welcome-button-box-shadow-color);
+        box-shadow: 0 0 0 4px var(--welcome-button-box-shadow-color);
       }
 
       &:hover {
@@ -576,7 +602,6 @@ body {
       margin-top: 14px;
 
       &:hover,
-      &:focus,
       &:active {
         background-color: initial;
       }
@@ -625,6 +650,8 @@ body {
       margin-inline-start: 4px;
       background: var(--grey-subtitle-1);
       border-radius: 5px;
+      // This transparent border will show up in Windows High Contrast Mode to improve accessibility.
+      border: 1px solid transparent;
       opacity: 0.25;
 
       &.current {

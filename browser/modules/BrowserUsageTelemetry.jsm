@@ -9,8 +9,6 @@ var EXPORTED_SYMBOLS = [
   "BrowserUsageTelemetry",
   "getUniqueDomainsVisitedInPast24Hours",
   "URICountListener",
-  "URLBAR_SELECTED_RESULT_TYPES",
-  "URLBAR_SELECTED_RESULT_METHODS",
   "MINIMUM_TAB_COUNT_INTERVAL_MS",
 ];
 
@@ -20,13 +18,17 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
+  ClientID: "resource://gre/modules/ClientID.jsm",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
+  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   SearchTelemetry: "resource:///modules/SearchTelemetry.jsm",
   Services: "resource://gre/modules/Services.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
   clearTimeout: "resource://gre/modules/Timer.jsm",
+  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 // This pref is in seconds!
@@ -62,6 +64,8 @@ const UNIQUE_DOMAINS_COUNT_SCALAR_NAME =
 const TOTAL_URI_COUNT_SCALAR_NAME = "browser.engagement.total_uri_count";
 const UNFILTERED_URI_COUNT_SCALAR_NAME =
   "browser.engagement.unfiltered_uri_count";
+const TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE_SCALAR_NAME =
+  "browser.engagement.total_uri_count_normal_and_private_mode";
 
 // A list of known search origins.
 const KNOWN_SEARCH_SOURCES = [
@@ -71,6 +75,7 @@ const KNOWN_SEARCH_SOURCES = [
   "searchbar",
   "system",
   "urlbar",
+  "urlbar-searchmode",
   "webextension",
 ];
 
@@ -79,46 +84,6 @@ const KNOWN_ONEOFF_SOURCES = [
   "oneoff-searchbar",
   "unknown", // Edge case: this is the searchbar (see bug 1195733 comment 7).
 ];
-
-/**
- * Buckets used for logging telemetry to the FX_URLBAR_SELECTED_RESULT_TYPE_2
- * histogram.
- */
-const URLBAR_SELECTED_RESULT_TYPES = {
-  autofill: 0,
-  bookmark: 1,
-  history: 2,
-  keyword: 3,
-  searchengine: 4,
-  searchsuggestion: 5,
-  switchtab: 6,
-  tag: 7,
-  visiturl: 8,
-  remotetab: 9,
-  extension: 10,
-  "preloaded-top-site": 11,
-  tip: 12,
-  topsite: 13,
-  formhistory: 14,
-  dynamic: 15,
-  // n_values = 32, so you'll need to create a new histogram if you need more.
-};
-
-/**
- * This maps the categories used by the FX_URLBAR_SELECTED_RESULT_METHOD and
- * FX_SEARCHBAR_SELECTED_RESULT_METHOD histograms to their indexes in the
- * `labels` array.  This only needs to be used by tests that need to map from
- * category names to indexes in histogram snapshots.  Actual app code can use
- * these category names directly when they add to a histogram.
- */
-const URLBAR_SELECTED_RESULT_METHODS = {
-  enter: 0,
-  enterSelection: 1,
-  click: 2,
-  arrowEnterSelection: 3,
-  tabEnterSelection: 4,
-  rightClickEnter: 5,
-};
 
 const MINIMUM_TAB_COUNT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, in ms
 
@@ -279,6 +244,22 @@ let URICountListener = {
     this._restoredURIsMap.set(browser, uri.spec);
   },
 
+  onStateChange(browser, webProgress, request, stateFlags, status) {
+    if (
+      !webProgress.isTopLevel ||
+      !(stateFlags & Ci.nsIWebProgressListener.STATE_STOP) ||
+      !(stateFlags & Ci.nsIWebProgressListener.STATE_IS_WINDOW)
+    ) {
+      return;
+    }
+
+    if (!(request instanceof Ci.nsIChannel) || !this.isHttpURI(request.URI)) {
+      return;
+    }
+
+    BrowserUsageTelemetry._recordSiteOriginsPerLoadedTabs();
+  },
+
   onLocationChange(browser, webProgress, request, uri, flags) {
     if (!(flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT)) {
       // By default, assume we no longer need to track this tab.
@@ -360,6 +341,12 @@ let URICountListener = {
       SearchTelemetry.updateTrackingStatus(browser, uriSpec);
     }
 
+    // Update total URI count, including when in private mode.
+    Services.telemetry.scalarAdd(
+      TOTAL_URI_COUNT_NORMAL_AND_PRIVATE_MODE_SCALAR_NAME,
+      1
+    );
+
     if (!shouldCountURI) {
       return;
     }
@@ -432,11 +419,23 @@ let URICountListener = {
 };
 
 let BrowserUsageTelemetry = {
+  /**
+   * This is a policy object used to override behavior for testing.
+   */
+  Policy: {
+    getTelemetryClientId: async () => ClientID.getClientID(),
+    getUpdateDirectory: () => Services.dirsvc.get("UpdRootD", Ci.nsIFile),
+    readProfileCountFile: async path => IOUtils.readUTF8(path),
+    writeProfileCountFile: async (path, data) =>
+      IOUtils.writeAtomicUTF8(path, data),
+  },
+
   _inited: false,
 
   init() {
     this._lastRecordTabCount = 0;
     this._lastRecordLoadedTabCount = 0;
+    this._lastRecordSiteOriginsPerLoadedTabs = 0;
     this._setupAfterRestore();
     this._inited = true;
 
@@ -589,6 +588,10 @@ let BrowserUsageTelemetry = {
         // in SEARCH_COUNTS.
         if (["urlbar", "searchbar"].includes(source)) {
           histogram.add(countIdSource);
+          PartnerLinkAttribution.makeSearchEngineRequest(
+            engine,
+            details.url
+          ).catch(Cu.reportError);
           return;
         }
         throw new Error("Unknown source for one-off search: " + source);
@@ -599,10 +602,11 @@ let BrowserUsageTelemetry = {
       }
       if (
         details.alias &&
-        engine.wrappedJSObject._internalAliases.includes(details.alias)
+        engine.isAppProvided &&
+        engine.aliases.includes(details.alias)
       ) {
-        // This search uses an internal @search keyword.  Record the source as
-        // "alias", not "urlbar".
+        // This is a keyword search using an AppProvided engine.
+        // Record the source as "alias", not "urlbar".
         histogram.add(countIdPrefix + "alias");
       } else {
         histogram.add(countIdSource);
@@ -613,7 +617,18 @@ let BrowserUsageTelemetry = {
     this._handleSearchAction(engine, source, details);
   },
 
-  _recordSearch(engine, source, action = null) {
+  _recordSearch(engine, url, source, action = null) {
+    // The one-off buttons are logged in two places, if we hit here with the
+    // action as oneoff and no url, then we are hitting the attribution case
+    // in `recordSearch` above. Really this needs re-architecturing so we
+    // do not have two distinct calls to `recordSearch` for one-offs
+    // (see bug 1662553).
+    if (!(action == "oneoff" && !url)) {
+      PartnerLinkAttribution.makeSearchEngineRequest(engine, url).catch(
+        Cu.reportError
+      );
+    }
+
     let scalarKey = action ? "search_" + action : "search";
     Services.telemetry.keyedScalarAdd(
       "browser.engagement.navigation." + source,
@@ -625,6 +640,49 @@ let BrowserUsageTelemetry = {
     });
   },
 
+  /**
+   * Records entry into the Urlbar's search mode.
+   *
+   * Telemetry records only which search mode is entered and how it was entered.
+   * It does not record anything pertaining to searches made within search mode.
+   * @param {object} searchMode
+   *   A search mode object. See UrlbarInput.setSearchMode documentation for
+   *   details.
+   */
+  recordSearchMode(searchMode) {
+    // Search mode preview is not search mode. Recording it would just create
+    // noise.
+    if (searchMode.isPreview) {
+      return;
+    }
+    let scalarKey;
+    if (searchMode.engineName) {
+      let engine = Services.search.getEngineByName(searchMode.engineName);
+      let resultDomain = engine.getResultDomain();
+      // For built-in engines, sanitize the data in a few special cases to make
+      // analysis easier.
+      if (!engine.isAppProvided) {
+        scalarKey = "other";
+      } else if (resultDomain.includes("amazon.")) {
+        // Group all the localized Amazon sites together.
+        scalarKey = "Amazon";
+      } else if (resultDomain.endsWith("wikipedia.org")) {
+        // Group all the localized Wikipedia sites together.
+        scalarKey = "Wikipedia";
+      } else {
+        scalarKey = searchMode.engineName;
+      }
+    } else if (searchMode.source) {
+      scalarKey = UrlbarUtils.getResultSourceName(searchMode.source) || "other";
+    }
+
+    Services.telemetry.keyedScalarAdd(
+      "urlbar.searchmode." + searchMode.entry,
+      scalarKey,
+      1
+    );
+  },
+
   _handleSearchAction(engine, source, details) {
     switch (source) {
       case "urlbar":
@@ -634,16 +692,19 @@ let BrowserUsageTelemetry = {
       case "unknown": // Edge case: this is the searchbar (see bug 1195733 comment 7).
         this._handleSearchAndUrlbar(engine, source, details);
         break;
+      case "urlbar-searchmode":
+        this._handleSearchAndUrlbar(engine, "urlbar_searchmode", details);
+        break;
       case "abouthome":
-        this._recordSearch(engine, "about_home", "enter");
+        this._recordSearch(engine, details.url, "about_home", "enter");
         break;
       case "newtab":
-        this._recordSearch(engine, "about_newtab", "enter");
+        this._recordSearch(engine, details.url, "about_newtab", "enter");
         break;
       case "contextmenu":
       case "system":
       case "webextension":
-        this._recordSearch(engine, source);
+        this._recordSearch(engine, details.url, source);
         break;
     }
   },
@@ -674,27 +735,27 @@ let BrowserUsageTelemetry = {
       }
 
       // If that's a legit one-off search signal, record it using the relative key.
-      this._recordSearch(engine, sourceName, "oneoff");
+      this._recordSearch(engine, details.url, sourceName, "oneoff");
       return;
     }
 
     // The search was not a one-off. It was a search with the default search engine.
     if (details.isFormHistory) {
       // It came from a form history result.
-      this._recordSearch(engine, sourceName, "formhistory");
+      this._recordSearch(engine, details.url, sourceName, "formhistory");
       return;
     } else if (details.isSuggestion) {
       // It came from a suggested search, so count it as such.
-      this._recordSearch(engine, sourceName, "suggestion");
+      this._recordSearch(engine, details.url, sourceName, "suggestion");
       return;
     } else if (details.alias) {
       // This one came from a search that used an alias.
-      this._recordSearch(engine, sourceName, "alias");
+      this._recordSearch(engine, details.url, sourceName, "alias");
       return;
     }
 
     // The search signal was generated by typing something and pressing enter.
-    this._recordSearch(engine, sourceName, "enter");
+    this._recordSearch(engine, details.url, sourceName, "enter");
   },
 
   /**
@@ -746,6 +807,9 @@ let BrowserUsageTelemetry = {
     histogramID,
     userSelectionBehavior
   ) {
+    // If the contents of the histogram are changed then
+    // `UrlbarTestUtils.SELECTED_RESULT_METHODS` should also be updated.
+
     let histogram = Services.telemetry.getHistogramById(histogramID);
     // command events are from the one-off context menu.  Treat them as clicks.
     // Note that we don't care about MouseEvent subclasses here, since
@@ -809,11 +873,23 @@ let BrowserUsageTelemetry = {
     let widgetMap = new Map();
 
     const toolbarState = nodeId => {
-      let value = Services.xulStore.getValue(
+      let value;
+      if (nodeId == "PersonalToolbar") {
+        value = Services.prefs.getCharPref(
+          "browser.toolbars.bookmarks.visibility",
+          "newtab"
+        );
+        if (value != "newtab") {
+          return value == "never" ? "off" : "on";
+        }
+        return value;
+      }
+      value = Services.xulStore.getValue(
         AppConstants.BROWSER_CHROME_URL,
         nodeId,
         "collapsed"
       );
+
       if (value) {
         return value == "true" ? "off" : "on";
       }
@@ -1095,9 +1171,12 @@ let BrowserUsageTelemetry = {
   },
 
   recordToolbarVisibility(toolbarId, newState, reason) {
+    if (typeof newState != "string") {
+      newState = newState ? "on" : "off";
+    }
     this._recordWidgetChange(
       BROWSER_UI_CONTAINER_IDS[toolbarId],
-      newState ? "on" : "off",
+      newState,
       reason
     );
   },
@@ -1294,6 +1373,182 @@ let BrowserUsageTelemetry = {
         .add(loadedTabCount);
       this._lastRecordLoadedTabCount = currentTime;
     }
+  },
+
+  _checkProfileCountFileSchema(fileData) {
+    // Verifies that the schema of the file is the expected schema
+    if (typeof fileData.version != "string") {
+      throw new Error("Schema Mismatch Error: Bad type for 'version' field");
+    }
+    if (!Array.isArray(fileData.profileTelemetryIds)) {
+      throw new Error(
+        "Schema Mismatch Error: Bad type for 'profileTelemetryIds' field"
+      );
+    }
+    for (let profileTelemetryId of fileData.profileTelemetryIds) {
+      if (typeof profileTelemetryId != "string") {
+        throw new Error(
+          "Schema Mismatch Error: Bad type for an element of 'profileTelemetryIds'"
+        );
+      }
+    }
+  },
+
+  // Reports the number of Firefox profiles on this machine to telemetry.
+  async reportProfileCount() {
+    if (AppConstants.platform != "win") {
+      // This is currently a windows-only feature.
+      return;
+    }
+
+    // To report only as much data as we need, we will bucket our values.
+    // Rather than the raw value, we will report the greatest value in the list
+    // below that is no larger than the raw value.
+    const buckets = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100, 1000, 10000];
+
+    // We need both the C:\ProgramData\Mozilla directory and the install
+    // directory hash to create the profile count file path. We can easily
+    // reassemble this from the update directory, which looks like:
+    // C:\ProgramData\Mozilla\updates\hash
+    // Retrieving the directory this way also ensures that the "Mozilla"
+    // directory is created with the correct permissions.
+    // The ProgramData directory, by default, grants write permissions only to
+    // file creators. The directory service calls GetCommonUpdateDirectory,
+    // which makes sure the the directory is created with user-writable
+    // permissions.
+    const updateDirectory = BrowserUsageTelemetry.Policy.getUpdateDirectory();
+    const hash = updateDirectory.leafName;
+    const profileCountFilename = "profile_count_" + hash + ".json";
+    let profileCountFile = updateDirectory.parent.parent;
+    profileCountFile.append(profileCountFilename);
+
+    let readError = false;
+    let fileData;
+    try {
+      let json = await BrowserUsageTelemetry.Policy.readProfileCountFile(
+        profileCountFile.path
+      );
+      fileData = JSON.parse(json);
+      BrowserUsageTelemetry._checkProfileCountFileSchema(fileData);
+    } catch (ex) {
+      // Note that since this also catches the "no such file" error, this is
+      // always the template that we use when writing to the file for the first
+      // time.
+      fileData = { version: "1", profileTelemetryIds: [] };
+      if (!(ex.name == "NotFoundError")) {
+        Cu.reportError(ex);
+        // Don't just return here on a read error. We need to send the error
+        // value to telemetry and we want to attempt to fix the file.
+        // However, we will still report an error for this ping, even if we
+        // fix the file. This is to prevent always sending a profile count of 1
+        // if, for some reason, we always get a read error but never a write
+        // error.
+        readError = true;
+      }
+    }
+
+    let writeError = false;
+    let currentTelemetryId = await BrowserUsageTelemetry.Policy.getTelemetryClientId();
+    // Don't add our telemetry ID to the file if we've already reached the
+    // largest bucket. This prevents the file size from growing forever.
+    if (
+      !fileData.profileTelemetryIds.includes(currentTelemetryId) &&
+      fileData.profileTelemetryIds.length < Math.max(...buckets)
+    ) {
+      fileData.profileTelemetryIds.push(currentTelemetryId);
+      try {
+        await BrowserUsageTelemetry.Policy.writeProfileCountFile(
+          profileCountFile.path,
+          JSON.stringify(fileData)
+        );
+      } catch (ex) {
+        Cu.reportError(ex);
+        writeError = true;
+      }
+    }
+
+    // Determine the bucketed value to report
+    let rawProfileCount = fileData.profileTelemetryIds.length;
+    let valueToReport = 0;
+    for (let bucket of buckets) {
+      if (bucket <= rawProfileCount && bucket > valueToReport) {
+        valueToReport = bucket;
+      }
+    }
+
+    if (readError || writeError) {
+      // We convey errors via a profile count of 0.
+      valueToReport = 0;
+    }
+
+    Services.telemetry.scalarSet(
+      "browser.engagement.profile_count",
+      valueToReport
+    );
+  },
+
+  /**
+   * Record telemetry about the ratio of number of site origins per number of
+   * loaded tabs.
+   *
+   * This will only record the telemetry if it has been five minutes since the
+   * last recording.
+   */
+  _recordSiteOriginsPerLoadedTabs() {
+    const currentTime = Date.now();
+    if (
+      currentTime >
+      this._lastRecordSiteOriginsPerLoadedTabs + MINIMUM_TAB_COUNT_INTERVAL_MS
+    ) {
+      this._lastRecordSiteOriginsPerLoadedTabs = currentTime;
+      // If this is the first load, we discard it because it is likely just the
+      // browser opening for the first time.
+      if (this._lastRecordSiteOriginsPerLoadedTabs === 0) {
+        return;
+      }
+
+      const { loadedTabCount } = getOpenTabsAndWinsCounts();
+      const siteOrigins = BrowserUtils.computeSiteOriginCount(
+        Services.wm.getEnumerator("navigator:browser"),
+        false
+      );
+      const histogramId = this._getSiteOriginHistogram(loadedTabCount);
+      // Telemetry doesn't support float values.
+      Services.telemetry
+        .getHistogramById(histogramId)
+        .add(Math.trunc((100 * siteOrigins) / loadedTabCount));
+    }
+  },
+
+  _siteOriginHistogramIds: [
+    [1, 1, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_1"],
+    [2, 4, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_2_4"],
+    [5, 9, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_5_9"],
+    [10, 14, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_10_14"],
+    [15, 19, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_15_19"],
+    [20, 24, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_20_24"],
+    [25, 29, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_25_29"],
+    [31, 34, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_30_34"],
+    [35, 39, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_35_39"],
+    [40, 44, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_40_44"],
+    [45, 49, "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_45_49"],
+  ],
+
+  /**
+   * Return the appropriate histogram ID for the given loaded tab count.
+   *
+   * Unique site origin telemetry is split across several histograms so that it
+   * can approximate a unique site origin vs loaded tab count curve.
+   *
+   * @param {number} [loadedTabCount] The number of loaded tabs.
+   */
+  _getSiteOriginHistogram(loadedTabCount) {
+    for (const [min, max, histogramId] of this._siteOriginHistogramIds) {
+      if (min <= loadedTabCount && loadedTabCount <= max) {
+        return histogramId;
+      }
+    }
+    return "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_LOADED_TABS_50_PLUS";
   },
 };
 

@@ -15,7 +15,8 @@
 #include "jsfriendapi.h"
 
 #include "jit/BaselineInspector.h"
-#include "jit/BytecodeAnalysis.h"
+#include "jit/CompileInfo.h"
+#include "jit/InlineScriptTree.h"
 #include "jit/IonAnalysis.h"
 #include "jit/IonOptimizationLevels.h"
 #include "jit/MIR.h"
@@ -23,7 +24,9 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "jit/TIOracle.h"
-#include "vm/SharedStencil.h"  // GCThingIndex
+#include "js/experimental/JitInfo.h"  // JSJitInfo
+#include "js/ScalarType.h"            // js::Scalar::Type
+#include "vm/SharedStencil.h"         // GCThingIndex
 
 namespace js {
 
@@ -295,8 +298,6 @@ class MOZ_STACK_CLASS IonBuilder {
   MInstruction* addBoundsCheck(MDefinition* index, MDefinition* length);
 
   MInstruction* addShapeGuard(MDefinition* obj, Shape* const shape);
-  MInstruction* addGroupGuard(MDefinition* obj, ObjectGroup* group,
-                              BailoutKind bailoutKind);
 
   MInstruction* addGuardReceiverPolymorphic(
       MDefinition* obj, const BaselineInspector::ReceiverVector& receivers);
@@ -425,8 +426,6 @@ class MOZ_STACK_CLASS IonBuilder {
       bool* emitted, JSOp op, MDefinition* left, MDefinition* right);
   AbortReasonOr<Ok> compareTryBinaryStub(bool* emitted, MDefinition* left,
                                          MDefinition* right);
-  AbortReasonOr<Ok> compareTryCharacter(bool* emitted, JSOp op,
-                                        MDefinition* left, MDefinition* right);
 
   // jsop_newarray helpers.
   AbortReasonOr<Ok> newArrayTryTemplateObject(bool* emitted,
@@ -596,12 +595,12 @@ class MOZ_STACK_CLASS IonBuilder {
   AbortReasonOr<Ok> jsop_getelem();
   AbortReasonOr<Ok> jsop_getelem_dense(MDefinition* obj, MDefinition* index);
   AbortReasonOr<Ok> jsop_getelem_typed(MDefinition* obj, MDefinition* index,
-                                       ScalarTypeDescr::Type arrayType);
+                                       Scalar::Type arrayType);
   AbortReasonOr<Ok> jsop_setelem();
   AbortReasonOr<Ok> initOrSetElemDense(
       TemporaryTypeSet::DoubleConversion conversion, MDefinition* object,
       MDefinition* index, MDefinition* value, bool writeHole, bool* emitted);
-  AbortReasonOr<Ok> jsop_setelem_typed(ScalarTypeDescr::Type arrayType,
+  AbortReasonOr<Ok> jsop_setelem_typed(Scalar::Type arrayType,
                                        MDefinition* object, MDefinition* index,
                                        MDefinition* value);
   AbortReasonOr<Ok> jsop_length();
@@ -652,6 +651,7 @@ class MOZ_STACK_CLASS IonBuilder {
   AbortReasonOr<Ok> jsop_iternext();
   AbortReasonOr<Ok> jsop_in();
   AbortReasonOr<Ok> jsop_hasown();
+  AbortReasonOr<Ok> jsop_checkprivatefield();
   AbortReasonOr<Ok> jsop_instanceof();
   AbortReasonOr<Ok> jsop_getaliasedvar(EnvironmentCoordinate ec);
   AbortReasonOr<Ok> jsop_setaliasedvar(EnvironmentCoordinate ec);
@@ -670,7 +670,7 @@ class MOZ_STACK_CLASS IonBuilder {
   AbortReasonOr<Ok> jsop_instrumentation_scriptid();
   AbortReasonOr<Ok> jsop_coalesce();
   AbortReasonOr<Ok> jsop_objwithproto();
-  AbortReasonOr<Ok> jsop_functionproto();
+  AbortReasonOr<Ok> jsop_builtinobject();
   AbortReasonOr<Ok> jsop_checkreturn();
   AbortReasonOr<Ok> jsop_checkthis();
   AbortReasonOr<Ok> jsop_checkthisreinit();
@@ -763,7 +763,6 @@ class MOZ_STACK_CLASS IonBuilder {
   // String natives.
   InliningResult inlineStringObject(CallInfo& callInfo);
   InliningResult inlineStrCharCodeAt(CallInfo& callInfo);
-  InliningResult inlineConstantCharCodeAt(CallInfo& callInfo);
   InliningResult inlineStrFromCharCode(CallInfo& callInfo);
   InliningResult inlineStrFromCodePoint(CallInfo& callInfo);
   InliningResult inlineStrCharAt(CallInfo& callInfo);
@@ -792,6 +791,7 @@ class MOZ_STACK_CLASS IonBuilder {
   InliningResult inlineObject(CallInfo& callInfo);
   InliningResult inlineObjectCreate(CallInfo& callInfo);
   InliningResult inlineObjectIs(CallInfo& callInfo);
+  InliningResult inlineObjectIsPrototypeOf(CallInfo& callInfo);
   InliningResult inlineObjectToString(CallInfo& callInfo);
   InliningResult inlineDefineDataProperty(CallInfo& callInfo);
 

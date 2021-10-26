@@ -503,7 +503,7 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
     }
     policy->AddPath(SandboxBroker::MAY_CONNECT, bumblebeeSocket);
 
-#if defined(MOZ_WIDGET_GTK)
+#if defined(MOZ_WIDGET_GTK) && defined(MOZ_X11)
     // Allow local X11 connections, for Primus and VirtualGL to contact
     // the secondary X server. No exception for Wayland.
 #  if defined(MOZ_WAYLAND)
@@ -678,10 +678,52 @@ UniquePtr<SandboxBroker::Policy> SandboxBrokerPolicyFactory::GetContentPolicy(
 }
 
 /* static */ UniquePtr<SandboxBroker::Policy>
-SandboxBrokerPolicyFactory::GetUtilityPolicy(int aPid) {
+SandboxBrokerPolicyFactory::GetRDDPolicy(int aPid) {
   auto policy = MakeUnique<SandboxBroker::Policy>();
 
   AddSharedMemoryPaths(policy.get(), aPid);
+
+  // FIXME (bug 1662321): we should fix nsSystemInfo so that every
+  // child process doesn't need to re-read these files to get the info
+  // the parent process already has.
+  policy->AddPath(rdonly, "/proc/cpuinfo");
+  policy->AddPath(rdonly,
+                  "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
+  policy->AddPath(rdonly, "/sys/devices/system/cpu/cpu0/cache/index2/size");
+  policy->AddPath(rdonly, "/sys/devices/system/cpu/cpu0/cache/index3/size");
+  policy->AddDir(rdonly, "/sys/devices/cpu");
+  policy->AddDir(rdonly, "/sys/devices/system/cpu");
+  policy->AddDir(rdonly, "/sys/devices/system/node");
+  policy->AddDir(rdonly, "/lib");
+  policy->AddDir(rdonly, "/lib64");
+  policy->AddDir(rdonly, "/usr/lib");
+  policy->AddDir(rdonly, "/usr/lib32");
+  policy->AddDir(rdonly, "/usr/lib64");
+
+  // Firefox binary dir.
+  // Note that unlike the previous cases, we use NS_GetSpecialDirectory
+  // instead of GetSpecialSystemDirectory. The former requires a working XPCOM
+  // system, which may not be the case for some tests. For querying for the
+  // location of XPCOM things, we can use it anyway.
+  nsCOMPtr<nsIFile> ffDir;
+  nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(ffDir));
+  if (NS_SUCCEEDED(rv)) {
+    nsAutoCString tmpPath;
+    rv = ffDir->GetNativePath(tmpPath);
+    if (NS_SUCCEEDED(rv)) {
+      policy->AddDir(rdonly, tmpPath.get());
+    }
+  }
+
+  if (mozilla::IsDevelopmentBuild()) {
+    // If this is a developer build the resources are symlinks to outside the
+    // binary dir. Therefore in non-release builds we allow reads from the whole
+    // repository. MOZ_DEVELOPER_REPO_DIR is set by mach run.
+    const char* developer_repo_dir = PR_GetEnv("MOZ_DEVELOPER_REPO_DIR");
+    if (developer_repo_dir) {
+      policy->AddDir(rdonly, developer_repo_dir);
+    }
+  }
 
   if (policy->IsEmpty()) {
     policy = nullptr;

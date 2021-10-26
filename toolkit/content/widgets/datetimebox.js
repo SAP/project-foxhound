@@ -92,7 +92,7 @@ this.DateTimeInputBaseImplWidget = class {
     this.mIsRTL = false;
     let intlUtils = this.window.intlUtils;
     if (intlUtils) {
-      this.mIsRTL = intlUtils.getLocaleInfo(this.mLocales).direction === "rtl";
+      this.mIsRTL = intlUtils.isAppLocaleRTL();
     }
 
     if (this.mIsRTL) {
@@ -612,27 +612,41 @@ this.DateTimeInputBaseImplWidget = class {
       "onBlur originalTarget: " +
         aEvent.originalTarget +
         " target: " +
-        aEvent.target
+        aEvent.target +
+        " rt: " +
+        aEvent.relatedTarget
     );
 
     let target = aEvent.originalTarget;
     target.setAttribute("typeBuffer", "");
     this.setInputValueFromFields();
-    this.mInputElement.setFocusState(false);
+    // No need to set and unset the focus state if the focus is staying within
+    // our input. Same about closing the picker.
+    if (aEvent.relatedTarget != this.mInputElement) {
+      this.mInputElement.setFocusState(false);
+      if (this.mIsPickerOpen) {
+        this.mInputElement.closeDateTimePicker();
+      }
+    }
   }
 
   onKeyPress(aEvent) {
     this.log("onKeyPress key: " + aEvent.key);
 
     switch (aEvent.key) {
-      // Close picker on Enter, Escape or Space key.
+      // Toggle the picker on space/enter, close on Escape.
       case "Enter":
       case "Escape":
       case " ": {
         if (this.mIsPickerOpen) {
           this.mInputElement.closeDateTimePicker();
-          aEvent.preventDefault();
+        } else if (aEvent.key != "Escape") {
+          this.mInputElement.openDateTimePicker(this.getCurrentValue());
+        } else {
+          // Don't preventDefault();
+          break;
         }
+        aEvent.preventDefault();
         break;
       }
       case "Backspace": {
@@ -797,31 +811,15 @@ this.DateInputImplWidget = class extends DateTimeInputBaseImplWidget {
   clearInputFields(aFromInputElement) {
     this.log("clearInputFields");
 
-    if (!this.isEditable()) {
-      return;
-    }
-
-    if (
-      this.mMonthField &&
-      !this.mMonthField.disabled &&
-      !this.mMonthField.readOnly
-    ) {
+    if (this.mMonthField) {
       this.clearFieldValue(this.mMonthField);
     }
 
-    if (
-      this.mDayField &&
-      !this.mDayField.disabled &&
-      !this.mDayField.readOnly
-    ) {
+    if (this.mDayField) {
       this.clearFieldValue(this.mDayField);
     }
 
-    if (
-      this.mYearField &&
-      !this.mYearField.disabled &&
-      !this.mYearField.readOnly
-    ) {
+    if (this.mYearField) {
       this.clearFieldValue(this.mYearField);
     }
 
@@ -1477,47 +1475,23 @@ this.TimeInputImplWidget = class extends DateTimeInputBaseImplWidget {
   clearInputFields(aFromInputElement) {
     this.log("clearInputFields");
 
-    if (!this.isEditable()) {
-      return;
-    }
-
-    if (
-      this.mHourField &&
-      !this.mHourField.disabled &&
-      !this.mHourField.readOnly
-    ) {
+    if (this.mHourField) {
       this.clearFieldValue(this.mHourField);
     }
 
-    if (
-      this.mMinuteField &&
-      !this.mMinuteField.disabled &&
-      !this.mMinuteField.readOnly
-    ) {
+    if (this.mMinuteField) {
       this.clearFieldValue(this.mMinuteField);
     }
 
-    if (
-      this.hasSecondField() &&
-      !this.mSecondField.disabled &&
-      !this.mSecondField.readOnly
-    ) {
+    if (this.hasSecondField()) {
       this.clearFieldValue(this.mSecondField);
     }
 
-    if (
-      this.hasMillisecField() &&
-      !this.mMillisecField.disabled &&
-      !this.mMillisecField.readOnly
-    ) {
+    if (this.hasMillisecField()) {
       this.clearFieldValue(this.mMillisecField);
     }
 
-    if (
-      this.hasDayPeriodField() &&
-      !this.mDayPeriodField.disabled &&
-      !this.mDayPeriodField.readOnly
-    ) {
+    if (this.hasDayPeriodField()) {
       this.clearFieldValue(this.mDayPeriodField);
     }
 

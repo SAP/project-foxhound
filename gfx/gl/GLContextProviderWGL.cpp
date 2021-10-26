@@ -318,11 +318,6 @@ void GLContextWGL::GetWSIInfo(nsCString* const out) const {
   out->Append(sWGLLib.mSymbols.fGetExtensionsStringARB(mDC));
 }
 
-already_AddRefed<GLContext> GLContextProviderWGL::CreateWrappingExisting(
-    void*, void*) {
-  return nullptr;
-}
-
 HGLRC
 WGLLibrary::CreateContextWithFallback(const HDC dc,
                                       const bool tryRobustBuffers) const {

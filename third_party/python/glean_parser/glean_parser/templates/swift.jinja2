@@ -8,7 +8,7 @@ Jinja2 template is not. Please file bugs! #}
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 {% macro obj_declaration(obj, suffix='', access='') %}
-{{ access }}static let {{ obj.name|camelize|variable_name }}{{ suffix }} = {{ obj|type_name }}(
+{{ access }}static let {{ obj.name|camelize|variable_name }}{{ suffix }} = {{ obj|type_name }}( // generated from {{ obj.identifier() }}
             {% for arg_name in extra_args if obj[arg_name] is defined %}
             {{ arg_name|camelize }}: {{ obj[arg_name]|swift }}{{ "," if not loop.last }}
             {% endfor %}
@@ -26,14 +26,15 @@ import {{ glean_namespace }}
 // swiftlint:disable force_try
 
 extension {{ namespace }} {
-    {% if is_ping_type %}
-    class {{ category_name|Camelize }} {
-        public static let shared = {{ category_name|Camelize }}()
+    {% for category in categories %}
+    {% if category.contains_pings %}
+    class {{ category.name|Camelize }} {
+        public static let shared = {{ category.name|Camelize }}()
         private init() {
             // Intentionally left private, no external user can instantiate a new global object.
         }
 
-        {% for obj in objs.values() %}
+        {% for obj in category.objs.values() %}
         {% if obj|attr("_generate_enums") %}
         {% for name, suffix in obj["_generate_enums"] %}
         {% if obj|attr(name)|length %}
@@ -50,7 +51,6 @@ extension {{ namespace }} {
         {% endif %}
         {% endfor %}
         {% endif %}
-
         /// {{ obj.description|wordwrap() | replace('\n', '\n        /// ') }}
         let {{ obj.name|camelize|variable_name }} = {{obj|type_name}}(
             name: {{ obj.name|swift }},
@@ -61,9 +61,10 @@ extension {{ namespace }} {
 
       {% endfor %}
     }
+
     {% else %}
-    enum {{ category_name|Camelize }} {
-    {% for obj in objs.values() %}
+    enum {{ category.name|Camelize }} {
+    {% for obj in category.objs.values() %}
         {% if obj|attr("_generate_enums") %}
         {% for name, suffix in obj["_generate_enums"] %}
         {% if obj|attr(name)|length %}
@@ -81,11 +82,11 @@ extension {{ namespace }} {
         {% endfor %}
         {% endif %}
     {% endfor %}
-    {% for obj in objs.values() %}
+    {% for obj in category.objs.values() %}
         {% if obj.labeled %}
         {{ obj_declaration(obj, 'Label', 'private ') }}
         /// {{ obj.description|wordwrap() | replace('\n', '\n        /// ') }}
-        static let {{ obj.name|camelize|variable_name }} = try! LabeledMetricType<{{ obj|type_name }}>(
+        static let {{ obj.name|camelize|variable_name }} = try! LabeledMetricType<{{ obj|type_name }}>( // generated from {{ obj.identifier() }}
             category: {{ obj.category|swift }},
             name: {{ obj.name|swift }},
             sendInPings: {{ obj.send_in_pings|swift }},
@@ -101,5 +102,7 @@ extension {{ namespace }} {
         {% endif %}
     {% endfor %}
     }
+
     {% endif %}
+    {% endfor %}
 }

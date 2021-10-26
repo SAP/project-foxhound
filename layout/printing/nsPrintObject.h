@@ -47,7 +47,15 @@ class nsPrintObject {
    * from the given item down into the tree
    */
   void EnablePrinting(bool aEnable);
+
+  /**
+   * Recursively sets all the PO items to be printed if they have a selection.
+   */
+  void EnablePrintingSelectionOnly();
+
   bool PrintingIsEnabled() const { return mPrintingIsEnabled; }
+
+  bool HasSelection() const;
 
   // Data Members
   nsCOMPtr<nsIDocShell> mDocShell;

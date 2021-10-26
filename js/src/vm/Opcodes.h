@@ -225,6 +225,7 @@
  *     SetPrototype
  *     Array literals
  *     RegExp literals
+ *     Built-in objects
  *   [Functions]
  *     Creating functions
  *     Creating constructors
@@ -842,8 +843,9 @@
      * new object every time it's evaluated, so this instruction must not be
      * used anywhere it might be executed more than once.
      *
-     * There's a shell-only option, `newGlobal({cloneSingletons: true})`, that
-     * makes this instruction do a deep copy of the object. A few tests use it.
+     * This may only be used in non-function run-once scripts. Care also must
+     * be taken to not emit in loops or other constructs where it could run
+     * more than once.
      *
      *   Category: Objects
      *   Type: Creating objects
@@ -924,6 +926,8 @@
      *
      * `JSOp::InitHiddenElem` is the same but defines a non-enumerable property,
      * for class methods.
+     * `JSOp::InitLockedElem` is the same but defines a non-enumerable, non-writable, non-configurable property,
+     * for private class methods.
      *
      *    [1]: https://tc39.es/ecma262/#sec-createdatapropertyorthrow
      *
@@ -934,18 +938,7 @@
      */ \
     MACRO(InitElem, init_elem, NULL, 1, 3, 1, JOF_BYTE|JOF_ELEM|JOF_PROPINIT|JOF_IC) \
     MACRO(InitHiddenElem, init_hidden_elem, NULL, 1, 3, 1, JOF_BYTE|JOF_ELEM|JOF_PROPINIT|JOF_IC) \
-    /*
-     * Define a private field on `obj` with property key `id` and value `val`.
-     *
-     * `obj` must be an object,
-     * `id` must be a private name.
-     *
-     *   Category: Objects
-     *   Type: Defining properties
-     *   Operands:
-     *   Stack: obj, id, val => obj
-     */ \
-    MACRO(InitPrivateElem, init_private_elem, NULL, 1, 3, 1, JOF_BYTE|JOF_ELEM|JOF_PROPINIT|JOF_IC) \
+    MACRO(InitLockedElem, init_locked_elem, NULL, 1, 3, 1, JOF_BYTE|JOF_ELEM|JOF_PROPINIT|JOF_IC) \
     /*
      * Define an accessor property on `obj` with the given `getter`.
      * `nameIndex` gives the property name.
@@ -1051,17 +1044,6 @@
     MACRO(GetElem, get_elem, NULL, 1, 2, 1, JOF_BYTE|JOF_ELEM|JOF_TYPESET|JOF_IC) \
     MACRO(CallElem, call_elem, NULL, 1, 2, 1, JOF_BYTE|JOF_ELEM|JOF_TYPESET|JOF_IC) \
     /*
-     * Get the value of the private field `obj.#key`.
-     *
-     * Throws a TypeError if #key isn't on obj.
-     *
-     *   Category: Objects
-     *   Type: Accessing properties
-     *   Operands:
-     *   Stack: obj, key => obj[key]
-     */ \
-    MACRO(GetPrivateElem, get_private_elem, NULL, 1, 2, 1, JOF_BYTE|JOF_ELEM|JOF_TYPESET|JOF_IC) \
-    /*
      * Push the value of `obj.length`.
      *
      * `nameIndex` must be the index of the atom `"length"`. This then behaves
@@ -1125,14 +1107,6 @@
      *   Stack: obj, key, val => val
      */ \
     MACRO(StrictSetElem, strict_set_elem, NULL, 1, 3, 1, JOF_BYTE|JOF_ELEM|JOF_PROPSET|JOF_CHECKSTRICT|JOF_IC) \
-    /*
-     * Like `JSOp::SetStrictElem`, but for private names. throw a TypeError if the private name doesnt' exist.
-     *   Category: Objects
-     *   Type: Accessing properties
-     *   Operands:
-     *   Stack: obj, key, val => val
-     */ \
-    MACRO(SetPrivateElem, set_private_elem, NULL, 1, 3, 1, JOF_BYTE|JOF_ELEM|JOF_PROPSET|JOF_CHECKSTRICT|JOF_IC) \
     /*
      * Delete a property from `obj`. Push true on success, false if the
      * property existed but could not be deleted. This implements `delete
@@ -1202,6 +1176,24 @@
      *   Stack: id, obj => (obj.hasOwnProperty(id))
      */ \
     MACRO(HasOwn, has_own, NULL, 1, 2, 1, JOF_BYTE|JOF_IC) \
+    /*
+     * Push a bool representing the presence of private field id on obj.
+     * May throw, depending on the ThrowCondition.
+     *
+     * Two arguments:
+     *   - throwCondition: One of the ThrowConditions defined in
+     *     ThrowMsgKind.h. Determines why (or if) this op will throw.
+     *   - msgKind: One of the ThrowMsgKinds defined in ThrowMsgKind.h, which
+     *     maps to one of the messages in js.msg. Note: It's not possible to
+     *     pass arguments to the message at the moment.
+     *
+     *   Category: Control flow
+     *   Category: Objects
+     *   Type: Accessing properties
+     *   Operands: ThrowCondition throwCondition, ThrowMsgKind msgKind
+     *   Stack: obj, key => obj, key, (obj.hasOwnProperty(id))
+     */ \
+    MACRO(CheckPrivateField, check_private_field, NULL, 3, 2, 3, JOF_TWO_UINT8|JOF_CHECKSTRICT|JOF_IC) \
     /*
      * Push the SuperBase of the method `callee`. The SuperBase is
      * `callee.[[HomeObject]].[[GetPrototypeOf]]()`, the object where `super`
@@ -1713,17 +1705,17 @@
      */ \
     MACRO(DerivedConstructor, derived_constructor, NULL, 13, 1, 1, JOF_CLASS_CTOR) \
     /*
-     * Pushes the current global's FunctionPrototype.
+     * Pushes the current global's %BuiltinObject%.
      *
-     * `kind` must be in range for `JSProtoKey` (and must not be
-     * `JSProto_LIMIT`).
+     * `kind` must be a valid `BuiltinObjectKind` (and must not be
+     * `BuiltinObjectKind::None`).
      *
-     *   Category: Functions
-     *   Type: Creating constructors
-     *   Operands:
-     *   Stack: => %FunctionPrototype%
+     *   Category: Objects
+     *   Type: Built-in objects
+     *   Operands: uint8_t kind
+     *   Stack: => %BuiltinObject%
      */ \
-    MACRO(FunctionProto, function_proto, NULL, 1, 0, 1, JOF_BYTE) \
+    MACRO(BuiltinObject, builtin_object, NULL, 2, 0, 1, JOF_UINT8) \
     /*
      * Invoke `callee` with `this` and `args`, and push the return value. Throw
      * a TypeError if `callee` isn't a function.
@@ -1789,7 +1781,7 @@
      *   Operands:
      *   Stack: arr => arr, optimized
      */ \
-    MACRO(OptimizeSpreadCall, optimize_spread_call, NULL, 1, 1, 2, JOF_BYTE) \
+    MACRO(OptimizeSpreadCall, optimize_spread_call, NULL, 1, 1, 2, JOF_BYTE|JOF_IC) \
     /*
      * Perform a direct eval in the current environment if `callee` is the
      * builtin `eval` function, otherwise follow same behaviour as `JSOp::Call`.
@@ -2565,9 +2557,9 @@
      * example, `delete super.prop;` is allowed in methods, but always throws a
      * ReferenceError.
      *
-     * `msgNumber` must be one of the error codes listed in js/src/js.msg; it
-     * determines the `.message` and [[Prototype]] of the new Error object. The
-     * number of arguments in the error message must be 0.
+     * `msgNumber` determines the `.message` and [[Prototype]] of the new Error
+     * object.  It must be an error number in js/public/friend/ErrorNumbers.msg.
+     * The number of arguments in the error message must be 0.
      *
      *   Category: Control flow
      *   Type: Exceptions
@@ -3687,6 +3679,7 @@
  * a power of two.  Use this macro to do so.
  */
 #define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+  MACRO(239)                                   \
   MACRO(240)                                   \
   MACRO(241)                                   \
   MACRO(242)                                   \

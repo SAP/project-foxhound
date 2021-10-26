@@ -120,6 +120,21 @@
       </panel-list>
     </template>
 
+    <template name="addon-permissions-list">
+      <div class="addon-permissions-required" hidden>
+        <h2 class="permission-header" data-l10n-id="addon-permissions-required"></h2>
+        <ul class="addon-permissions-list"></ul>
+      </div>
+      <div class="addon-permissions-optional" hidden>
+        <h2 class="permission-header" data-l10n-id="addon-permissions-optional"></h2>
+        <ul class="addon-permissions-list"></ul>
+      </div>
+      <div class="addon-detail-row addon-permissions-empty" data-l10n-id="addon-permissions-empty" hidden></div>
+      <div class="addon-detail-row">
+        <a is="support-link" support-page="extension-permissions" data-l10n-id="addon-permissions-learnmore"></a>
+      </div>
+    </template>
+
     <template name="card">
       <div class="card addon">
         <img class="card-heading-image">
@@ -129,8 +144,23 @@
             <div class="addon-name-container">
               <a class="addon-badge addon-badge-recommended"
                  is="support-link"
-                 support-page="recommended-extensions-program"
+                 support-page="add-on-badges"
+                 utmcontent="promoted-addon-badge"
                  data-l10n-id="addon-badge-recommended2"
+                 hidden>
+              </a>
+              <a class="addon-badge addon-badge-line"
+                 is="support-link"
+                 support-page="add-on-badges"
+                 utmcontent="promoted-addon-badge"
+                 data-l10n-id="addon-badge-line2"
+                 hidden>
+              </a>
+              <a class="addon-badge addon-badge-verified"
+                 is="support-link"
+                 support-page="add-on-badges"
+                 utmcontent="promoted-addon-badge"
+                 data-l10n-id="addon-badge-verified2"
                  hidden>
               </a>
               <a class="addon-badge addon-badge-private-browsing-allowed"
@@ -153,6 +183,10 @@
             <span class="addon-description" tabindex="-1"></span>
           </div>
         </div>
+        <message-bar class="update-postponed-bar" align="center" hidden>
+          <span class="description" data-l10n-id="install-postponed-message"></span>
+          <button action="install-postponed" data-l10n-id="install-postponed-button"></button>
+        </message-bar>
         <message-bar class="addon-card-message" align="center" hidden>
           <span></span>
           <button action="link"></button>

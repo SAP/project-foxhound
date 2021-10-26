@@ -772,6 +772,12 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvGetAPZTestData(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult LayerTransactionParent::RecvGetFrameUniformity(
+    FrameUniformityData* aOutData) {
+  mCompositorBridge->GetFrameUniformity(GetId(), aOutData);
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult LayerTransactionParent::RecvRequestProperty(
     const nsString& aProperty, float* aValue) {
   *aValue = -1;
@@ -789,7 +795,8 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvSetConfirmedTargetAPZC(
       return IPC_FAIL(this, "Bad layers id");
     }
   }
-  mCompositorBridge->SetConfirmedTargetAPZC(GetId(), aBlockId, aTargets);
+  mCompositorBridge->SetConfirmedTargetAPZC(GetId(), aBlockId,
+                                            std::move(aTargets));
   return IPC_OK();
 }
 

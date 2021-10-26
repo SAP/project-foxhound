@@ -46,7 +46,7 @@ function PlacesInsertionPoint({
 
 PlacesInsertionPoint.prototype = {
   set index(val) {
-    return (this._index = val);
+    this._index = val;
   },
 
   async getIndex() {
@@ -206,6 +206,9 @@ PlacesController.prototype = {
         let selectedNode = this._view.selectedNode;
         return (
           selectedNode &&
+          !PlacesUtils.isRootItem(
+            PlacesUtils.getConcreteItemGuid(selectedNode)
+          ) &&
           (PlacesUtils.nodeIsTagQuery(selectedNode) ||
             PlacesUtils.nodeIsBookmark(selectedNode) ||
             (PlacesUtils.nodeIsFolder(selectedNode) &&
@@ -1175,7 +1178,6 @@ PlacesController.prototype = {
     updateCutNodes(false);
     this._cutNodes = aNodes;
     updateCutNodes(true);
-    return aNodes;
   },
 
   /**

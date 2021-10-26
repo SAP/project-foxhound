@@ -5,12 +5,11 @@
 #include "HitTestingTreeNode.h"
 
 #include "AsyncPanZoomController.h"  // for AsyncPanZoomController
-#include "LayersLogging.h"           // for Stringify
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/Point.h"        // for Point4D
-#include "mozilla/layers/APZUtils.h"  // for CompleteAsyncTransform
-#include "mozilla/layers/AsyncCompositionManager.h"  // for ViewTransform::operator Matrix4x4()
+#include "mozilla/layers/APZUtils.h"  // for AsyncTransform, CompleteAsyncTransform
 #include "mozilla/layers/AsyncDragMetrics.h"  // for AsyncDragMetrics
+#include "mozilla/ToString.h"                 // for ToString
 #include "nsPrintfCString.h"                  // for nsPrintfCString
 #include "UnitTransforms.h"                   // for ViewAs
 
@@ -433,7 +432,7 @@ void HitTestingTreeNode::Dump(const char* aPrefix) const {
       ("%sHitTestingTreeNode (%p) APZC (%p) g=(%s) %s%s%sr=(%s) t=(%s) "
        "c=(%s)%s%s\n",
        aPrefix, this, mApzc.get(),
-       mApzc ? Stringify(mApzc->GetGuid()).c_str()
+       mApzc ? ToString(mApzc->GetGuid()).c_str()
              : nsPrintfCString("l=0x%" PRIx64, uint64_t(mLayersId)).get(),
        (mOverride & EventRegionsOverride::ForceDispatchToContent) ? "fdtc "
                                                                   : "",
@@ -441,8 +440,8 @@ void HitTestingTreeNode::Dump(const char* aPrefix) const {
        (mFixedPosTarget != ScrollableLayerGuid::NULL_SCROLL_ID)
            ? nsPrintfCString("fixed=%" PRIu64 " ", mFixedPosTarget).get()
            : "",
-       Stringify(mEventRegions).c_str(), Stringify(mTransform).c_str(),
-       mClipRegion ? Stringify(mClipRegion.ref()).c_str() : "none",
+       ToString(mEventRegions).c_str(), ToString(mTransform).c_str(),
+       mClipRegion ? ToString(mClipRegion.ref()).c_str() : "none",
        mScrollbarData.mDirection.isSome() ? " scrollbar" : "",
        IsScrollThumbNode() ? " scrollthumb" : ""));
 

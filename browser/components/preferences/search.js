@@ -66,6 +66,7 @@ var gSearchPane = {
     window.addEventListener("dragstart", this);
     window.addEventListener("keypress", this);
     window.addEventListener("select", this);
+    window.addEventListener("dblclick", this);
 
     Services.obs.addObserver(this, "browser-search-engine-modified");
     window.addEventListener("unload", () => {
@@ -111,6 +112,7 @@ var gSearchPane = {
     this._initDefaultEngines();
     this._initShowSearchSuggestionsFirst();
     this._updateSuggestionCheckboxes();
+    this._showAddEngineButton();
   },
 
   /**
@@ -241,6 +243,17 @@ var gSearchPane = {
     permanentPBLabel.hidden = urlbarSuggests.hidden || !permanentPB;
   },
 
+  _showAddEngineButton() {
+    let aliasRefresh = Services.prefs.getBoolPref(
+      "browser.urlbar.update2.engineAliasRefresh",
+      false
+    );
+    if (aliasRefresh) {
+      let addButton = document.getElementById("addEngineButton");
+      addButton.hidden = false;
+    }
+  },
+
   /**
    * Builds the default and private engines drop down lists. This is called
    * each time something affects the list of engines.
@@ -297,33 +310,21 @@ var gSearchPane = {
         list.selectedItem = item;
       }
     });
-
-    // We don't currently support overriding the engine for private mode with
-    // extensions.
-    if (isPrivate) {
-      return;
-    }
-
-    handleControllingExtension(SEARCH_TYPE, SEARCH_KEY);
-    let searchEngineListener = {
-      observe(subject, topic, data) {
-        handleControllingExtension(SEARCH_TYPE, SEARCH_KEY);
-      },
-    };
-    Services.obs.addObserver(
-      searchEngineListener,
-      "browser-search-engine-modified"
-    );
-    window.addEventListener("unload", () => {
-      Services.obs.removeObserver(
-        searchEngineListener,
-        "browser-search-engine-modified"
-      );
-    });
   },
 
   handleEvent(aEvent) {
     switch (aEvent.type) {
+      case "dblclick":
+        if (aEvent.target.id == "engineChildren") {
+          let cell = aEvent.target.parentNode.getCellAt(
+            aEvent.clientX,
+            aEvent.clientY
+          );
+          if (cell.col?.id == "engineKeyword") {
+            this.startEditingAlias(gEngineView.selectedIndex);
+          }
+        }
+        break;
       case "click":
         if (
           aEvent.target.id != "engineChildren" &&
@@ -367,6 +368,12 @@ var gSearchPane = {
           case "removeEngineButton":
             Services.search.removeEngine(
               gEngineView.selectedEngine.originalEngine
+            );
+            break;
+          case "addEngineButton":
+            gSubDialog.open(
+              "chrome://browser/content/preferences/dialogs/addEngine.xhtml",
+              { features: "resizable=no, modal=yes" }
             );
             break;
         }
@@ -472,7 +479,7 @@ var gSearchPane = {
         (isMac && aEvent.keyCode == KeyEvent.DOM_VK_RETURN) ||
         (!isMac && aEvent.keyCode == KeyEvent.DOM_VK_F2)
       ) {
-        tree.startEditing(index, tree.columns.getLastColumn());
+        this.startEditingAlias(index);
       } else if (
         aEvent.keyCode == KeyEvent.DOM_VK_DELETE ||
         (isMac &&
@@ -484,6 +491,14 @@ var gSearchPane = {
         Services.search.removeEngine(gEngineView.selectedEngine.originalEngine);
       }
     }
+  },
+
+  startEditingAlias(index) {
+    let tree = document.getElementById("engineList");
+    let engine = gEngineView._engineStore.engines[index];
+    tree.startEditing(index, tree.columns.getLastColumn());
+    tree.inputField.value = engine.alias || "";
+    tree.inputField.select();
   },
 
   async onRestoreDefaults() {
@@ -817,7 +832,7 @@ EngineView.prototype = {
     if (column.id == "engineName") {
       return this._engineStore.engines[index].name;
     } else if (column.id == "engineKeyword") {
-      return this._engineStore.engines[index].alias;
+      return this._engineStore.engines[index].originalEngine.aliases.join(", ");
     }
     return "";
   },
@@ -917,7 +932,7 @@ EngineView.prototype = {
         .editKeyword(this._engineStore.engines[index], value)
         .then(valid => {
           if (!valid) {
-            document.getElementById("engineList").startEditing(index, column);
+            gSearchPane.startEditingAlias(index);
           }
         });
     }

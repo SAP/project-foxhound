@@ -240,7 +240,7 @@ var MigratorPrototype = {
   getMigrateData: async function MP_getMigrateData(aProfile) {
     let resources = await this._getMaybeCachedResources(aProfile);
     if (!resources) {
-      return [];
+      return 0;
     }
     let types = resources.map(r => r.type);
     return types.reduce((a, b) => {
@@ -527,7 +527,7 @@ var MigratorPrototype = {
   },
 };
 
-var MigrationUtils = Object.freeze({
+var MigrationUtils = Object.seal({
   resourceTypes: {
     COOKIES: Ci.nsIBrowserProfileMigrator.COOKIES,
     HISTORY: Ci.nsIBrowserProfileMigrator.HISTORY,
@@ -1108,6 +1108,15 @@ var MigrationUtils = Object.freeze({
     history: 0,
   },
 
+  getImportedCount(type) {
+    if (!this._importQuantities.hasOwnProperty(type)) {
+      throw new Error(
+        `Unknown import data type "${type}" passed to getImportedCount`
+      );
+    }
+    return this._importQuantities[type];
+  },
+
   insertBookmarkWrapper(bookmark) {
     this._importQuantities.bookmarks++;
     let insertionPromise = PlacesUtils.bookmarks.insert(bookmark);
@@ -1287,6 +1296,7 @@ var MigrationUtils = Object.freeze({
   MIGRATION_ENTRYPOINT_NEWTAB: 5,
   MIGRATION_ENTRYPOINT_FILE_MENU: 6,
   MIGRATION_ENTRYPOINT_HELP_MENU: 7,
+  MIGRATION_ENTRYPOINT_BOOKMARKS_TOOLBAR: 8,
 
   _sourceNameToIdMapping: {
     nothing: 1,
@@ -1306,4 +1316,11 @@ var MigrationUtils = Object.freeze({
   getSourceIdForTelemetry(sourceName) {
     return this._sourceNameToIdMapping[sourceName] || 0;
   },
+
+  /* Enum of locations where bookmarks were found in the
+     source browser that we import from */
+  SOURCE_BOOKMARK_ROOTS_BOOKMARKS_TOOLBAR: 1,
+  SOURCE_BOOKMARK_ROOTS_BOOKMARKS_MENU: 2,
+  SOURCE_BOOKMARK_ROOTS_READING_LIST: 4,
+  SOURCE_BOOKMARK_ROOTS_UNFILED: 8,
 });

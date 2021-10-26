@@ -47,7 +47,9 @@ class LabellingEventTarget final : public nsISerialEventTarget,
 
   explicit LabellingEventTarget(mozilla::dom::DocGroup* aDocGroup)
       : mDocGroup(aDocGroup),
-        mMainThread(static_cast<nsThread*>(GetMainThreadSerialEventTarget())) {}
+        mMainThread(
+            static_cast<nsThread*>(mozilla::GetMainThreadSerialEventTarget())) {
+  }
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIEVENTTARGET_FULL
@@ -116,8 +118,7 @@ NS_IMETHODIMP LabellingEventTarget::HaveDirectTasks(bool* aValue) {
 NS_IMPL_ISUPPORTS(LabellingEventTarget, nsIEventTarget, nsISerialEventTarget,
                   nsIDirectTaskDispatcher)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 AutoTArray<RefPtr<DocGroup>, 2>* DocGroup::sPendingDocGroups = nullptr;
 
@@ -186,11 +187,10 @@ DocGroup::~DocGroup() {
   MOZ_RELEASE_ASSERT(!mBrowsingContextGroup);
 
   if (!NS_IsMainThread()) {
-    nsIEventTarget* target = EventTargetFor(TaskCategory::Other);
-    NS_ProxyRelease("DocGroup::mReactionsStack", target,
-                    mReactionsStack.forget());
+    NS_ReleaseOnMainThread("DocGroup::mReactionsStack",
+                           mReactionsStack.forget());
 
-    NS_ProxyRelease("DocGroup::mArena", target, mArena.forget());
+    NS_ReleaseOnMainThread("DocGroup::mArena", mArena.forget());
   }
 
   if (mIframePostMessageQueue) {
@@ -382,13 +382,11 @@ void DocGroup::FlushIframePostMessageQueue() {
   }
 }
 
-void DocGroup::MoveSignalSlotListTo(nsTArray<RefPtr<HTMLSlotElement>>& aDest) {
-  aDest.SetCapacity(aDest.Length() + mSignalSlotList.Length());
-  for (RefPtr<HTMLSlotElement>& slot : mSignalSlotList) {
+nsTArray<RefPtr<HTMLSlotElement>> DocGroup::MoveSignalSlotList() {
+  for (const RefPtr<HTMLSlotElement>& slot : mSignalSlotList) {
     slot->RemovedFromSignalSlotList();
-    aDest.AppendElement(std::move(slot));
   }
-  mSignalSlotList.Clear();
+  return std::move(mSignalSlotList);
 }
 
 bool DocGroup::IsActive() const {
@@ -401,5 +399,4 @@ bool DocGroup::IsActive() const {
   return false;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsComponentManagerUtils.h"
 #include "nsICaptivePortalService.h"
@@ -19,13 +20,16 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Tokenizer.h"
+#include "mozilla/net/rust_helper.h"
+
+#if defined(XP_WIN) && !defined(__MINGW32__)
+#  include <shlobj_core.h>  // for SHGetSpecialFolderPathA
+#endif                      // XP_WIN
 
 static const char kOpenCaptivePortalLoginEvent[] = "captive-portal-login";
 static const char kClearPrivateData[] = "clear-private-data";
 static const char kPurge[] = "browser:purge-session-history";
 static const char kDisableIpv6Pref[] = "network.dns.disableIPv6";
-static const char kPrefSkipTRRParentalControl[] =
-    "network.dns.skipTRR-when-parental-control-enabled";
 static const char kRolloutURIPref[] = "doh-rollout.uri";
 static const char kRolloutModePref[] = "doh-rollout.mode";
 
@@ -41,6 +45,7 @@ extern mozilla::LazyLogModule gHostResolverLog;
 
 TRRService* gTRRService = nullptr;
 StaticRefPtr<nsIThread> sTRRBackgroundThread;
+static Atomic<TRRService*> sTRRServicePtr;
 
 NS_IMPL_ISUPPORTS(TRRService, nsIObserver, nsISupportsWeakReference)
 
@@ -49,17 +54,10 @@ TRRService::TRRService()
       mBlocklistDurationSeconds(60),
       mLock("trrservice"),
       mConfirmationNS("example.com"_ns),
-      mWaitForCaptive(true),
-      mRfc1918(false),
       mCaptiveIsPassed(false),
-      mUseGET(false),
-      mDisableECS(true),
-      mSkipTRRWhenParentalControlEnabled(true),
-      mDisableAfterFails(5),
-      mPlatformDisabledTRR(false),
       mTRRBLStorage("DataMutex::TRRBlocklist"),
       mConfirmationState(CONFIRM_INIT),
-      mRetryConfirmInterval(1000),
+      mRetryConfirmInterval(125),
       mTRRFailures(0),
       mParentalControlEnabled(false) {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
@@ -119,6 +117,32 @@ const nsCString& TRRService::AutoDetectedKey() {
   return kTRRNotAutoDetectedKey.AsString();
 }
 
+static void RemoveTRRBlocklistFile() {
+  MOZ_ASSERT(NS_IsMainThread(), "Getting the profile dir on the main thread");
+
+  nsCOMPtr<nsIFile> file;
+  nsresult rv =
+      NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  rv = file->AppendNative("TRRBlacklist.txt"_ns);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  // Dispatch an async task that removes the blocklist file from the profile.
+  rv = NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction("RemoveTRRBlocklistFile::Remove",
+                             [file] { file->Remove(false); }),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  Preferences::SetBool("network.trr.blocklist_cleanup_done", true);
+}
+
 nsresult TRRService::Init() {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
   if (mInitialized) {
@@ -133,14 +157,14 @@ nsresult TRRService::Init() {
   if (prefBranch) {
     prefBranch->AddObserver(TRR_PREF_PREFIX, this, true);
     prefBranch->AddObserver(kDisableIpv6Pref, this, true);
-    prefBranch->AddObserver(kPrefSkipTRRParentalControl, this, true);
     prefBranch->AddObserver(kRolloutURIPref, this, true);
     prefBranch->AddObserver(kRolloutModePref, this, true);
   }
 
-  ReadPrefs(nullptr);
-
   gTRRService = this;
+  sTRRServicePtr = this;
+
+  ReadPrefs(nullptr);
 
   if (XRE_IsParentProcess()) {
     mCaptiveIsPassed = CheckCaptivePortalIsPassed();
@@ -163,6 +187,15 @@ nsresult TRRService::Init() {
     }
 
     sTRRBackgroundThread = thread;
+
+    if (!StaticPrefs::network_trr_blocklist_cleanup_done()) {
+      // Dispatch an idle task to the main thread that gets the profile dir
+      // then attempts to delete the blocklist file on a background thread.
+      Unused << NS_DispatchToMainThreadQueue(
+          NS_NewCancelableRunnableFunction("RemoveTRRBlocklistFile::GetDir",
+                                           [] { RemoveTRRBlocklistFile(); }),
+          EventQueuePriority::Idle);
+    }
   }
 
   LOG(("Initialized TRRService\n"));
@@ -197,7 +230,7 @@ bool TRRService::Enabled(nsIRequest::TRRMode aMode) {
     return false;
   }
   if (mConfirmationState == CONFIRM_INIT &&
-      (!mWaitForCaptive || mCaptiveIsPassed ||
+      (!StaticPrefs::network_trr_wait_for_portal() || mCaptiveIsPassed ||
        (mMode == MODE_TRRONLY || aMode == nsIRequest::TRR_ONLY_MODE))) {
     LOG(("TRRService::Enabled => CONFIRM_TRYING\n"));
     mConfirmationState = CONFIRM_TRYING;
@@ -290,25 +323,6 @@ nsresult TRRService::ReadPrefs(const char* name) {
     Preferences::GetCString(TRR_PREF("bootstrapAddress"), mBootstrapAddr);
     clearEntireCache = true;
   }
-  if (!name || !strcmp(name, TRR_PREF("wait-for-portal"))) {
-    // Wait for captive portal?
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("wait-for-portal"), &tmp))) {
-      mWaitForCaptive = tmp;
-    }
-  }
-  if (!name || !strcmp(name, TRR_PREF("allow-rfc1918"))) {
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("allow-rfc1918"), &tmp))) {
-      mRfc1918 = tmp;
-    }
-  }
-  if (!name || !strcmp(name, TRR_PREF("useGET"))) {
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("useGET"), &tmp))) {
-      mUseGET = tmp;
-    }
-  }
   if (!name || !strcmp(name, TRR_PREF("blacklist-duration"))) {
     // prefs is given in number of seconds
     uint32_t secs;
@@ -317,43 +331,10 @@ nsresult TRRService::ReadPrefs(const char* name) {
       mBlocklistDurationSeconds = secs;
     }
   }
-  if (!name || !strcmp(name, TRR_PREF("early-AAAA"))) {
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("early-AAAA"), &tmp))) {
-      mEarlyAAAA = tmp;
-    }
-  }
-
-  if (!name || !strcmp(name, TRR_PREF("skip-AAAA-when-not-supported"))) {
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(
-            TRR_PREF("skip-AAAA-when-not-supported"), &tmp))) {
-      mCheckIPv6Connectivity = tmp;
-    }
-  }
-  if (!name || !strcmp(name, TRR_PREF("wait-for-A-and-AAAA"))) {
-    bool tmp;
-    if (NS_SUCCEEDED(
-            Preferences::GetBool(TRR_PREF("wait-for-A-and-AAAA"), &tmp))) {
-      mWaitForAllResponses = tmp;
-    }
-  }
   if (!name || !strcmp(name, kDisableIpv6Pref)) {
     bool tmp;
     if (NS_SUCCEEDED(Preferences::GetBool(kDisableIpv6Pref, &tmp))) {
       mDisableIPv6 = tmp;
-    }
-  }
-  if (!name || !strcmp(name, TRR_PREF("disable-ECS"))) {
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("disable-ECS"), &tmp))) {
-      mDisableECS = tmp;
-    }
-  }
-  if (!name || !strcmp(name, TRR_PREF("max-fails"))) {
-    uint32_t fails;
-    if (NS_SUCCEEDED(Preferences::GetUint(TRR_PREF("max-fails"), &fails))) {
-      mDisableAfterFails = fails;
     }
   }
   if (!name || !strcmp(name, TRR_PREF("excluded-domains")) ||
@@ -382,13 +363,6 @@ nsresult TRRService::ReadPrefs(const char* name) {
     clearEntireCache = true;
   }
 
-  if (!name || !strcmp(name, kPrefSkipTRRParentalControl)) {
-    bool tmp;
-    if (NS_SUCCEEDED(Preferences::GetBool(kPrefSkipTRRParentalControl, &tmp))) {
-      mSkipTRRWhenParentalControlEnabled = tmp;
-    }
-  }
-
   // if name is null, then we're just now initializing. In that case we don't
   // need to clear the cache.
   if (name && clearEntireCache) {
@@ -399,13 +373,7 @@ nsresult TRRService::ReadPrefs(const char* name) {
 }
 
 void TRRService::ClearEntireCache() {
-  bool tmp;
-  nsresult rv =
-      Preferences::GetBool(TRR_PREF("clear-cache-on-pref-change"), &tmp);
-  if (NS_FAILED(rv)) {
-    return;
-  }
-  if (!tmp) {
+  if (!StaticPrefs::network_trr_clear_cache_on_pref_change()) {
     return;
   }
   nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
@@ -413,6 +381,59 @@ void TRRService::ClearEntireCache() {
     return;
   }
   dns->ClearCache(true);
+}
+
+void TRRService::AddEtcHosts(const nsTArray<nsCString>& aArray) {
+  MutexAutoLock lock(mLock);
+  for (const auto& item : aArray) {
+    LOG(("Adding %s from /etc/hosts to excluded domains", item.get()));
+    mEtcHostsDomains.PutEntry(item);
+  }
+}
+
+void TRRService::ReadEtcHostsFile() {
+  if (!StaticPrefs::network_trr_exclude_etc_hosts()) {
+    return;
+  }
+
+  auto readHostsTask = []() {
+    MOZ_ASSERT(!NS_IsMainThread(), "Must not run on the main thread");
+#if defined(XP_WIN) && !defined(__MINGW32__)
+    // Inspired by libevent/evdns.c
+    // Windows is a little coy about where it puts its configuration
+    // files.  Sure, they're _usually_ in C:\windows\system32, but
+    // there's no reason in principle they couldn't be in
+    // W:\hoboken chicken emergency
+
+    nsCString path;
+    path.SetLength(MAX_PATH + 1);
+    if (!SHGetSpecialFolderPathA(NULL, path.BeginWriting(), CSIDL_SYSTEM,
+                                 false)) {
+      LOG(("Calling SHGetSpecialFolderPathA failed"));
+      return;
+    }
+
+    path.SetLength(strlen(path.get()));
+    path.Append("\\drivers\\etc\\hosts");
+#elif defined(__MINGW32__)
+    nsAutoCString path("C:\\windows\\system32\\drivers\\etc\\hosts"_ns);
+#else
+    nsAutoCString path("/etc/hosts"_ns);
+#endif
+
+    LOG(("Reading hosts file at %s", path.get()));
+    rust_parse_etc_hosts(&path, [](const nsTArray<nsCString>* aArray) -> bool {
+      RefPtr<TRRService> service(sTRRServicePtr);
+      if (service && aArray) {
+        service->AddEtcHosts(*aArray);
+      }
+      return !!service;
+    });
+  };
+
+  Unused << NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction("Read /etc/hosts file", readHostsTask),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
 }
 
 nsresult TRRService::GetURI(nsACString& result) {
@@ -547,7 +568,6 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
         link->GetDnsSuffixList(suffixList);
         RebuildSuffixList(std::move(suffixList));
       }
-      mPlatformDisabledTRR = CheckPlatformDNSStatus(link);
     }
 
     if (!strcmp(aTopic, NS_NETWORK_LINK_TOPIC) && mURISetByDetection) {
@@ -564,35 +584,23 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
         sTRRBackgroundThread = nullptr;
       }
       MOZ_ALWAYS_SUCCEEDS(thread->Shutdown());
+      sTRRServicePtr = nullptr;
     }
   }
   return NS_OK;
 }
 
 void TRRService::RebuildSuffixList(nsTArray<nsCString>&& aSuffixList) {
+  if (!StaticPrefs::network_trr_split_horizon_mitigations()) {
+    return;
+  }
+
   MutexAutoLock lock(mLock);
   mDNSSuffixDomains.Clear();
   for (const auto& item : aSuffixList) {
     LOG(("TRRService adding %s to suffix list", item.get()));
     mDNSSuffixDomains.PutEntry(item);
   }
-}
-
-// static
-bool TRRService::CheckPlatformDNSStatus(nsINetworkLinkService* aLinkService) {
-  if (!aLinkService) {
-    return false;
-  }
-
-  uint32_t platformIndications = nsINetworkLinkService::NONE_DETECTED;
-  aLinkService->GetPlatformDNSIndications(&platformIndications);
-  LOG(("TRRService platformIndications=%u", platformIndications));
-  return (!StaticPrefs::network_trr_enable_when_vpn_detected() &&
-          (platformIndications & nsINetworkLinkService::VPN_DETECTED)) ||
-         (!StaticPrefs::network_trr_enable_when_proxy_detected() &&
-          (platformIndications & nsINetworkLinkService::PROXY_DETECTED)) ||
-         (!StaticPrefs::network_trr_enable_when_nrpt_detected() &&
-          (platformIndications & nsINetworkLinkService::NRPT_DETECTED));
 }
 
 void TRRService::MaybeConfirm() {
@@ -618,8 +626,7 @@ void TRRService::MaybeConfirm_locked() {
   } else {
     LOG(("TRRService starting confirmation test %s %s\n", mPrivateURI.get(),
          mConfirmationNS.get()));
-    mConfirmer =
-        new TRR(this, mConfirmationNS, TRRTYPE_NS, EmptyCString(), false);
+    mConfirmer = new TRR(this, mConfirmationNS, TRRTYPE_NS, ""_ns, false);
     DispatchTRRRequestInternal(mConfirmer, false);
   }
 }
@@ -735,12 +742,6 @@ bool TRRService::IsExcludedFromTRR_unlocked(const nsACString& aHost) {
     mLock.AssertCurrentThreadOwns();
   }
 
-  if (mPlatformDisabledTRR) {
-    LOG(("%s is excluded from TRR because of platform indications",
-         aHost.BeginReading()));
-    return true;
-  }
-
   int32_t dot = 0;
   // iteratively check the sub-domain of |aHost|
   while (dot < static_cast<int32_t>(aHost.Length())) {
@@ -754,6 +755,11 @@ bool TRRService::IsExcludedFromTRR_unlocked(const nsACString& aHost) {
     }
     if (mDNSSuffixDomains.GetEntry(subdomain)) {
       LOG(("Subdomain [%s] of host [%s] Is Excluded From TRR via pref\n",
+           subdomain.BeginReading(), aHost.BeginReading()));
+      return true;
+    }
+    if (mEtcHostsDomains.GetEntry(subdomain)) {
+      LOG(("Subdomain [%s] of host [%s] Is Excluded From TRR by /etc/hosts\n",
            subdomain.BeginReading(), aHost.BeginReading()));
       return true;
     }
@@ -836,7 +842,7 @@ void TRRService::TRRIsOkay(enum TrrOkay aReason) {
   } else if ((mMode == MODE_TRRFIRST) && (mConfirmationState == CONFIRM_OK)) {
     // only count failures while in OK state
     uint32_t fails = ++mTRRFailures;
-    if (fails >= mDisableAfterFails) {
+    if (fails >= StaticPrefs::network_trr_max_fails()) {
       LOG(("TRRService goes FAILED after %u failures in a row\n", fails));
       mConfirmationState = CONFIRM_FAILED;
       // Fire off a timer and start re-trying the NS domain again
@@ -898,17 +904,17 @@ AHostResolver::LookupStatus TRRService::CompleteLookup(
                               TRRService::AutoDetectedKey(),
                               (mConfirmationState == CONFIRM_OK));
       }
-      mRetryConfirmInterval = 1000;
+      mRetryConfirmInterval = StaticPrefs::network_trr_retry_timeout_ms();
     }
     return LOOKUP_OK;
   }
 
   // when called without a host record, this is a domain name check response.
   if (NS_SUCCEEDED(status)) {
-    LOG(("TRR verified %s to be fine!\n", newRRSet->mHostName.get()));
+    LOG(("TRR verified %s to be fine!\n", newRRSet->Hostname().get()));
   } else {
-    LOG(("TRR says %s doesn't resolve as NS!\n", newRRSet->mHostName.get()));
-    AddToBlocklist(newRRSet->mHostName, aOriginSuffix, pb, false);
+    LOG(("TRR says %s doesn't resolve as NS!\n", newRRSet->Hostname().get()));
+    AddToBlocklist(newRRSet->Hostname(), aOriginSuffix, pb, false);
   }
   return LOOKUP_OK;
 }

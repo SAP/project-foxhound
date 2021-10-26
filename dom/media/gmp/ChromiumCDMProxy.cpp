@@ -21,13 +21,12 @@ ChromiumCDMProxy::ChromiumCDMProxy(dom::MediaKeys* aKeys,
                                    const nsAString& aKeySystem,
                                    GMPCrashHelper* aCrashHelper,
                                    bool aDistinctiveIdentifierRequired,
-                                   bool aPersistentStateRequired,
-                                   nsISerialEventTarget* aMainThread)
+                                   bool aPersistentStateRequired)
     : CDMProxy(aKeys, aKeySystem, aDistinctiveIdentifierRequired,
-               aPersistentStateRequired, aMainThread),
+               aPersistentStateRequired),
       mCrashHelper(aCrashHelper),
       mCDMMutex("ChromiumCDMProxy"),
-      mGMPThread(GetGMPAbstractThread()) {
+      mGMPThread(GetGMPThread()) {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
@@ -65,7 +64,7 @@ void ChromiumCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
   }
 
   gmp::NodeId nodeId(aOrigin, aTopLevelOrigin, aGMPName);
-  RefPtr<AbstractThread> thread = mGMPThread;
+  nsCOMPtr<nsISerialEventTarget> thread = mGMPThread;
   RefPtr<ChromiumCDMProxy> self(this);
   nsCString keySystem = NS_ConvertUTF16toUTF8(mKeySystem);
   RefPtr<Runnable> task(NS_NewRunnableFunction(
@@ -187,7 +186,7 @@ void ChromiumCDMProxy::ShutdownCDMIfExists() {
 
 #ifdef DEBUG
 bool ChromiumCDMProxy::IsOnOwnerThread() {
-  return mGMPThread->IsCurrentThreadIn();
+  return mGMPThread && mGMPThread->IsOnCurrentThread();
 }
 #endif
 
@@ -369,6 +368,10 @@ void ChromiumCDMProxy::RejectPromise(PromiseId aId, ErrorResult&& aException,
           this, aId, aException.ErrorCodeAsInt(), aReason.get());
   if (!mKeys.IsNull()) {
     mKeys->RejectPromise(aId, std::move(aException), aReason);
+  } else {
+    // We don't have a MediaKeys object to pass the exception to, so silence
+    // the exception to avoid it asserting due to being unused.
+    aException.SuppressException();
   }
 }
 

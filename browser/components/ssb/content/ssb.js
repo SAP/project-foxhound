@@ -14,6 +14,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   WindowsSupport: "resource:///modules/ssb/WindowsSupport.jsm",
 });
 
+XPCOMUtils.defineLazyScriptGetter(
+  this,
+  "PrintUtils",
+  "chrome://global/content/printUtils.js"
+);
+
 let gSSBBrowser = null;
 var gSSB = null;
 
@@ -160,6 +166,13 @@ class BrowserDOMWindow {
     // It's been determined that this load needs to happen in a new frame.
     // Either onBeforeLinkTraversal set this correctly or this is the result
     // of a window.open call.
+    if (where == Ci.nsIBrowserDOMWindow.OPEN_PRINT_BROWSER) {
+      return PrintUtils.startPrintWindow(
+        "window_print",
+        params.openWindowInfo.parent,
+        params.openWindowInfo
+      );
+    }
 
     // If this ssb can load the url then just load it internally.
     if (gSSB.canLoad(uri)) {
@@ -230,11 +243,6 @@ class BrowserDOMWindow {
       name,
       true
     );
-  }
-
-  isTabContentWindow(window) {
-    // This method is probably not needed anymore: bug 1602915
-    return gSSBBrowser.contentWindow == window;
   }
 
   canClose() {

@@ -37,7 +37,11 @@ function openAndLoadSubDialog(
   aClosingCallback = null
 ) {
   let promise = promiseLoadSubDialog(aURL);
-  content.gSubDialog.open(aURL, aFeatures, aParams, aClosingCallback);
+  content.gSubDialog.open(
+    aURL,
+    { features: aFeatures, closingCallback: aClosingCallback },
+    aParams
+  );
   return promise;
 }
 
@@ -162,7 +166,11 @@ async function openPreferencesViaOpenPreferencesAPI(aPane, aOptions) {
   return { selectedPane };
 }
 
-async function evaluateSearchResults(keyword, searchReults) {
+async function evaluateSearchResults(
+  keyword,
+  searchReults,
+  includeExperiments = false
+) {
   searchReults = Array.isArray(searchReults) ? searchReults : [searchReults];
   searchReults.push("header-searchResults");
 
@@ -179,6 +187,9 @@ async function evaluateSearchResults(keyword, searchReults) {
   let mainPrefTag = gBrowser.contentDocument.getElementById("mainPrefPane");
   for (let i = 0; i < mainPrefTag.childElementCount; i++) {
     let child = mainPrefTag.children[i];
+    if (!includeExperiments && child.id?.startsWith("pane-experimental")) {
+      continue;
+    }
     if (searchReults.includes(child.id)) {
       is_element_visible(child, `${child.id} should be in search results`);
     } else if (child.id) {
@@ -197,4 +208,57 @@ function waitForMutation(target, opts, cb) {
     });
     observer.observe(target, opts);
   });
+}
+
+// Used to add sample experimental features for testing. To use, create
+// a DefinitionServer, then call addDefinition as needed.
+class DefinitionServer {
+  constructor(definitionOverrides = []) {
+    let { HttpServer } = ChromeUtils.import(
+      "resource://testing-common/httpd.js"
+    );
+
+    this.server = new HttpServer();
+    this.server.registerPathHandler("/definitions.json", this);
+    this.definitions = {};
+
+    for (const override of definitionOverrides) {
+      this.addDefinition(override);
+    }
+
+    this.server.start();
+    registerCleanupFunction(
+      () => new Promise(resolve => this.server.stop(resolve))
+    );
+  }
+
+  // for nsIHttpRequestHandler
+  handle(request, response) {
+    response.write(JSON.stringify(this.definitions));
+  }
+
+  get definitionsUrl() {
+    const { primaryScheme, primaryHost, primaryPort } = this.server.identity;
+    return `${primaryScheme}://${primaryHost}:${primaryPort}/definitions.json`;
+  }
+
+  addDefinition(overrides = {}) {
+    const definition = {
+      id: "test-feature",
+      // These l10n IDs are just random so we have some text to display
+      title: "experimental-features-media-avif",
+      description: "pane-experimental-description",
+      restartRequired: false,
+      type: "boolean",
+      preference: "test.feature",
+      defaultValue: false,
+      isPublic: false,
+      ...overrides,
+    };
+    // convert targeted values, used by fromId
+    definition.isPublic = { default: definition.isPublic };
+    definition.defaultValue = { default: definition.defaultValue };
+    this.definitions[definition.id] = definition;
+    return definition;
+  }
 }

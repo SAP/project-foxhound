@@ -185,15 +185,15 @@ nsresult nsJSUtils::ExecutionContext::JoinCompile(
   MOZ_ASSERT(!mWantsReturnValue);
   MOZ_ASSERT(!mExpectScopeChain);
   MOZ_ASSERT(!mScript);
-  mScript.set(JS::FinishOffThreadScript(mCx, *aOffThreadToken));
+
+  if (mEncodeBytecode) {
+    mScript.set(JS::FinishOffThreadScriptAndStartIncrementalEncoding(
+        mCx, *aOffThreadToken));
+  } else {
+    mScript.set(JS::FinishOffThreadScript(mCx, *aOffThreadToken));
+  }
   *aOffThreadToken = nullptr;  // Mark the token as having been finished.
   if (!mScript) {
-    mSkip = true;
-    mRv = EvaluationExceptionToNSResult(mCx);
-    return mRv;
-  }
-
-  if (mEncodeBytecode && !StartIncrementalEncoding(mCx, mScript)) {
     mSkip = true;
     mRv = EvaluationExceptionToNSResult(mCx);
     return mRv;
@@ -216,17 +216,19 @@ nsresult nsJSUtils::ExecutionContext::InternalCompile(
 #endif
 
   MOZ_ASSERT(!mScript);
-  mScript =
-      mScopeChain.length() == 0
-          ? JS::Compile(mCx, aCompileOptions, aSrcBuf)
-          : JS::CompileForNonSyntacticScope(mCx, aCompileOptions, aSrcBuf);
-  if (!mScript) {
-    mSkip = true;
-    mRv = EvaluationExceptionToNSResult(mCx);
-    return mRv;
+
+  if (mScopeChain.length() != 0) {
+    aCompileOptions.setNonSyntacticScope(true);
   }
 
-  if (mEncodeBytecode && !StartIncrementalEncoding(mCx, mScript)) {
+  if (mEncodeBytecode) {
+    mScript =
+        JS::CompileAndStartIncrementalEncoding(mCx, aCompileOptions, aSrcBuf);
+  } else {
+    mScript = JS::Compile(mCx, aCompileOptions, aSrcBuf);
+  }
+
+  if (!mScript) {
     mSkip = true;
     mRv = EvaluationExceptionToNSResult(mCx);
     return mRv;
@@ -271,8 +273,8 @@ nsresult nsJSUtils::ExecutionContext::Decode(
   }
 
   MOZ_ASSERT(!mWantsReturnValue);
-  JS::TranscodeResult tr =
-      JS::DecodeScript(mCx, aBytecodeBuf, &mScript, aBytecodeIndex);
+  JS::TranscodeResult tr = JS::DecodeScriptMaybeStencil(
+      mCx, aCompileOptions, aBytecodeBuf, &mScript, aBytecodeIndex);
   // These errors are external parameters which should be handled before the
   // decoding phase, and which are the only reasons why you might want to
   // fallback on decoding failures.

@@ -394,7 +394,7 @@ bool nsFrameMessageManager::GetParamsForMessage(JSContext* aCx,
     error->Init(
         u"Sending message that cannot be cloned. Are "
         "you trying to send an XPCOM object?"_ns,
-        filename, EmptyString(), lineno, column, nsIScriptError::warningFlag,
+        filename, u""_ns, lineno, column, nsIScriptError::warningFlag,
         "chrome javascript", false /* from private window */,
         true /* from chrome context */);
     console->LogMessage(error);
@@ -752,9 +752,8 @@ void nsFrameMessageManager::ReceiveMessage(
           if (console) {
             nsCOMPtr<nsIScriptError> error(
                 do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
-            error->Init(msg, EmptyString(), EmptyString(), 0, 0,
-                        nsIScriptError::warningFlag, "chrome javascript",
-                        false /* from private window */,
+            error->Init(msg, u""_ns, u""_ns, 0, 0, nsIScriptError::warningFlag,
+                        "chrome javascript", false /* from private window */,
                         true /* from chrome context */);
             console->LogMessage(error);
           }
@@ -998,11 +997,11 @@ void MessageManagerReporter::CountReferents(
 static void ReportReferentCount(
     const char* aManagerType, const MessageManagerReferentCount& aReferentCount,
     nsIHandleReportCallback* aHandleReport, nsISupports* aData) {
-#define REPORT(_path, _amount, _desc)                           \
-  do {                                                          \
-    aHandleReport->Callback(                                    \
-        EmptyCString(), _path, nsIMemoryReporter::KIND_OTHER,   \
-        nsIMemoryReporter::UNITS_COUNT, _amount, _desc, aData); \
+#define REPORT(_path, _amount, _desc)                                       \
+  do {                                                                      \
+    aHandleReport->Callback(""_ns, _path, nsIMemoryReporter::KIND_OTHER,    \
+                            nsIMemoryReporter::UNITS_COUNT, _amount, _desc, \
+                            aData);                                         \
   } while (0)
 
   REPORT(nsPrintfCString("message-manager/referent/%s/strong", aManagerType),
@@ -1197,16 +1196,22 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
     return;
   }
   JSContext* cx = jsapi.cx();
-  JS::Rooted<JSScript*> script(cx);
 
-  script = ScriptPreloader::GetChildSingleton().GetCachedScript(cx, url);
+  JS::CompileOptions options(cx);
+  ScriptPreloader::FillCompileOptionsForCachedScript(options);
+  options.setFileAndLine(url.get(), 1);
+  options.setNonSyntacticScope(true);
+
+  JS::Rooted<JSScript*> script(cx);
+  script =
+      ScriptPreloader::GetChildSingleton().GetCachedScript(cx, options, url);
 
   if (!script) {
     nsCOMPtr<nsIChannel> channel;
     NS_NewChannel(getter_AddRefs(channel), uri,
                   nsContentUtils::GetSystemPrincipal(),
                   nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-                  nsIContentPolicy::TYPE_OTHER);
+                  nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT);
 
     if (!channel) {
       return;
@@ -1227,7 +1232,7 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
 
       uint32_t size = (uint32_t)std::min(written, (uint64_t)UINT32_MAX);
       ScriptLoader::ConvertToUTF16(channel, (uint8_t*)buffer.get(), size,
-                                   EmptyString(), nullptr, dataStringBuf,
+                                   u""_ns, nullptr, dataStringBuf,
                                    dataStringLength);
     }
 
@@ -1242,11 +1247,7 @@ void nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
       return;
     }
 
-    JS::CompileOptions options(cx);
-    options.setFileAndLine(url.get(), 1);
-    options.setNoScriptRval(true);
-
-    script = JS::CompileForNonSyntacticScope(cx, options, srcBuf);
+    script = JS::Compile(cx, options, srcBuf);
     if (!script) {
       return;
     }

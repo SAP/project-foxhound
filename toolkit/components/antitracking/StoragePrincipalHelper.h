@@ -7,7 +7,8 @@
 #ifndef mozilla_StoragePrincipalHelper_h
 #define mozilla_StoragePrincipalHelper_h
 
-#include "nsError.h"
+#include <cstdint>
+#include "ErrorList.h"
 
 /**
  * StoragePrincipal
@@ -200,8 +201,10 @@
  */
 
 class nsIChannel;
+class nsICookieJarSettings;
 class nsILoadGroup;
 class nsIPrincipal;
+class nsIURI;
 
 namespace mozilla {
 
@@ -268,6 +271,10 @@ class StoragePrincipalHelper final {
                                                  OriginAttributes& aAttributes);
   static void UpdateOriginAttributesForNetworkState(
       nsIURI* aFirstPartyURI, OriginAttributes& aAttributes);
+
+  // For HSTS we want to force 'HTTP' in the partition key.
+  static bool GetOriginAttributesForHSTS(nsIChannel* aChannel,
+                                         OriginAttributes& aAttributes);
 };
 
 }  // namespace mozilla

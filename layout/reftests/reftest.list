@@ -11,9 +11,6 @@ include reftest-sanity/reftest.list
 # images (if ImageLib is busted, could result in weird failures in other tests)
 include ../../image/test/reftest/reftest.list
 
-# CSSWG tests
-include w3c-css/submitted/reftest.list
-
 # relative and absolute positioning
 include abs-pos/reftest.list
 include position-relative/reftest.list
@@ -158,6 +155,9 @@ include cssom/reftest.list
 
 # columns/
 include columns/reftest.list
+
+# conditional/
+include conditional/reftest.list
 
 # content/
 include ../../dom/tests/reftest/reftest.list
@@ -457,3 +457,4 @@ include display-list/reftest.list
 
 # Media
 include ../../dom/media/test/reftest/reftest.list
+include ../../dom/media/webvtt/test/reftest/reftest.list

@@ -33,10 +33,9 @@
 #include "nsIGlobalObject.h"
 #include "nsMixedContentBlocker.h"
 #include "nsURLParsers.h"
+#include "js/Object.h"  // JS::GetClass
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::ErrorResult;
 using mozilla::Unused;
@@ -242,7 +241,7 @@ already_AddRefed<CacheStorage> CacheStorage::CreateOnWorker(
 // static
 bool CacheStorage::DefineCaches(JSContext* aCx, JS::Handle<JSObject*> aGlobal) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_DIAGNOSTIC_ASSERT(js::GetObjectClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
+  MOZ_DIAGNOSTIC_ASSERT(JS::GetClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
                         "Passed object is not a global object!");
   js::AssertSameCompartment(aCx, aGlobal);
 
@@ -313,7 +312,7 @@ CacheStorage::CacheStorage(nsresult aFailureResult)
 
 already_AddRefed<Promise> CacheStorage::Match(
     JSContext* aCx, const RequestOrUSVString& aRequest,
-    const CacheQueryOptions& aOptions, ErrorResult& aRv) {
+    const MultiCacheQueryOptions& aOptions, ErrorResult& aRv) {
   NS_ASSERT_OWNINGTHREAD(CacheStorage);
 
   if (!HasStorageAccess()) {
@@ -590,6 +589,4 @@ bool CacheStorage::HasStorageAccess() const {
   return access > StorageAccess::ePrivateBrowsing;
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

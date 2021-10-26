@@ -7,9 +7,9 @@
 #ifndef mozilla_layers_APZInputBridge_h
 #define mozilla_layers_APZInputBridge_h
 
-#include "mozilla/EventForwards.h"    // for WidgetInputEvent, nsEventStatus
-#include "mozilla/layers/APZUtils.h"  // for APZWheelAction
-#include "Units.h"                    // for LayoutDeviceIntPoint
+#include "mozilla/EventForwards.h"  // for WidgetInputEvent, nsEventStatus
+#include "mozilla/layers/APZPublicUtils.h"  // for APZWheelAction
+#include "Units.h"                          // for LayoutDeviceIntPoint
 
 namespace mozilla {
 
@@ -19,6 +19,18 @@ namespace layers {
 
 class APZInputBridgeParent;
 struct ScrollableLayerGuid;
+
+enum class APZHandledResult : uint8_t {
+  Unhandled = 0,         // we know for sure that the event will not be handled
+                         // by either the root APZC or others
+  HandledByRoot = 1,     // we know for sure that the event will be handled
+                         // by the root content APZC
+  HandledByContent = 2,  // we know for sure it will be handled by a non-root
+                         // APZC or by an event listener using preventDefault()
+                         // in a document
+  Invalid = 3,
+  Last = Invalid
+};
 
 /**
  * Represents the outcome of APZ receiving and processing an input event.
@@ -53,30 +65,25 @@ struct APZEventResult {
    */
   nsEventStatus mStatus;
   /**
-   * The guid of the APZC this event was delivered to.
+   * The guid of the APZC initially targeted by this event.
+   * This will usually be the APZC that handles the event, but in cases
+   * where the event is dispatched to content, it may end up being
+   * handled by a different APZC.
    */
   ScrollableLayerGuid mTargetGuid;
   /**
-   * Whether or not mTargetGuid refers to the root content APZC. This gets set
-   * to false in cases where APZ is unsure due to imprecision in hit-testing.
+   * This is:
+   *  - set to HandledByRoot if we know for sure that the event will be handled
+   *    by the root content APZC;
+   *  - set to HandledByContent if we know for sure it will not be;
+   *  - left empty if we are unsure.
    */
-  bool mTargetIsRoot;
+  Maybe<APZHandledResult> mHandledResult;
   /**
    * If this event started or was added to an input block, the id of that
    * input block, otherwise InputBlockState::NO_BLOCK_ID.
    */
   uint64_t mInputBlockId;
-  /**
-   * True if the event is targeting a region with non-passive APZ-aware
-   * listeners, that is, a region where we need to dispatch the event to Gecko
-   * to see if a listener will prevent-default it.
-   * Notes:
-   *   1) This is currently only set for touch events.
-   *   2) For non-WebRender, this will have some false positives; it will
-   *      be set in some cases where we need to dispatch the event to Gecko
-   *      before handling for other reasons than APZ-aware listeners.
-   */
-  bool mHitRegionWithApzAwareListeners;
 };
 
 /**
@@ -149,6 +156,9 @@ class APZInputBridge {
 
   virtual ~APZInputBridge() = default;
 };
+
+std::ostream& operator<<(std::ostream& aOut,
+                         const APZHandledResult& aHandledResult);
 
 }  // namespace layers
 }  // namespace mozilla

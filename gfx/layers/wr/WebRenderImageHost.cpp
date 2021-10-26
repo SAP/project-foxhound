@@ -8,7 +8,6 @@
 
 #include <utility>
 
-#include "LayersLogging.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
 #include "mozilla/layers/Compositor.h"                // for Compositor
@@ -169,8 +168,7 @@ TextureHost* WebRenderImageHost::GetAsTextureHostForComposite(
   SetCurrentTextureHost(img->mTextureHost);
 
   if (mCurrentAsyncImageManager->GetCompositionTime()) {
-    // We are in a composition. Send ImageCompositeNotifications and call
-    // UpdateBias.
+    // We are in a composition. Send ImageCompositeNotifications.
     OnFinishRendering(imageIndex, img, mAsyncRef.mProcessId, mAsyncRef.mHandle);
   }
 
@@ -215,7 +213,7 @@ void WebRenderImageHost::PrintInfo(std::stringstream& aStream,
   for (const auto& img : Images()) {
     aStream << "\n";
     img.mTextureHost->PrintInfo(aStream, pfx.get());
-    AppendToString(aStream, img.mPictureRect, " [picture-rect=", "]");
+    aStream << " [picture-rect=" << img.mPictureRect << "]";
   }
 }
 

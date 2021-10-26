@@ -10,6 +10,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RangeBoundary.h"
+#include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Text.h"
 #include "nsAtom.h"
@@ -19,6 +20,7 @@
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsINode.h"
+#include "nsStyledElement.h"
 
 namespace mozilla {
 
@@ -175,6 +177,10 @@ class EditorDOMPointBase final {
     MOZ_ASSERT(mParent);
     MOZ_ASSERT(mParent->IsElement());
     return mParent->AsElement();
+  }
+
+  nsStyledElement* GetContainerAsStyledElement() const {
+    return nsStyledElement::FromNodeOrNull(mParent);
   }
 
   dom::Text* GetContainerAsText() const {
@@ -341,6 +347,22 @@ class EditorDOMPointBase final {
   MOZ_NEVER_INLINE_DEBUG bool IsCharASCIISpaceOrNBSP() const {
     char16_t ch = Char();
     return nsCRT::IsAsciiSpace(ch) || ch == 0x00A0;
+  }
+
+  MOZ_NEVER_INLINE_DEBUG bool IsCharHighSurrogateFollowedByLowSurrogate()
+      const {
+    MOZ_ASSERT(IsSetAndValid());
+    MOZ_ASSERT(!IsEndOfContainer());
+    return ContainerAsText()
+        ->TextFragment()
+        .IsHighSurrogateFollowedByLowSurrogateAt(mOffset.value());
+  }
+  MOZ_NEVER_INLINE_DEBUG bool IsCharLowSurrogateFollowingHighSurrogate() const {
+    MOZ_ASSERT(IsSetAndValid());
+    MOZ_ASSERT(!IsEndOfContainer());
+    return ContainerAsText()
+        ->TextFragment()
+        .IsLowSurrogateFollowingHighSurrogateAt(mOffset.value());
   }
 
   MOZ_NEVER_INLINE_DEBUG char16_t PreviousChar() const {
@@ -1002,8 +1024,8 @@ template <typename EditorDOMPointType>
 class EditorDOMRangeBase final {
  public:
   EditorDOMRangeBase() = default;
-  template <typename PointType>
-  explicit EditorDOMRangeBase(const PointType& aStart)
+  template <typename PT, typename CT>
+  explicit EditorDOMRangeBase(const EditorDOMPointBase<PT, CT>& aStart)
       : mStart(aStart), mEnd(aStart) {
     MOZ_ASSERT(!mStart.IsSet() || mStart.IsSetAndValid());
   }
@@ -1011,6 +1033,13 @@ class EditorDOMRangeBase final {
   explicit EditorDOMRangeBase(const StartPointType& aStart,
                               const EndPointType& aEnd)
       : mStart(aStart), mEnd(aEnd) {
+    MOZ_ASSERT_IF(mStart.IsSet(), mStart.IsSetAndValid());
+    MOZ_ASSERT_IF(mEnd.IsSet(), mEnd.IsSetAndValid());
+    MOZ_ASSERT_IF(mStart.IsSet() && mEnd.IsSet(),
+                  mStart.EqualsOrIsBefore(mEnd));
+  }
+  explicit EditorDOMRangeBase(const dom::AbstractRange& aRange)
+      : mStart(aRange.StartRef()), mEnd(aRange.EndRef()) {
     MOZ_ASSERT_IF(mStart.IsSet(), mStart.IsSetAndValid());
     MOZ_ASSERT_IF(mEnd.IsSet(), mEnd.IsSetAndValid());
     MOZ_ASSERT_IF(mStart.IsSet() && mEnd.IsSet(),
@@ -1047,9 +1076,10 @@ class EditorDOMRangeBase final {
            mStart.EqualsOrIsBefore(mEnd);
   }
   template <typename OtherPointType>
-  bool Contains(const OtherPointType& aPoint) const {
-    return IsPositioned() && mStart.EqualsOrIsBefore(aPoint) &&
-           mEnd.IsBefore(aPoint);
+  MOZ_NEVER_INLINE_DEBUG bool Contains(const OtherPointType& aPoint) const {
+    MOZ_ASSERT(aPoint.IsSetAndValid());
+    return IsPositioned() && aPoint.IsSet() &&
+           mStart.EqualsOrIsBefore(aPoint) && aPoint.IsBefore(mEnd);
   }
   bool InSameContainer() const {
     MOZ_ASSERT(IsPositioned());
@@ -1065,11 +1095,12 @@ class EditorDOMRangeBase final {
   }
   template <typename OtherRangeType>
   bool operator==(const OtherRangeType& aOther) const {
-    return mStart == aOther.mStart && mEnd == aOther.mEnd;
+    return (!IsPositioned() && !aOther.IsPositioned()) ||
+           (mStart == aOther.mStart && mEnd == aOther.mEnd);
   }
   template <typename OtherRangeType>
   bool operator!=(const OtherRangeType& aOther) const {
-    return *this == aOther;
+    return !(*this == aOther);
   }
 
   EditorDOMRangeInTexts GetAsInTexts() const {

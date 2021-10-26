@@ -6,6 +6,8 @@
 #include "RDDParent.h"
 
 #if defined(XP_WIN)
+#  include "mozilla/gfx/DeviceManagerDx.h"
+#  include "WMF.h"
 #  include <process.h>
 #  include <dwrite.h>
 #  include "mozilla/WinDllServices.h"
@@ -22,6 +24,7 @@
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "gfxConfig.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
@@ -53,7 +56,10 @@ RDDParent::RDDParent() : mLaunchTime(TimeStamp::Now()) { sRDDParent = this; }
 RDDParent::~RDDParent() { sRDDParent = nullptr; }
 
 /* static */
-RDDParent* RDDParent::GetSingleton() { return sRDDParent; }
+RDDParent* RDDParent::GetSingleton() {
+  MOZ_DIAGNOSTIC_ASSERT(sRDDParent);
+  return sRDDParent;
+}
 
 bool RDDParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
                      MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel) {
@@ -87,7 +93,12 @@ bool RDDParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
     return false;
   }
 
+  gfxConfig::Init();
   gfxVars::Initialize();
+#ifdef XP_WIN
+  DeviceManagerDx::Init();
+  wmf::MFStartup();
+#endif
 
   mozilla::ipc::SetThisProcessName("RDD Process");
 
@@ -154,17 +165,40 @@ mozilla::ipc::IPCResult RDDParent::RecvNewContentRemoteDecoderManager(
 }
 
 mozilla::ipc::IPCResult RDDParent::RecvInitVideoBridge(
-    Endpoint<PVideoBridgeChild>&& aEndpoint) {
+    Endpoint<PVideoBridgeChild>&& aEndpoint,
+    const ContentDeviceData& aContentDeviceData) {
   if (!RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
           std::move(aEndpoint))) {
     return IPC_FAIL_NO_REASON(this);
   }
+
+  gfxConfig::Inherit(
+      {
+          Feature::HW_COMPOSITING,
+          Feature::D3D11_COMPOSITING,
+          Feature::OPENGL_COMPOSITING,
+          Feature::ADVANCED_LAYERS,
+          Feature::DIRECT2D,
+          Feature::WEBGPU,
+      },
+      aContentDeviceData.prefs());
+#ifdef XP_WIN
+  if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
+    auto* devmgr = DeviceManagerDx::Get();
+    if (devmgr) {
+      devmgr->ImportDeviceInfo(aContentDeviceData.d3d11());
+      devmgr->CreateContentDevices();
+    }
+  }
+#endif
+
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult RDDParent::RecvRequestMemoryReport(
     const uint32_t& aGeneration, const bool& aAnonymize,
-    const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile) {
+    const bool& aMinimizeMemoryUsage, const Maybe<FileDescriptor>& aDMDFile,
+    const RequestMemoryReportResolver& aResolver) {
   nsPrintfCString processName("RDD (pid %u)", (unsigned)getpid());
 
   mozilla::dom::MemoryReportRequestClient::Start(
@@ -172,9 +206,7 @@ mozilla::ipc::IPCResult RDDParent::RecvRequestMemoryReport(
       [&](const MemoryReport& aReport) {
         Unused << GetSingleton()->SendAddMemoryReport(aReport);
       },
-      [&](const uint32_t& aGeneration) {
-        return GetSingleton()->SendFinishMemoryReport(aGeneration);
-      });
+      aResolver);
   return IPC_OK();
 }
 
@@ -206,28 +238,44 @@ void RDDParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 
 #ifndef NS_FREE_PERMANENT_DATA
+#  ifdef XP_WIN
+  wmf::MFShutdown();
+#  endif
   // No point in going through XPCOM shutdown because we don't keep persistent
   // state.
   ProcessChild::QuickExit();
 #endif
 
+  // Wait until all RemoteDecoderManagerParent have closed.
+  mShutdownBlockers.WaitUntilClear(10 * 1000 /* 10s timeout*/)
+      ->Then(GetCurrentSerialEventTarget(), __func__, [this]() {
+
+#ifdef XP_WIN
+        wmf::MFShutdown();
+#endif
+
 #if defined(XP_WIN)
-  RefPtr<DllServices> dllSvc(DllServices::Get());
-  dllSvc->DisableFull();
+        RefPtr<DllServices> dllSvc(DllServices::Get());
+        dllSvc->DisableFull();
 #endif  // defined(XP_WIN)
 
 #ifdef MOZ_GECKO_PROFILER
-  if (mProfilerController) {
-    mProfilerController->Shutdown();
-    mProfilerController = nullptr;
-  }
+        if (mProfilerController) {
+          mProfilerController->Shutdown();
+          mProfilerController = nullptr;
+        }
 #endif
 
-  RemoteDecoderManagerParent::ShutdownVideoBridge();
+        RemoteDecoderManagerParent::ShutdownVideoBridge();
 
-  gfxVars::Shutdown();
-  CrashReporterClient::DestroySingleton();
-  XRE_ShutdownChildProcess();
+#ifdef XP_WIN
+        DeviceManagerDx::Shutdown();
+#endif
+        gfxVars::Shutdown();
+        gfxConfig::Shutdown();
+        CrashReporterClient::DestroySingleton();
+        XRE_ShutdownChildProcess();
+      });
 }
 
 }  // namespace mozilla

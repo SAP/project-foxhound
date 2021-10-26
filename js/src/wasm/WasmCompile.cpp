@@ -25,6 +25,8 @@
 
 #include "jit/ProcessExecutableMemory.h"
 #include "util/Text.h"
+#include "vm/HelperThreadState.h"
+#include "vm/Realm.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCraneliftCompile.h"
 #include "wasm/WasmGenerator.h"
@@ -76,6 +78,19 @@ uint32_t wasm::ObservedCPUFeatures() {
 #endif
 }
 
+FeatureArgs FeatureArgs::build(JSContext* cx) {
+  FeatureArgs features;
+  features.sharedMemory =
+      wasm::ThreadsAvailable(cx) ? Shareable::True : Shareable::False;
+  features.refTypes = wasm::ReftypesAvailable(cx);
+  features.functionReferences = wasm::FunctionReferencesAvailable(cx);
+  features.gcTypes = wasm::GcTypesAvailable(cx);
+  features.multiValue = wasm::MultiValuesAvailable(cx);
+  features.v128 = wasm::SimdAvailable(cx);
+  features.hugeMemory = wasm::IsHugeMemoryEnabled();
+  return features;
+}
+
 SharedCompileArgs CompileArgs::build(JSContext* cx,
                                      ScriptedCaller&& scriptedCaller) {
   bool baseline = BaselineAvailable(cx);
@@ -89,13 +104,18 @@ SharedCompileArgs CompileArgs::build(JSContext* cx,
   // additional memory and permanently stay in baseline code, so we try to
   // only enable it when a developer actually cares: when the debugger tab
   // is open.
-  bool debug = cx->realm()->debuggerObservesAsmJS();
+  bool debug = cx->realm() && cx->realm()->debuggerObservesAsmJS();
 
   bool forceTiering =
       cx->options().testWasmAwaitTier2() || JitOptions.wasmDelayTier2;
 
-  // The <Compiler>Available() predicates should ensure this.
-  MOZ_RELEASE_ASSERT(!(debug && (ion || cranelift)));
+  // The <Compiler>Available() predicates should ensure no failure here, but
+  // when we're fuzzing we allow inconsistent switches and the check may thus
+  // fail.  Let it go to a run-time error instead of crashing.
+  if (debug && (ion || cranelift)) {
+    JS_ReportErrorASCII(cx, "no WebAssembly compiler available");
+    return nullptr;
+  }
 
   if (forceTiering && !(baseline && (cranelift || ion))) {
     // This can happen only in testing, and in this case we don't have a
@@ -118,14 +138,8 @@ SharedCompileArgs CompileArgs::build(JSContext* cx,
   target->ionEnabled = ion;
   target->craneliftEnabled = cranelift;
   target->debugEnabled = debug;
-  target->sharedMemoryEnabled =
-      cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled();
   target->forceTiering = forceTiering;
-  target->reftypesEnabled = wasm::ReftypesAvailable(cx);
-  target->gcEnabled = wasm::GcTypesAvailable(cx);
-  target->hugeMemory = wasm::IsHugeMemoryEnabled();
-  target->multiValuesEnabled = wasm::MultiValuesAvailable(cx);
-  target->v128Enabled = wasm::SimdAvailable(cx);
+  target->features = FeatureArgs::build(cx);
 
   Log(cx, "available wasm compilers: tier1=%s tier2=%s",
       baseline ? "baseline" : "none",
@@ -423,26 +437,31 @@ CompilerEnvironment::CompilerEnvironment(const CompileArgs& args)
 
 CompilerEnvironment::CompilerEnvironment(CompileMode mode, Tier tier,
                                          OptimizedBackend optimizedBackend,
-                                         DebugEnabled debugEnabled,
-                                         bool multiValueConfigured,
-                                         bool refTypesConfigured,
-                                         bool gcTypesConfigured,
-                                         bool hugeMemory, bool v128Configured)
+                                         DebugEnabled debugEnabled)
     : state_(InitialWithModeTierDebug),
       mode_(mode),
       tier_(tier),
       optimizedBackend_(optimizedBackend),
-      debug_(debugEnabled),
-      refTypes_(refTypesConfigured),
-      gcTypes_(gcTypesConfigured),
-      multiValues_(multiValueConfigured),
-      hugeMemory_(hugeMemory),
-      v128_(v128Configured) {}
+      debug_(debugEnabled) {}
 
 void CompilerEnvironment::computeParameters() {
   MOZ_ASSERT(state_ == InitialWithModeTierDebug);
 
   state_ = Computed;
+}
+
+// Check that this architecture either:
+// - is cache-coherent, which is the case for most tier-1 architectures we care
+// about.
+// - or has the ability to invalidate the instruction cache of all threads, so
+// background compilation in tiered compilation can be synchronized across all
+// threads.
+static bool IsICacheSafe() {
+#ifdef JS_CODEGEN_ARM64
+  return jit::CanFlushICacheFromBackgroundThreads();
+#else
+  return true;
+#endif
 }
 
 void CompilerEnvironment::computeParameters(Decoder& d) {
@@ -453,16 +472,11 @@ void CompilerEnvironment::computeParameters(Decoder& d) {
     return;
   }
 
-  bool reftypesEnabled = args_->reftypesEnabled;
-  bool gcEnabled = args_->gcEnabled;
   bool baselineEnabled = args_->baselineEnabled;
   bool ionEnabled = args_->ionEnabled;
   bool debugEnabled = args_->debugEnabled;
   bool craneliftEnabled = args_->craneliftEnabled;
   bool forceTiering = args_->forceTiering;
-  bool hugeMemory = args_->hugeMemory;
-  bool multiValuesEnabled = args_->multiValuesEnabled;
-  bool v128Enabled = args_->v128Enabled;
 
   bool hasSecondTier = ionEnabled || craneliftEnabled;
   MOZ_ASSERT_IF(debugEnabled, baselineEnabled);
@@ -480,7 +494,7 @@ void CompilerEnvironment::computeParameters(Decoder& d) {
   }
 
   if (baselineEnabled && hasSecondTier && CanUseExtraThreads() &&
-      (TieringBeneficial(codeSectionSize) || forceTiering)) {
+      (TieringBeneficial(codeSectionSize) || forceTiering) && IsICacheSafe()) {
     mode_ = CompileMode::Tier1;
     tier_ = Tier::Baseline;
   } else {
@@ -492,12 +506,6 @@ void CompilerEnvironment::computeParameters(Decoder& d) {
       craneliftEnabled ? OptimizedBackend::Cranelift : OptimizedBackend::Ion;
 
   debug_ = debugEnabled ? DebugEnabled::True : DebugEnabled::False;
-  refTypes_ = reftypesEnabled;
-  gcTypes_ = gcEnabled;
-  multiValues_ = multiValuesEnabled;
-  hugeMemory_ = hugeMemory;
-  multiValues_ = multiValuesEnabled;
-  v128_ = v128Enabled;
 
   state_ = Computed;
 }
@@ -565,27 +573,27 @@ SharedModule wasm::CompileBuffer(const CompileArgs& args,
                                  const ShareableBytes& bytecode,
                                  UniqueChars* error,
                                  UniqueCharsVector* warnings,
-                                 JS::OptimizedEncodingListener* listener) {
+                                 JS::OptimizedEncodingListener* listener,
+                                 JSTelemetrySender telemetrySender) {
   Decoder d(bytecode.bytes, 0, error, warnings);
 
+  ModuleEnvironment moduleEnv(args.features);
+  if (!DecodeModuleEnvironment(d, &moduleEnv)) {
+    return nullptr;
+  }
   CompilerEnvironment compilerEnv(args);
-  ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
-                                          ? Shareable::True
-                                          : Shareable::False);
-  if (!DecodeModuleEnvironment(d, &env)) {
+  compilerEnv.computeParameters(d);
+
+  ModuleGenerator mg(args, &moduleEnv, &compilerEnv, nullptr, error);
+  if (!mg.init(nullptr, telemetrySender)) {
     return nullptr;
   }
 
-  ModuleGenerator mg(args, &env, nullptr, error);
-  if (!mg.init()) {
+  if (!DecodeCodeSection(moduleEnv, d, mg)) {
     return nullptr;
   }
 
-  if (!DecodeCodeSection(env, d, mg)) {
-    return nullptr;
-  }
-
-  if (!DecodeModuleTail(d, &env)) {
+  if (!DecodeModuleTail(d, &moduleEnv)) {
     return nullptr;
   }
 
@@ -593,45 +601,33 @@ SharedModule wasm::CompileBuffer(const CompileArgs& args,
 }
 
 void wasm::CompileTier2(const CompileArgs& args, const Bytes& bytecode,
-                        const Module& module, Atomic<bool>* cancelled) {
+                        const Module& module, Atomic<bool>* cancelled,
+                        JSTelemetrySender telemetrySender) {
   UniqueChars error;
   Decoder d(bytecode, 0, &error);
-
-  bool gcTypesConfigured = false;  // No optimized backend support yet
-#ifdef ENABLE_WASM_REFTYPES
-  bool refTypesConfigured = true;
-#else
-  bool refTypesConfigured = false;
-#endif
-  bool multiValueConfigured = args.multiValuesEnabled;
-  bool v128Configured = args.v128Enabled;
 
   OptimizedBackend optimizedBackend = args.craneliftEnabled
                                           ? OptimizedBackend::Cranelift
                                           : OptimizedBackend::Ion;
 
-  CompilerEnvironment compilerEnv(
-      CompileMode::Tier2, Tier::Optimized, optimizedBackend,
-      DebugEnabled::False, multiValueConfigured, refTypesConfigured,
-      gcTypesConfigured, args.hugeMemory, v128Configured);
+  ModuleEnvironment moduleEnv(args.features);
+  if (!DecodeModuleEnvironment(d, &moduleEnv)) {
+    return;
+  }
+  CompilerEnvironment compilerEnv(CompileMode::Tier2, Tier::Optimized,
+                                  optimizedBackend, DebugEnabled::False);
+  compilerEnv.computeParameters(d);
 
-  ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
-                                          ? Shareable::True
-                                          : Shareable::False);
-  if (!DecodeModuleEnvironment(d, &env)) {
+  ModuleGenerator mg(args, &moduleEnv, &compilerEnv, cancelled, &error);
+  if (!mg.init(nullptr, telemetrySender)) {
     return;
   }
 
-  ModuleGenerator mg(args, &env, cancelled, &error);
-  if (!mg.init()) {
+  if (!DecodeCodeSection(moduleEnv, d, mg)) {
     return;
   }
 
-  if (!DecodeCodeSection(env, d, mg)) {
-    return;
-  }
-
-  if (!DecodeModuleTail(d, &env)) {
+  if (!DecodeModuleTail(d, &moduleEnv)) {
     return;
   }
 
@@ -723,38 +719,37 @@ SharedModule wasm::CompileStreaming(
     const ExclusiveBytesPtr& codeBytesEnd,
     const ExclusiveStreamEndData& exclusiveStreamEnd,
     const Atomic<bool>& cancelled, UniqueChars* error,
-    UniqueCharsVector* warnings) {
+    UniqueCharsVector* warnings, JSTelemetrySender telemetrySender) {
   CompilerEnvironment compilerEnv(args);
-  ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
-                                          ? Shareable::True
-                                          : Shareable::False);
+  ModuleEnvironment moduleEnv(args.features);
 
   {
     Decoder d(envBytes, 0, error, warnings);
 
-    if (!DecodeModuleEnvironment(d, &env)) {
+    if (!DecodeModuleEnvironment(d, &moduleEnv)) {
       return nullptr;
     }
+    compilerEnv.computeParameters(d);
 
-    if (!env.codeSection) {
+    if (!moduleEnv.codeSection) {
       d.fail("unknown section before code section");
       return nullptr;
     }
 
-    MOZ_RELEASE_ASSERT(env.codeSection->size == codeBytes.length());
+    MOZ_RELEASE_ASSERT(moduleEnv.codeSection->size == codeBytes.length());
     MOZ_RELEASE_ASSERT(d.done());
   }
 
-  ModuleGenerator mg(args, &env, &cancelled, error);
-  if (!mg.init()) {
+  ModuleGenerator mg(args, &moduleEnv, &compilerEnv, &cancelled, error);
+  if (!mg.init(nullptr, telemetrySender)) {
     return nullptr;
   }
 
   {
-    StreamingDecoder d(env, codeBytes, codeBytesEnd, cancelled, error,
+    StreamingDecoder d(moduleEnv, codeBytes, codeBytesEnd, cancelled, error,
                        warnings);
 
-    if (!DecodeCodeSection(env, d, mg)) {
+    if (!DecodeCodeSection(moduleEnv, d, mg)) {
       return nullptr;
     }
 
@@ -775,9 +770,9 @@ SharedModule wasm::CompileStreaming(
   const Bytes& tailBytes = *streamEnd.tailBytes;
 
   {
-    Decoder d(tailBytes, env.codeSection->end(), error, warnings);
+    Decoder d(tailBytes, moduleEnv.codeSection->end(), error, warnings);
 
-    if (!DecodeModuleTail(d, &env)) {
+    if (!DecodeModuleTail(d, &moduleEnv)) {
       return nullptr;
     }
 

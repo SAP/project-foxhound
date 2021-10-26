@@ -148,6 +148,7 @@ enum class CRLiteLookupResult {
   CertificateValid = 4,
   CertificateRevoked = 5,
   LibraryFailure = 6,
+  CertRevokedByStash = 7,
 };
 
 class CRLiteTelemetryInfo {
@@ -264,6 +265,7 @@ class CertVerifier {
                NetscapeStepUpPolicy netscapeStepUpPolicy,
                CertificateTransparencyMode ctMode,
                DistrustedCAPolicy distrustedCAPolicy, CRLiteMode crliteMode,
+               uint64_t crliteCTMergeDelaySeconds,
                const Vector<EnterpriseCert>& thirdPartyCerts);
   ~CertVerifier();
 
@@ -281,6 +283,7 @@ class CertVerifier {
   const CertificateTransparencyMode mCTMode;
   const DistrustedCAPolicy mDistrustedCAPolicy;
   const CRLiteMode mCRLiteMode;
+  const uint64_t mCRLiteCTMergeDelaySeconds;
 
  private:
   OCSPCache mOCSPCache;

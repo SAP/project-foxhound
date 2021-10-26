@@ -34,7 +34,7 @@ interface Element : Node {
   readonly attribute DOMTokenList classList;
 
   // https://drafts.csswg.org/css-shadow-parts/#idl
-  [SameObject, PutForwards=value, Pref="layout.css.shadow-parts.enabled"]
+  [SameObject, PutForwards=value]
   readonly attribute DOMTokenList part;
 
   [SameObject]
@@ -133,12 +133,14 @@ interface Element : Node {
    * element.
    *
    */
+  [UseCounter]
   void setCapture(optional boolean retargetToElement = false);
 
   /**
    * If this element has captured the mouse, release the capture. If another
    * element has captured the mouse, this method has no effect.
    */
+  [UseCounter]
   void releaseCapture();
 
   /*
@@ -351,6 +353,13 @@ partial interface Element {
   void setAttributeDevtools(DOMString name, DOMString value);
   [ChromeOnly, CEReactions, Throws]
   void setAttributeDevtoolsNS(DOMString? namespace, DOMString name, DOMString value);
+
+  /**
+   * Provide a direct way to determine if this Element has visible
+   * scrollbars. Flushes layout.
+   */
+  [ChromeOnly]
+  readonly attribute boolean hasVisibleScrollbars;
 };
 
 // These variables are used in vtt.js, they are used for positioning vtt cues.

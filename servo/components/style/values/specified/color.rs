@@ -107,6 +107,18 @@ pub enum SystemColor {
     IMESelectedConvertedTextUnderline,
     #[css(skip)]
     SpellCheckerUnderline,
+    #[css(skip)]
+    ThemedScrollbar,
+    #[css(skip)]
+    ThemedScrollbarInactive,
+    #[css(skip)]
+    ThemedScrollbarThumb,
+    #[css(skip)]
+    ThemedScrollbarThumbHover,
+    #[css(skip)]
+    ThemedScrollbarThumbActive,
+    #[css(skip)]
+    ThemedScrollbarThumbInactive,
     Activeborder,
     Activecaption,
     Appworkspace,
@@ -528,15 +540,6 @@ impl Color {
         debug_assert_eq!(written, 6);
         parse_hash_color(&serialization)
             .map_err(|()| location.new_custom_error(StyleParseErrorKind::UnspecifiedError))
-    }
-
-    /// Returns true if the color is completely transparent, and false
-    /// otherwise.
-    pub fn is_transparent(&self) -> bool {
-        match *self {
-            Color::Numeric { ref parsed, .. } => parsed.alpha == 0,
-            _ => false,
-        }
     }
 }
 

@@ -141,7 +141,7 @@ const CFR_MESSAGES = [
         id: "954390",
         title: "Facebook Container",
         icon:
-          "resource://activity-stream/data/content/assets/cfr_fb_container.png",
+          "chrome://activity-stream/content/data/content/assets/cfr_fb_container.png",
         rating: 4.6,
         users: 299019,
         author: "Mozilla",
@@ -212,7 +212,7 @@ const CFR_MESSAGES = [
         id: "445852",
         title: "To Google Translate",
         icon:
-          "resource://activity-stream/data/content/assets/cfr_google_translate.png",
+          "chrome://activity-stream/content/data/content/assets/cfr_google_translate.png",
         rating: 4.1,
         users: 313474,
         author: "Juan Escobar",
@@ -284,7 +284,7 @@ const CFR_MESSAGES = [
         id: "700308",
         title: "Enhancer for YouTube\u2122",
         icon:
-          "resource://activity-stream/data/content/assets/cfr_enhancer_youtube.png",
+          "chrome://activity-stream/content/data/content/assets/cfr_enhancer_youtube.png",
         rating: 4.8,
         users: 357328,
         author: "Maxime RF",
@@ -357,7 +357,7 @@ const CFR_MESSAGES = [
         id: "659026",
         title: "Wikipedia Context Menu Search",
         icon:
-          "resource://activity-stream/data/content/assets/cfr_wiki_search.png",
+          "chrome://activity-stream/content/data/content/assets/cfr_wiki_search.png",
         rating: 4.9,
         users: 3095,
         author: "Nick Diedrich",
@@ -433,7 +433,7 @@ const CFR_MESSAGES = [
         id: "387429",
         title: "Reddit Enhancement Suite",
         icon:
-          "resource://activity-stream/data/content/assets/cfr_reddit_enhancement.png",
+          "chrome://activity-stream/content/data/content/assets/cfr_reddit_enhancement.png",
         rating: 4.6,
         users: 258129,
         author: "honestbleeps",
@@ -963,11 +963,92 @@ const CFR_MESSAGES = [
       patterns: ["*://*/*"],
     },
   },
+  {
+    id: "HOMEPAGE_REMEDIATION_82",
+    frequency: {
+      lifetime: 3,
+    },
+    targeting:
+      "!homePageSettings.isDefault && homePageSettings.isCustomUrl && homePageSettings.urls[.host == 'google.com']|length > 0 && visitsCount >= 3 && userPrefs.cfrFeatures",
+    template: "cfr_doorhanger",
+    content: {
+      layout: "icon_and_message",
+      text:
+        "Update your homepage to search Google while also being able to search your Firefox history and bookmarks.",
+      icon: "chrome://browser/skin/preferences/search.svg",
+      buttons: {
+        secondary: [
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-cancel-button",
+            },
+            action: {
+              type: "CANCEL",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-never-show-recommendation",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-manage-settings-button",
+            },
+            action: {
+              type: "OPEN_PREFERENCES_PAGE",
+              data: {
+                category: "general-cfrfeatures",
+              },
+            },
+          },
+        ],
+        primary: {
+          label: {
+            value: "Activate now",
+            attributes: {
+              accesskey: "A",
+            },
+          },
+          action: {
+            type: "CONFIGURE_HOMEPAGE",
+            data: {
+              homePage: "default",
+              newtab: "default",
+              layout: {
+                search: true,
+                topsites: false,
+                highlights: false,
+                topstories: false,
+                snippets: false,
+              },
+            },
+          },
+        },
+      },
+      bucket_id: "HOMEPAGE_REMEDIATION_82",
+      heading_text: "A better search experience",
+      info_icon: {
+        label: {
+          string_id: "cfr-doorhanger-extension-sumo-link",
+        },
+        sumo_path: "extensionrecommendations",
+      },
+      notification_text: {
+        string_id: "cfr-doorhanger-feature-notification",
+      },
+      category: "cfrFeatures",
+    },
+    trigger: {
+      id: "openURL",
+      params: ["google.com", "www.google.com"],
+    },
+  },
 ];
 
 const CFRMessageProvider = {
   getMessages() {
-    return CFR_MESSAGES.filter(msg => !msg.exclude);
+    return Promise.resolve(CFR_MESSAGES.filter(msg => !msg.exclude));
   },
 };
 this.CFRMessageProvider = CFRMessageProvider;

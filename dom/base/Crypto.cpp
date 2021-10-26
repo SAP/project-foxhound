@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "Crypto.h"
 #include "jsfriendapi.h"
+#include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType
 #include "nsCOMPtr.h"
 #include "nsIRandomGenerator.h"
 #include "MainThreadUtils.h"
@@ -16,8 +17,7 @@
 
 using mozilla::dom::ContentChild;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Crypto)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -99,5 +99,4 @@ SubtleCrypto* Crypto::Subtle() {
   return mSubtle;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

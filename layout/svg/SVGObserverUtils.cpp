@@ -77,7 +77,7 @@ class URLAndReferrerInfoHashKey : public PLDHashEntryHdr {
   static PLDHashNumber HashKey(const URLAndReferrerInfo* aKey) {
     if (!aKey) {
       // If the key is null, return hash for empty string.
-      return HashString(EmptyCString());
+      return HashString(""_ns);
     }
     nsAutoCString urlSpec, referrerSpec;
     // nsURIHashKey ignores GetSpec() failures, so we do too:
@@ -1116,8 +1116,8 @@ void SVGRenderingObserver::DebugObserverSet() {
 }
 #endif
 
-typedef nsInterfaceHashtable<URLAndReferrerInfoHashKey, nsIMutationObserver>
-    URIObserverHashtable;
+using URIObserverHashtable =
+    nsInterfaceHashtable<URLAndReferrerInfoHashKey, nsIMutationObserver>;
 
 using PaintingPropertyDescriptor =
     const FramePropertyDescriptor<SVGPaintingProperty>*;

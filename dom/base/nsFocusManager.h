@@ -16,6 +16,7 @@
 #include "nsWeakReference.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPtr.h"
 
 #define FOCUSMETHOD_MASK 0xF000
 #define FOCUSMETHODANDRING_MASK 0xF0F000
@@ -208,6 +209,12 @@ class nsFocusManager final : public nsIFocusManager,
                                        nsIContent** aNextContent);
 
   /**
+   * Setter for focusedWindow with CallerType
+   */
+  nsresult SetFocusedWindowWithCallerType(mozIDOMWindowProxy* aWindowToFocus,
+                                          mozilla::dom::CallerType aCallerType);
+
+  /**
    * Given an element, which must be the focused element, activate the remote
    * frame it embeds, if any.
    */
@@ -218,6 +225,48 @@ class nsFocusManager final : public nsIFocusManager,
    */
   void RaiseWindow(nsPIDOMWindowOuter* aWindow,
                    mozilla::dom::CallerType aCallerType);
+
+  /**
+   * Called when a window has been raised.
+   */
+  void WindowRaised(mozIDOMWindowProxy* aWindow);
+
+  /**
+   * Called when a window has been lowered.
+   */
+  void WindowLowered(mozIDOMWindowProxy* aWindow);
+
+  /**
+   * Called when a new document in a window is shown.
+   *
+   * If aNeedsFocus is true, then focus events are expected to be fired on the
+   * window if this window is in the focused window chain.
+   */
+  void WindowShown(mozIDOMWindowProxy* aWindow, bool aNeedsFocus);
+
+  /**
+   * Called when a document in a window has been hidden or otherwise can no
+   * longer accept focus.
+   */
+  void WindowHidden(mozIDOMWindowProxy* aWindow);
+
+  /**
+   * Fire any events that have been delayed due to synchronized actions.
+   */
+  void FireDelayedEvents(Document* aDocument);
+
+  /**
+   * Used in a child process to indicate that the parent window is now
+   * active or deactive.
+   */
+  void ParentActivated(mozIDOMWindowProxy* aWindow, bool aActive);
+
+  /**
+   * Indicate that a plugin wishes to take the focus. This is similar to a
+   * normal focus except that the widget focus is not changed. Updating the
+   * widget focus state is the responsibility of the caller.
+   */
+  nsresult FocusPlugin(mozilla::dom::Element* aPlugin);
 
   static uint32_t FocusOptionsToFocusManagerFlags(
       const mozilla::dom::FocusOptions& aOptions);
@@ -239,9 +288,24 @@ class nsFocusManager final : public nsIFocusManager,
    */
   static InputContextAction::Cause GetFocusMoveActionCause(uint32_t aFlags);
 
+  /**
+   * Notify of re-focus to same content.
+   *
+   * aContent is focused content.
+   */
+  void NotifyOfReFocus(nsIContent& aContent);
+
   static bool sMouseFocusesFormControl;
 
   static void MarkUncollectableForCCGeneration(uint32_t aGeneration);
+
+  struct BlurredElementInfo {
+    const mozilla::OwningNonNull<mozilla::dom::Element> mElement;
+    const bool mHadRing;
+
+    explicit BlurredElementInfo(mozilla::dom::Element&);
+    ~BlurredElementInfo();
+  };
 
  protected:
   nsFocusManager();
@@ -359,7 +423,7 @@ class nsFocusManager final : public nsIFocusManager,
   bool Blur(mozilla::dom::BrowsingContext* aBrowsingContextToClear,
             mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
             bool aIsLeavingDocument, bool aAdjustWidget,
-            nsIContent* aContentToFocus = nullptr);
+            mozilla::dom::Element* aElementToFocus = nullptr);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void BlurFromOtherProcess(
       mozilla::dom::BrowsingContext* aFocusedBrowsingContext,
@@ -370,7 +434,7 @@ class nsFocusManager final : public nsIFocusManager,
   bool BlurImpl(mozilla::dom::BrowsingContext* aBrowsingContextToClear,
                 mozilla::dom::BrowsingContext* aAncestorBrowsingContextToFocus,
                 bool aIsLeavingDocument, bool aAdjustWidget,
-                nsIContent* aContentToFocus);
+                mozilla::dom::Element* aElementToFocus);
 
   /**
    * Focus an element in the active window and child frame.
@@ -403,7 +467,7 @@ class nsFocusManager final : public nsIFocusManager,
              uint32_t aFlags, bool aIsNewDocument, bool aFocusChanged,
              bool aWindowRaised, bool aAdjustWidget,
              bool aFocusInOtherContentProcess,
-             nsIContent* aContentLostFocus = nullptr);
+             const mozilla::Maybe<BlurredElementInfo>& = mozilla::Nothing());
 
   /**
    * Send a focus or blur event at aTarget. It may be added to the delayed
@@ -677,18 +741,17 @@ class nsFocusManager final : public nsIFocusManager,
                            nsIContent** aFocusedContent);
 
  private:
-  // Notify that the focus state of aContent has changed.  Note that
-  // we need to pass in whether the window should show a focus ring
-  // before the SetFocusedNode call on it happened when losing focus
-  // and after the SetFocusedNode call when gaining focus, which is
-  // why that information needs to be an explicit argument instead of
-  // just passing in the window and asking it whether it should show
-  // focus rings: in the losing focus case that information could be
-  // wrong..
-  static void NotifyFocusStateChange(nsIContent* aContent,
-                                     nsIContent* aContentToFocus,
-                                     bool aWindowShouldShowFocusRing,
-                                     int32_t aFlags, bool aGettingFocus);
+  // Notify that the focus state of aElement has changed.  Note that we need to
+  // pass in whether the window should show a focus ring before the
+  // SetFocusedNode call on it happened when losing focus and after the
+  // SetFocusedNode call when gaining focus, which is why that information needs
+  // to be an explicit argument instead of just passing in the window and asking
+  // it whether it should show focus rings: in the losing focus case that
+  // information could be wrong.
+  static void NotifyFocusStateChange(
+      mozilla::dom::Element* aElement, mozilla::dom::Element* aElementToFocus,
+      bool aWindowShouldShowFocusRing, int32_t aFlags, bool aGettingFocus,
+      const mozilla::Maybe<BlurredElementInfo>& = mozilla::Nothing());
 
   void SetFocusedWindowInternal(nsPIDOMWindowOuter* aWindow);
 
@@ -814,8 +877,8 @@ class nsFocusManager final : public nsIFocusManager,
   // these fields store a content node temporarily while it is being focused
   // or blurred to ensure that a recursive call doesn't refire the same event.
   // They will always be cleared afterwards.
-  nsCOMPtr<nsIContent> mFirstBlurEvent;
-  nsCOMPtr<nsIContent> mFirstFocusEvent;
+  RefPtr<mozilla::dom::Element> mFirstBlurEvent;
+  RefPtr<mozilla::dom::Element> mFirstFocusEvent;
 
   // keep track of a window while it is being lowered
   nsCOMPtr<nsPIDOMWindowOuter> mWindowBeingLowered;
@@ -831,7 +894,7 @@ class nsFocusManager final : public nsIFocusManager,
   static bool sTestMode;
 
   // the single focus manager
-  static nsFocusManager* sInstance;
+  static mozilla::StaticRefPtr<nsFocusManager> sInstance;
 };
 
 nsresult NS_NewFocusManager(nsIFocusManager** aResult);

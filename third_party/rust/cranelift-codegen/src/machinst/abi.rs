@@ -1,7 +1,7 @@
 //! ABI definitions.
 
-use crate::binemit::Stackmap;
-use crate::ir::{ArgumentExtension, StackSlot};
+use crate::binemit::StackMap;
+use crate::ir::StackSlot;
 use crate::machinst::*;
 use crate::settings;
 
@@ -9,7 +9,7 @@ use regalloc::{Reg, Set, SpillSlot, Writable};
 
 /// Trait implemented by an object that tracks ABI-related state (e.g., stack
 /// layout) and can generate code while emitting the *body* of a function.
-pub trait ABIBody {
+pub trait ABICallee {
     /// The instruction type for the ISA associated with this ABI.
     type I: VCodeInst;
 
@@ -17,7 +17,7 @@ pub trait ABIBody {
     /// as the `maybe_tmp` arg if so.
     fn temp_needed(&self) -> bool;
 
-    /// Initialize. This is called after the ABIBody is constructed because it
+    /// Initialize. This is called after the ABICallee is constructed because it
     /// may be provided with a temp vreg, which can only be allocated once the
     /// lowering context exists.
     fn init(&mut self, maybe_tmp: Option<Writable<Reg>>);
@@ -44,6 +44,11 @@ pub trait ABIBody {
     /// register.
     fn gen_copy_arg_to_reg(&self, idx: usize, into_reg: Writable<Reg>) -> Self::I;
 
+    /// Is the given argument needed in the body (as opposed to, e.g., serving
+    /// only as a special ABI-specific placeholder)? This controls whether
+    /// lowering will copy it to a virtual reg use by CLIF instructions.
+    fn arg_is_needed_in_body(&self, idx: usize) -> bool;
+
     /// Generate any setup instruction needed to save values to the
     /// return-value area. This is usually used when were are multiple return
     /// values or an otherwise large return value that must be passed on the
@@ -52,12 +57,7 @@ pub trait ABIBody {
     fn gen_retval_area_setup(&self) -> Option<Self::I>;
 
     /// Generate an instruction which copies a source register to a return value slot.
-    fn gen_copy_reg_to_retval(
-        &self,
-        idx: usize,
-        from_reg: Writable<Reg>,
-        ext: ArgumentExtension,
-    ) -> Vec<Self::I>;
+    fn gen_copy_reg_to_retval(&self, idx: usize, from_reg: Writable<Reg>) -> Vec<Self::I>;
 
     /// Generate a return instruction.
     fn gen_ret(&self) -> Self::I;
@@ -101,14 +101,14 @@ pub trait ABIBody {
     /// Store to a spillslot.
     fn store_spillslot(&self, slot: SpillSlot, ty: Type, from_reg: Reg) -> Self::I;
 
-    /// Generate a stackmap, given a list of spillslots and the emission state
+    /// Generate a stack map, given a list of spillslots and the emission state
     /// at a given program point (prior to emission fo the safepointing
     /// instruction).
-    fn spillslots_to_stackmap(
+    fn spillslots_to_stack_map(
         &self,
         slots: &[SpillSlot],
         state: &<Self::I as MachInstEmit>::State,
-    ) -> Stackmap;
+    ) -> StackMap;
 
     /// Generate a prologue, post-regalloc. This should include any stack
     /// frame or other setup necessary to use the other methods (`load_arg`,
@@ -160,14 +160,14 @@ pub trait ABIBody {
 /// callsite. It will usually be computed from the called function's
 /// signature.
 ///
-/// Unlike `ABIBody` above, methods on this trait are not invoked directly
+/// Unlike `ABICallee` above, methods on this trait are not invoked directly
 /// by the machine-independent code. Rather, the machine-specific lowering
-/// code will typically create an `ABICall` when creating machine instructions
+/// code will typically create an `ABICaller` when creating machine instructions
 /// for an IR call instruction inside `lower()`, directly emit the arg and
 /// and retval copies, and attach the register use/def info to the call.
 ///
 /// This trait is thus provided for convenience to the backends.
-pub trait ABICall {
+pub trait ABICaller {
     /// The instruction type for the ISA associated with this ABI.
     type I: VCodeInst;
 
@@ -208,6 +208,6 @@ pub trait ABICall {
     /// sense.)
     ///
     /// This function should only be called once, as it is allowed to re-use
-    /// parts of the ABICall object in emitting instructions.
+    /// parts of the ABICaller object in emitting instructions.
     fn emit_call<C: LowerCtx<I = Self::I>>(&mut self, ctx: &mut C);
 }

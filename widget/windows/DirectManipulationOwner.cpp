@@ -5,9 +5,11 @@
 
 #include "DirectManipulationOwner.h"
 #include "nsWindow.h"
+#include "WinModifierKeyState.h"
 #include "InputData.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/VsyncDispatcher.h"
 
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 
@@ -85,7 +87,10 @@ class DManipEventHandler : public IDirectManipulationViewportEventHandler,
   void TransitionToState(State aNewState);
 
   enum class Phase { eStart, eMiddle, eEnd };
-  void SendPinch(Phase aPhase, float aScale);
+  // Return value indicates if we sent an event or not and hence if we should
+  // update mLastScale. (We only want to send pinch events if the computed
+  // deltaY for the corresponding WidgetWheelEvent would be non-zero.)
+  bool SendPinch(Phase aPhase, float aScale);
   void SendPan(Phase aPhase, float x, float y, bool aIsInertia);
 
  private:
@@ -293,6 +298,18 @@ DManipEventHandler::OnContentUpdated(IDirectManipulationViewport* viewport,
     TransitionToState(State::ePinching);
   }
 
+  if (mState == State::ePanning || mState == State::eInertia) {
+    // Accumulate the offset (by not updating mLastX/YOffset) until we have at
+    // least one pixel both before and after scaling by the window scale.
+    float dx = std::abs(mLastXOffset - xoffset);
+    float dy = std::abs(mLastYOffset - yoffset);
+    float minDelta = std::max(1.f, windowScale);
+    if (dx < minDelta && dy < minDelta) {
+      return S_OK;
+    }
+  }
+
+  bool updateLastScale = true;
   if (mState == State::ePanning) {
     if (mShouldSendPanStart) {
       SendPan(Phase::eStart, mLastXOffset - xoffset, mLastYOffset - yoffset,
@@ -307,14 +324,16 @@ DManipEventHandler::OnContentUpdated(IDirectManipulationViewport* viewport,
             true);
   } else if (mState == State::ePinching) {
     if (mShouldSendPinchStart) {
-      SendPinch(Phase::eStart, scale);
+      updateLastScale = SendPinch(Phase::eStart, scale);
       mShouldSendPinchStart = false;
     } else {
-      SendPinch(Phase::eMiddle, scale);
+      updateLastScale = SendPinch(Phase::eMiddle, scale);
     }
   }
 
-  mLastScale = scale;
+  if (updateLastScale) {
+    mLastScale = scale;
+  }
   mLastXOffset = xoffset;
   mLastYOffset = yoffset;
 
@@ -366,9 +385,13 @@ DirectManipulationOwner::~DirectManipulationOwner() { Destroy(); }
 
 #if !defined(__MINGW32__) && !defined(__MINGW64__)
 
-void DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
+bool DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
   if (!mWindow) {
-    return;
+    return false;
+  }
+
+  if (aScale == mLastScale && aPhase != Phase::eEnd) {
+    return false;
   }
 
   PinchGestureInput::PinchGestureType pinchGestureType =
@@ -390,8 +413,8 @@ void DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
   PRIntervalTime eventIntervalTime = PR_IntervalNow();
   TimeStamp eventTimeStamp = TimeStamp::Now();
 
-  Modifiers mods =
-      MODIFIER_NONE;  // xxx should we get getting key state for this?
+  ModifierKeyState modifierKeyState;
+  Modifiers mods = modifierKeyState.GetModifiers();
 
   ExternalPoint screenOffset = ViewAs<ExternalPixel>(
       mWindow->WidgetToScreenOffset(),
@@ -413,7 +436,17 @@ void DManipEventHandler::SendPinch(Phase aPhase, float aScale) {
                           100.0 * ((aPhase == Phase::eEnd) ? 1.f : mLastScale),
                           mods};
 
+  double deltaY = event.ComputeDeltaY(mWindow);
+  if (deltaY == 0.0) {
+    return false;
+  }
+  gfx::IntPoint lineOrPageDelta = PinchGestureInput::GetIntegerDeltaForEvent(
+      (aPhase == Phase::eStart), 0, deltaY);
+  event.mLineOrPageDeltaY = lineOrPageDelta.y;
+
   mWindow->SendAnAPZEvent(event);
+
+  return true;
 }
 
 void DManipEventHandler::SendPan(Phase aPhase, float x, float y,
@@ -457,7 +490,8 @@ void DManipEventHandler::SendPan(Phase aPhase, float x, float y,
   PRIntervalTime eventIntervalTime = PR_IntervalNow();
   TimeStamp eventTimeStamp = TimeStamp::Now();
 
-  Modifiers mods = MODIFIER_NONE;
+  ModifierKeyState modifierKeyState;
+  Modifiers mods = modifierKeyState.GetModifiers();
 
   POINT cursor_pos;
   ::GetCursorPos(&cursor_pos);

@@ -7,11 +7,10 @@
 import React, { Component } from "react";
 import { connect } from "../../utils/connect";
 import classnames from "classnames";
-import { showMenu } from "devtools-contextmenu";
+import { showMenu } from "../../context-menu/menu";
 
 import SourceIcon from "../shared/SourceIcon";
 import AccessibleImage from "../shared/AccessibleImage";
-import { isWorker } from "../../utils/threads";
 
 import {
   getGeneratedSourceByURL,
@@ -28,8 +27,13 @@ import {
   isUrlExtension,
   isExtensionDirectoryPath,
   shouldBlackbox,
+  sourceTypes,
 } from "../../utils/source";
-import { isDirectory, getPathWithoutThread } from "../../utils/sources-tree";
+import {
+  isDirectory,
+  getPathWithoutThread,
+  getFileExtension,
+} from "../../utils/sources-tree";
 import { copyToTheClipboard } from "../../utils/clipboard";
 import { features } from "../../utils/prefs";
 import { downloadFile } from "../../utils/utils";
@@ -164,7 +168,7 @@ class SourceTreeItem extends Component<Props, State> {
 
       if (features.root) {
         const { path } = item;
-        const { cx, projectRoot } = this.props;
+        const { cx, depth, projectRoot } = this.props;
 
         if (projectRoot.endsWith(path)) {
           menuOptions.push({
@@ -179,7 +183,12 @@ class SourceTreeItem extends Component<Props, State> {
             label: setDirectoryRootLabel,
             accesskey: setDirectoryRootKey,
             disabled: false,
-            click: () => this.props.setProjectDirectoryRoot(cx, path),
+            click: () =>
+              this.props.setProjectDirectoryRoot(
+                cx,
+                path,
+                this.renderItemName(depth)
+              ),
           });
         }
       }
@@ -322,7 +331,7 @@ class SourceTreeItem extends Component<Props, State> {
       const thread = threads.find(thrd => thrd.actor == item.name);
 
       if (thread) {
-        const icon = isWorker(thread) ? "worker" : "window";
+        const icon = thread.targetType.includes("worker") ? "worker" : "window";
         return (
           <AccessibleImage
             className={classnames(icon, {
@@ -356,7 +365,13 @@ class SourceTreeItem extends Component<Props, State> {
       return (
         <SourceIcon
           source={source}
-          modifier={icon => (icon === "extension" ? "javascript" : icon)}
+          modifier={icon =>
+            // In the SourceTree, extension files should use the file-extension based icon,
+            // whereas we use the extension icon in other Components (eg. source tabs and breakpoints pane).
+            icon === "extension"
+              ? sourceTypes[getFileExtension(source)] || "javascript"
+              : icon
+          }
         />
       );
     }

@@ -438,6 +438,12 @@ var FullZoom = {
     return result;
   },
 
+  resetScalingZoom: function FullZoom_resetScaling(
+    browser = gBrowser.selectedBrowser
+  ) {
+    browser.browsingContext?.resetScalingZoom();
+  },
+
   /**
    * Set the zoom level for a given browser.
    *
@@ -679,9 +685,7 @@ var FullZoom = {
 
   _isPDFViewer(browser) {
     return !!(
-      browser.contentPrincipal &&
-      browser.contentPrincipal.URI &&
-      browser.contentPrincipal.URI.spec == "resource://pdf.js/web/viewer.html"
+      browser.contentPrincipal.spec == "resource://pdf.js/web/viewer.html"
     );
   },
 };

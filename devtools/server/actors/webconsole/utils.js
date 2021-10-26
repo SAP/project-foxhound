@@ -88,10 +88,10 @@ var WebConsoleUtils = {
    *         Inner ID for the given window, null if we can't access it.
    */
   getInnerWindowId: function(window) {
-    // Might throw with SecurityError: Permission denied to access property "windowUtils"
-    // on cross-origin object.
+    // Might throw with SecurityError: Permission denied to access property
+    // "windowGlobalChild" on cross-origin object.
     try {
-      return window.windowUtils.currentInnerWindowID;
+      return window.windowGlobalChild.innerWindowId;
     } catch (e) {
       return null;
     }
@@ -546,13 +546,13 @@ WebConsoleCommands._registerOriginal("cd", function(owner, window) {
     0,
     1,
     "content javascript",
-    owner.window.windowUtils.currentInnerWindowID
+    owner.window.windowGlobalChild.innerWindowId
   );
   const Services = require("Services");
   Services.console.logMessage(scriptError);
 
   if (!window) {
-    owner.consoleActor.evalWindow = null;
+    owner.consoleActor.evalGlobal = null;
     owner.helperResult = { type: "cd" };
     return;
   }
@@ -571,7 +571,7 @@ WebConsoleCommands._registerOriginal("cd", function(owner, window) {
     return;
   }
 
-  owner.consoleActor.evalWindow = window;
+  owner.consoleActor.evalGlobal = window;
   owner.helperResult = { type: "cd" };
 });
 

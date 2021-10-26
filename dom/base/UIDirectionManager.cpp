@@ -11,8 +11,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/SimpleEnumerator.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 void OnPrefChange(const char* aPrefName, void*) {
@@ -31,17 +30,18 @@ void OnPrefChange(const char* aPrefName, void*) {
       continue;
     }
 
-    nsCOMPtr<nsIDocShell> rootDocShell = window->GetDocShell();
-    nsTArray<RefPtr<nsIDocShell>> docShells;
-    rootDocShell->GetAllDocShellsInSubtree(
-        nsIDocShell::typeAll, nsIDocShell::ENUMERATE_FORWARDS, docShells);
-    for (auto& docShell : docShells) {
-      if (nsCOMPtr<nsPIDOMWindowOuter> win = do_GetInterface(docShell)) {
-        if (dom::Document* doc = win->GetExtantDoc()) {
-          doc->ResetDocumentDirection();
-        }
-      }
+    RefPtr<BrowsingContext> context = window->GetBrowsingContext();
+    MOZ_DIAGNOSTIC_ASSERT(context);
+
+    if (context->IsDiscarded()) {
+      continue;
     }
+
+    context->PreOrderWalk([](BrowsingContext* aContext) {
+      if (dom::Document* doc = aContext->GetDocument()) {
+        doc->ResetDocumentDirection();
+      }
+    });
   }
 }
 
@@ -60,5 +60,4 @@ void UIDirectionManager::Shutdown() {
   Preferences::UnregisterCallback(OnPrefChange, "intl.l10n.pseudo");
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -30,7 +30,8 @@ class SVGMatrix;
  * DOM wrapper for an SVG transform. See DOMSVGLength.h.
  */
 class DOMSVGTransform final : public nsWrapperCache {
-  friend class AutoChangeTransformNotifier;
+  template <class T>
+  friend class AutoChangeTransformListNotifier;
 
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DOMSVGTransform)
@@ -49,9 +50,9 @@ class DOMSVGTransform final : public nsWrapperCache {
    *   SVGTransformList.createSVGTransformFromMatrix(in DOMMatrix2DInit  matrix)
    * which do not initially belong to an attribute.
    */
-  explicit DOMSVGTransform();
+  DOMSVGTransform();
   explicit DOMSVGTransform(const gfxMatrix& aMatrix);
-  explicit DOMSVGTransform(const DOMMatrix2DInit& aMatrix, ErrorResult& rv);
+  DOMSVGTransform(const DOMMatrix2DInit& aMatrix, ErrorResult& rv);
 
   /**
    * Ctor for creating an unowned copy. Used with Clone().
@@ -68,6 +69,12 @@ class DOMSVGTransform final : public nsWrapperCache {
   }
 
   bool IsInList() const { return !!mList; }
+
+  /**
+   * Returns true if our attribute is animating (in which case our animVal is
+   * not simply a mirror of our baseVal).
+   */
+  bool IsAnimating() const { return mList && mList->IsAnimating(); }
 
   /**
    * In future, if this class is used for non-list transforms, this will be

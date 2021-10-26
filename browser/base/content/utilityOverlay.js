@@ -319,6 +319,7 @@ function openWebLinkIn(url, where, params) {
  * Instead of aAllowThirdPartyFixup, you may also pass an object with any of
  * these properties:
  *   allowThirdPartyFixup (boolean)
+ *   fromChrome           (boolean)
  *   postData             (nsIInputStream)
  *   referrerInfo         (nsIReferrerInfo)
  *   relatedToCurrent     (boolean)
@@ -346,7 +347,7 @@ function openUILinkIn(
     );
   }
 
-  params.fromChrome = true;
+  params.fromChrome = params.fromChrome ?? true;
 
   openLinkIn(url, where, params);
 }
@@ -397,6 +398,7 @@ function openLinkIn(url, where, params) {
         true,
         aReferrerInfo,
         null,
+        null,
         params.isContentWindowPrivate,
         aPrincipal
       );
@@ -408,7 +410,7 @@ function openLinkIn(url, where, params) {
         );
         return;
       }
-      saveURL(url, null, null, true, true, aReferrerInfo, aInitiatingDoc);
+      saveURL(url, null, null, true, true, aReferrerInfo, null, aInitiatingDoc);
     }
     return;
   }
@@ -560,8 +562,9 @@ function openLinkIn(url, where, params) {
     } catch (e) {}
 
     if (
+      !aAllowPinnedTabHostChange &&
       w.gBrowser.getTabForBrowser(targetBrowser).pinned &&
-      !aAllowPinnedTabHostChange
+      url != "about:crashcontent"
     ) {
       try {
         // nsIURI.host can throw for non-nsStandardURL nsIURIs.
@@ -696,7 +699,11 @@ function openLinkIn(url, where, params) {
       break;
   }
 
-  if (!focusUrlBar && targetBrowser == w.gBrowser.selectedBrowser) {
+  if (
+    !params.avoidBrowserFocus &&
+    !focusUrlBar &&
+    targetBrowser == w.gBrowser.selectedBrowser
+  ) {
     // Focus the content, but only if the browser used for the load is selected.
     targetBrowser.focus();
   }

@@ -7653,16 +7653,6 @@ ssl3_CompleteHandleCertificateRequest(sslSocket *ss,
             /* check what the callback function returned */
             if ((!ss->ssl3.clientCertificate) || (!ss->ssl3.clientPrivateKey)) {
                 /* we are missing either the key or cert */
-                if (ss->ssl3.clientCertificate) {
-                    /* got a cert, but no key - free it */
-                    CERT_DestroyCertificate(ss->ssl3.clientCertificate);
-                    ss->ssl3.clientCertificate = NULL;
-                }
-                if (ss->ssl3.clientPrivateKey) {
-                    /* got a key, but no cert - free it */
-                    SECKEY_DestroyPrivateKey(ss->ssl3.clientPrivateKey);
-                    ss->ssl3.clientPrivateKey = NULL;
-                }
                 goto send_no_certificate;
             }
             /* Setting ssl3.clientCertChain non-NULL will cause
@@ -7672,22 +7662,33 @@ ssl3_CompleteHandleCertificateRequest(sslSocket *ss,
                 ss->ssl3.clientCertificate,
                 certUsageSSLClient, PR_FALSE);
             if (ss->ssl3.clientCertChain == NULL) {
-                CERT_DestroyCertificate(ss->ssl3.clientCertificate);
-                ss->ssl3.clientCertificate = NULL;
-                SECKEY_DestroyPrivateKey(ss->ssl3.clientPrivateKey);
-                ss->ssl3.clientPrivateKey = NULL;
                 goto send_no_certificate;
             }
             if (ss->ssl3.hs.hashType == handshake_hash_record ||
                 ss->ssl3.hs.hashType == handshake_hash_single) {
                 rv = ssl_PickClientSignatureScheme(ss, signatureSchemes,
                                                    signatureSchemeCount);
+                if (rv != SECSuccess) {
+                    /* This should only happen if our schemes changed or
+                     * if an RSA-PSS cert was selected, but the token
+                     * does not support PSS schemes. */
+                    goto send_no_certificate;
+                }
             }
             break; /* not an error */
 
         case SECFailure:
         default:
         send_no_certificate:
+            CERT_DestroyCertificate(ss->ssl3.clientCertificate);
+            SECKEY_DestroyPrivateKey(ss->ssl3.clientPrivateKey);
+            ss->ssl3.clientCertificate = NULL;
+            ss->ssl3.clientPrivateKey = NULL;
+            if (ss->ssl3.clientCertChain) {
+                CERT_DestroyCertificateList(ss->ssl3.clientCertChain);
+                ss->ssl3.clientCertChain = NULL;
+            }
+
             if (ss->version > SSL_LIBRARY_VERSION_3_0) {
                 ss->ssl3.sendEmptyCert = PR_TRUE;
             } else {
@@ -11298,6 +11299,8 @@ static SECStatus ssl3_FinishHandshake(sslSocket *ss);
 static SECStatus
 ssl3_AlwaysFail(sslSocket *ss)
 {
+    /* The caller should have cleared the callback. */
+    ss->ssl3.hs.restartTarget = ssl3_AlwaysFail;
     PORT_SetError(PR_INVALID_STATE_ERROR);
     return SECFailure;
 }
@@ -11733,7 +11736,6 @@ ssl3_CacheWrappedSecret(sslSocket *ss, sslSessionID *sid,
 static SECStatus
 ssl3_HandleFinished(sslSocket *ss, PRUint8 *b, PRUint32 length)
 {
-    sslSessionID *sid = ss->sec.ci.sid;
     SECStatus rv = SECSuccess;
     PRBool isServer = ss->sec.isServer;
     PRBool isTLS;
@@ -11877,15 +11879,6 @@ xmit_loser:
         return rv;
     }
 
-    if (sid->cached == never_cached && !ss->opt.noCache) {
-        rv = ssl3_FillInCachedSID(ss, sid, ss->ssl3.crSpec->masterSecret);
-
-        /* If the wrap failed, we don't cache the sid.
-         * The connection continues normally however.
-         */
-        ss->ssl3.hs.cacheSID = rv == SECSuccess;
-    }
-
     if (ss->ssl3.hs.authCertificatePending) {
         if (ss->ssl3.hs.restartTarget) {
             PR_NOT_REACHED("ssl3_HandleFinished: unexpected restartTarget");
@@ -11950,33 +11943,45 @@ ssl3_FinishHandshake(sslSocket *ss)
     PORT_Assert(ss->opt.noLocks || ssl_HaveRecvBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
     PORT_Assert(ss->ssl3.hs.restartTarget == NULL);
+    sslSessionID *sid = ss->sec.ci.sid;
+    SECStatus sidRv = SECFailure;
 
     /* The first handshake is now completed. */
     ss->handshake = NULL;
 
+    if (sid->cached == never_cached && !ss->opt.noCache) {
+        /* If the wrap fails, don't cache the sid. The connection proceeds
+         * normally, so the rv is only used to determine whether we cache. */
+        sidRv = ssl3_FillInCachedSID(ss, sid, ss->ssl3.crSpec->masterSecret);
+    }
+
     /* RFC 5077 Section 3.3: "The client MUST NOT treat the ticket as valid
-     * until it has verified the server's Finished message." When the server
-     * sends a NewSessionTicket in a resumption handshake, we must wait until
-     * the handshake is finished (we have verified the server's Finished
-     * AND the server's certificate) before we update the ticket in the sid.
-     *
-     * This must be done before we call ssl_CacheSessionID(ss)
-     * because CacheSID requires the session ticket to already be set, and also
-     * because of the lazy lock creation scheme used by CacheSID and
-     * ssl3_SetSIDSessionTicket.
-     */
+    * until it has verified the server's Finished message." When the server
+    * sends a NewSessionTicket in a resumption handshake, we must wait until
+    * the handshake is finished (we have verified the server's Finished
+    * AND the server's certificate) before we update the ticket in the sid.
+    *
+    * This must be done before we call ssl_CacheSessionID(ss)
+    * because CacheSID requires the session ticket to already be set, and also
+    * because of the lazy lock creation scheme used by CacheSID and
+    * ssl3_SetSIDSessionTicket. */
     if (ss->ssl3.hs.receivedNewSessionTicket) {
         PORT_Assert(!ss->sec.isServer);
-        ssl3_SetSIDSessionTicket(ss->sec.ci.sid, &ss->ssl3.hs.newSessionTicket);
-        /* The sid took over the ticket data */
+        if (sidRv == SECSuccess) {
+            /* The sid takes over the ticket data */
+            ssl3_SetSIDSessionTicket(ss->sec.ci.sid,
+                                     &ss->ssl3.hs.newSessionTicket);
+        } else {
+            PORT_Assert(ss->ssl3.hs.newSessionTicket.ticket.data);
+            SECITEM_FreeItem(&ss->ssl3.hs.newSessionTicket.ticket,
+                             PR_FALSE);
+        }
         PORT_Assert(!ss->ssl3.hs.newSessionTicket.ticket.data);
         ss->ssl3.hs.receivedNewSessionTicket = PR_FALSE;
     }
-
-    if (ss->ssl3.hs.cacheSID) {
+    if (sidRv == SECSuccess) {
         PORT_Assert(ss->sec.ci.sid->cached == never_cached);
         ssl_CacheSessionID(ss);
-        ss->ssl3.hs.cacheSID = PR_FALSE;
     }
 
     ss->ssl3.hs.canFalseStart = PR_FALSE; /* False Start phase is complete */
@@ -13056,8 +13061,14 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText)
             ss->ssl3.hs.ws != idle_handshake &&
             cText->buf->len == 1 &&
             cText->buf->buf[0] == change_cipher_spec_choice) {
-            /* Ignore the CCS. */
-            return SECSuccess;
+            if (!ss->ssl3.hs.rejectCcs) {
+                /* Allow only the first CCS. */
+                ss->ssl3.hs.rejectCcs = PR_TRUE;
+                return SECSuccess;
+            } else {
+                alert = unexpected_message;
+                PORT_SetError(SSL_ERROR_RX_MALFORMED_CHANGE_CIPHER);
+            }
         }
 
         if ((IS_DTLS(ss) && !dtls13_AeadLimitReached(spec)) ||
@@ -13579,6 +13590,61 @@ ssl3_DestroySSL3Info(sslSocket *ss)
     tls13_DestroyPskList(&ss->ssl3.hs.psks);
 }
 
+/*
+ * parse the policy value for a single algorithm in a cipher_suite,
+ *   return TRUE if we disallow by the cipher suite by policy
+ *   (we don't have to parse any more algorithm policies on this cipher suite),
+ *  otherwise return FALSE.
+ *   1. If we don't have the required policy, disable by default, disallow by
+ *      policy and return TRUE (no more processing needed).
+ *   2. If we have the required policy, and we are disabled, return FALSE,
+ *      (if we are disabled, we only need to parse policy, not default).
+ *   3. If we have the required policy, and we aren't adjusting the defaults
+ *      return FALSE. (only parsing the policy, not default).
+ *   4. We have the required policy and we are adjusting the defaults.
+ *      If we are setting default = FALSE, set isDisabled to true so that
+ *      we don't try to re-enable the cipher suite based on a different
+ *      algorithm.
+ */
+PRBool
+ssl_HandlePolicy(int cipher_suite, SECOidTag policyOid,
+                 PRUint32 requiredPolicy, PRBool *isDisabled)
+{
+    PRUint32 policy;
+    SECStatus rv;
+
+    /* first fetch the policy for this algorithm */
+    rv = NSS_GetAlgorithmPolicy(policyOid, &policy);
+    if (rv != SECSuccess) {
+        return PR_FALSE; /* no policy value, continue to the next algorithm */
+    }
+    /* first, are we allowed by policy, if not turn off allow and disable */
+    if (!(policy & requiredPolicy)) {
+        ssl_CipherPrefSetDefault(cipher_suite, PR_FALSE);
+        ssl_CipherPolicySet(cipher_suite, SSL_NOT_ALLOWED);
+        return PR_TRUE;
+    }
+    /* If we are already disabled, or the policy isn't setting a default
+     * we are done processing this algorithm */
+    if (*isDisabled || (policy & NSS_USE_DEFAULT_NOT_VALID)) {
+        return PR_FALSE;
+    }
+    /* set the default value for the cipher suite. If we disable the cipher
+     * suite, remember that so we don't process the next default. This has
+     * the effect of disabling the whole cipher suite if any of the
+     * algorithms it uses are disabled by default. We still have to
+     * process the upper level because the cipher suite is still allowed
+     * by policy, and we may still have to disallow it based on other
+     * algorithms in the cipher suite. */
+    if (policy & NSS_USE_DEFAULT_SSL_ENABLE) {
+        ssl_CipherPrefSetDefault(cipher_suite, PR_TRUE);
+    } else {
+        *isDisabled = PR_TRUE;
+        ssl_CipherPrefSetDefault(cipher_suite, PR_FALSE);
+    }
+    return PR_FALSE;
+}
+
 #define MAP_NULL(x) (((x) != 0) ? (x) : SEC_OID_NULL_CIPHER)
 
 SECStatus
@@ -13597,30 +13663,30 @@ ssl3_ApplyNSSPolicy(void)
     for (i = 1; i < PR_ARRAY_SIZE(cipher_suite_defs); ++i) {
         const ssl3CipherSuiteDef *suite = &cipher_suite_defs[i];
         SECOidTag policyOid;
+        PRBool isDisabled = PR_FALSE;
 
+        /* if we haven't explicitly disabled it below enable by policy */
+        ssl_CipherPolicySet(suite->cipher_suite, SSL_ALLOWED);
+
+        /* now check the various key exchange, ciphers and macs and
+         * if we ever disallow by policy, we are done, go to the next cipher
+         */
         policyOid = MAP_NULL(kea_defs[suite->key_exchange_alg].oid);
-        rv = NSS_GetAlgorithmPolicy(policyOid, &policy);
-        if (rv == SECSuccess && !(policy & NSS_USE_ALG_IN_SSL_KX)) {
-            ssl_CipherPrefSetDefault(suite->cipher_suite, PR_FALSE);
-            ssl_CipherPolicySet(suite->cipher_suite, SSL_NOT_ALLOWED);
+        if (ssl_HandlePolicy(suite->cipher_suite, policyOid,
+                             NSS_USE_ALG_IN_SSL_KX, &isDisabled)) {
             continue;
         }
 
         policyOid = MAP_NULL(ssl_GetBulkCipherDef(suite)->oid);
-        rv = NSS_GetAlgorithmPolicy(policyOid, &policy);
-        if (rv == SECSuccess && !(policy & NSS_USE_ALG_IN_SSL)) {
-            ssl_CipherPrefSetDefault(suite->cipher_suite, PR_FALSE);
-            ssl_CipherPolicySet(suite->cipher_suite, SSL_NOT_ALLOWED);
+        if (ssl_HandlePolicy(suite->cipher_suite, policyOid,
+                             NSS_USE_ALG_IN_SSL, &isDisabled)) {
             continue;
         }
 
         if (ssl_GetBulkCipherDef(suite)->type != type_aead) {
             policyOid = MAP_NULL(ssl_GetMacDefByAlg(suite->mac_alg)->oid);
-            rv = NSS_GetAlgorithmPolicy(policyOid, &policy);
-            if (rv == SECSuccess && !(policy & NSS_USE_ALG_IN_SSL)) {
-                ssl_CipherPrefSetDefault(suite->cipher_suite, PR_FALSE);
-                ssl_CipherPolicySet(suite->cipher_suite,
-                                    SSL_NOT_ALLOWED);
+            if (ssl_HandlePolicy(suite->cipher_suite, policyOid,
+                                 NSS_USE_ALG_IN_SSL, &isDisabled)) {
                 continue;
             }
         }

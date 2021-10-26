@@ -42,7 +42,6 @@
 #include "mozilla/CallState.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/TimeStamp.h"
@@ -51,13 +50,16 @@
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#ifdef MOZ_GLEAN
+#  include "mozilla/glean/Glean.h"
+#endif
 #include "Units.h"
 #include "nsComponentManagerUtils.h"
 #include "nsSize.h"
 #include "nsCheapSets.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/UniquePtr.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 #include "nsThreadUtils.h"
 
 class nsIArray;
@@ -74,6 +76,7 @@ class nsIScriptTimeoutHandler;
 class nsIBrowserChild;
 class nsITimeoutHandler;
 class nsIWebBrowserChrome;
+class nsIWebProgressListener;
 class mozIDOMWindowProxy;
 
 class nsScreen;
@@ -106,6 +109,7 @@ class DocGroup;
 class External;
 class Function;
 class Gamepad;
+class ContentMediaController;
 enum class ImageBitmapFormat : uint8_t;
 class IdleRequest;
 class IdleRequestCallback;
@@ -675,6 +679,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
       const mozilla::dom::RequestInit& aInit,
       mozilla::dom::CallerType aCallerType, mozilla::ErrorResult& aRv);
   void Print(mozilla::ErrorResult& aError);
+  mozilla::dom::Nullable<mozilla::dom::WindowProxyHolder> PrintPreview(
+      nsIPrintSettings*, nsIWebProgressListener*, nsIDocShell*,
+      mozilla::ErrorResult&);
   void PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
                       const nsAString& aTargetOrigin,
                       const mozilla::dom::Sequence<JSObject*>& aTransfer,
@@ -828,6 +835,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
       mozilla::ErrorResult& aError);
   bool HasActiveSpeechSynthesis();
 #endif
+
+#ifdef MOZ_GLEAN
+  mozilla::glean::Glean* Glean();
+#endif
   already_AddRefed<nsICSSDeclaration> GetDefaultComputedStyle(
       mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
       mozilla::ErrorResult& aError);
@@ -957,33 +968,36 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   // Implementation guts for our writable IDL attributes that are really
   // supposed to be readonly replaceable.
-  typedef int32_t (nsGlobalWindowInner::*WindowCoordGetter)(
+  template <typename T>
+  using WindowCoordGetter = T (nsGlobalWindowInner::*)(
       mozilla::dom::CallerType aCallerType, mozilla::ErrorResult&);
-  typedef void (nsGlobalWindowInner::*WindowCoordSetter)(
-      int32_t, mozilla::dom::CallerType aCallerType, mozilla::ErrorResult&);
-  void GetReplaceableWindowCoord(JSContext* aCx, WindowCoordGetter aGetter,
+  template <typename T>
+  using WindowCoordSetter = void (nsGlobalWindowInner::*)(
+      T, mozilla::dom::CallerType aCallerType, mozilla::ErrorResult&);
+
+  template <typename T>
+  void GetReplaceableWindowCoord(JSContext* aCx, WindowCoordGetter<T> aGetter,
                                  JS::MutableHandle<JS::Value> aRetval,
                                  mozilla::dom::CallerType aCallerType,
                                  mozilla::ErrorResult& aError);
-  void SetReplaceableWindowCoord(JSContext* aCx, WindowCoordSetter aSetter,
+
+  template <typename T>
+  void SetReplaceableWindowCoord(JSContext* aCx, WindowCoordSetter<T> aSetter,
                                  JS::Handle<JS::Value> aValue,
                                  const char* aPropName,
                                  mozilla::dom::CallerType aCallerType,
                                  mozilla::ErrorResult& aError);
   // And the implementations of WindowCoordGetter/WindowCoordSetter.
  protected:
-  int32_t GetInnerWidth(mozilla::dom::CallerType aCallerType,
-                        mozilla::ErrorResult& aError);
-  nsresult GetInnerWidth(int32_t* aWidth) override;
-  void SetInnerWidth(int32_t aInnerWidth, mozilla::dom::CallerType aCallerType,
+  double GetInnerWidth(mozilla::dom::CallerType aCallerType,
+                       mozilla::ErrorResult& aError);
+  nsresult GetInnerWidth(double* aWidth) override;
+  void SetInnerWidth(double aInnerWidth, mozilla::dom::CallerType aCallerType,
                      mozilla::ErrorResult& aError);
-
- protected:
-  int32_t GetInnerHeight(mozilla::dom::CallerType aCallerType,
-                         mozilla::ErrorResult& aError);
-  nsresult GetInnerHeight(int32_t* aHeight) override;
-  void SetInnerHeight(int32_t aInnerHeight,
-                      mozilla::dom::CallerType aCallerType,
+  double GetInnerHeight(mozilla::dom::CallerType aCallerType,
+                        mozilla::ErrorResult& aError);
+  nsresult GetInnerHeight(double* aHeight) override;
+  void SetInnerHeight(double aInnerHeight, mozilla::dom::CallerType aCallerType,
                       mozilla::ErrorResult& aError);
   int32_t GetScreenX(mozilla::dom::CallerType aCallerType,
                      mozilla::ErrorResult& aError);
@@ -1200,8 +1214,14 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void FireFrameLoadEvent();
 
   void UpdateAutoplayPermission();
+  void UpdateShortcutsPermission();
+  void UpdatePopupPermission();
+
+  void UpdatePermissions();
 
  public:
+  static uint32_t GetShortcutsPermission(nsIPrincipal* aPrincipal);
+
   // Dispatch a runnable related to the global.
   virtual nsresult Dispatch(mozilla::TaskCategory aCategory,
                             already_AddRefed<nsIRunnable>&& aRunnable) override;
@@ -1232,6 +1252,12 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   // Hint to the JS engine whether we are currently loading.
   void HintIsLoading(bool aIsLoading);
+
+ public:
+  mozilla::dom::ContentMediaController* GetContentMediaController();
+
+ private:
+  RefPtr<mozilla::dom::ContentMediaController> mContentMediaController;
 
  protected:
   // Window offline status. Checked to see if we need to fire offline event
@@ -1405,6 +1431,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::dom::SpeechSynthesis> mSpeechSynthesis;
 #endif
 
+#ifdef MOZ_GLEAN
+  RefPtr<mozilla::glean::Glean> mGlean;
+#endif
+
   // This is the CC generation the last time we called CanSkip.
   uint32_t mCanSkipCCGeneration;
 
@@ -1418,8 +1448,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::dom::IntlUtils> mIntlUtils;
 
   mozilla::UniquePtr<mozilla::dom::ClientSource> mClientSource;
-
-  nsTArray<RefPtr<mozilla::dom::Promise>> mPendingPromises;
 
   nsTArray<mozilla::UniquePtr<PromiseDocumentFlushedResolver>>
       mDocumentFlushedResolvers;

@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIRunnable.idl"
 #include "nsISupports.idl"
 
 %{C++
@@ -38,10 +37,10 @@ interface nsINSSComponent : nsISupports {
   [noscript] bool isCertTestBuiltInRoot(in CERTCertificatePtr cert);
 
   /**
-   * Used to determine if the given CERTCertificate is the content signing root
-   * certificate.
+   * Used to determine if the given certificate (represented as an array of
+   * bytes) is the content signing root certificate.
    */
-  [noscript] bool isCertContentSigningRoot(in CERTCertificatePtr cert);
+  [noscript] bool isCertContentSigningRoot(in Array<octet> cert);
 
   /**
    * If enabled by the preference "security.enterprise_roots.enabled", returns
@@ -112,10 +111,4 @@ interface nsINSSComponent : nsISupports {
    * For clearing both SSL internal and external session cache from JS.
    */
   void clearSSLExternalAndInternalSessionCache();
-
-  /**
-   * Dispatches a task to the component's serial background queue, if NSS
-   * hasn't already been shut down.
-   */
-  [noscript] void dispatchTaskToSerialBackgroundQueue(in nsIRunnable task);
 };

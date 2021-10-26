@@ -103,7 +103,7 @@ add_task(async function test_NavigationBetweenTwoDomains_NoDestroy() {
   await checkHooks(hooks, { available: 2, destroyed: 2, targets: [] });
 
   // Stop listening to avoid worker related requests
-  targetList.stopListening();
+  targetList.destroy();
 
   await client.waitForRequestsToSettle();
   await client.close();
@@ -182,7 +182,7 @@ add_task(async function test_NavigationBetweenTwoDomains_WithDestroy() {
   await checkHooks(hooks, { available: 4, destroyed: 4, targets: [] });
 
   // Stop listening to avoid worker related requests
-  targetList.stopListening();
+  targetList.destroy();
 
   await client.waitForRequestsToSettle();
   await client.close();
@@ -279,7 +279,7 @@ async function testNavigationToPageWithExistingWorker({
   await checkHooks(hooks, { available: 2, destroyed: 2, targets: [] });
 
   // Stop listening to avoid worker related requests
-  targetList.stopListening();
+  targetList.destroy();
 
   await client.waitForRequestsToSettle();
   await client.close();
@@ -360,10 +360,14 @@ async function unregisterServiceWorker(tab, expectedPageUrl) {
 async function waitForRegistrationReady(tab, expectedPageUrl) {
   await asyncWaitUntil(() =>
     SpecialPowers.spawn(tab.linkedBrowser, [expectedPageUrl], function(_url) {
-      const win = content.wrappedJSObject;
-      const isExpectedUrl = win.location.href === _url;
-      const hasRegistration = !!win.registration;
-      return isExpectedUrl && hasRegistration;
+      try {
+        const win = content.wrappedJSObject;
+        const isExpectedUrl = win.location.href === _url;
+        const hasRegistration = !!win.registration;
+        return isExpectedUrl && hasRegistration;
+      } catch (e) {
+        return false;
+      }
     })
   );
 }

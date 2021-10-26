@@ -21,19 +21,21 @@ add_task(
         lastExpression = expression;
       },
     };
-    // But both tabs and processes will be going through the ConsoleMessages module
-    // We force watching for console message first,
-    Resources.watchTargetResources(targetActor, [
-      Resources.TYPES.CONSOLE_MESSAGE,
-    ]);
+
     // And then listen for resource RDP event.
     // Bug 1646677: But we should probably migrate this test to ResourceWatcher so that
-    // we don't have to hack the server side via Resource.watchTargetResources call.
+    // we don't have to hack the server side via Resource.watchResources call.
     targetActor.on("resource-available-form", resources => {
       if (resources[0].resourceType == Resources.TYPES.CONSOLE_MESSAGE) {
         lastMessage = resources[0].message;
       }
     });
+
+    // But both tabs and processes will be going through the ConsoleMessages module
+    // We force watching for console message first,
+    await Resources.watchResources(targetActor, [
+      Resources.TYPES.CONSOLE_MESSAGE,
+    ]);
 
     const packet = await executeOnNextTickAndWaitForPause(
       () => evalCode(debuggee),

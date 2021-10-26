@@ -16,17 +16,20 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
-
+ChromeUtils.defineModuleGetter(
+  this,
+  "ASRouterDefaultConfig",
+  "resource://activity-stream/lib/ASRouterDefaultConfig.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "ASRouterNewTabHook",
+  "resource://activity-stream/lib/ASRouterNewTabHook.jsm"
+);
 ChromeUtils.defineModuleGetter(
   this,
   "ActorManagerParent",
   "resource://gre/modules/ActorManagerParent.jsm"
-);
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "CustomizableUI",
-  "resource:///modules/CustomizableUI.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
@@ -61,6 +64,12 @@ ChromeUtils.defineModuleGetter(
   "resource://featuregates/FeatureGate.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm"
+);
+
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "PushService",
@@ -92,6 +101,34 @@ let JSPROCESSACTORS = {
       ],
     },
   },
+
+  RefreshBlockerObserver: {
+    child: {
+      moduleURI: "resource:///actors/RefreshBlockerChild.jsm",
+      observers: [
+        "webnavigation-create",
+        "chrome-webnavigation-create",
+        "webnavigation-destroy",
+        "chrome-webnavigation-destroy",
+      ],
+    },
+
+    enablePreference: "accessibility.blockautorefresh",
+    onPreferenceChanged: (prefName, prevValue, isEnabled) => {
+      BrowserWindowTracker.orderedWindows.forEach(win => {
+        for (let browser of win.gBrowser.browsers) {
+          try {
+            browser.sendMessageToActor(
+              "PreferenceChanged",
+              { isEnabled },
+              "RefreshBlocker",
+              "all"
+            );
+          } catch (ex) {}
+        }
+      });
+    },
+  },
 };
 
 /**
@@ -111,13 +148,10 @@ let JSWINDOWACTORS = {
         AboutLoginsCreateLogin: { wantUntrusted: true },
         AboutLoginsDeleteLogin: { wantUntrusted: true },
         AboutLoginsDismissBreachAlert: { wantUntrusted: true },
-        AboutLoginsHideFooter: { wantUntrusted: true },
         AboutLoginsImportFromBrowser: { wantUntrusted: true },
         AboutLoginsImportFromFile: { wantUntrusted: true },
         AboutLoginsInit: { wantUntrusted: true },
         AboutLoginsGetHelp: { wantUntrusted: true },
-        AboutLoginsOpenMobileAndroid: { wantUntrusted: true },
-        AboutLoginsOpenMobileIos: { wantUntrusted: true },
         AboutLoginsOpenPreferences: { wantUntrusted: true },
         AboutLoginsOpenSite: { wantUntrusted: true },
         AboutLoginsRecordTelemetryEvent: { wantUntrusted: true },
@@ -147,10 +181,15 @@ let JSWINDOWACTORS = {
   },
 
   AboutNewTab: {
+    parent: {
+      moduleURI: "resource:///actors/AboutNewTabParent.jsm",
+    },
     child: {
       moduleURI: "resource:///actors/AboutNewTabChild.jsm",
       events: {
         DOMContentLoaded: {},
+        pageshow: {},
+        visibilitychange: {},
       },
     },
     // The wildcard on about:newtab is for the ?endpoint query parameter
@@ -201,7 +240,7 @@ let JSWINDOWACTORS = {
       },
     },
 
-    matches: ["about:protections"],
+    matches: ["about:protections", "about:protections?*"],
   },
 
   AboutReader: {
@@ -247,6 +286,7 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:welcome"],
+    remoteTypes: ["privilegedabout"],
 
     // See Bug 1618306
     // Remove this preference check when we turn on separate about:welcome for all users.
@@ -278,8 +318,6 @@ let JSWINDOWACTORS = {
       events: {
         DOMWindowCreated: {},
         MozAfterPaint: {},
-        "MozDOMPointerLock:Entered": {},
-        "MozDOMPointerLock:Exited": {},
       },
     },
 
@@ -349,6 +387,20 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
+  DecoderDoctor: {
+    parent: {
+      moduleURI: "resource:///actors/DecoderDoctorParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource:///actors/DecoderDoctorChild.jsm",
+      observers: ["decoder-doctor-notification"],
+    },
+
+    messageManagerGroups: ["browsers"],
+    allFrames: true,
+  },
+
   DOMFullscreen: {
     parent: {
       moduleURI: "resource:///actors/DOMFullscreenParent.jsm",
@@ -379,6 +431,7 @@ let JSWINDOWACTORS = {
       observers: ["mediakeys-request"],
     },
 
+    messageManagerGroups: ["browsers"],
     allFrames: true,
   },
 
@@ -481,7 +534,6 @@ let JSWINDOWACTORS = {
     child: {
       moduleURI: "resource://pdf.js/PdfjsChild.jsm",
     },
-    enablePreference: PREF_PDFJS_ISDEFAULT_CACHE_STATE,
     allFrames: true,
   },
 
@@ -506,12 +558,40 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
+  PointerLock: {
+    parent: {
+      moduleURI: "resource:///actors/PointerLockParent.jsm",
+    },
+    child: {
+      moduleURI: "resource:///actors/PointerLockChild.jsm",
+      events: {
+        "MozDOMPointerLock:Entered": {},
+        "MozDOMPointerLock:Exited": {},
+      },
+    },
+
+    messageManagerGroups: ["browsers"],
+    allFrames: true,
+  },
+
   Prompt: {
     parent: {
       moduleURI: "resource:///actors/PromptParent.jsm",
     },
     includeChrome: true,
     allFrames: true,
+  },
+
+  RefreshBlocker: {
+    parent: {
+      moduleURI: "resource:///actors/RefreshBlockerParent.jsm",
+    },
+    child: {
+      moduleURI: "resource:///actors/RefreshBlockerChild.jsm",
+    },
+
+    messageManagerGroups: ["browsers"],
+    enablePreference: "accessibility.blockautorefresh",
   },
 
   SearchTelemetry: {
@@ -541,6 +621,22 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:studies"],
+  },
+
+  ASRouter: {
+    parent: {
+      moduleURI: "resource:///actors/ASRouterParent.jsm",
+    },
+    child: {
+      moduleURI: "resource:///actors/ASRouterChild.jsm",
+      events: {
+        // This is added so the actor instantiates immediately and makes
+        // methods available to the page js on load.
+        DOMWindowCreated: {},
+      },
+    },
+    matches: ["about:home*", "about:newtab*", "about:welcome*"],
+    remoteTypes: ["privilegedabout"],
   },
 
   SwitchDocumentDirection: {
@@ -601,6 +697,7 @@ let JSWINDOWACTORS = {
 };
 
 (function earlyBlankFirstPaint() {
+  let startTime = Cu.now();
   if (
     AppConstants.platform == "macosx" ||
     !Services.prefs.getBoolPref("browser.startup.blankWindow", false)
@@ -682,6 +779,9 @@ let JSWINDOWACTORS = {
   // The window becomes visible after OnStopRequest, so make this happen now.
   win.stop();
 
+  ChromeUtils.addProfilerMarker("earlyBlankFirstPaint", startTime);
+  win.openTime = Cu.now();
+
   let { TelemetryTimestamps } = ChromeUtils.import(
     "resource://gre/modules/TelemetryTimestamps.jsm"
   );
@@ -711,17 +811,19 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Corroborate: "resource://gre/modules/Corroborate.jsm",
   Discovery: "resource:///modules/Discovery.jsm",
   DoHController: "resource:///modules/DoHController.jsm",
+  DownloadsViewableInternally:
+    "resource:///modules/DownloadsViewableInternally.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
   FirefoxMonitor: "resource:///modules/FirefoxMonitor.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   Integration: "resource://gre/modules/Integration.jsm",
   LoginBreaches: "resource:///modules/LoginBreaches.jsm",
-  LiveBookmarkMigrator: "resource:///modules/LiveBookmarkMigrator.jsm",
   NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
   Normandy: "resource://normandy/Normandy.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   OS: "resource://gre/modules/osfile.jsm",
+  OsEnvironment: "resource://gre/modules/OsEnvironment.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
   PdfJs: "resource://pdf.js/PdfJs.jsm",
@@ -742,7 +844,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   SearchTelemetry: "resource:///modules/SearchTelemetry.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
-  ShellService: "resource:///modules/ShellService.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TabUnloader: "resource:///modules/TabUnloader.jsm",
   TRRRacer: "resource:///modules/TRRPerformance.jsm",
@@ -1124,6 +1225,10 @@ BrowserGlue.prototype = {
         // pdf content handler, and initializes parent side message manager
         // shim for privileged api access.
         PdfJs.init(this._isNewProfile);
+
+        // Allow certain viewable internally types to be opened from downloads.
+        DownloadsViewableInternally.register();
+
         break;
       case "shield-init-complete":
         this._shieldInitComplete = true;
@@ -1168,7 +1273,6 @@ BrowserGlue.prototype = {
 
     ActorManagerParent.addJSProcessActors(JSPROCESSACTORS);
     ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
-    ActorManagerParent.flush();
 
     this._flashHangCount = 0;
     this._firstWindowReady = new Promise(
@@ -1177,6 +1281,9 @@ BrowserGlue.prototype = {
     if (AppConstants.platform == "win") {
       JawsScreenReaderVersionCheck.init();
     }
+
+    // This value is to limit collecting Places telemetry once per session.
+    this._placesTelemetryGathered = false;
   },
 
   // cleanup (called on application shutdown)
@@ -1292,13 +1399,18 @@ BrowserGlue.prototype = {
 
     AddonManager.maybeInstallBuiltinAddon(
       "firefox-compact-light@mozilla.org",
-      "1.0",
-      "resource:///modules/themes/light/"
+      "1.1",
+      "resource://builtin-themes/light/"
     );
     AddonManager.maybeInstallBuiltinAddon(
       "firefox-compact-dark@mozilla.org",
-      "1.0",
-      "resource:///modules/themes/dark/"
+      "1.1",
+      "resource://builtin-themes/dark/"
+    );
+    AddonManager.maybeInstallBuiltinAddon(
+      "firefox-alpenglow@mozilla.org",
+      "1.2",
+      "resource://builtin-themes/alpenglow/"
     );
 
     if (AppConstants.MOZ_NORMANDY) {
@@ -1606,7 +1718,7 @@ BrowserGlue.prototype = {
     win.gNotificationBox.appendNotification(
       message,
       "reset-profile-notification",
-      "chrome://global/skin/icons/question-16.png",
+      "chrome://global/skin/icons/question-64.png",
       win.gNotificationBox.PRIORITY_INFO_LOW,
       buttons
     );
@@ -1672,6 +1784,10 @@ BrowserGlue.prototype = {
       let isColdStartup =
         nowSeconds - secondsSinceLastOSRestart > lastCheckSeconds;
       Services.telemetry.scalarSet("startup.is_cold", isColdStartup);
+      Services.telemetry.scalarSet(
+        "startup.seconds_since_last_os_restart",
+        secondsSinceLastOSRestart
+      );
     } catch (ex) {
       Cu.reportError(ex);
     }
@@ -1720,6 +1836,7 @@ BrowserGlue.prototype = {
           // exists to expose prefs once we are confident of privacy implications)
           delete snapshotData.crashes;
           delete snapshotData.modifiedPreferences;
+          delete snapshotData.printingPreferences;
           channel.send(snapshotData, target);
         });
       }
@@ -1785,12 +1902,21 @@ BrowserGlue.prototype = {
 
     PageActions.init();
 
+    DoHController.init();
+
     this._firstWindowTelemetry(aWindow);
     this._firstWindowLoaded();
 
     this._collectStartupConditionsTelemetry();
 
     this._collectFirstPartyIsolationTelemetry();
+
+    if (!this._placesTelemetryGathered) {
+      Cc["@mozilla.org/places/categoriesStarter;1"]
+        .getService(Ci.nsIObserver)
+        .observe(null, "gather-places-telemetry", null);
+      this._placesTelemetryGathered = true;
+    }
 
     // Set the default favicon size for UI views that use the page-icon protocol.
     PlacesUtils.favicons.setDefaultIconURIPreferredSize(
@@ -1817,6 +1943,10 @@ BrowserGlue.prototype = {
       this._updateAutoplayPref
     );
     Services.prefs.addObserver(
+      "media.hardwaremediakeys.enabled",
+      this._updateMediaControlPref
+    );
+    Services.prefs.addObserver(
       "privacy.trackingprotection",
       this._setPrefExpectations
     );
@@ -1835,6 +1965,16 @@ BrowserGlue.prototype = {
     if (blocked in labels) {
       telemetry.add(labels[blocked]);
     }
+  },
+
+  _updateMediaControlPref() {
+    const enabled = Services.prefs.getBoolPref(
+      "media.hardwaremediakeys.enabled"
+    );
+    const telemetry = Services.telemetry.getHistogramById(
+      "MEDIA_CONTROL_SETTING_CHANGE"
+    );
+    telemetry.add(enabled ? "EnableTotal" : "DisableTotal");
   },
 
   _setPrefExpectations() {
@@ -2036,6 +2176,7 @@ BrowserGlue.prototype = {
 
     Normandy.uninit();
     RFPHelper.uninit();
+    ASRouterNewTabHook.destroy();
   },
 
   // Set up a listener to enable/disable the screenshots extension
@@ -2116,14 +2257,14 @@ BrowserGlue.prototype = {
     _checkHTTPSOnlyPBMPref();
   },
 
-  _monitorPioneerPref() {
-    const PREF_PIONEER_ID = "toolkit.telemetry.pioneerId";
+  _monitorIonPref() {
+    const PREF_ION_ID = "toolkit.telemetry.pioneerId";
 
-    const _checkPioneerPref = async () => {
+    const _checkIonPref = async () => {
       for (let win of Services.wm.getEnumerator("navigator:browser")) {
         win.document.getElementById(
-          "pioneer-button"
-        ).hidden = !Services.prefs.getStringPref(PREF_PIONEER_ID, null);
+          "ion-button"
+        ).hidden = !Services.prefs.getStringPref(PREF_ION_ID, null);
       }
     };
 
@@ -2131,32 +2272,29 @@ BrowserGlue.prototype = {
       onOpenWindow(xulWindow) {
         const win = xulWindow.docShell.domWindow;
         win.addEventListener("load", () => {
-          const pioneerButton = win.document.getElementById("pioneer-button");
-          if (pioneerButton) {
-            pioneerButton.hidden = !Services.prefs.getStringPref(
-              PREF_PIONEER_ID,
-              null
-            );
+          const ionButton = win.document.getElementById("ion-button");
+          if (ionButton) {
+            ionButton.hidden = !Services.prefs.getStringPref(PREF_ION_ID, null);
           }
         });
       },
       onCloseWindow() {},
     };
 
-    Services.prefs.addObserver(PREF_PIONEER_ID, _checkPioneerPref);
+    Services.prefs.addObserver(PREF_ION_ID, _checkIonPref);
     Services.wm.addListener(windowListener);
-    _checkPioneerPref();
+    _checkIonPref();
   },
 
-  _monitorPioneerStudies() {
-    const STUDY_ADDON_COLLECTION_KEY = "pioneer-study-addons";
-    const PREF_PIONEER_NEW_STUDIES_AVAILABLE =
+  _monitorIonStudies() {
+    const STUDY_ADDON_COLLECTION_KEY = "pioneer-study-addons-v1";
+    const PREF_ION_NEW_STUDIES_AVAILABLE =
       "toolkit.telemetry.pioneer-new-studies-available";
 
     const _badgeIcon = async () => {
       for (let win of Services.wm.getEnumerator("navigator:browser")) {
         win.document
-          .getElementById("pioneer-button")
+          .getElementById("ion-button")
           .querySelector(".toolbarbutton-badge")
           .classList.add("feature-callout");
       }
@@ -2166,14 +2304,11 @@ BrowserGlue.prototype = {
       onOpenWindow(xulWindow) {
         const win = xulWindow.docShell.domWindow;
         win.addEventListener("load", () => {
-          const pioneerButton = win.document.getElementById("pioneer-button");
-          if (pioneerButton) {
-            const badge = pioneerButton.querySelector(".toolbarbutton-badge");
+          const ionButton = win.document.getElementById("ion-button");
+          if (ionButton) {
+            const badge = ionButton.querySelector(".toolbarbutton-badge");
             if (
-              Services.prefs.getBoolPref(
-                PREF_PIONEER_NEW_STUDIES_AVAILABLE,
-                false
-              )
+              Services.prefs.getBoolPref(PREF_ION_NEW_STUDIES_AVAILABLE, false)
             ) {
               badge.classList.add("feature-callout");
             } else {
@@ -2185,12 +2320,19 @@ BrowserGlue.prototype = {
       onCloseWindow() {},
     };
 
-    Services.prefs.addObserver(PREF_PIONEER_NEW_STUDIES_AVAILABLE, _badgeIcon);
+    // Update all open windows if the pref changes.
+    Services.prefs.addObserver(PREF_ION_NEW_STUDIES_AVAILABLE, _badgeIcon);
+
+    // Badge any currently-open windows.
+    if (Services.prefs.getBoolPref(PREF_ION_NEW_STUDIES_AVAILABLE, false)) {
+      _badgeIcon();
+    }
 
     RemoteSettings(STUDY_ADDON_COLLECTION_KEY).on("sync", async event => {
-      Services.prefs.setBoolPref(PREF_PIONEER_NEW_STUDIES_AVAILABLE, true);
+      Services.prefs.setBoolPref(PREF_ION_NEW_STUDIES_AVAILABLE, true);
     });
 
+    // When a new window opens, check if we need to badge the icon.
     Services.wm.addListener(windowListener);
   },
 
@@ -2284,8 +2426,8 @@ BrowserGlue.prototype = {
     this._monitorScreenshotsPref();
     this._monitorWebcompatReporterPref();
     this._monitorHTTPSOnlyPref();
-    this._monitorPioneerPref();
-    this._monitorPioneerStudies();
+    this._monitorIonPref();
+    this._monitorIonStudies();
 
     let pService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
       Ci.nsIToolkitProfileService
@@ -2294,7 +2436,6 @@ BrowserGlue.prototype = {
       this._showNewInstallModal();
     }
 
-    DoHController.init();
     FirefoxMonitor.init();
   },
 
@@ -2374,16 +2515,6 @@ BrowserGlue.prototype = {
             "security.ui.certerror",
             enableCertErrorUITelemetry
           );
-        },
-      },
-
-      {
-        task: () => {
-          let siteSpecific = Services.prefs.getBoolPref(
-            "browser.zoom.siteSpecific",
-            false
-          );
-          Services.telemetry.scalarSet("a11y.sitezoom", siteSpecific);
         },
       },
 
@@ -2476,24 +2607,13 @@ BrowserGlue.prototype = {
       },
 
       {
-        condition:
-          Services.prefs.getIntPref(
-            "browser.livebookmarks.migrationAttemptsLeft",
-            0
-          ) > 0,
-        task: () => {
-          LiveBookmarkMigrator.migrate().catch(Cu.reportError);
-        },
-      },
-
-      {
         task: () => {
           TabUnloader.init();
         },
       },
 
       // request startup of Chromium remote debugging protocol
-      // (observer will only be notified when --remote-debugger is passed)
+      // (observer will only be notified when --remote-debugging-port is passed)
       {
         condition: AppConstants.ENABLE_REMOTE_AGENT,
         task: () => {
@@ -2526,6 +2646,55 @@ BrowserGlue.prototype = {
               }
             });
           }
+        },
+      },
+
+      // FOG doesn't need to be initialized _too_ early because it has a
+      // pre-init buffer.
+      {
+        task: () => {
+          if (AppConstants.MOZ_GLEAN) {
+            let FOG = Cc["@mozilla.org/toolkit/glean;1"].createInstance(
+              Ci.nsIFOG
+            );
+            FOG.initializeFOG();
+          }
+        },
+      },
+
+      // Add the import button if this is the first startup.
+      {
+        task: async () => {
+          // First check if we've already added the import button, in which
+          // case we should check for events indicating we can remove it.
+          if (
+            Services.prefs.getBoolPref(
+              "browser.bookmarks.addedImportButton",
+              false
+            )
+          ) {
+            PlacesUIUtils.removeImportButtonWhenImportSucceeds();
+            return;
+          }
+
+          // Otherwise, check if this is a new profile where we need to add it.
+          // `maybeAddImportButton` will call
+          // `removeImportButtonWhenImportSucceeds`itself if/when it adds the
+          // button. Doing things in this order avoids listening for removal
+          // more than once.
+          if (
+            this._isNewProfile &&
+            // Not in automation: the button changes CUI state, breaking tests
+            !Cu.isInAutomation
+          ) {
+            await PlacesUIUtils.maybeAddImportButton();
+          }
+        },
+      },
+
+      {
+        task: () => {
+          ASRouterNewTabHook.createInstance(ASRouterDefaultConfig());
         },
       },
 
@@ -2630,14 +2799,20 @@ BrowserGlue.prototype = {
           Corroborate.init().catch(Cu.reportError);
         }
       },
+
+      () => BrowserUsageTelemetry.reportProfileCount(),
+
+      () => OsEnvironment.reportAllowedAppSources(),
+
+      () => Services.search.checkWebExtensionEngines(),
     ];
 
     for (let task of idleTasks) {
-      ChromeUtils.idleDispatch(() => {
+      ChromeUtils.idleDispatch(async () => {
         if (!Services.startup.shuttingDown) {
           let startTime = Cu.now();
           try {
-            task();
+            await task();
           } catch (ex) {
             Cu.reportError(ex);
           } finally {
@@ -3032,7 +3207,7 @@ BrowserGlue.prototype = {
           // New profiles may have existing bookmarks (imported from another browser or
           // copied into the profile) and we want to show the bookmark toolbar for them
           // in some cases.
-          this._maybeToggleBookmarkToolbarVisibility();
+          PlacesUIUtils.maybeToggleBookmarkToolbarVisibility();
         } catch (ex) {
           Cu.reportError(ex);
         }
@@ -3140,47 +3315,6 @@ BrowserGlue.prototype = {
     );
   },
 
-  /**
-   * Uncollapses PersonalToolbar if its collapsed status is not
-   * persisted, and user customized it or changed default bookmarks.
-   *
-   * If the user does not have a persisted value for the toolbar's
-   * "collapsed" attribute, try to determine whether it's customized.
-   */
-  _maybeToggleBookmarkToolbarVisibility() {
-    const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
-    const NUM_TOOLBAR_BOOKMARKS_TO_UNHIDE = 3;
-    let xulStore = Services.xulStore;
-
-    if (!xulStore.hasValue(BROWSER_DOCURL, "PersonalToolbar", "collapsed")) {
-      // We consider the toolbar customized if it has more than NUM_TOOLBAR_BOOKMARKS_TO_UNHIDE
-      // children, or if it has a persisted currentset value.
-      let toolbarIsCustomized = xulStore.hasValue(
-        BROWSER_DOCURL,
-        "PersonalToolbar",
-        "currentset"
-      );
-      let getToolbarFolderCount = () => {
-        let toolbarFolder = PlacesUtils.getFolderContents(
-          PlacesUtils.bookmarks.toolbarGuid
-        ).root;
-        let toolbarChildCount = toolbarFolder.childCount;
-        toolbarFolder.containerOpen = false;
-        return toolbarChildCount;
-      };
-
-      if (
-        toolbarIsCustomized ||
-        getToolbarFolderCount() > NUM_TOOLBAR_BOOKMARKS_TO_UNHIDE
-      ) {
-        CustomizableUI.setToolbarVisibility(
-          CustomizableUI.AREA_BOOKMARKS,
-          true
-        );
-      }
-    }
-  },
-
   _migrateXULStoreForDocument(fromURL, toURL) {
     Array.from(Services.xulStore.getIDsEnumerator(fromURL)).forEach(id => {
       Array.from(Services.xulStore.getAttributeEnumerator(fromURL, id)).forEach(
@@ -3196,7 +3330,7 @@ BrowserGlue.prototype = {
   _migrateUI: function BG__migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 96;
+    const UI_VERSION = 104;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     if (!Services.prefs.prefHasUserValue("browser.migration.version")) {
@@ -3464,16 +3598,6 @@ BrowserGlue.prototype = {
         );
         OS.File.remove(path, { ignoreAbsent: true });
       }
-    }
-
-    if (currentUIVersion < 75) {
-      // Ensure we try to migrate any live bookmarks the user might have, trying up to
-      // 5 times. We set this early, and here, to avoid running the migration on
-      // new profile (or, indeed, ever creating the pref there).
-      Services.prefs.setIntPref(
-        "browser.livebookmarks.migrationAttemptsLeft",
-        5
-      );
     }
 
     if (currentUIVersion < 76) {
@@ -3784,17 +3908,121 @@ BrowserGlue.prototype = {
       Services.prefs.clearUserPref(oldPrefName);
     }
 
+    if (currentUIVersion < 97) {
+      let userCustomizedWheelMax = Services.prefs.prefHasUserValue(
+        "general.smoothScroll.mouseWheel.durationMaxMS"
+      );
+      let userCustomizedWheelMin = Services.prefs.prefHasUserValue(
+        "general.smoothScroll.mouseWheel.durationMinMS"
+      );
+
+      if (!userCustomizedWheelMin && !userCustomizedWheelMax) {
+        // If the user has an existing profile but hasn't customized the wheel
+        // animation duration, indicate that they need to be migrated to the new
+        // values by setting their "migration complete" percentage to 0.
+        Services.prefs.setIntPref(
+          "general.smoothScroll.mouseWheel.migrationPercent",
+          0
+        );
+      } else if (userCustomizedWheelMin && !userCustomizedWheelMax) {
+        // If they customized just one of the two, save the old value for the
+        // other one as well, because the two values go hand-in-hand and we
+        // don't want to move just one to a new value and leave the other one
+        // at a customized value. In both of these cases, we leave the "migration
+        // complete" percentage at 100, because they have customized this and
+        // don't need any further migration.
+        Services.prefs.setIntPref(
+          "general.smoothScroll.mouseWheel.durationMaxMS",
+          400
+        );
+      } else if (!userCustomizedWheelMin && userCustomizedWheelMax) {
+        // Same as above case, but for the other pref.
+        Services.prefs.setIntPref(
+          "general.smoothScroll.mouseWheel.durationMinMS",
+          200
+        );
+      } else {
+        // The last remaining case is if they customized both values, in which
+        // case also we leave the "migration complete" percentage at 100, as no
+        // further migration is needed.
+      }
+    }
+
+    if (currentUIVersion < 98) {
+      Services.prefs.clearUserPref("browser.search.cohort");
+    }
+
+    if (currentUIVersion < 99) {
+      Services.prefs.clearUserPref("security.tls.version.enable-deprecated");
+    }
+
+    if (currentUIVersion < 102) {
+      // In Firefox 83, we moved to a dynamic button, so it needs to be removed
+      // from default placement. This is done early enough that it doesn't
+      // impact adding new managed bookmarks.
+      const { CustomizableUI } = ChromeUtils.import(
+        "resource:///modules/CustomizableUI.jsm"
+      );
+      CustomizableUI.removeWidgetFromArea("managed-bookmarks");
+    }
+
+    // We have to rerun these because we had to use 102 on beta.
+    // They were 101 and 102 before.
+    if (currentUIVersion < 103) {
+      // Set a pref if the bookmarks toolbar was already visible,
+      // so we can keep it visible when navigating away from newtab
+      let bookmarksToolbarWasVisible =
+        Services.xulStore.getValue(
+          BROWSER_DOCURL,
+          "PersonalToolbar",
+          "collapsed"
+        ) == "false";
+      if (bookmarksToolbarWasVisible) {
+        // Migrate the user to the "always visible" value. See firefox.js for
+        // the other possible states.
+        Services.prefs.setCharPref(
+          "browser.toolbars.bookmarks.visibility",
+          "always"
+        );
+      }
+      Services.xulStore.removeValue(
+        BROWSER_DOCURL,
+        "PersonalToolbar",
+        "collapsed"
+      );
+
+      Services.prefs.clearUserPref(
+        "browser.livebookmarks.migrationAttemptsLeft"
+      );
+    }
+
+    // For existing profiles, continue putting bookmarks in the
+    // "other bookmarks" folder.
+    if (currentUIVersion < 104) {
+      Services.prefs.setCharPref(
+        "browser.bookmarks.defaultLocation",
+        "unfiled"
+      );
+    }
+
     // Update the migration version.
     Services.prefs.setIntPref("browser.migration.version", UI_VERSION);
   },
 
   _maybeShowDefaultBrowserPrompt() {
     DefaultBrowserCheck.willCheckDefaultBrowser(/* isStartupCheck */ true).then(
-      willPrompt => {
-        if (!willPrompt) {
-          return;
+      async willPrompt => {
+        let { DefaultBrowserNotification } = ChromeUtils.import(
+          "resource:///actors/AboutNewTabParent.jsm",
+          {}
+        );
+        if (willPrompt) {
+          // Prevent the related notification from appearing and
+          // show the modal prompt.
+          DefaultBrowserNotification.notifyModalDisplayed();
+          let win = BrowserWindowTracker.getTopWindow();
+          DefaultBrowserCheck.prompt(win);
         }
-        DefaultBrowserCheck.prompt(BrowserWindowTracker.getTopWindow());
       }
     );
   },
@@ -4577,211 +4805,57 @@ ContentPermissionPrompt.prototype = {
 };
 
 var DefaultBrowserCheck = {
-  get OPTIONPOPUP() {
-    return "defaultBrowserNotificationPopup";
-  },
-
-  closePrompt(aNode) {
-    if (this._notification) {
-      this._notification.close();
-    }
-  },
-
-  setAsDefault() {
-    let claimAllTypes = true;
-    let setAsDefaultError = false;
-    if (AppConstants.platform == "win") {
-      try {
-        // In Windows 8+, the UI for selecting default protocol is much
-        // nicer than the UI for setting file type associations. So we
-        // only show the protocol association screen on Windows 8+.
-        // Windows 8 is version 6.2.
-        let version = Services.sysinfo.getProperty("version");
-        claimAllTypes = parseFloat(version) < 6.2;
-      } catch (ex) {}
-    }
-    try {
-      ShellService.setDefaultBrowser(claimAllTypes, false);
-    } catch (ex) {
-      setAsDefaultError = true;
-      Cu.reportError(ex);
-    }
-    // Here BROWSER_IS_USER_DEFAULT and BROWSER_SET_USER_DEFAULT_ERROR appear
-    // to be inverse of each other, but that is only because this function is
-    // called when the browser is set as the default. During startup we record
-    // the BROWSER_IS_USER_DEFAULT value without recording BROWSER_SET_USER_DEFAULT_ERROR.
-    Services.telemetry
-      .getHistogramById("BROWSER_IS_USER_DEFAULT")
-      .add(!setAsDefaultError);
-    Services.telemetry
-      .getHistogramById("BROWSER_SET_DEFAULT_ERROR")
-      .add(setAsDefaultError);
-  },
-
-  _createPopup(win, notNowStrings, neverStrings) {
-    let doc = win.document;
-    let popup = doc.createXULElement("menupopup");
-    popup.id = this.OPTIONPOPUP;
-
-    let notNowItem = doc.createXULElement("menuitem");
-    notNowItem.id = "defaultBrowserNotNow";
-    notNowItem.setAttribute("label", notNowStrings.label);
-    notNowItem.setAttribute("accesskey", notNowStrings.accesskey);
-    popup.appendChild(notNowItem);
-
-    let neverItem = doc.createXULElement("menuitem");
-    neverItem.id = "defaultBrowserNever";
-    neverItem.setAttribute("label", neverStrings.label);
-    neverItem.setAttribute("accesskey", neverStrings.accesskey);
-    popup.appendChild(neverItem);
-
-    popup.addEventListener("command", this);
-
-    let popupset = doc.getElementById("mainPopupSet");
-    popupset.appendChild(popup);
-  },
-
-  handleEvent(event) {
-    if (event.type == "command") {
-      if (event.target.id == "defaultBrowserNever") {
-        ShellService.shouldCheckDefaultBrowser = false;
-      }
-      this.closePrompt();
-    }
-  },
-
   prompt(win) {
-    let useNotificationBar = Services.prefs.getBoolPref(
-      "browser.defaultbrowser.notificationbar"
-    );
-
     let brandBundle = win.document.getElementById("bundle_brand");
     let brandShortName = brandBundle.getString("brandShortName");
 
     let shellBundle = win.document.getElementById("bundle_shell");
-    let buttonPrefix =
-      "setDefaultBrowser" + (useNotificationBar ? "" : "Alert");
+    let buttonPrefix = "setDefaultBrowserAlert";
     let yesButton = shellBundle.getFormattedString(
       buttonPrefix + "Confirm.label",
       [brandShortName]
     );
     let notNowButton = shellBundle.getString(buttonPrefix + "NotNow.label");
 
-    if (useNotificationBar) {
-      let promptMessage = shellBundle.getFormattedString(
-        "setDefaultBrowserMessage2",
-        [brandShortName]
-      );
-      let optionsMessage = shellBundle.getString(
-        "setDefaultBrowserOptions.label"
-      );
-      let optionsKey = shellBundle.getString(
-        "setDefaultBrowserOptions.accesskey"
-      );
+    let promptTitle = shellBundle.getString("setDefaultBrowserTitle");
+    let promptMessage = shellBundle.getFormattedString(
+      "setDefaultBrowserMessage",
+      [brandShortName]
+    );
+    let askLabel = shellBundle.getFormattedString("setDefaultBrowserDontAsk", [
+      brandShortName,
+    ]);
 
-      let neverLabel = shellBundle.getString("setDefaultBrowserNever.label");
-      let neverKey = shellBundle.getString("setDefaultBrowserNever.accesskey");
-
-      let yesButtonKey = shellBundle.getString(
-        "setDefaultBrowserConfirm.accesskey"
-      );
-      let notNowButtonKey = shellBundle.getString(
-        "setDefaultBrowserNotNow.accesskey"
-      );
-
-      this._createPopup(
-        win,
-        {
-          label: notNowButton,
-          accesskey: notNowButtonKey,
-        },
-        {
-          label: neverLabel,
-          accesskey: neverKey,
-        }
-      );
-
-      let buttons = [
-        {
-          label: yesButton,
-          accessKey: yesButtonKey,
-          callback: () => {
-            this.setAsDefault();
-            this.closePrompt();
-          },
-        },
-        {
-          label: optionsMessage,
-          accessKey: optionsKey,
-          popup: this.OPTIONPOPUP,
-        },
-      ];
-
-      let iconPixels = win.devicePixelRatio > 1 ? "32" : "16";
-      let iconURL = "chrome://branding/content/icon" + iconPixels + ".png";
-      const priority = win.gHighPriorityNotificationBox.PRIORITY_WARNING_HIGH;
-      let callback = this._onNotificationEvent.bind(this);
-      this._notification = win.gHighPriorityNotificationBox.appendNotification(
-        promptMessage,
-        "default-browser",
-        iconURL,
-        priority,
-        buttons,
-        callback
-      );
-    } else {
-      // Modal prompt
-      let promptTitle = shellBundle.getString("setDefaultBrowserTitle");
-      let promptMessage = shellBundle.getFormattedString(
-        "setDefaultBrowserMessage",
-        [brandShortName]
-      );
-      let askLabel = shellBundle.getFormattedString(
-        "setDefaultBrowserDontAsk",
-        [brandShortName]
-      );
-
-      let ps = Services.prompt;
-      let shouldAsk = { value: true };
-      let buttonFlags =
-        ps.BUTTON_TITLE_IS_STRING * ps.BUTTON_POS_0 +
-        ps.BUTTON_TITLE_IS_STRING * ps.BUTTON_POS_1 +
-        ps.BUTTON_POS_0_DEFAULT;
-      let rv = ps.confirmEx(
-        win,
-        promptTitle,
-        promptMessage,
-        buttonFlags,
-        yesButton,
-        notNowButton,
-        null,
-        askLabel,
-        shouldAsk
-      );
-      if (rv == 0) {
-        this.setAsDefault();
-      } else if (!shouldAsk.value) {
-        ShellService.shouldCheckDefaultBrowser = false;
-      }
-
-      try {
-        let resultEnum = rv * 2 + shouldAsk.value;
-        Services.telemetry
-          .getHistogramById("BROWSER_SET_DEFAULT_RESULT")
-          .add(resultEnum);
-      } catch (ex) {
-        /* Don't break if Telemetry is acting up. */
-      }
+    let ps = Services.prompt;
+    let shouldAsk = { value: true };
+    let buttonFlags =
+      ps.BUTTON_TITLE_IS_STRING * ps.BUTTON_POS_0 +
+      ps.BUTTON_TITLE_IS_STRING * ps.BUTTON_POS_1 +
+      ps.BUTTON_POS_0_DEFAULT;
+    let rv = ps.confirmEx(
+      win,
+      promptTitle,
+      promptMessage,
+      buttonFlags,
+      yesButton,
+      notNowButton,
+      null,
+      askLabel,
+      shouldAsk
+    );
+    if (rv == 0) {
+      win.getShellService().setAsDefault();
+    } else if (!shouldAsk.value) {
+      win.getShellService().shouldCheckDefaultBrowser = false;
     }
-  },
 
-  _onNotificationEvent(eventType) {
-    if (eventType == "removed") {
-      let doc = this._notification.ownerDocument;
-      let popup = doc.getElementById(this.OPTIONPOPUP);
-      popup.removeEventListener("command", this);
-      popup.remove();
-      delete this._notification;
+    try {
+      let resultEnum = rv * 2 + shouldAsk.value;
+      Services.telemetry
+        .getHistogramById("BROWSER_SET_DEFAULT_RESULT")
+        .add(resultEnum);
+    } catch (ex) {
+      /* Don't break if Telemetry is acting up. */
     }
   },
 
@@ -4792,13 +4866,21 @@ var DefaultBrowserCheck = {
    * @returns {boolean} True if the default browser check prompt will be shown.
    */
   async willCheckDefaultBrowser(isStartupCheck) {
+    let win = BrowserWindowTracker.getTopWindow();
+    let shellService = win.getShellService();
+
     // Perform default browser checking.
-    if (!ShellService) {
+    if (!shellService) {
       return false;
     }
 
     let shouldCheck =
-      !AppConstants.DEBUG && ShellService.shouldCheckDefaultBrowser;
+      !AppConstants.DEBUG &&
+      shellService.shouldCheckDefaultBrowser &&
+      !Services.prefs.getBoolPref(
+        "browser.defaultbrowser.notificationbar",
+        false
+      );
 
     // Even if we shouldn't check the default browser, we still continue when
     // isStartupCheck = true to set prefs and telemetry.
@@ -4831,7 +4913,7 @@ var DefaultBrowserCheck = {
     let isDefault = false;
     let isDefaultError = false;
     try {
-      isDefault = ShellService.isDefaultBrowser(isStartupCheck, false);
+      isDefault = shellService.isDefaultBrowser(isStartupCheck, false);
     } catch (ex) {
       isDefaultError = true;
     }
@@ -5266,7 +5348,15 @@ var AboutHomeStartupCache = {
     }
 
     this._cacheProgress = "Writing to cache";
-    await this.populateCache(pageInputStream, scriptInputStream);
+
+    try {
+      await this.populateCache(pageInputStream, scriptInputStream);
+    } catch (e) {
+      this._cacheProgress = "Failed to populate cache";
+      this.log.error("Populating the cache failed: ", e);
+      return;
+    }
+
     this._cacheProgress = "Done";
     this.log.trace("Done writing to cache.");
     this._hasWrittenThisSession = true;
@@ -5303,7 +5393,7 @@ var AboutHomeStartupCache = {
     let state = AboutNewTab.activityStream.store.getState();
     return new Promise(resolve => {
       this._cacheDeferred = resolve;
-      this.log.trace("Parent received cache streams.");
+      this.log.trace("Parent is requesting cache streams.");
       this._procManager.sendAsyncMessage(this.CACHE_REQUEST_MESSAGE, { state });
     });
   },
@@ -5638,7 +5728,7 @@ var AboutHomeStartupCache = {
 
   /**
    * Called when a content process is destroyed. Either it shut down normally,
-   * or it crshed. If this is the "privileged about content process", then some
+   * or it crashed. If this is the "privileged about content process", then some
    * internal state is cleared.
    *
    * @param childID (Number)
@@ -5647,6 +5737,17 @@ var AboutHomeStartupCache = {
    */
   onContentProcessShutdown(childID) {
     if (this._procManagerID == childID) {
+      if (this._cacheDeferred) {
+        this.log.error(
+          "A privileged about content process shut down while cache streams " +
+            "were still en route."
+        );
+        // The crash occurred while we were waiting on cache input streams to
+        // be returned to us. Resolve with null streams instead.
+        this._cacheDeferred({ pageInputStream: null, scriptInputStream: null });
+        this._cacheDeferred = null;
+      }
+
       this._procManager.removeMessageListener(
         this.CACHE_RESPONSE_MESSAGE,
         this

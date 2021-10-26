@@ -37,7 +37,7 @@ jobs:
   displayName: 'affected tests: Safari Technology Preview'
   condition: eq(variables['Build.Reason'], 'PullRequest')
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -54,7 +54,7 @@ jobs:
   displayName: 'affected tests without changes: Safari Technology Preview'
   condition: eq(variables['Build.Reason'], 'PullRequest')
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -79,6 +79,8 @@ jobs:
   steps:
   - template: tools/ci/azure/checkout.yml
   - script: |
+      set -euo pipefail
+      git fetch --depth 50 --quiet origin master
       ./wpt test-jobs | while read job; do
         echo "$job"
         echo "##vso[task.setvariable variable=$job;isOutput=true]true";
@@ -91,7 +93,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wptrunner_infrastructure']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -120,7 +122,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.tools_unittest']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   variables:
     HYPOTHESIS_PROFILE: ci
   steps:
@@ -138,7 +140,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.tools_unittest']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -154,7 +156,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.tools_unittest']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -170,7 +172,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wptrunner_unittest']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   variables:
     HYPOTHESIS_PROFILE: ci
   steps:
@@ -188,7 +190,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wptrunner_unittest']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -204,7 +206,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wptrunner_unittest']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -220,7 +222,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wpt_integration']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   variables:
     HYPOTHESIS_PROFILE: ci
   steps:
@@ -242,7 +244,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wpt_integration']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   # full checkout required
   - task: UsePythonVersion@0
@@ -262,7 +264,7 @@ jobs:
   dependsOn: decision
   condition: dependencies.decision.outputs['test_jobs.wpt_integration']
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   # full checkout required
   - task: UsePythonVersion@0
@@ -595,7 +597,7 @@ jobs:
     parallel: 5 # chosen to make runtime ~2h
   timeoutInMinutes: 180
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -610,8 +612,8 @@ jobs:
       channel: stable
   - template: tools/ci/azure/update_hosts.yml
   - template: tools/ci/azure/update_manifest.yml
-  # --exclude is a workaround for https://github.com/web-platform-tests/wpt/issues/18995 + https://github.com/web-platform-tests/wpt/issues/20887 + https://github.com/web-platform-tests/wpt/issues/22175 + https://github.com/web-platform-tests/wpt/issues/23630
-  - script: ./wpt run --no-manifest-update --no-restart-on-unexpected --no-fail-on-unexpected --this-chunk=$(System.JobPositionInPhase) --total-chunks=$(System.TotalJobsInPhase) --chunk-type hash --log-wptreport $(Build.ArtifactStagingDirectory)/wpt_report_$(System.JobPositionInPhase).json --log-wptscreenshot $(Build.ArtifactStagingDirectory)/wpt_screenshot_$(System.JobPositionInPhase).txt --log-mach - --log-mach-level info safari --exclude /pointerevents/pointerevent_pointercapture-not-lost-in-chorded-buttons.html --exclude /pointerevents/pointerevent_pointercapture_in_frame.html --exclude /web-share/share-sharePromise-internal-slot.https.html --exclude /webdriver/tests/perform_actions/pointer_tripleclick.py
+  # --exclude is a workaround for https://github.com/web-platform-tests/wpt/issues/18995 + https://github.com/web-platform-tests/wpt/issues/20887 + https://github.com/web-platform-tests/wpt/issues/22175 + https://github.com/web-platform-tests/wpt/issues/23630 + https://github.com/web-platform-tests/wpt/issues/25294
+  - script: ./wpt run --no-manifest-update --no-restart-on-unexpected --no-fail-on-unexpected --this-chunk=$(System.JobPositionInPhase) --total-chunks=$(System.TotalJobsInPhase) --chunk-type hash --log-wptreport $(Build.ArtifactStagingDirectory)/wpt_report_$(System.JobPositionInPhase).json --log-wptscreenshot $(Build.ArtifactStagingDirectory)/wpt_screenshot_$(System.JobPositionInPhase).txt --log-mach - --log-mach-level info --channel stable safari --exclude /pointerevents/pointerevent_pointercapture-not-lost-in-chorded-buttons.html --exclude /pointerevents/pointerevent_pointercapture_in_frame.html --exclude /web-share/share-sharePromise-internal-slot.https.html --exclude /webdriver/tests/perform_actions/pointer_tripleclick.py --exclude /is-input-pending/security/cross-origin-subframe-overlap.sub.html --exclude /web-share/share-url-invalid.https.html
     displayName: 'Run tests'
   - task: PublishBuildArtifacts@1
     displayName: 'Publish results'
@@ -633,7 +635,7 @@ jobs:
     parallel: 5 # chosen to make runtime ~2h
   timeoutInMinutes: 180
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macOS-10.15'
   steps:
   - task: UsePythonVersion@0
     inputs:
@@ -646,8 +648,8 @@ jobs:
   - template: tools/ci/azure/install_safari.yml
   - template: tools/ci/azure/update_hosts.yml
   - template: tools/ci/azure/update_manifest.yml
-  # --exclude is a workaround for https://github.com/web-platform-tests/wpt/issues/18995 + https://github.com/web-platform-tests/wpt/issues/20887 + https://github.com/web-platform-tests/wpt/issues/23630
-  - script: ./wpt run --no-manifest-update --no-restart-on-unexpected --no-fail-on-unexpected --this-chunk=$(System.JobPositionInPhase) --total-chunks=$(System.TotalJobsInPhase) --chunk-type hash --log-wptreport $(Build.ArtifactStagingDirectory)/wpt_report_$(System.JobPositionInPhase).json --log-wptscreenshot $(Build.ArtifactStagingDirectory)/wpt_screenshot_$(System.JobPositionInPhase).txt --log-mach - --log-mach-level info --channel preview safari --exclude /pointerevents/pointerevent_pointercapture_in_frame.html --exclude /web-share/share-sharePromise-internal-slot.https.html --exclude /webdriver/tests/perform_actions/pointer_tripleclick.py
+  # --exclude is a workaround for https://github.com/web-platform-tests/wpt/issues/18995 + https://github.com/web-platform-tests/wpt/issues/20887 + https://github.com/web-platform-tests/wpt/issues/23630 + https://github.com/web-platform-tests/wpt/issues/25417
+  - script: ./wpt run --no-manifest-update --no-restart-on-unexpected --no-fail-on-unexpected --this-chunk=$(System.JobPositionInPhase) --total-chunks=$(System.TotalJobsInPhase) --chunk-type hash --log-wptreport $(Build.ArtifactStagingDirectory)/wpt_report_$(System.JobPositionInPhase).json --log-wptscreenshot $(Build.ArtifactStagingDirectory)/wpt_screenshot_$(System.JobPositionInPhase).txt --log-mach - --log-mach-level info --channel preview safari --exclude /pointerevents/pointerevent_pointercapture_in_frame.html --exclude /web-share/share-sharePromise-internal-slot.https.html --exclude /webdriver/tests/perform_actions/pointer_tripleclick.py --exclude /web-share/share-url-invalid.https.html
     displayName: 'Run tests'
   - task: PublishBuildArtifacts@1
     displayName: 'Publish results'

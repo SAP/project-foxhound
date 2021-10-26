@@ -21,7 +21,6 @@
 #include "EventStateManager.h"
 #include "FrameLayerBuilder.h"
 #include "Layers.h"
-#include "LayersLogging.h"
 #include "MMPrinter.h"
 #include "PermissionMessageUtils.h"
 #include "PuppetWidget.h"
@@ -45,12 +44,15 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/ToString.h"
 #include "mozilla/Unused.h"
+#include "mozilla/dom/AutoPrintEventDispatcher.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DocGroup.h"
@@ -122,6 +124,7 @@
 #include "nsPrintfCString.h"
 #include "nsQueryActor.h"
 #include "nsQueryObject.h"
+#include "nsRefreshDriver.h"
 #include "nsSandboxFlags.h"
 #include "nsString.h"
 #include "nsTHashtable.h"
@@ -131,6 +134,7 @@
 #include "nsViewportInfo.h"
 #include "nsWebBrowser.h"
 #include "nsWindowWatcher.h"
+#include "nsIXULRuntime.h"
 
 #ifdef XP_WIN
 #  include "mozilla/plugins/PluginWidgetChild.h"
@@ -158,8 +162,6 @@ using mozilla::layers::GeckoContentController;
 NS_IMPL_ISUPPORTS(ContentListener, nsIDOMEventListener)
 
 static const char BEFORE_FIRST_PAINT[] = "before-first-paint";
-
-nsTHashtable<nsPtrHashKey<BrowserChild>>* BrowserChild::sVisibleTabs;
 
 typedef nsDataHashtable<nsUint64HashKey, BrowserChild*> BrowserChildMap;
 static BrowserChildMap* sBrowserChildren;
@@ -308,7 +310,6 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mLayersId{0},
       mEffectsInfo{EffectsInfo::FullyHidden()},
       mDidFakeShow(false),
-      mNotified(false),
       mTriedBrowserInit(false),
       mOrientation(hal::eScreenOrientation_PortraitPrimary),
       mIgnoreKeyPressEvent(false),
@@ -334,7 +335,6 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mShouldSendWebProgressEventsToParent(false),
       mRenderLayers(true),
       mPendingDocShellIsActive(false),
-      mPendingSuspendMediaWhenInactive(false),
       mPendingDocShellReceivedMessage(false),
       mPendingRenderLayers(false),
       mPendingRenderLayersReceivedMessage(false),
@@ -525,8 +525,7 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
   // frames.
   if (mIsTopLevel) {
     nsContentUtils::SetScrollbarsVisibility(
-        window->GetDocShell(),
-        !!(mChromeFlags & nsIWebBrowserChrome::CHROME_SCROLLBARS));
+        docShell, !!(mChromeFlags & nsIWebBrowserChrome::CHROME_SCROLLBARS));
   }
 
   nsWeakPtr weakPtrThis = do_GetWeakReference(
@@ -549,6 +548,11 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
   rv = mSessionStoreListener->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 #endif
+
+  // We've all set up, make sure our visibility state is consistent. This is
+  // important for OOP iframes, which start off as hidden.
+  UpdateVisibility();
+
   return NS_OK;
 }
 
@@ -562,7 +566,8 @@ void BrowserChild::NotifyTabContextUpdated() {
 
   // Set SANDBOXED_AUXILIARY_NAVIGATION flag if this is a receiver page.
   if (!PresentationURL().IsEmpty()) {
-    mBrowsingContext->SetSandboxFlags(SANDBOXED_AUXILIARY_NAVIGATION);
+    // Return value of setting synced field should be checked. See bug 1656492.
+    Unused << mBrowsingContext->SetSandboxFlags(SANDBOXED_AUXILIARY_NAVIGATION);
   }
 }
 
@@ -832,7 +837,8 @@ BrowserChild::ProvideWindow(nsIOpenWindowInfo* aOpenWindowInfo,
   RefPtr<BrowsingContext> parent = aOpenWindowInfo->GetParent();
 
   int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
-      parent->GetDOMWindow(), aChromeFlags, aCalledFromJS, aWidthSpecified);
+      parent->GetDOMWindow(), aChromeFlags, aCalledFromJS, aWidthSpecified,
+      aOpenWindowInfo->GetIsForPrinting());
 
   // If it turns out we're opening in the current browser, just hand over the
   // current browser's docshell.
@@ -941,13 +947,6 @@ void BrowserChild::ActorDestroy(ActorDestroyReason why) {
 
 BrowserChild::~BrowserChild() {
   mAnonymousGlobalScopes.Clear();
-  if (sVisibleTabs) {
-    sVisibleTabs->RemoveEntry(this);
-    if (sVisibleTabs->IsEmpty()) {
-      delete sVisibleTabs;
-      sVisibleTabs = nullptr;
-    }
-  }
 
   DestroyWindow();
 
@@ -969,8 +968,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvWillChangeProcess(
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvLoadURL(
-    const nsCString& aURI, nsIPrincipal* aTriggeringPrincipal,
-    const ParentShowInfo& aInfo) {
+    nsDocShellLoadState* aLoadState, const ParentShowInfo& aInfo) {
   if (!mDidLoadURLInit) {
     mDidLoadURLInit = true;
     if (!InitBrowserChildMessageManager()) {
@@ -979,28 +977,20 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadURL(
 
     ApplyParentShowInfo(aInfo);
   }
-
-  LoadURIOptions loadURIOptions;
-  loadURIOptions.mTriggeringPrincipal = aTriggeringPrincipal;
-  loadURIOptions.mLoadFlags =
-      nsIWebNavigation::LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP |
-      nsIWebNavigation::LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
-
-  nsIWebNavigation* webNav = WebNavigation();
-  nsresult rv = webNav->LoadURI(NS_ConvertUTF8toUTF16(aURI), loadURIOptions);
-  if (NS_FAILED(rv)) {
-    NS_WARNING(
-        "WebNavigation()->LoadURI failed. Eating exception, what else can I "
-        "do?");
-  }
+  nsAutoCString spec;
+  aLoadState->URI()->GetSpec(spec);
 
   nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
-  if (docShell) {
-    nsDocShell::Cast(docShell)->MaybeClearStorageAccessFlag();
+  MOZ_ASSERT(docShell);
+  if (!docShell) {
+    NS_WARNING("WebNavigation does not have a docshell");
+    return IPC_OK();
   }
+  docShell->LoadURI(aLoadState, true);
 
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, aURI);
+  nsDocShell::Cast(docShell)->MaybeClearStorageAccessFlag();
 
+  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, spec);
   return IPC_OK();
 }
 
@@ -1018,6 +1008,52 @@ mozilla::ipc::IPCResult BrowserChild::RecvResumeLoad(
   nsresult rv = WebNavigation()->ResumeRedirectedLoad(aPendingSwitchID, -1);
   if (NS_FAILED(rv)) {
     NS_WARNING("WebNavigation()->ResumeRedirectedLoad failed");
+  }
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserChild::RecvCloneDocumentTreeIntoSelf(
+    const MaybeDiscarded<BrowsingContext>& aSourceBC) {
+  if (NS_WARN_IF(aSourceBC.IsNullOrDiscarded())) {
+    return IPC_OK();
+  }
+  nsCOMPtr<Document> sourceDocument = aSourceBC.get()->GetDocument();
+  if (NS_WARN_IF(!sourceDocument)) {
+    return IPC_OK();
+  }
+
+  nsCOMPtr<nsIDocShell> ourDocShell = do_GetInterface(WebNavigation());
+  if (NS_WARN_IF(!ourDocShell)) {
+    return IPC_OK();
+  }
+
+  nsCOMPtr<nsIContentViewer> cv;
+  ourDocShell->GetContentViewer(getter_AddRefs(cv));
+  if (NS_WARN_IF(!cv)) {
+    return IPC_OK();
+  }
+
+  RefPtr<Document> clone;
+  {
+    AutoPrintEventDispatcher dispatcher(*sourceDocument);
+    nsAutoScriptBlocker scriptBlocker;
+    bool hasInProcessCallbacks = false;
+    clone = sourceDocument->CreateStaticClone(ourDocShell, cv,
+                                              &hasInProcessCallbacks);
+    if (NS_WARN_IF(!clone)) {
+      return IPC_OK();
+    }
+  }
+
+  // Since the clone document is not parsed-created, we need to initialize
+  // layout manually. This is usually done in ReflowPrintObject for non-remote
+  // documents.
+  if (RefPtr<PresShell> ps = clone->GetPresShell()) {
+    if (!ps->DidInitialize()) {
+      nsresult rv = ps->Initialize();
+      Unused << NS_WARN_IF(NS_FAILED(rv));
+    }
   }
 
   return IPC_OK();
@@ -1250,7 +1286,7 @@ void BrowserChild::HandleDoubleTap(const CSSPoint& aPoint,
                                    const ScrollableLayerGuid& aGuid) {
   MOZ_LOG(
       sApzChildLog, LogLevel::Debug,
-      ("Handling double tap at %s with %p %p\n", Stringify(aPoint).c_str(),
+      ("Handling double tap at %s with %p %p\n", ToString(aPoint).c_str(),
        mBrowserChildMessageManager ? mBrowserChildMessageManager->GetWrapper()
                                    : nullptr,
        mBrowserChildMessageManager.get()));
@@ -1383,16 +1419,7 @@ void BrowserChild::ZoomToRect(const uint32_t& aPresShellId,
 
 mozilla::ipc::IPCResult BrowserChild::RecvActivate() {
   MOZ_ASSERT(mWebBrowser);
-  // Ensure that the PresShell exists, otherwise focusing
-  // is definitely not going to work. GetPresShell should
-  // create a PresShell if one doesn't exist yet.
-  RefPtr<PresShell> presShell = GetTopLevelPresShell();
-  NS_ASSERTION(presShell, "Need a PresShell to activate!");
-  Unused << presShell;
-
-  if (presShell) {
-    mWebBrowser->FocusActivate();
-  }
+  mWebBrowser->FocusActivate();
   return IPC_OK();
 }
 
@@ -1778,12 +1805,14 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealTouchEvent(
   // The other values don't really matter.
   InputAPZContext context(aGuid, aInputBlockId, aApzResponse);
 
+  nsTArray<TouchBehaviorFlags> allowedTouchBehaviors;
   if (localEvent.mMessage == eTouchStart && AsyncPanZoomEnabled()) {
     nsCOMPtr<Document> document = GetTopLevelDocument();
     if (StaticPrefs::layout_css_touch_action_enabled()) {
-      APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(
-          mPuppetWidget, document, localEvent, aInputBlockId,
-          mSetAllowedTouchBehaviorCallback);
+      allowedTouchBehaviors =
+          APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(
+              mPuppetWidget, document, localEvent, aInputBlockId,
+              mSetAllowedTouchBehaviorCallback);
     }
     UniquePtr<DisplayportSetListener> postLayerization =
         APZCCallbackHelper::SendSetTargetAPZCNotification(
@@ -1805,7 +1834,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealTouchEvent(
   }
 
   mAPZEventState->ProcessTouchEvent(localEvent, aGuid, aInputBlockId,
-                                    aApzResponse, status);
+                                    aApzResponse, status,
+                                    std::move(allowedTouchBehaviors));
   return IPC_OK();
 }
 
@@ -2256,18 +2286,81 @@ mozilla::ipc::IPCResult BrowserChild::RecvHandleAccessKey(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BrowserChild::RecvPrintPreview(
+    const PrintData& aPrintData,
+    const mozilla::Maybe<uint64_t>& aSourceOuterWindowID,
+    PrintPreviewResolver&& aCallback) {
+#ifdef NS_PRINTING
+  // If we didn't succeed in passing off ownership of aCallback, then something
+  // went wrong.
+  auto sendCallbackError = MakeScopeExit([&] {
+    if (aCallback) {
+      aCallback(PrintPreviewResultInfo(0, 0, false));  // signal error
+    }
+  });
+
+  RefPtr<nsGlobalWindowOuter> sourceWindow;
+  if (aSourceOuterWindowID) {
+    sourceWindow =
+        nsGlobalWindowOuter::GetOuterWindowWithId(aSourceOuterWindowID.value());
+    if (NS_WARN_IF(!sourceWindow)) {
+      return IPC_OK();
+    }
+  } else {
+    nsCOMPtr<nsPIDOMWindowOuter> ourWindow = do_GetInterface(WebNavigation());
+    if (NS_WARN_IF(!ourWindow)) {
+      return IPC_OK();
+    }
+    sourceWindow = nsGlobalWindowOuter::Cast(ourWindow);
+  }
+
+  RefPtr<nsIPrintSettings> printSettings;
+  nsCOMPtr<nsIPrintSettingsService> printSettingsSvc =
+      do_GetService("@mozilla.org/gfx/printsettings-service;1");
+  if (NS_WARN_IF(!printSettingsSvc)) {
+    return IPC_OK();
+  }
+  printSettingsSvc->GetNewPrintSettings(getter_AddRefs(printSettings));
+  if (NS_WARN_IF(!printSettings)) {
+    return IPC_OK();
+  }
+  printSettingsSvc->DeserializeToPrintSettings(aPrintData, printSettings);
+
+  nsCOMPtr<nsIDocShell> docShellToCloneInto;
+  if (aSourceOuterWindowID) {
+    docShellToCloneInto = do_GetInterface(WebNavigation());
+    if (NS_WARN_IF(!docShellToCloneInto)) {
+      return IPC_OK();
+    }
+  }
+
+  sourceWindow->Print(printSettings,
+                      /* aListener = */ nullptr, docShellToCloneInto,
+                      nsGlobalWindowOuter::IsPreview::Yes,
+                      nsGlobalWindowOuter::IsForWindowDotPrint::No,
+                      std::move(aCallback), IgnoreErrors());
+#endif
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserChild::RecvExitPrintPreview() {
+#ifdef NS_PRINTING
+  nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint =
+      do_GetInterface(ToSupports(WebNavigation()));
+  if (NS_WARN_IF(!webBrowserPrint)) {
+    return IPC_OK();
+  }
+  webBrowserPrint->ExitPrintPreview();
+#endif
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult BrowserChild::RecvPrint(const uint64_t& aOuterWindowID,
                                                 const PrintData& aPrintData) {
 #ifdef NS_PRINTING
-  nsGlobalWindowOuter* outerWindow =
+  RefPtr<nsGlobalWindowOuter> outerWindow =
       nsGlobalWindowOuter::GetOuterWindowWithId(aOuterWindowID);
   if (NS_WARN_IF(!outerWindow)) {
-    return IPC_OK();
-  }
-
-  nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint =
-      do_GetInterface(ToSupports(outerWindow));
-  if (NS_WARN_IF(!webBrowserPrint)) {
     return IPC_OK();
   }
 
@@ -2292,11 +2385,18 @@ mozilla::ipc::IPCResult BrowserChild::RecvPrint(const uint64_t& aOuterWindowID,
 
   printSettings->SetPrintSession(printSession);
   printSettingsSvc->DeserializeToPrintSettings(aPrintData, printSettings);
-  rv = webBrowserPrint->Print(printSettings, nullptr);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return IPC_OK();
+  {
+    IgnoredErrorResult rv;
+    outerWindow->Print(printSettings,
+                       /* aListener = */ nullptr,
+                       /* aWindowToCloneInto = */ nullptr,
+                       nsGlobalWindowOuter::IsPreview::No,
+                       nsGlobalWindowOuter::IsForWindowDotPrint::No,
+                       /* aPrintPreviewCallback = */ nullptr, rv);
+    if (NS_WARN_IF(rv.Failed())) {
+      return IPC_OK();
+    }
   }
-
 #endif
   return IPC_OK();
 }
@@ -2357,10 +2457,6 @@ void BrowserChild::RemovePendingDocShellBlocker() {
     mPendingDocShellReceivedMessage = false;
     InternalSetDocShellIsActive(mPendingDocShellIsActive);
   }
-  if (!mPendingDocShellBlockers && mPendingSuspendMediaWhenInactive) {
-    mPendingSuspendMediaWhenInactive = false;
-    InternalSetSuspendMediaWhenInactive(mPendingSuspendMediaWhenInactive);
-  }
   if (!mPendingDocShellBlockers && mPendingRenderLayersReceivedMessage) {
     mPendingRenderLayersReceivedMessage = false;
     RecvRenderLayers(mPendingRenderLayers, mPendingLayersObserverEpoch);
@@ -2385,25 +2481,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvSetDocShellIsActive(
   }
 
   InternalSetDocShellIsActive(aIsActive);
-  return IPC_OK();
-}
-
-void BrowserChild::InternalSetSuspendMediaWhenInactive(
-    bool aSuspendMediaWhenInactive) {
-  if (nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation())) {
-    docShell->SetSuspendMediaWhenInactive(aSuspendMediaWhenInactive);
-  }
-}
-
-mozilla::ipc::IPCResult BrowserChild::RecvSetSuspendMediaWhenInactive(
-    const bool& aSuspendMediaWhenInactive) {
-  if (mPendingDocShellBlockers > 0) {
-    mPendingDocShellReceivedMessage = true;
-    mPendingSuspendMediaWhenInactive = aSuspendMediaWhenInactive;
-    return IPC_OK();
-  }
-
-  InternalSetSuspendMediaWhenInactive(aSuspendMediaWhenInactive);
   return IPC_OK();
 }
 
@@ -2614,7 +2691,12 @@ void BrowserChild::InitRenderingState(
     mLayersId = aLayersId;
   }
 
-  MOZ_ASSERT(!mPuppetWidget->HasLayerManager());
+  // Depending on timing, we might paint too early and fall back to basic
+  // layers. CreateRemoteLayerManager will destroy us if we manage to get a
+  // remote layer manager though, so that's fine.
+  MOZ_ASSERT(!mPuppetWidget->HasLayerManager() ||
+             mPuppetWidget->GetLayerManager()->GetBackendType() ==
+                 layers::LayersBackend::LAYERS_BASIC);
   bool success = false;
   if (mLayersConnected == Some(true)) {
     success = CreateRemoteLayerManager(compositorChild);
@@ -2651,9 +2733,10 @@ bool BrowserChild::CreateRemoteLayerManager(
     success = mPuppetWidget->CreateRemoteLayerManager(
         [&](LayerManager* aLayerManager) -> bool {
           MOZ_ASSERT(aLayerManager->AsWebRenderLayerManager());
+          nsCString error;
           return aLayerManager->AsWebRenderLayerManager()->Initialize(
               aCompositorChild, wr::AsPipelineId(mLayersId),
-              &mTextureFactoryIdentifier);
+              &mTextureFactoryIdentifier, error);
         });
   } else {
     nsTArray<LayersBackend> ignored;
@@ -2717,13 +2800,6 @@ void BrowserChild::InitAPZState() {
   cbc->SendPAPZConstructor(apzChild, mLayersId);
 }
 
-void BrowserChild::NotifyPainted() {
-  if (!mNotified) {
-    SendNotifyCompositorTransaction();
-    mNotified = true;
-  }
-}
-
 IPCResult BrowserChild::RecvUpdateEffects(const EffectsInfo& aEffects) {
   bool needInvalidate = false;
   if (mEffectsInfo.IsVisible() && aEffects.IsVisible() &&
@@ -2777,11 +2853,6 @@ void BrowserChild::MakeVisible() {
     return;
   }
 
-  if (!sVisibleTabs) {
-    sVisibleTabs = new nsTHashtable<nsPtrHashKey<BrowserChild>>();
-  }
-  sVisibleTabs->PutEntry(this);
-
   if (mPuppetWidget) {
     mPuppetWidget->Show(true);
   }
@@ -2815,12 +2886,6 @@ void BrowserChild::MakeVisible() {
 }
 
 void BrowserChild::MakeHidden() {
-  if (sVisibleTabs) {
-    sVisibleTabs->RemoveEntry(this);
-    // We don't delete sVisibleTabs here when it's empty since that
-    // could cause a lot of churn. Instead, we wait until ~BrowserChild.
-  }
-
   if (!IsVisible()) {
     return;
   }
@@ -2866,9 +2931,9 @@ BrowserChild::GetMessageManager(ContentFrameMessageManager** aResult) {
 
 NS_IMETHODIMP
 BrowserChild::GetWebBrowserChrome(nsIWebBrowserChrome3** aWebBrowserChrome) {
-  nsCOMPtr<nsPIDOMWindowOuter> outer = do_GetInterface(WebNavigation());
+  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
   if (nsCOMPtr<nsIWebBrowserChrome3> chrome =
-          do_QueryActor("WebBrowserChrome", outer)) {
+          do_QueryActor("WebBrowserChrome", docShell->GetDocument())) {
     chrome.forget(aWebBrowserChrome);
   } else {
     // TODO: remove fallback
@@ -2885,6 +2950,22 @@ BrowserChild::SetWebBrowserChrome(nsIWebBrowserChrome3* aWebBrowserChrome) {
 }
 
 void BrowserChild::SendRequestFocus(bool aCanFocus, CallerType aCallerType) {
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
+  if (!fm) {
+    return;
+  }
+
+  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(WebNavigation());
+  if (!window) {
+    return;
+  }
+
+  BrowsingContext* focusedBC = fm->GetFocusedBrowsingContext();
+  if (focusedBC == window->GetBrowsingContext()) {
+    // BrowsingContext has the focus already, do not request again.
+    return;
+  }
+
   PBrowserChild::SendRequestFocus(aCanFocus, aCallerType);
 }
 
@@ -2899,6 +2980,12 @@ void BrowserChild::SetTabId(const TabId& aTabId) {
 
   mUniqueId = aTabId;
   NestedBrowserChildMap()[mUniqueId] = this;
+}
+
+NS_IMETHODIMP
+BrowserChild::GetChromeOuterWindowID(uint64_t* aId) {
+  *aId = ChromeOuterWindowID();
+  return NS_OK;
 }
 
 bool BrowserChild::DoSendBlockingMessage(
@@ -2996,6 +3083,13 @@ void BrowserChild::ClearCachedResources() {
   MOZ_ASSERT(lm);
 
   lm->ClearCachedResources();
+
+  if (nsCOMPtr<Document> document = GetTopLevelDocument()) {
+    nsPresContext* presContext = document->GetPresContext();
+    if (presContext) {
+      presContext->NotifyPaintStatusReset();
+    }
+  }
 }
 
 void BrowserChild::InvalidateLayers() {
@@ -3209,6 +3303,11 @@ mozilla::ipc::IPCResult BrowserChild::RecvSetWidgetNativeData(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BrowserChild::RecvReleaseAllPointerCapture() {
+  PointerEventHandler::ReleaseAllPointerCapture();
+  return IPC_OK();
+}
+
 mozilla::plugins::PPluginWidgetChild* BrowserChild::AllocPPluginWidgetChild() {
 #ifdef XP_WIN
   return new mozilla::plugins::PluginWidgetChild();
@@ -3275,16 +3374,14 @@ ScreenIntSize BrowserChild::GetInnerSize() {
       innerSize, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
 };
 
-Maybe<LayoutDeviceIntRect> BrowserChild::GetVisibleRect() const {
+Maybe<nsRect> BrowserChild::GetVisibleRect() const {
   if (mIsTopLevel) {
     // We are conservative about visible rects for top-level browsers to avoid
     // artifacts when resizing
     return Nothing();
   }
-  CSSRect visibleRectCSS = CSSPixel::FromAppUnits(mEffectsInfo.mVisibleRect);
-  LayoutDeviceIntRect visibleRectLD =
-      RoundedToInt(visibleRectCSS * mPuppetWidget->GetDefaultScale());
-  return Some(visibleRectLD);
+
+  return Some(mEffectsInfo.mVisibleRect);
 }
 
 Maybe<LayoutDeviceRect>
@@ -3351,7 +3448,19 @@ nsresult BrowserChild::CanCancelContentJS(
     return NS_OK;
   }
 
-  nsCOMPtr<nsISHistory> history = do_GetInterface(WebNavigation());
+  // If we have session history in the parent we've already performed
+  // the checks following, so we can return early.
+  if (mozilla::SessionHistoryInParent()) {
+    *aCanCancel = true;
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
+  nsCOMPtr<nsISHistory> history;
+  if (docShell) {
+    history = nsDocShell::Cast(docShell)->GetSessionHistory()->LegacySHistory();
+  }
+
   if (!history) {
     return NS_ERROR_FAILURE;
   }
@@ -3606,9 +3715,8 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
     if (CrashReporter::GetEnabled()) {
       nsCOMPtr<nsIURI> annotationURI;
 
-      nsresult rv = NS_MutateURI(aLocation)
-                        .SetUserPass(EmptyCString())
-                        .Finalize(annotationURI);
+      nsresult rv =
+          NS_MutateURI(aLocation).SetUserPass(""_ns).Finalize(annotationURI);
 
       if (NS_FAILED(rv)) {
         // Ignore failures on about: URIs.
@@ -3914,13 +4022,6 @@ already_AddRefed<nsIEventTarget>
 BrowserChildMessageManager::GetTabEventTarget() {
   nsCOMPtr<nsIEventTarget> target = EventTargetFor(TaskCategory::Other);
   return target.forget();
-}
-
-uint64_t BrowserChildMessageManager::ChromeOuterWindowID() {
-  if (!mBrowserChild) {
-    return 0;
-  }
-  return mBrowserChild->ChromeOuterWindowID();
 }
 
 nsresult BrowserChildMessageManager::Dispatch(

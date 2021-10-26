@@ -28,7 +28,7 @@ linux64/opt:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
-    run-on-projects: ['mozilla-central']
+    run-on-projects: ['integration']
     use-sccache: true
     fetches:
         toolchain:
@@ -81,13 +81,16 @@ linux64-plain/opt:
             - linux64-cbindgen
             - linux64-dump-syms
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
 
 linux64-fuzzing/debug:
     description: "Linux64 Fuzzing Debug"
     index:
         product: firefox
         job-name: linux64-fuzzing-debug
+    attributes:
+        # The gtest libxul contains libFuzzer targets
+        skip-verify-test-packaging: true
     treeherder:
         platform: linux64/debug
         symbol: Bf
@@ -97,6 +100,7 @@ linux64-fuzzing/debug:
         env:
             MOZ_LOW_PARALLELISM_BUILD: '1'
             PERFHERDER_EXTRA_OPTIONS: fuzzing
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -128,7 +132,7 @@ linux64-fuzzing/debug:
             # this dependency can be removed.
             - linux64-fix-stacks
     optimization:
-        build-fuzzing: null
+        skip-unless-expanded: null
 
 linux64/debug:
     description: "Linux64 Debug"
@@ -186,6 +190,8 @@ linux64/codeql-cpp:
         symbol: linux64-cpp
         tier: 2
         kind: other
+    shipping-phase: ship
+    shipping-product: firefox
     worker-type: b-linux-xlarge
     expires-after: 4 days
     worker:
@@ -228,6 +234,15 @@ linux64/codeql-cpp:
             # the build step. Once bug 1614626 moves them to the xpcshell task,
             # this dependency can be removed.
             - linux64-fix-stacks
+    notifications:
+        subject: '{task[shipping-product]} {release_config[version]} build{release_config[build_number]}/{config[params][project]} linux64 codeql-cpp status'
+        message: '{task[shipping-product]} {release_config[version]} build{release_config[build_number]}/{config[params][project]} linux64 codeql-cpp status'
+        emails:
+            by-project:
+                mozilla-release: ["tom@mozilla.com", "freddy@mozilla.com"]
+                try: ["{config[params][owner]}"]
+                default: []
+    optimization: null
 
 
 linux64-plain/debug:
@@ -267,7 +282,7 @@ linux64-plain/debug:
             - linux64-cbindgen
             - linux64-dump-syms
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
 
 linux64-devedition/opt:
     description: "Linux64 devedition (shippable)"
@@ -342,7 +357,7 @@ linux/opt:
         secrets: true
         tooltool-downloads: public
         need-xvfb: true
-    run-on-projects: ['release']
+    run-on-projects: ['mozilla-beta', 'mozilla-release', 'mozilla-esr78']
     use-sccache: true
     fetches:
         toolchain:
@@ -445,6 +460,8 @@ linux-rusttests/opt:
             - linux64-node
             - linux64-lucetc
             - wasi-sysroot
+    optimization:
+        test-inclusive: [rusttests]
 
 linux-rusttests/debug:
     description: "Linux32 Rust Tests Debug"
@@ -487,6 +504,8 @@ linux-rusttests/debug:
             - linux64-node
             - linux64-lucetc
             - wasi-sysroot
+    optimization:
+        test-inclusive: [rusttests]
 
 linux-devedition/opt:
     description: "Linux32 devedition (shippable)"
@@ -754,7 +773,7 @@ linux64-tsan-fuzzing/opt:
             - linux64-lucetc
             - wasi-sysroot
     optimization:
-        build-fuzzing: null
+        skip-unless-expanded: null
 
 linux64-asan-fuzzing/opt:
     description: "Linux64 Fuzzing Opt ASAN"
@@ -801,7 +820,7 @@ linux64-asan-fuzzing/opt:
             - linux64-lucetc
             - wasi-sysroot
     optimization:
-        build-fuzzing: null
+        skip-unless-expanded: null
 
 linux64-asan-fuzzing-ccov/opt:
     description: "Linux64 Fuzzing Opt ASAN w/ Coverage"
@@ -893,7 +912,7 @@ linux64-fuzzing-ccov/opt:
             - linux64-lucetc
             - wasi-sysroot
     optimization:
-        build-fuzzing: null
+        skip-unless-expanded: null
 
 linux64-asan-reporter-shippable/opt:
     description: "Linux64 Opt ASAN Reporter (Shippable)"
@@ -993,7 +1012,7 @@ linux64-asan/debug:
             # this dependency can be removed.
             - linux64-fix-stacks
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
 
 linux64-shippable/opt:
     description: "Linux64 Shippable"
@@ -1010,6 +1029,7 @@ linux64-shippable/opt:
     treeherder:
         platform: linux64-shippable/opt
         symbol: Bpgo(B)
+    run-on-projects: ['release']
     worker-type: b-linux
     worker:
         max-run-time: 9000
@@ -1126,6 +1146,8 @@ linux64-rusttests/opt:
             - linux64-node
             - linux64-lucetc
             - wasi-sysroot
+    optimization:
+        test-inclusive: [rusttests]
 
 linux64-rusttests/debug:
     description: "Linux64 Rust Tests Debug"
@@ -1167,6 +1189,8 @@ linux64-rusttests/debug:
             - linux64-node
             - linux64-lucetc
             - wasi-sysroot
+    optimization:
+        test-inclusive: [rusttests]
 
 linux64-ccov/opt:
     description: "Linux64-CCov Opt"
@@ -1286,6 +1310,7 @@ linux64-aarch64/opt:
         mozconfig-variant: opt
         tooltool-downloads: public
         need-xvfb: true
+    run-on-projects: ['integration']
     use-sccache: true
     fetches:
         toolchain:
@@ -1300,7 +1325,7 @@ linux64-aarch64/opt:
             - linux64-lucetc
             - wasi-sysroot
     optimization:
-        push-interval-10: null
+        skip-unless-expanded: null
 
 linux-gcp/debug:
     description: "Linux32 Debug - built on GCP"
@@ -1351,7 +1376,7 @@ linux-gcp/debug:
             # this dependency can be removed.
             - linux64-fix-stacks
     optimization:
-        push-interval-25: null
+        skip-unless-backstop: null
 
 linux-gcp/opt:
     description: "Linux32 Opt - built on GCP"
@@ -1443,7 +1468,7 @@ linux64-gcp/debug:
             # this dependency can be removed.
             - linux64-fix-stacks
     optimization:
-        push-interval-25: null
+        skip-unless-backstop: null
 
 linux64-gcp/opt:
     description: "Linux64 Opt - built on GCP"

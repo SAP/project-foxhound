@@ -8,7 +8,7 @@
 #include "ContentBlockingNotifier.h"
 #include "AntiTrackingUtils.h"
 
-#include "mozilla/AbstractEventQueue.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -496,7 +496,7 @@ void ContentBlockingNotifier::OnDecision(BrowsingContext* aBrowsingContext,
 
 /* static */
 void ContentBlockingNotifier::OnEvent(nsIChannel* aTrackingChannel,
-                                      uint32_t aRejectedReason) {
+                                      uint32_t aRejectedReason, bool aBlocked) {
   MOZ_ASSERT(XRE_IsParentProcess() && aTrackingChannel);
 
   nsCOMPtr<nsIURI> uri;
@@ -507,7 +507,7 @@ void ContentBlockingNotifier::OnEvent(nsIChannel* aTrackingChannel,
     Unused << nsContentUtils::GetASCIIOrigin(uri, trackingOrigin);
   }
 
-  return ContentBlockingNotifier::OnEvent(aTrackingChannel, true,
+  return ContentBlockingNotifier::OnEvent(aTrackingChannel, aBlocked,
                                           aRejectedReason, trackingOrigin);
 }
 

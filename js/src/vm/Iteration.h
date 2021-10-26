@@ -91,15 +91,24 @@ struct NativeIterator {
  private:
   static constexpr uint32_t FlagsBits = 3;
   static constexpr uint32_t FlagsMask = (1 << FlagsBits) - 1;
+
+ public:
   static constexpr uint32_t PropCountLimit = 1 << (32 - FlagsBits);
+
+ private:
+  // While in compartment->enumerators, these form a doubly linked list.
+  NativeIterator* next_ = nullptr;
+  NativeIterator* prev_ = nullptr;
 
   // Stores Flags bits in the lower bits and the initial property count above
   // them.
   uint32_t flagsAndCount_ = 0;
 
-  /* While in compartment->enumerators, these form a doubly linked list. */
-  NativeIterator* next_ = nullptr;
-  NativeIterator* prev_ = nullptr;
+#ifdef DEBUG
+  // If true, this iterator may contain indexed properties that came from
+  // objects on the prototype chain. This is used by certain debug assertions.
+  bool maybeHasIndexedPropertiesFromProto_ = false;
+#endif
 
   // END OF PROPERTIES
 
@@ -235,22 +244,29 @@ struct NativeIterator {
 
   size_t allocationSize() const;
 
+#ifdef DEBUG
+  void setMaybeHasIndexedPropertiesFromProto() {
+    maybeHasIndexedPropertiesFromProto_ = true;
+  }
+  bool maybeHasIndexedPropertiesFromProto() const {
+    return maybeHasIndexedPropertiesFromProto_;
+  }
+#endif
+
  private:
   uint32_t flags() const { return flagsAndCount_ & FlagsMask; }
 
   uint32_t initialPropertyCount() const { return flagsAndCount_ >> FlagsBits; }
 
+  static uint32_t initialFlagsAndCount(uint32_t count) {
+    // No flags are initially set.
+    MOZ_ASSERT(count < PropCountLimit);
+    return count << FlagsBits;
+  }
+
   void setFlags(uint32_t flags) {
     MOZ_ASSERT((flags & ~FlagsMask) == 0);
     flagsAndCount_ = (initialPropertyCount() << FlagsBits) | flags;
-  }
-
-  MOZ_MUST_USE bool setInitialPropertyCount(uint32_t count) {
-    if (count >= PropCountLimit) {
-      return false;
-    }
-    flagsAndCount_ = (count << FlagsBits) | flags();
-    return true;
   }
 
   void markInitialized() {
@@ -413,6 +429,12 @@ extern bool SuppressDeletedProperty(JSContext* cx, HandleObject obj, jsid id);
 
 extern bool SuppressDeletedElement(JSContext* cx, HandleObject obj,
                                    uint32_t index);
+
+#ifdef DEBUG
+extern void AssertDenseElementsNotIterated(NativeObject* obj);
+#else
+inline void AssertDenseElementsNotIterated(NativeObject* obj) {}
+#endif
 
 /*
  * IteratorMore() returns the next iteration value. If no value is available,

@@ -647,13 +647,13 @@ hr[size="1"] {
   border-style: solid none none none;
 }
 
-input:is(:-moz-broken, :-moz-user-disabled)::before,
-img:is(:-moz-broken, :-moz-user-disabled)::before {
+input:-moz-broken::before,
+img:-moz-broken::before {
   content: -moz-alt-content !important;
   unicode-bidi: isolate;
 }
 
-object:is(:-moz-broken,:-moz-user-disabled) > *|* {
+object:-moz-broken > *|* {
   /*
     Inherit in the object's alignment so that if we aren't aligned explicitly
     we'll end up in the right place vertically.  See bug 36997.  Note that this
@@ -662,28 +662,13 @@ object:is(:-moz-broken,:-moz-user-disabled) > *|* {
   vertical-align: inherit;
 }
 
-img:-moz-suppressed,
-input:-moz-suppressed,
-object:-moz-suppressed,
-embed:-moz-suppressed {
-  /*
-    Set visibility too in case the page changes display.  Note that we _may_
-    want to just set visibility and not display, in general, if we find that
-    display:none breaks too many layouts.  And if we decide we really do want
-    people to be able to right-click blocked images, etc, we need to set
-    neither one, and hack the painting code.... :(
-   */
-  display: none !important;
-  visibility: hidden !important;
-}
-
 img[usemap], object[usemap] {
   color: blue;
 }
 
 frameset {
   display: block ! important;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   position: static ! important;
   float: none ! important;
   border: none ! important;
@@ -798,6 +783,11 @@ video > .caption-box {
 }
 
 /* details & summary */
+details > summary:-moz-native-anonymous {
+  /* TODO(krosylight): Remove this when fixing bug 1308080 */
+  user-select: none;
+}
+
 details > summary:is(:first-of-type, :-moz-native-anonymous) {
   display: list-item;
   counter-increment: list-item 0;
@@ -833,6 +823,20 @@ dialog {
 
 dialog:not([open]) {
   display: none;
+}
+
+/* This pseudo-class is used to remove the inertness for
+   the topmost modal dialog in top layer. This reverts
+   what StyleAdjuster's adjust_for_inert does.
+*/
+dialog:-moz-topmost-modal-dialog {
+  -moz-inert: none;
+  -moz-user-focus: initial;
+  -moz-user-input: initial;
+  -moz-user-modify: initial;
+  user-select: text;
+  pointer-events: initial;
+  cursor: initial;
 }
 
 dialog:-moz-modal-dialog {

@@ -127,7 +127,6 @@
 #include "mozilla/Alignment.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DoublyLinkedList.h"
 #include "mozilla/HelperMacros.h"
@@ -184,7 +183,7 @@ using namespace mozilla;
 // Debug builds are opted out too, for test coverage.
 #ifndef MOZ_DEBUG
 #  if !defined(__ia64__) && !defined(__sparc__) && !defined(__mips__) && \
-      !defined(__aarch64__) && !defined(__powerpc__)
+      !defined(__aarch64__) && !defined(__powerpc__) && !defined(XP_MACOSX)
 #    define MALLOC_STATIC_PAGESIZE 1
 #  endif
 #endif
@@ -524,6 +523,10 @@ static size_t opt_dirty_max = DIRTY_MAX_DEFAULT;
 
 // Return the smallest pagesize multiple that is >= s.
 #define PAGE_CEILING(s) (((s) + gPageSizeMask) & ~gPageSizeMask)
+
+// Number of all the small-allocated classes
+#define NUM_SMALL_CLASSES \
+  (kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses)
 
 // ***************************************************************************
 // MALLOC_DECOMMIT and MALLOC_DOUBLE_PURGE are mutually exclusive.
@@ -971,8 +974,8 @@ struct arena_t {
 
   void DallocRun(arena_run_t* aRun, bool aDirty);
 
-  MOZ_MUST_USE bool SplitRun(arena_run_t* aRun, size_t aSize, bool aLarge,
-                             bool aZero);
+  [[nodiscard]] bool SplitRun(arena_run_t* aRun, size_t aSize, bool aLarge,
+                              bool aZero);
 
   void TrimRunHead(arena_chunk_t* aChunk, arena_run_t* aRun, size_t aOldSize,
                    size_t aNewSize);
@@ -1310,7 +1313,7 @@ static inline void pages_decommit(void* aAddr, size_t aSize) {
 }
 
 // Commit pages. Returns whether pages were committed.
-MOZ_MUST_USE static inline bool pages_commit(void* aAddr, size_t aSize) {
+[[nodiscard]] static inline bool pages_commit(void* aAddr, size_t aSize) {
 #ifdef XP_WIN
   // The region starting at addr may have been allocated in multiple calls
   // to VirtualAlloc and recycled, so committing the entire region in one
@@ -1444,9 +1447,7 @@ arena_t* TypedBaseAlloc<arena_t>::sFirstFree = nullptr;
 template <>
 size_t TypedBaseAlloc<arena_t>::size_of() {
   // Allocate enough space for trailing bins.
-  return sizeof(arena_t) +
-         (sizeof(arena_bin_t) *
-          (kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses - 1));
+  return sizeof(arena_t) + (sizeof(arena_bin_t) * (NUM_SMALL_CLASSES - 1));
 }
 
 template <typename T>
@@ -3563,8 +3564,7 @@ arena_t::arena_t(arena_params_t* aParams) {
     }
     sizeClass = sizeClass.Next();
   }
-  MOZ_ASSERT(i ==
-             kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses - 1);
+  MOZ_ASSERT(i == NUM_SMALL_CLASSES - 1);
 
 #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
   mMagic = ARENA_MAGIC;
@@ -3581,8 +3581,7 @@ arena_t::~arena_t() {
   if (mSpare) {
     chunk_dealloc(mSpare, kChunkSize, ARENA_CHUNK);
   }
-  for (i = 0; i < kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses;
-       i++) {
+  for (i = 0; i < NUM_SMALL_CLASSES; i++) {
     MOZ_RELEASE_ASSERT(!mBins[i].mNonFullRuns.First(), "Bin is not empty");
   }
 #ifdef MOZ_DEBUG
@@ -3599,7 +3598,6 @@ arena_t::~arena_t() {
 
 arena_t* ArenaCollection::CreateArena(bool aIsPrivate,
                                       arena_params_t* aParams) {
-  fallible_t fallible;
   arena_t* ret = new (fallible) arena_t(aParams);
   if (!ret) {
     // Only reached if there is an OOM error.
@@ -3884,6 +3882,8 @@ static bool malloc_init_hard() {
   gPageSize = (size_t)result;
   DefineGlobals();
 #endif
+
+  MOZ_RELEASE_ASSERT(JEMALLOC_MAX_STATS_BINS >= NUM_SMALL_CLASSES);
 
   // Get runtime configuration.
   if ((opts = getenv("MALLOC_OPTIONS"))) {
@@ -4228,7 +4228,8 @@ inline size_t MozJemalloc::malloc_usable_size(usable_ptr_t aPtr) {
 }
 
 template <>
-inline void MozJemalloc::jemalloc_stats(jemalloc_stats_t* aStats) {
+inline void MozJemalloc::jemalloc_stats_internal(
+    jemalloc_stats_t* aStats, jemalloc_bin_stats_t* aBinStats) {
   size_t non_arena_mapped, chunk_header_size;
 
   if (!aStats) {
@@ -4238,12 +4239,18 @@ inline void MozJemalloc::jemalloc_stats(jemalloc_stats_t* aStats) {
     memset(aStats, 0, sizeof(*aStats));
     return;
   }
+  if (aBinStats) {
+    // An assertion in malloc_init_hard will guarantee that
+    // JEMALLOC_MAX_STATS_BINS >= NUM_SMALL_CLASSES.
+    memset(aBinStats, 0,
+           sizeof(jemalloc_bin_stats_t) * JEMALLOC_MAX_STATS_BINS);
+  }
 
   // Gather runtime settings.
   aStats->opt_junk = opt_junk;
   aStats->opt_zero = opt_zero;
   aStats->quantum = kQuantum;
-  aStats->small_max = kMaxQuantumClass;
+  aStats->quantum_max = kMaxQuantumClass;
   aStats->large_max = gMaxLargeClass;
   aStats->chunksize = kChunkSize;
   aStats->page_size = gPageSize;
@@ -4281,7 +4288,6 @@ inline void MozJemalloc::jemalloc_stats(jemalloc_stats_t* aStats) {
   for (auto arena : gArenas.iter()) {
     size_t arena_mapped, arena_allocated, arena_committed, arena_dirty, j,
         arena_unused, arena_headers;
-    arena_run_t* run;
 
     arena_headers = 0;
     arena_unused = 0;
@@ -4299,22 +4305,32 @@ inline void MozJemalloc::jemalloc_stats(jemalloc_stats_t* aStats) {
 
       arena_dirty = arena->mNumDirty << gPageSize2Pow;
 
-      for (j = 0; j < kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses;
-           j++) {
+      for (j = 0; j < NUM_SMALL_CLASSES; j++) {
         arena_bin_t* bin = &arena->mBins[j];
         size_t bin_unused = 0;
+        size_t num_non_full_runs = 0;
 
         for (auto mapelm : bin->mNonFullRuns.iter()) {
-          run = (arena_run_t*)(mapelm->bits & ~gPageSizeMask);
+          arena_run_t* run = (arena_run_t*)(mapelm->bits & ~gPageSizeMask);
           bin_unused += run->mNumFree * bin->mSizeClass;
+          num_non_full_runs++;
         }
 
         if (bin->mCurrentRun) {
           bin_unused += bin->mCurrentRun->mNumFree * bin->mSizeClass;
+          num_non_full_runs++;
         }
 
         arena_unused += bin_unused;
         arena_headers += bin->mNumRuns * bin->mRunFirstRegionOffset;
+        if (aBinStats) {
+          aBinStats[j].size = bin->mSizeClass;
+          aBinStats[j].num_non_full_runs += num_non_full_runs;
+          aBinStats[j].num_runs += bin->mNumRuns;
+          aBinStats[j].bytes_unused += bin_unused;
+          aBinStats[j].bytes_total +=
+              bin->mNumRuns * (bin->mRunSize - bin->mRunFirstRegionOffset);
+        }
       }
     }
 

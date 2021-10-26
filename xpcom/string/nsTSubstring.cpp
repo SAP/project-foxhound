@@ -9,6 +9,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Printf.h"
+#include "mozilla/ResultExtensions.h"
 
 #include "nsASCIIMask.h"
 
@@ -63,15 +64,13 @@ inline const nsTAutoString<T>* AsAutoString(const nsTSubstring<T>* aStr) {
 }
 
 template <typename T>
-mozilla::BulkWriteHandle<T> nsTSubstring<T>::BulkWrite(
-    size_type aCapacity, size_type aPrefixToPreserve, bool aAllowShrinking,
-    nsresult& aRv) {
+mozilla::Result<mozilla::BulkWriteHandle<T>, nsresult>
+nsTSubstring<T>::BulkWrite(size_type aCapacity, size_type aPrefixToPreserve,
+                           bool aAllowShrinking) {
   auto r = StartBulkWriteImpl(aCapacity, aPrefixToPreserve, aAllowShrinking);
   if (MOZ_UNLIKELY(r.isErr())) {
-    aRv = r.unwrapErr();
-    return mozilla::BulkWriteHandle<T>(nullptr, 0);
+    return r.propagateErr();
   }
-  aRv = NS_OK;
   return mozilla::BulkWriteHandle<T>(this, r.unwrap());
 }
 
@@ -1296,7 +1295,7 @@ void nsTSubstring<T>::AppendPrintf(const char* aFormat, ...) {
 }
 
 template <typename T>
-void nsTSubstring<T>::AppendPrintf(const char* aFormat, va_list aAp) {
+void nsTSubstring<T>::AppendVprintf(const char* aFormat, va_list aAp) {
   PrintfAppend<T> appender(this);
   bool r = appender.vprint(aFormat, aAp);
   if (!r) {
@@ -1543,7 +1542,13 @@ nsTSubstringSplitter<T> nsTSubstring<T>::Split(const char_type aChar) const {
 template <typename T>
 const nsTDependentSubstring<T>&
 nsTSubstringSplitter<T>::nsTSubstringSplit_Iter::operator*() const {
-  return mObj.Get(mPos);
+  return mObj->Get(mPos);
+}
+
+template <typename T>
+const nsTDependentSubstring<T>*
+nsTSubstringSplitter<T>::nsTSubstringSplit_Iter::operator->() const {
+  return &mObj->Get(mPos);
 }
 
 // Common logic for nsTSubstring<T>::ToInteger and nsTSubstring<T>::ToInteger64.

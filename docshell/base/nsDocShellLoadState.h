@@ -26,6 +26,8 @@ class nsIChannel;
 class nsIReferrerInfo;
 class OriginAttibutes;
 namespace mozilla {
+template <typename, class>
+class UniquePtr;
 namespace dom {
 class DocShellLoadStateInit;
 }  // namespace dom
@@ -102,6 +104,10 @@ class nsDocShellLoadState final {
 
   void SetTriggeringPrincipal(nsIPrincipal* aTriggeringPrincipal);
 
+  uint32_t TriggeringSandboxFlags() const;
+
+  void SetTriggeringSandboxFlags(uint32_t aTriggeringSandboxFlags);
+
   nsIContentSecurityPolicy* Csp() const;
 
   void SetCsp(nsIContentSecurityPolicy* aCsp);
@@ -134,9 +140,18 @@ class nsDocShellLoadState final {
 
   void SetSHEntry(nsISHEntry* aSHEntry);
 
-  const mozilla::dom::SessionHistoryInfo* GetSessionHistoryInfo() const;
+  const mozilla::dom::LoadingSessionHistoryInfo* GetLoadingSessionHistoryInfo()
+      const;
 
-  void SetSessionHistoryInfo(const mozilla::dom::SessionHistoryInfo& aInfo);
+  // Copies aLoadingInfo and stores the copy in this nsDocShellLoadState.
+  void SetLoadingSessionHistoryInfo(
+      const mozilla::dom::LoadingSessionHistoryInfo& aLoadingInfo);
+
+  // Stores aLoadingInfo in this nsDocShellLoadState.
+  void SetLoadingSessionHistoryInfo(
+      mozilla::UniquePtr<mozilla::dom::LoadingSessionHistoryInfo> aLoadingInfo);
+
+  bool LoadIsFromSessionHistory() const;
 
   const nsString& Target() const;
 
@@ -272,6 +287,11 @@ class nsDocShellLoadState final {
 
   mozilla::dom::DocShellLoadStateInit Serialize();
 
+  void SetLoadIsFromSessionHistory(int32_t aRequestedIndex,
+                                   int32_t aSessionHistoryLength,
+                                   bool aLoadingFromActiveEntry);
+  void ClearLoadIsFromSessionHistory();
+
  protected:
   // Destructor can't be defaulted or inlined, as header doesn't have all type
   // includes it needs to do so.
@@ -306,6 +326,11 @@ class nsDocShellLoadState final {
   // the argument aURI is provided by the web, then please do not pass a
   // SystemPrincipal as the triggeringPrincipal.
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
+
+  // The SandboxFlags of the load, that are, the SandboxFlags of the entity
+  // responsible for causing the load to occur. Most likely this are the
+  // SandboxFlags of the document that started the load.
+  uint32_t mTriggeringSandboxFlags;
 
   // The CSP of the load, that is, the CSP of the entity responsible for causing
   // the load to occur. Most likely this is the CSP of the document that started
@@ -368,8 +393,9 @@ class nsDocShellLoadState final {
   // Active Session History entry (if loading from SH)
   nsCOMPtr<nsISHEntry> mSHEntry;
 
-  // Session history info for the load
-  mozilla::UniquePtr<mozilla::dom::SessionHistoryInfo> mSessionHistoryInfo;
+  // Loading session history info for the load
+  mozilla::UniquePtr<mozilla::dom::LoadingSessionHistoryInfo>
+      mLoadingSessionHistoryInfo;
 
   // Target for load, like _content, _blank etc.
   nsString mTarget;

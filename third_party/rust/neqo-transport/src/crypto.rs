@@ -5,30 +5,44 @@
 // except according to those terms.
 
 use std::cell::RefCell;
-use std::cmp::max;
+use std::cmp::{max, min};
+use std::convert::TryFrom;
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::rc::Rc;
 use std::time::Instant;
 
-use neqo_common::{hex, qdebug, qerror, qinfo, qtrace, Role};
+use neqo_common::{hex, hex_snip_middle, qdebug, qinfo, qtrace, Encoder, Role};
 use neqo_crypto::{
     aead::Aead, hkdf, hp::HpKey, Agent, AntiReplay, Cipher, Epoch, HandshakeState, Record,
-    RecordList, SymKey, ZeroRttChecker, TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384,
-    TLS_CHACHA20_POLY1305_SHA256, TLS_CT_HANDSHAKE, TLS_EPOCH_APPLICATION_DATA,
-    TLS_EPOCH_HANDSHAKE, TLS_EPOCH_INITIAL, TLS_EPOCH_ZERO_RTT, TLS_VERSION_1_3,
+    RecordList, ResumptionToken, SymKey, ZeroRttChecker, TLS_AES_128_GCM_SHA256,
+    TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256, TLS_CT_HANDSHAKE,
+    TLS_EPOCH_APPLICATION_DATA, TLS_EPOCH_HANDSHAKE, TLS_EPOCH_INITIAL, TLS_EPOCH_ZERO_RTT,
+    TLS_VERSION_1_3,
 };
 
-use crate::frame::Frame;
-use crate::packet::{PacketNumber, QuicVersion};
+use crate::packet::{PacketBuilder, PacketNumber, QuicVersion};
 use crate::recovery::RecoveryToken;
 use crate::recv_stream::RxStreamOrderer;
 use crate::send_stream::TxBuffer;
-use crate::tparams::{TpZeroRttChecker, TransportParametersHandler};
+use crate::tparams::{TpZeroRttChecker, TransportParameters, TransportParametersHandler};
 use crate::tracking::PNSpace;
 use crate::{Error, Res};
 
 const MAX_AUTH_TAG: usize = 32;
+/// The number of invocations remaining on a write cipher before we try
+/// to update keys.  This has to be much smaller than the number returned
+/// by `CryptoDxState::limit` or updates will happen too often.  As we don't
+/// need to ask permission to update, this can be quite small.
+pub(crate) const UPDATE_WRITE_KEYS_AT: PacketNumber = 100;
+
+// This is a testing kludge that allows for overwriting the number of
+// invocations of the next cipher to operate.  With this, it is possible
+// to test what happens when the number of invocations reaches 0, or
+// when it hits `UPDATE_WRITE_KEYS_AT` and an automatic update should occur.
+// This is a little crude, but it saves a lot of plumbing.
+#[cfg(test)]
+thread_local!(pub(crate) static OVERWRITE_INVOCATIONS: RefCell<Option<PacketNumber>> = RefCell::default());
 
 #[derive(Debug)]
 pub struct Crypto {
@@ -134,51 +148,48 @@ impl Crypto {
                 self.tls.read_secret(TLS_EPOCH_ZERO_RTT),
             ),
         };
-        let secret = secret.ok_or(Error::KeysNotFound)?;
+        let secret = secret.ok_or(Error::InternalError)?;
         self.states.set_0rtt_keys(dir, &secret, cipher.unwrap());
         Ok(true)
     }
 
-    pub fn install_keys(&mut self, role: Role) {
-        if self.tls.state().is_final() {
-            return;
-        }
-        // These functions only work once, but will usually return KeysNotFound.
-        // Anything else is unusual and worth logging.
-        if let Err(e) = self.install_handshake_keys() {
-            qerror!([self], "Error installing handshake keys: {:?}", e);
-        }
-        if role == Role::Server {
-            if let Err(e) = self.install_application_write_key() {
-                qerror!([self], "Error installing application write key: {:?}", e);
+    /// Returns true if new handshake keys were installed.
+    pub fn install_keys(&mut self, role: Role) -> Res<bool> {
+        if !self.tls.state().is_final() {
+            let installed_hs = self.install_handshake_keys()?;
+            if role == Role::Server {
+                self.maybe_install_application_write_key()?;
             }
+            Ok(installed_hs)
+        } else {
+            Ok(false)
         }
     }
 
-    fn install_handshake_keys(&mut self) -> Res<()> {
+    fn install_handshake_keys(&mut self) -> Res<bool> {
         qtrace!([self], "Attempt to install handshake keys");
         let write_secret = if let Some(secret) = self.tls.write_secret(TLS_EPOCH_HANDSHAKE) {
             secret
         } else {
             // No keys is fine.
-            return Ok(());
+            return Ok(false);
         };
         let read_secret = self
             .tls
             .read_secret(TLS_EPOCH_HANDSHAKE)
-            .ok_or(Error::KeysNotFound)?;
+            .ok_or(Error::InternalError)?;
         let cipher = match self.tls.info() {
             None => self.tls.preinfo()?.cipher_suite(),
             Some(info) => Some(info.cipher_suite()),
         }
-        .ok_or(Error::KeysNotFound)?;
+        .ok_or(Error::InternalError)?;
         self.states
             .set_handshake_keys(&write_secret, &read_secret, cipher);
         qdebug!([self], "Handshake keys installed");
-        Ok(())
+        Ok(true)
     }
 
-    fn install_application_write_key(&mut self) -> Res<()> {
+    fn maybe_install_application_write_key(&mut self) -> Res<()> {
         qtrace!([self], "Attempt to install application write key");
         if let Some(secret) = self.tls.write_secret(TLS_EPOCH_APPLICATION_DATA) {
             self.states.set_application_write_key(secret)?;
@@ -188,15 +199,14 @@ impl Crypto {
     }
 
     pub fn install_application_keys(&mut self, expire_0rtt: Instant) -> Res<()> {
-        if let Err(e) = self.install_application_write_key() {
-            if e != Error::KeysNotFound {
-                return Err(e);
-            }
-        }
+        self.maybe_install_application_write_key()?;
+        // The write key might have been installed earlier, but it should
+        // always be installed now.
+        debug_assert!(self.states.app_write.is_some());
         let read_secret = self
             .tls
             .read_secret(TLS_EPOCH_APPLICATION_DATA)
-            .ok_or(Error::KeysNotFound)?;
+            .ok_or(Error::InternalError)?;
         self.states
             .set_application_read_key(read_secret, expire_0rtt)?;
         qdebug!([self], "application read keys installed");
@@ -235,11 +245,51 @@ impl Crypto {
         self.streams.lost(token);
     }
 
+    /// Mark any outstanding frames in the indicated space as "lost" so
+    /// that they can be sent again.
+    pub fn resend_unacked(&mut self, space: PNSpace) {
+        self.streams.resend_unacked(space);
+    }
+
     /// Discard state for a packet number space and return true
     /// if something was discarded.
     pub fn discard(&mut self, space: PNSpace) -> bool {
         self.streams.discard(space);
         self.states.discard(space)
+    }
+
+    pub fn create_resumption_token(
+        &mut self,
+        new_token: Option<&[u8]>,
+        tps: &TransportParameters,
+        rtt: u64,
+    ) -> Option<ResumptionToken> {
+        if let Agent::Client(ref mut c) = self.tls {
+            if let Some(ref t) = c.resumption_token() {
+                qtrace!("TLS token {}", hex(t.as_ref()));
+                let mut enc = Encoder::default();
+                enc.encode_varint(rtt);
+                enc.encode_vvec_with(|enc_inner| {
+                    tps.encode(enc_inner);
+                });
+                enc.encode_vvec(new_token.unwrap_or(&[]));
+                enc.encode(t.as_ref());
+                qinfo!("resumption token {}", hex_snip_middle(&enc[..]));
+                Some(ResumptionToken::new(enc.into(), t.expiration_time()))
+            } else {
+                None
+            }
+        } else {
+            unreachable!("It is a server.");
+        }
+    }
+
+    pub fn has_resumption_token(&self) -> bool {
+        if let Agent::Client(c) = &self.tls {
+            c.has_resumption_token()
+        } else {
+            unreachable!("It is a server.");
+        }
     }
 }
 
@@ -269,11 +319,16 @@ pub struct CryptoDxState {
     /// for verifying that packet numbers before a key update are strictly lower
     /// than packet numbers after a key update.
     used_pn: Range<PacketNumber>,
-    /// This is the minimum allowed.
+    /// This is the minimum packet number that is allowed.
     min_pn: PacketNumber,
+    /// The total number of operations that are remaining before the keys
+    /// become exhausted and can't be used any more.
+    invocations: PacketNumber,
 }
 
 impl CryptoDxState {
+    #[allow(clippy::unknown_clippy_lints)] // Until we require rust 1.45.
+    #[allow(clippy::reversed_empty_ranges)] // To initialize an empty range.
     pub fn new(
         direction: CryptoDxDirection,
         epoch: Epoch,
@@ -293,6 +348,7 @@ impl CryptoDxState {
             hpkey: HpKey::extract(TLS_VERSION_1_3, cipher, secret, "quic hp").unwrap(),
             used_pn: 0..0,
             min_pn: 0,
+            invocations: Self::limit(direction, cipher),
         }
     }
 
@@ -307,13 +363,13 @@ impl CryptoDxState {
             0xc3, 0xee, 0xf7, 0x12, 0xc7, 0x2e, 0xbb, 0x5a, 0x11, 0xa7, 0xd2, 0x43, 0x2b, 0xb4,
             0x63, 0x65, 0xbe, 0xf9, 0xf5, 0x02,
         ];
-        const INITIAL_SALT_29: &[u8] = &[
+        const INITIAL_SALT_29_30: &[u8] = &[
             0xaf, 0xbf, 0xec, 0x28, 0x99, 0x93, 0xd2, 0x4c, 0x9e, 0x97, 0x86, 0xf1, 0x9c, 0x61,
             0x11, 0xe0, 0x43, 0x90, 0xa8, 0x99,
         ];
         let salt = match quic_version {
             QuicVersion::Draft27 | QuicVersion::Draft28 => INITIAL_SALT_27,
-            QuicVersion::Draft29 => INITIAL_SALT_29,
+            QuicVersion::Draft29 | QuicVersion::Draft30 => INITIAL_SALT_29_30,
         };
         let cipher = TLS_AES_128_GCM_SHA256;
         let initial_secret = hkdf::extract(
@@ -336,8 +392,58 @@ impl CryptoDxState {
         Self::new(direction, TLS_EPOCH_INITIAL, &secret, cipher)
     }
 
+    /// Determine the confidentiality and integrity limits for the cipher.
+    fn limit(direction: CryptoDxDirection, cipher: Cipher) -> PacketNumber {
+        match direction {
+            // This uses the smaller limits for 2^16 byte packets
+            // as we don't control incoming packet size.
+            CryptoDxDirection::Read => match cipher {
+                TLS_AES_128_GCM_SHA256 => 1 << 52,
+                TLS_AES_256_GCM_SHA384 => PacketNumber::MAX,
+                TLS_CHACHA20_POLY1305_SHA256 => 1 << 36,
+                _ => unreachable!(),
+            },
+            // This uses the larger limits for 2^11 byte packets.
+            CryptoDxDirection::Write => match cipher {
+                TLS_AES_128_GCM_SHA256 | TLS_AES_256_GCM_SHA384 => 1 << 28,
+                TLS_CHACHA20_POLY1305_SHA256 => PacketNumber::MAX,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    fn invoked(&mut self) -> Res<()> {
+        #[cfg(test)]
+        OVERWRITE_INVOCATIONS.with(|v| {
+            if let Some(i) = v.borrow_mut().take() {
+                neqo_common::qwarn!("Setting {:?} invocations to {}", self.direction, i);
+                self.invocations = i;
+            }
+        });
+        self.invocations = self
+            .invocations
+            .checked_sub(1)
+            .ok_or(Error::KeysExhausted)?;
+        Ok(())
+    }
+
+    /// Determine whether we should initiate a key update.
+    pub fn should_update(&self) -> bool {
+        // There is no point in updating read keys as the limit is global.
+        debug_assert_eq!(self.direction, CryptoDxDirection::Write);
+        self.invocations <= UPDATE_WRITE_KEYS_AT
+    }
+
     pub fn next(&self, next_secret: &SymKey, cipher: Cipher) -> Self {
         let pn = self.next_pn();
+        // We count invocations of each write key just for that key, but all
+        // attempts to invocations to read count toward a single limit.
+        // This doesn't count use of Handshake keys.
+        let invocations = if self.direction == CryptoDxDirection::Read {
+            self.invocations
+        } else {
+            Self::limit(CryptoDxDirection::Write, cipher)
+        };
         Self {
             direction: self.direction,
             epoch: self.epoch + 1,
@@ -345,12 +451,8 @@ impl CryptoDxState {
             hpkey: self.hpkey.clone(),
             used_pn: pn..pn,
             min_pn: pn,
+            invocations,
         }
-    }
-
-    #[must_use]
-    pub fn is_0rtt(&self) -> bool {
-        self.epoch == usize::from(TLS_EPOCH_ZERO_RTT)
     }
 
     #[must_use]
@@ -443,6 +545,9 @@ impl CryptoDxState {
             hex(hdr),
             hex(body)
         );
+        // The numbers in `Self::limit` assume a maximum packet size of 2^11.
+        assert!(body.len() <= 2048);
+        self.invoked()?;
 
         let size = body.len() + MAX_AUTH_TAG;
         let mut out = vec![0; size];
@@ -468,6 +573,7 @@ impl CryptoDxState {
             hex(hdr),
             hex(body)
         );
+        self.invoked()?;
         let mut out = vec![0; body.len()];
         let res = self.aead.decrypt(pn, hdr, body, &mut out)?;
         self.used(pn)?;
@@ -550,11 +656,23 @@ impl CryptoDxAppData {
         }
         let next_secret = Self::update_secret(self.cipher, &self.next_secret)?;
         Ok(Self {
-            dx: self.dx.next(&next_secret, self.cipher),
+            dx: self.dx.next(&self.next_secret, self.cipher),
             cipher: self.cipher,
             next_secret,
         })
     }
+
+    pub fn epoch(&self) -> usize {
+        self.dx.epoch
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CryptoSpace {
+    Initial,
+    ZeroRtt,
+    Handshake,
+    ApplicationData,
 }
 
 #[derive(Debug, Default)]
@@ -572,56 +690,86 @@ pub struct CryptoStates {
 }
 
 impl CryptoStates {
-    fn select_or_0rtt<'a>(
-        app: Option<&'a mut CryptoDxAppData>,
-        zero_rtt: Option<&'a mut CryptoDxState>,
-        dir: CryptoDxDirection,
-    ) -> Option<&'a mut CryptoDxState> {
-        app.map(|a| &mut a.dx)
-            .or_else(|| zero_rtt.filter(|z| z.direction == dir))
-    }
-
-    pub fn tx<'a>(&'a mut self, space: PNSpace) -> Option<&'a mut CryptoDxState> {
-        let tx = |x: &'a mut Option<CryptoState>| x.as_mut().map(|dx| &mut dx.tx);
+    /// Select a `CryptoDxState` and `CryptoSpace` for the given `PNSpace`.
+    /// This selects 0-RTT keys for `PNSpace::ApplicationData` if 1-RTT keys are
+    /// not yet available.
+    pub fn select_tx(&mut self, space: PNSpace) -> Option<(CryptoSpace, &mut CryptoDxState)> {
         match space {
-            PNSpace::Initial => tx(&mut self.initial),
-            PNSpace::Handshake => tx(&mut self.handshake),
-            PNSpace::ApplicationData => Self::select_or_0rtt(
-                self.app_write.as_mut(),
-                self.zero_rtt.as_mut(),
-                CryptoDxDirection::Write,
-            ),
-        }
-    }
-
-    pub fn rx_hp(&mut self, space: PNSpace) -> Option<&mut CryptoDxState> {
-        match space {
-            PNSpace::ApplicationData => Self::select_or_0rtt(
-                self.app_read.as_mut(),
-                self.zero_rtt.as_mut(),
-                CryptoDxDirection::Read,
-            ),
-            _ => self.rx(space, false),
-        }
-    }
-
-    pub fn rx<'a>(&'a mut self, space: PNSpace, key_phase: bool) -> Option<&'a mut CryptoDxState> {
-        let rx = |x: &'a mut Option<CryptoState>| x.as_mut().map(|dx| &mut dx.rx);
-        match space {
-            PNSpace::Initial => rx(&mut self.initial),
-            PNSpace::Handshake => rx(&mut self.handshake),
+            PNSpace::Initial => self
+                .tx(CryptoSpace::Initial)
+                .map(|dx| (CryptoSpace::Initial, dx)),
+            PNSpace::Handshake => self
+                .tx(CryptoSpace::Handshake)
+                .map(|dx| (CryptoSpace::Handshake, dx)),
             PNSpace::ApplicationData => {
-                let app = if let Some(arn) = &self.app_read_next {
-                    if arn.dx.key_phase() == key_phase {
-                        self.app_read_next.as_mut()
-                    } else {
-                        self.app_read.as_mut()
-                    }
+                if let Some(app) = self.app_write.as_mut() {
+                    Some((CryptoSpace::ApplicationData, &mut app.dx))
                 } else {
-                    self.app_read.as_mut()
-                };
-                Self::select_or_0rtt(app, self.zero_rtt.as_mut(), CryptoDxDirection::Read)
+                    self.zero_rtt.as_mut().map(|dx| (CryptoSpace::ZeroRtt, dx))
+                }
             }
+        }
+    }
+
+    pub fn tx<'a>(&'a mut self, cspace: CryptoSpace) -> Option<&'a mut CryptoDxState> {
+        let tx = |k: Option<&'a mut CryptoState>| k.map(|dx| &mut dx.tx);
+        match cspace {
+            CryptoSpace::Initial => tx(self.initial.as_mut()),
+            CryptoSpace::ZeroRtt => self
+                .zero_rtt
+                .as_mut()
+                .filter(|z| z.direction == CryptoDxDirection::Write),
+            CryptoSpace::Handshake => tx(self.handshake.as_mut()),
+            CryptoSpace::ApplicationData => self.app_write.as_mut().map(|app| &mut app.dx),
+        }
+    }
+
+    pub fn rx_hp(&mut self, cspace: CryptoSpace) -> Option<&mut CryptoDxState> {
+        if let CryptoSpace::ApplicationData = cspace {
+            self.app_read.as_mut().map(|ar| &mut ar.dx)
+        } else {
+            self.rx(cspace, false)
+        }
+    }
+
+    pub fn rx<'a>(
+        &'a mut self,
+        cspace: CryptoSpace,
+        key_phase: bool,
+    ) -> Option<&'a mut CryptoDxState> {
+        let rx = |x: Option<&'a mut CryptoState>| x.map(|dx| &mut dx.rx);
+        match cspace {
+            CryptoSpace::Initial => rx(self.initial.as_mut()),
+            CryptoSpace::ZeroRtt => self
+                .zero_rtt
+                .as_mut()
+                .filter(|z| z.direction == CryptoDxDirection::Read),
+            CryptoSpace::Handshake => rx(self.handshake.as_mut()),
+            CryptoSpace::ApplicationData => {
+                let f = |a: Option<&'a mut CryptoDxAppData>| {
+                    a.filter(|ar| ar.dx.key_phase() == key_phase)
+                };
+                // XOR to reduce the leakage about which key is chosen.
+                f(self.app_read.as_mut())
+                    .xor(f(self.app_read_next.as_mut()))
+                    .map(|ar| &mut ar.dx)
+            }
+        }
+    }
+
+    /// Whether keys for processing packets in the indicated space are pending.
+    /// This allows the caller to determine whether to save a packet for later
+    /// when keys are not available.
+    /// NOTE: 0-RTT keys are not considered here.  The expectation is that a
+    /// server will have to save 0-RTT packets in a different place.  Though it
+    /// is possible to attribute 0-RTT packets to an existing connection if there
+    /// is a multi-packet Initial, that is an unusual circumstance, so we
+    /// don't do caching for that in those places that call this function.
+    pub fn rx_pending(&self, space: CryptoSpace) -> bool {
+        match space {
+            CryptoSpace::Initial | CryptoSpace::ZeroRtt => false,
+            CryptoSpace::Handshake => self.handshake.is_none() && self.initial.is_some(),
+            CryptoSpace::ApplicationData => self.app_read.is_none(),
         }
     }
 
@@ -658,6 +806,7 @@ impl CryptoStates {
     }
 
     pub fn set_0rtt_keys(&mut self, dir: CryptoDxDirection, secret: &SymKey, cipher: Cipher) {
+        qtrace!([self], "install 0-RTT keys");
         self.zero_rtt = Some(CryptoDxState::new(dir, TLS_EPOCH_ZERO_RTT, secret, cipher));
     }
 
@@ -671,6 +820,7 @@ impl CryptoStates {
     }
 
     pub fn discard_0rtt_keys(&mut self) {
+        qtrace!([self], "discard 0-RTT keys");
         assert!(
             self.app_read.is_none(),
             "Can't discard 0-RTT after setting application keys"
@@ -758,15 +908,30 @@ impl CryptoStates {
         // ahead of the read keys.  If we initiated the key update, the write keys
         // will already be ahead.
         debug_assert!(self.read_update_time.is_none());
-        let write = &self.app_write.as_ref().unwrap().dx;
-        let read = &self.app_read.as_ref().unwrap().dx;
-        if write.epoch == read.epoch {
-            qdebug!([self], "Updating write keys to epoch={}", write.epoch + 1);
-            self.app_write = Some(self.app_write.as_ref().unwrap().next()?);
+        let write = &self.app_write.as_ref().unwrap();
+        let read = &self.app_read.as_ref().unwrap();
+        if write.epoch() == read.epoch() {
+            qdebug!([self], "Update write keys to epoch={}", write.epoch() + 1);
+            self.app_write = Some(write.next()?);
             Ok(true)
         } else {
             Ok(false)
         }
+    }
+
+    /// Check whether write keys are close to running out of invocations.
+    /// If that is close, update them if possible.  Failing to update at
+    /// this stage is cause for a fatal error.
+    pub fn auto_update(&mut self) -> Res<()> {
+        if let Some(app_write) = self.app_write.as_ref() {
+            if app_write.dx.should_update() {
+                qinfo!([self], "Initiating automatic key update");
+                if !self.maybe_update_write()? {
+                    return Err(Error::KeysExhausted);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn has_0rtt_read(&self) -> bool {
@@ -780,6 +945,7 @@ impl CryptoStates {
     /// we want to ensure that we can continue to receive any delayed
     /// packets that use the old keys.  So we just set a timer.
     pub fn key_update_received(&mut self, expiration: Instant) -> Res<()> {
+        qtrace!([self], "Key update received");
         // If we received a key update, then we assume that the peer has
         // acknowledged a packet we sent in this epoch. It's OK to do that
         // because they aren't allowed to update without first having received
@@ -846,13 +1012,14 @@ impl CryptoStates {
     /// Make some state for removing protection in tests.
     #[cfg(test)]
     pub(crate) fn test_default() -> Self {
-        let read = || {
+        let read = |epoch| {
             let mut dx = CryptoDxState::test_default();
             dx.direction = CryptoDxDirection::Read;
+            dx.epoch = epoch;
             dx
         };
-        let app_read = || CryptoDxAppData {
-            dx: read(),
+        let app_read = |epoch| CryptoDxAppData {
+            dx: read(epoch),
             cipher: TLS_AES_128_GCM_SHA256,
             next_secret: hkdf::import_key(TLS_VERSION_1_3, TLS_AES_128_GCM_SHA256, &[0xaa; 32])
                 .unwrap(),
@@ -860,14 +1027,15 @@ impl CryptoStates {
         Self {
             initial: Some(CryptoState {
                 tx: CryptoDxState::test_default(),
-                rx: read(),
+                rx: read(0),
             }),
             handshake: None,
             zero_rtt: None,
             cipher: TLS_AES_128_GCM_SHA256,
-            app_write: None,
-            app_read: Some(app_read()),
-            app_read_next: Some(app_read()),
+            // This isn't used, but the epoch is read to check for a key update.
+            app_write: Some(app_read(3)),
+            app_read: Some(app_read(3)),
+            app_read_next: Some(app_read(4)),
             read_update_time: None,
         }
     }
@@ -881,10 +1049,10 @@ impl CryptoStates {
         ];
         let secret =
             hkdf::import_key(TLS_VERSION_1_3, TLS_CHACHA20_POLY1305_SHA256, SECRET).unwrap();
-        let app_read = || CryptoDxAppData {
+        let app_read = |epoch| CryptoDxAppData {
             dx: CryptoDxState {
                 direction: CryptoDxDirection::Read,
-                epoch: 0,
+                epoch,
                 aead: Aead::new(
                     TLS_VERSION_1_3,
                     TLS_CHACHA20_POLY1305_SHA256,
@@ -901,6 +1069,7 @@ impl CryptoStates {
                 .unwrap(),
                 used_pn: 0..645_971_972,
                 min_pn: 0,
+                invocations: 10,
             },
             cipher: TLS_CHACHA20_POLY1305_SHA256,
             next_secret: secret.clone(),
@@ -910,9 +1079,9 @@ impl CryptoStates {
             handshake: None,
             zero_rtt: None,
             cipher: TLS_CHACHA20_POLY1305_SHA256,
-            app_write: None,
-            app_read: Some(app_read()),
-            app_read_next: Some(app_read()),
+            app_write: Some(app_read(3)),
+            app_read: Some(app_read(3)),
+            app_read_next: Some(app_read(4)),
             read_update_time: None,
         }
     }
@@ -980,8 +1149,8 @@ impl CryptoStreams {
         self.get_mut(space).unwrap().tx.send(data);
     }
 
-    pub fn inbound_frame(&mut self, space: PNSpace, offset: u64, data: Vec<u8>) -> Res<()> {
-        self.get_mut(space).unwrap().rx.inbound_frame(offset, data)
+    pub fn inbound_frame(&mut self, space: PNSpace, offset: u64, data: &[u8]) {
+        self.get_mut(space).unwrap().rx.inbound_frame(offset, data);
     }
 
     pub fn data_ready(&self, space: PNSpace) -> bool {
@@ -996,13 +1165,23 @@ impl CryptoStreams {
         self.get_mut(token.space)
             .unwrap()
             .tx
-            .mark_as_acked(token.offset, token.length)
+            .mark_as_acked(token.offset, token.length);
     }
 
     pub fn lost(&mut self, token: &CryptoRecoveryToken) {
         // See BZ 1624800, ignore lost packets in spaces we've dropped keys
         if let Some(cs) = self.get_mut(token.space) {
-            cs.tx.mark_as_lost(token.offset, token.length)
+            cs.tx.mark_as_lost(token.offset, token.length);
+        }
+    }
+
+    /// Resend any Initial or Handshake CRYPTO frames that might be outstanding.
+    /// This can help speed up handshake times.
+    pub fn resend_unacked(&mut self, space: PNSpace) {
+        if space != PNSpace::ApplicationData {
+            if let Some(cs) = self.get_mut(space) {
+                cs.tx.unmark_sent();
+            }
         }
     }
 
@@ -1046,30 +1225,38 @@ impl CryptoStreams {
         }
     }
 
-    pub fn get_frame(
+    pub fn write_frame(
         &mut self,
         space: PNSpace,
-        remaining: usize,
-    ) -> Option<(Frame, Option<RecoveryToken>)> {
+        builder: &mut PacketBuilder,
+    ) -> Option<RecoveryToken> {
         let cs = self.get_mut(space).unwrap();
         if let Some((offset, data)) = cs.tx.next_bytes() {
-            let (frame, length) = Frame::new_crypto(offset, data, remaining);
+            let mut header_len = 1 + Encoder::varint_len(offset) + 1;
+
+            // Don't bother if there isn't room for the header and some data.
+            if builder.remaining() < header_len + 1 {
+                return None;
+            }
+            // Calculate length of data based on the minimum of:
+            // - available data
+            // - remaining space, less the header, which counts only one byte
+            //   for the length at first to avoid underestimating length
+            let length = min(data.len(), builder.remaining() - header_len);
+            header_len += Encoder::varint_len(u64::try_from(length).unwrap()) - 1;
+            let length = min(data.len(), builder.remaining() - header_len);
+
+            builder.encode_varint(crate::frame::FRAME_TYPE_CRYPTO);
+            builder.encode_varint(offset);
+            builder.encode_vvec(&data[..length]);
             cs.tx.mark_as_sent(offset, length);
 
-            qdebug!(
-                "Emitting crypto frame space={}, offset={}, len={}",
+            qdebug!("CRYPTO for {} offset={}, len={}", space, offset, length);
+            Some(RecoveryToken::Crypto(CryptoRecoveryToken {
                 space,
                 offset,
-                length
-            );
-            Some((
-                frame,
-                Some(RecoveryToken::Crypto(CryptoRecoveryToken {
-                    space,
-                    offset,
-                    length,
-                })),
-            ))
+                length,
+            }))
         } else {
             None
         }

@@ -39,6 +39,10 @@
 #  include "mozilla/layers/TextureD3D11.h"
 #endif
 
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/AndroidHardwareBuffer.h"
+#endif
+
 namespace mozilla {
 namespace layers {
 
@@ -421,7 +425,37 @@ void ImageBridgeParent::NotifyNotUsed(PTextureParent* aTexture,
     return;
   }
 
-  if (!(texture->GetFlags() & TextureFlags::RECYCLE)) {
+#ifdef MOZ_WIDGET_ANDROID
+  if (auto hardwareBuffer = texture->GetAndroidHardwareBuffer()) {
+    MOZ_ASSERT(texture->GetFlags() & TextureFlags::RECYCLE);
+
+    Maybe<FileDescriptor> fenceFd = Some(FileDescriptor());
+    auto* compositor = texture->GetProvider()
+                           ? texture->GetProvider()->AsCompositorOGL()
+                           : nullptr;
+    if (compositor) {
+      fenceFd = Some(compositor->GetReleaseFence());
+    }
+
+    auto* wrTexture = texture->AsWebRenderTextureHost();
+    if (wrTexture) {
+      MOZ_ASSERT(!fenceFd->IsValid());
+      fenceFd = Some(texture->GetAndResetReleaseFence());
+    }
+
+    // Invalid file descriptor could not be sent via IPC, but
+    // OpDeliverReleaseFence message needs to be sent to child side.
+    if (!fenceFd->IsValid()) {
+      fenceFd = Nothing();
+    }
+    mPendingAsyncMessage.push_back(OpDeliverReleaseFence(
+        std::move(fenceFd), hardwareBuffer->mId, aTransactionId,
+        /* usesImageBridge */ true));
+  }
+#endif
+
+  if (!(texture->GetFlags() & TextureFlags::RECYCLE) &&
+      !(texture->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END)) {
     return;
   }
 
@@ -431,6 +465,51 @@ void ImageBridgeParent::NotifyNotUsed(PTextureParent* aTexture,
   if (!IsAboutToSendAsyncMessages()) {
     SendPendingAsyncMessages();
   }
+}
+
+/* static */
+void ImageBridgeParent::NotifyBufferNotUsedOfCompositorBridge(
+    base::ProcessId aChildProcessId, TextureHost* aTexture,
+    uint64_t aTransactionId) {
+  RefPtr<ImageBridgeParent> bridge = GetInstance(aChildProcessId);
+  if (!bridge || bridge->mClosed) {
+    return;
+  }
+  bridge->NotifyBufferNotUsedOfCompositorBridge(aTexture, aTransactionId);
+}
+
+void ImageBridgeParent::NotifyBufferNotUsedOfCompositorBridge(
+    TextureHost* aTexture, uint64_t aTransactionId) {
+  MOZ_ASSERT(aTexture);
+  MOZ_ASSERT(aTexture->GetAndroidHardwareBuffer());
+
+#ifdef MOZ_WIDGET_ANDROID
+  auto* compositor = aTexture->GetProvider()
+                         ? aTexture->GetProvider()->AsCompositorOGL()
+                         : nullptr;
+  Maybe<FileDescriptor> fenceFd = Some(FileDescriptor());
+  if (compositor) {
+    fenceFd = Some(compositor->GetReleaseFence());
+  }
+
+  auto* wrTexture = aTexture->AsWebRenderTextureHost();
+  if (wrTexture) {
+    MOZ_ASSERT(!fenceFd->IsValid());
+    fenceFd = Some(aTexture->GetAndResetReleaseFence());
+  }
+
+  // Invalid file descriptor could not be sent via IPC, but
+  // OpDeliverReleaseFence message needs to be sent to child side.
+  if (!fenceFd->IsValid()) {
+    fenceFd = Nothing();
+  }
+  mPendingAsyncMessage.push_back(
+      OpDeliverReleaseFence(fenceFd, aTexture->GetAndroidHardwareBuffer()->mId,
+                            aTransactionId, /* usesImageBridge */ false));
+  SendPendingAsyncMessages();
+#else
+  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+#endif
 }
 
 #if defined(OS_WIN)
@@ -686,7 +765,7 @@ RefPtr<TextureHost> GetNullPluginTextureHost() {
                           const wr::LayoutRect& aClip,
                           wr::ImageRendering aFilter,
                           const Range<wr::ImageKey>& aImageKeys,
-                          const bool aPreferCompositorSurface) override {}
+                          PushDisplayItemFlagSet aFlags) override {}
   };
 
   static StaticRefPtr<TextureHost> sNullPluginTextureHost;

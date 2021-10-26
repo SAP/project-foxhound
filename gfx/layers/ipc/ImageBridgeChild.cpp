@@ -33,7 +33,7 @@
 #include "mozilla/media/MediaSystemResourceManager.h"  // for MediaSystemResourceManager
 #include "mozilla/media/MediaSystemResourceManagerChild.h"  // for MediaSystemResourceManagerChild
 #include "mozilla/mozalloc.h"  // for operator new, etc
-#include "mtransport/runnable_utils.h"
+#include "transport/runnable_utils.h"
 #include "nsContentUtils.h"
 #include "nsISupportsImpl.h"         // for ImageContainer::AddRef, etc
 #include "nsTArray.h"                // for AutoTArray, nsTArray, etc
@@ -42,6 +42,10 @@
 
 #if defined(XP_WIN)
 #  include "mozilla/gfx/DeviceManagerDx.h"
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/AndroidHardwareBuffer.h"
 #endif
 
 namespace mozilla {
@@ -109,6 +113,15 @@ void ImageBridgeChild::UseTextures(
     }
 
     bool readLocked = t.mTextureClient->OnForwardedToHost();
+
+    auto fenceFd = t.mTextureClient->GetInternalData()->GetAcquireFence();
+    if (fenceFd.IsValid()) {
+      mTxn->AddNoSwapEdit(CompositableOperation(
+          aCompositable->GetIPCHandle(),
+          OpDeliverAcquireFence(nullptr, t.mTextureClient->GetIPDLActor(),
+                                fenceFd)));
+    }
+
     textures.AppendElement(
         TimedTexture(nullptr, t.mTextureClient->GetIPDLActor(), t.mTimeStamp,
                      t.mPictureRect, t.mFrameID, t.mProducerID, readLocked));
@@ -131,6 +144,16 @@ void ImageBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
   if (!aClient) {
     return;
   }
+
+#ifdef MOZ_WIDGET_ANDROID
+  auto bufferId = aClient->GetInternalData()->GetBufferId();
+  if (bufferId.isSome()) {
+    MOZ_ASSERT(aClient->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END);
+    AndroidHardwareBufferManager::Get()->HoldUntilNotifyNotUsed(
+        bufferId.ref(), GetFwdTransactionId(), /* aUsesImageBridge */ true);
+  }
+#endif
+
   // Wait ReleaseCompositableRef only when TextureFlags::RECYCLE or
   // TextureFlags::WAIT_HOST_USAGE_END is set on ImageBridge.
   bool waitNotifyNotUsed =
@@ -801,6 +824,21 @@ mozilla::ipc::IPCResult ImageBridgeChild::RecvParentAsyncMessages(
       case AsyncParentMessageData::TOpNotifyNotUsed: {
         const OpNotifyNotUsed& op = message.get_OpNotifyNotUsed();
         NotifyNotUsed(op.TextureId(), op.fwdTransactionId());
+        break;
+      }
+      case AsyncParentMessageData::TOpDeliverReleaseFence: {
+#ifdef MOZ_WIDGET_ANDROID
+        const OpDeliverReleaseFence& op = message.get_OpDeliverReleaseFence();
+        ipc::FileDescriptor fenceFd;
+        if (op.fenceFd().isSome()) {
+          fenceFd = *op.fenceFd();
+        }
+        AndroidHardwareBufferManager::Get()->NotifyNotUsed(
+            std::move(fenceFd), op.bufferId(), op.fwdTransactionId(),
+            op.usesImageBridge());
+#else
+        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+#endif
         break;
       }
       default:

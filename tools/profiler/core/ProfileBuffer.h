@@ -25,7 +25,9 @@ class ProfileBuffer final {
   // manager.
   explicit ProfileBuffer(mozilla::ProfileChunkedBuffer& aBuffer);
 
-  ~ProfileBuffer();
+  mozilla::ProfileChunkedBuffer& UnderlyingChunkedBuffer() const {
+    return mEntries;
+  }
 
   bool IsThreadSafe() const { return mEntries.IsThreadSafe(); }
 
@@ -35,14 +37,6 @@ class ProfileBuffer final {
   // Add to the buffer a sample start (ThreadId) entry for aThreadId.
   // Returns the position of the entry.
   uint64_t AddThreadIdEntry(int aThreadId);
-
-  // Add a new single entry with *all* given object (using a Serializer for
-  // each), return block index.
-  template <typename... Ts>
-  mozilla::ProfileBufferBlockIndex PutObjects(
-      const ProfileBufferEntry::Kind aKind, const Ts&... aTs) {
-    return mEntries.PutObjects(aKind, aTs...);
-  }
 
   void CollectCodeLocation(
       const char* aLabel, const char* aStr, uint32_t aFrameFlags,
@@ -63,14 +57,15 @@ class ProfileBuffer final {
   // Stream JSON for samples in the buffer to aWriter, using the supplied
   // UniqueStacks object.
   // Only streams samples for the given thread ID and which were taken at or
-  // after aSinceTime.
+  // after aSinceTime. If ID is 0, ignore the stored thread ID; this should only
+  // be used when the buffer contains only one sample.
   // aUniqueStacks needs to contain information about any JIT frames that we
   // might encounter in the buffer, before this method is called. In other
   // words, you need to have called AddJITInfoForRange for every range that
   // might contain JIT frame information before calling this method.
-  void StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
-                           double aSinceTime,
-                           UniqueStacks& aUniqueStacks) const;
+  // Return the thread ID of the streamed sample(s), or 0.
+  int StreamSamplesToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
+                          double aSinceTime, UniqueStacks& aUniqueStacks) const;
 
   void StreamMarkersToJSON(SpliceableJSONWriter& aWriter, int aThreadId,
                            const mozilla::TimeStamp& aProcessStartTime,

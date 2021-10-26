@@ -4,12 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Logging.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/Services.h"
+#include "MediaShutdownManager.h"
 
 #include "MediaDecoder.h"
-#include "MediaShutdownManager.h"
+#include "mozilla/Logging.h"
+#include "mozilla/media/MediaUtils.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPtr.h"
 
 namespace mozilla {
 
@@ -46,22 +47,6 @@ MediaShutdownManager& MediaShutdownManager::Instance() {
   return *sInstance;
 }
 
-static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
-  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
-  MOZ_RELEASE_ASSERT(svc);
-
-  nsCOMPtr<nsIAsyncShutdownClient> barrier;
-  nsresult rv = svc->GetProfileBeforeChange(getter_AddRefs(barrier));
-  if (!barrier) {
-    // We are probably in a content process. We need to do cleanup at
-    // XPCOM shutdown in leakchecking builds.
-    rv = svc->GetXpcomWillShutdown(getter_AddRefs(barrier));
-  }
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-  MOZ_RELEASE_ASSERT(barrier);
-  return barrier;
-}
-
 void MediaShutdownManager::InitStatics() {
   MOZ_ASSERT(NS_IsMainThread());
   if (sInitPhase != NotInited) {
@@ -71,9 +56,17 @@ void MediaShutdownManager::InitStatics() {
   sInstance = new MediaShutdownManager();
   MOZ_DIAGNOSTIC_ASSERT(sInstance);
 
-  nsresult rv = GetShutdownBarrier()->AddBlocker(
-      sInstance, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
-      u"MediaShutdownManager shutdown"_ns);
+  nsCOMPtr<nsIAsyncShutdownClient> barrier = media::GetShutdownBarrier();
+
+  if (!barrier) {
+    LOGW("Failed to get barrier, cannot add shutdown blocker!");
+    sInitPhase = InitFailed;
+    return;
+  }
+
+  nsresult rv =
+      barrier->AddBlocker(sInstance, NS_LITERAL_STRING_FROM_CSTRING(__FILE__),
+                          __LINE__, u"MediaShutdownManager shutdown"_ns);
   if (NS_FAILED(rv)) {
     LOGW("Failed to add shutdown blocker! rv=%x", uint32_t(rv));
     sInitPhase = InitFailed;
@@ -86,7 +79,14 @@ void MediaShutdownManager::RemoveBlocker() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(sInitPhase == XPCOMShutdownStarted);
   MOZ_ASSERT(mDecoders.Count() == 0);
-  GetShutdownBarrier()->RemoveBlocker(this);
+  nsCOMPtr<nsIAsyncShutdownClient> barrier = media::GetShutdownBarrier();
+  // xpcom should still be available because we blocked shutdown by having a
+  // blocker. Until it completely shuts down we should still be able to get
+  // the barrier.
+  MOZ_RELEASE_ASSERT(
+      barrier,
+      "Failed to get shutdown barrier, cannot remove shutdown blocker!");
+  barrier->RemoveBlocker(this);
   // Clear our singleton reference. This will probably delete
   // this instance, so don't deref |this| clearing sInstance.
   sInitPhase = XPCOMShutdownEnded;

@@ -40,6 +40,9 @@ add_task(async function() {
 });
 
 async function run_testcase(testcase) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.mixed_content.upgrade_display_content", false]],
+  });
   // Test the forward and back case.
   // Start by loading an unrelated URI so that this generalizes well when the
   // testcase would otherwise first navigate to an error page, which doesn't
@@ -104,7 +107,7 @@ async function run_testcase(testcase) {
     browser.webNavigation.goBack();
     await BrowserTestUtils.browserStopped(browser, kSecureURI);
     let secureIdentityModeAgain = window.document.getElementById("identity-box")
-      .classList;
+      .className;
     is(
       secureIdentityModeAgain,
       "verifiedDomain",

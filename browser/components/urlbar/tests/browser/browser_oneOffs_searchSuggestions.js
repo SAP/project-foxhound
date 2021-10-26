@@ -16,6 +16,9 @@ const serverInfo = {
   port: 20709, // Must be identical to what is in searchSuggestionEngine2.xml
 };
 
+var gEngine;
+var gEngine2;
+
 add_task(async function init() {
   await PlacesUtils.history.clear();
   await UrlbarTestUtils.formHistory.clear();
@@ -25,16 +28,16 @@ add_task(async function init() {
       ["browser.urlbar.maxHistoricalSearchSuggestions", 2],
     ],
   });
-  let engine = await SearchTestUtils.promiseNewSearchEngine(
+  gEngine = await SearchTestUtils.promiseNewSearchEngine(
     getRootDirectory(gTestPath) + TEST_ENGINE_BASENAME
   );
-  let engine2 = await SearchTestUtils.promiseNewSearchEngine(
+  gEngine2 = await SearchTestUtils.promiseNewSearchEngine(
     getRootDirectory(gTestPath) + TEST_ENGINE2_BASENAME
   );
   let oldDefaultEngine = await Services.search.getDefault();
-  await Services.search.moveEngine(engine2, 0);
-  await Services.search.moveEngine(engine, 0);
-  await Services.search.setDefault(engine);
+  await Services.search.moveEngine(gEngine2, 0);
+  await Services.search.moveEngine(gEngine, 0);
+  await Services.search.setDefault(gEngine);
   registerCleanupFunction(async function() {
     await Services.search.setDefault(oldDefaultEngine);
 
@@ -102,7 +105,14 @@ async function selectSecondSuggestion(index, isFormHistory) {
 
 // Presses the Return key when a one-off is selected after selecting a search
 // suggestion.
-add_task(async function test_returnAfterSuggestion() {
+// Can be removed with the update2 prefs.
+add_task(async function test_returnAfterSuggestion_legacy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", false],
+      ["browser.urlbar.update2.oneOffsRefresh", false],
+    ],
+  });
   await withSuggestions(async (index, usingFormHistory) => {
     await selectSecondSuggestion(index, usingFormHistory);
 
@@ -123,6 +133,8 @@ add_task(async function test_returnAfterSuggestion() {
       "The heuristic action should not be visible"
     );
 
+    await UrlbarTestUtils.formHistory.clear();
+    let formHistoryPromise = UrlbarTestUtils.formHistory.promiseChanged("add");
     let resultsPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser,
       false,
@@ -130,12 +142,69 @@ add_task(async function test_returnAfterSuggestion() {
     );
     EventUtils.synthesizeKey("KEY_Enter");
     await resultsPromise;
+    await formHistoryPromise;
+    let entries = (
+      await UrlbarTestUtils.formHistory.search({
+        value: "foobar",
+        source: gEngine.name,
+      })
+    ).map(entry => entry.value);
+    Assert.ok(entries.includes("foobar"));
   });
+  await SpecialPowers.popPrefEnv();
+});
+
+// Presses the Return key when a one-off is selected after selecting a search
+// suggestion.
+add_task(async function test_returnAfterSuggestion() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", true],
+      ["browser.urlbar.update2.oneOffsRefresh", true],
+    ],
+  });
+  await withSuggestions(async (index, usingFormHistory) => {
+    await selectSecondSuggestion(index, usingFormHistory);
+
+    // Alt+Down to select the first one-off.
+    EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
+    await assertState({
+      inputValue: "foobar",
+      resultIndex: index + 1,
+      oneOffIndex: 0,
+      suggestion: {
+        isFormHistory: usingFormHistory,
+      },
+    });
+
+    let heuristicResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.ok(
+      !BrowserTestUtils.is_visible(heuristicResult.element.action),
+      "The heuristic action should not be visible"
+    );
+
+    let resultsPromise = UrlbarTestUtils.promiseSearchComplete(window);
+    EventUtils.synthesizeKey("KEY_Enter");
+    await resultsPromise;
+    await UrlbarTestUtils.assertSearchMode(window, {
+      engineName: gEngine.name,
+      entry: "oneoff",
+    });
+    await UrlbarTestUtils.exitSearchMode(window, { backspace: true });
+  });
+  await SpecialPowers.popPrefEnv();
 });
 
 // Presses the Return key when a non-default one-off is selected after selecting
 // a search suggestion.
-add_task(async function test_returnAfterSuggestion_nonDefault() {
+// Can be removed with the update2 prefs.
+add_task(async function test_returnAfterSuggestion_nonDefault_legacy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", false],
+      ["browser.urlbar.update2.oneOffsRefresh", false],
+    ],
+  });
   await withSuggestions(async (index, usingFormHistory) => {
     await selectSecondSuggestion(index, usingFormHistory);
 
@@ -159,10 +228,54 @@ add_task(async function test_returnAfterSuggestion_nonDefault() {
     EventUtils.synthesizeKey("KEY_Enter");
     await resultsPromise;
   });
+  await SpecialPowers.popPrefEnv();
+});
+
+// Presses the Return key when a non-default one-off is selected after selecting
+// a search suggestion.
+add_task(async function test_returnAfterSuggestion_nonDefault() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", true],
+      ["browser.urlbar.update2.oneOffsRefresh", true],
+    ],
+  });
+  await withSuggestions(async (index, usingFormHistory) => {
+    await selectSecondSuggestion(index, usingFormHistory);
+
+    // Alt+Down twice to select the second one-off.
+    EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
+    EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
+    await assertState({
+      inputValue: "foobar",
+      resultIndex: index + 1,
+      oneOffIndex: 1,
+      suggestion: {
+        isFormHistory: usingFormHistory,
+      },
+    });
+
+    let resultsPromise = UrlbarTestUtils.promiseSearchComplete(window);
+    EventUtils.synthesizeKey("KEY_Enter");
+    await resultsPromise;
+    await UrlbarTestUtils.assertSearchMode(window, {
+      engineName: gEngine2.name,
+      entry: "oneoff",
+    });
+    await UrlbarTestUtils.exitSearchMode(window, { backspace: true });
+  });
+  await SpecialPowers.popPrefEnv();
 });
 
 // Clicks a one-off engine after selecting a search suggestion.
-add_task(async function test_clickAfterSuggestion() {
+// Can be removed with the update2 prefs.
+add_task(async function test_clickAfterSuggestion_legacy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", false],
+      ["browser.urlbar.update2.oneOffsRefresh", false],
+    ],
+  });
   await withSuggestions(async (index, usingFormHistory) => {
     await selectSecondSuggestion(index, usingFormHistory);
 
@@ -177,10 +290,44 @@ add_task(async function test_clickAfterSuggestion() {
     EventUtils.synthesizeMouseAtCenter(oneOffs[0], {});
     await resultsPromise;
   });
+  await SpecialPowers.popPrefEnv();
+});
+
+// Clicks a one-off engine after selecting a search suggestion.
+add_task(async function test_clickAfterSuggestion() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", true],
+      ["browser.urlbar.update2.oneOffsRefresh", true],
+    ],
+  });
+  await withSuggestions(async (index, usingFormHistory) => {
+    await selectSecondSuggestion(index, usingFormHistory);
+
+    let oneOffs = UrlbarTestUtils.getOneOffSearchButtons(
+      window
+    ).getSelectableButtons(true);
+    let resultsPromise = UrlbarTestUtils.promiseSearchComplete(window);
+    EventUtils.synthesizeMouseAtCenter(oneOffs[1], {});
+    await resultsPromise;
+    await UrlbarTestUtils.assertSearchMode(window, {
+      engineName: gEngine2.name,
+      entry: "oneoff",
+    });
+    await UrlbarTestUtils.exitSearchMode(window, { backspace: true });
+  });
+  await SpecialPowers.popPrefEnv();
 });
 
 // Clicks a non-default one-off engine after selecting a search suggestion.
-add_task(async function test_clickAfterSuggestion_nonDefault() {
+// Can be removed with the update2 prefs.
+add_task(async function test_clickAfterSuggestion_nonDefault_legacy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", false],
+      ["browser.urlbar.update2.oneOffsRefresh", false],
+    ],
+  });
   await withSuggestions(async (index, usingFormHistory) => {
     await selectSecondSuggestion(index, usingFormHistory);
 
@@ -195,6 +342,33 @@ add_task(async function test_clickAfterSuggestion_nonDefault() {
     EventUtils.synthesizeMouseAtCenter(oneOffs[1], {});
     await resultsPromise;
   });
+  await SpecialPowers.popPrefEnv();
+});
+
+// Clicks a non-default one-off engine after selecting a search suggestion.
+add_task(async function test_clickAfterSuggestion_nonDefault() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", true],
+      ["browser.urlbar.update2.oneOffsRefresh", true],
+    ],
+  });
+  await withSuggestions(async (index, usingFormHistory) => {
+    await selectSecondSuggestion(index, usingFormHistory);
+
+    let oneOffs = UrlbarTestUtils.getOneOffSearchButtons(
+      window
+    ).getSelectableButtons(true);
+    let resultsPromise = UrlbarTestUtils.promiseSearchComplete(window);
+    EventUtils.synthesizeMouseAtCenter(oneOffs[1], {});
+    await resultsPromise;
+    await UrlbarTestUtils.assertSearchMode(window, {
+      engineName: gEngine2.name,
+      entry: "oneoff",
+    });
+    await UrlbarTestUtils.exitSearchMode(window, { backspace: true });
+  });
+  await SpecialPowers.popPrefEnv();
 });
 
 // Selects a non-default one-off engine and then clicks a search suggestion.
@@ -217,11 +391,14 @@ add_task(async function test_selectOneOffThenSuggestion() {
 
     // Now click the second suggestion.
     let result = await UrlbarTestUtils.getDetailsOfResultAt(window, index + 1);
-
+    // Note search history results don't change their engine when the selected
+    // one-off button changes!
     let resultsPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser,
       false,
-      `http://localhost:20709/?terms=foobar`
+      usingFormHistory
+        ? `http://mochi.test:8888/?terms=foobar`
+        : `http://localhost:20709/?terms=foobar`
     );
     EventUtils.synthesizeMouseAtCenter(result.element.row, {});
     await resultsPromise;

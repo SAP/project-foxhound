@@ -19,6 +19,7 @@
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
 #include "nsIURI.h"
+#include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
@@ -82,18 +83,19 @@ SVGUseElement::~SVGUseElement() {
                         "Dying without unbinding?");
 }
 
+namespace SVGT = SVGGeometryProperty::Tags;
+
 //----------------------------------------------------------------------
 // nsINode methods
+
+bool SVGUseElement::IsNodeOfType(uint32_t aFlags) const {
+  return !(aFlags & ~eUSE_TARGET);
+}
 
 void SVGUseElement::ProcessAttributeChange(int32_t aNamespaceID,
                                            nsAtom* aAttribute) {
   if (aNamespaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::x || aAttribute == nsGkAtoms::y) {
-      if (auto* frame = GetFrame()) {
-        frame->PositionAttributeChanged();
-      }
-    } else if (aAttribute == nsGkAtoms::width ||
-               aAttribute == nsGkAtoms::height) {
+    if (aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height) {
       const bool hadValidDimensions = HasValidDimensions();
       const bool isUsed = OurWidthAndHeightAreUsed();
       if (isUsed) {
@@ -313,13 +315,7 @@ void SVGUseElement::UpdateShadowTree() {
   });
 
   // make sure target is valid type for <use>
-  // QIable SVGGraphicsElement would eliminate enumerating all elements
-  if (!targetElement ||
-      !targetElement->IsAnyOfSVGElements(
-          nsGkAtoms::svg, nsGkAtoms::symbol, nsGkAtoms::g, nsGkAtoms::path,
-          nsGkAtoms::text, nsGkAtoms::rect, nsGkAtoms::circle,
-          nsGkAtoms::ellipse, nsGkAtoms::line, nsGkAtoms::polyline,
-          nsGkAtoms::polygon, nsGkAtoms::image, nsGkAtoms::use)) {
+  if (!targetElement || !targetElement->IsNodeOfType(nsINode::eUSE_TARGET)) {
     return;
   }
 
@@ -489,7 +485,9 @@ gfxMatrix SVGUseElement::PrependLocalTransformsTo(
 
   // our 'x' and 'y' attributes:
   float x, y;
-  const_cast<SVGUseElement*>(this)->GetAnimatedLengthValues(&x, &y, nullptr);
+  if (!SVGGeometryProperty::ResolveAll<SVGT::X, SVGT::Y>(this, &x, &y)) {
+    const_cast<SVGUseElement*>(this)->GetAnimatedLengthValues(&x, &y, nullptr);
+  }
 
   gfxMatrix childToUser = gfxMatrix::Translation(x, y);
 
@@ -552,8 +550,21 @@ SVGUseElement::IsAttributeMapped(const nsAtom* name) const {
                                                     sTextContentElementsMap,
                                                     sViewportsMap};
 
-  return FindAttributeDependence(name, map) ||
+  return name == nsGkAtoms::x || name == nsGkAtoms::y ||
+         FindAttributeDependence(name, map) ||
          SVGUseElementBase::IsAttributeMapped(name);
+}
+
+nsCSSPropertyID SVGUseElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {
+  switch (aAttrEnum) {
+    case ATTR_X:
+      return eCSSProperty_x;
+    case ATTR_Y:
+      return eCSSProperty_y;
+    default:
+      // Currently we don't map width or height to style
+      return eCSSProperty_UNKNOWN;
+  }
 }
 
 }  // namespace dom

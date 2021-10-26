@@ -14,6 +14,7 @@ use crate::boilerplate::{Example, HandyDandyRectBuilder};
 use gleam::gl;
 use std::mem;
 use webrender::api::*;
+use webrender::render_api::*;
 use webrender::api::units::*;
 
 
@@ -301,12 +302,11 @@ impl Example for App {
         false
     }
 
-    fn get_image_handlers(
+    fn get_image_handler(
         &mut self,
         _gl: &dyn gl::Gl,
-    ) -> (Option<Box<dyn ExternalImageHandler>>,
-          Option<Box<dyn OutputImageHandler>>) {
-        (Some(Box::new(ImageGenerator::new())), None)
+    ) -> Option<Box<dyn ExternalImageHandler>> {
+        Some(Box::new(ImageGenerator::new()))
     }
 }
 

@@ -418,19 +418,17 @@ void ScrollAnchorContainer::ApplyAdjustments() {
   if (!mAnchorNode || mAnchorNodeIsDirty || mDisabled ||
       mScrollFrame->HasPendingScrollRestoration() ||
       mScrollFrame->IsProcessingScrollEvent() ||
-      mScrollFrame->IsProcessingAsyncScroll() ||
-      mScrollFrame->mApzSmoothScrollDestination.isSome() ||
+      mScrollFrame->IsScrollAnimating() ||
       mScrollFrame->GetScrollPosition() == nsPoint()) {
     ANCHOR_LOG(
         "Ignoring post-reflow (anchor=%p, dirty=%d, disabled=%d, "
-        "pendingRestoration=%d, scrollevent=%d, asyncScroll=%d, "
-        "apzSmoothDestination=%d, zeroScrollPos=%d pendingSuppression=%d, "
+        "pendingRestoration=%d, scrollevent=%d, animating=%d, "
+        "zeroScrollPos=%d pendingSuppression=%d, "
         "container=%p).\n",
         mAnchorNode, mAnchorNodeIsDirty, mDisabled,
         mScrollFrame->HasPendingScrollRestoration(),
         mScrollFrame->IsProcessingScrollEvent(),
-        mScrollFrame->IsProcessingAsyncScroll(),
-        mScrollFrame->mApzSmoothScrollDestination.isSome(),
+        mScrollFrame->IsScrollAnimating(),
         mScrollFrame->GetScrollPosition() == nsPoint(),
         mSuppressAnchorAdjustment, this);
     if (mSuppressAnchorAdjustment) {
@@ -492,7 +490,6 @@ void ScrollAnchorContainer::ApplyAdjustments() {
   if (mScrollFrame->mIsRoot) {
     pc->PresShell()->RootScrollFrameAdjusted(physicalAdjustment.y);
   }
-  pc->Document()->UpdateForScrollAnchorAdjustment(logicalAdjustment);
 
   // The anchor position may not be in the same relative position after
   // adjustment. Update ourselves so we have consistent state.

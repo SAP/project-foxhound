@@ -388,7 +388,6 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
       if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
-      tempTaint.clear();
       tempBufferPos = 0;
     }
 
@@ -415,7 +414,7 @@ bool NS_EscapeURL(const char* aPart, int32_t aPartLen, const StringTaint& aTaint
     partLen = aPartLen;
   }
 
-  return NS_EscapeURLSpan(mozilla::MakeSpan(aPart, partLen), aTaint, aFlags, aResult);
+  return NS_EscapeURLSpan(mozilla::Span(aPart, partLen), aTaint, aFlags, aResult);
 }
 
 bool NS_EscapeURLSpan(mozilla::Span<const char> aStr, const StringTaint& aTaint,

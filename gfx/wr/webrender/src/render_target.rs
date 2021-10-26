@@ -4,7 +4,7 @@
 
 
 use api::units::*;
-use api::{ColorF, PremultipliedColorF, ImageFormat, LineOrientation, BorderStyle, PipelineId};
+use api::{ColorF, PremultipliedColorF, ImageFormat, LineOrientation, BorderStyle};
 use crate::batch::{AlphaBatchBuilder, AlphaBatchContainer, BatchTextures, resolve_image};
 use crate::batch::{ClipBatcher, BatchBuilder};
 use crate::spatial_tree::{SpatialTree, ROOT_SPATIAL_NODE_INDEX};
@@ -258,7 +258,7 @@ impl<T: RenderTarget> RenderTargetList<T> {
             }
         };
 
-        if alloc_size.is_empty_or_negative() && self.targets.is_empty() {
+        if alloc_size.is_empty() && self.targets.is_empty() {
             // push an unused target here, only if we don't have any
             self.targets.push(T::new(self.screen_size, self.gpu_supports_fast_clears));
         }
@@ -295,12 +295,9 @@ pub struct ColorRenderTarget {
     // List of blur operations to apply for this render target.
     pub vertical_blurs: Vec<BlurInstance>,
     pub horizontal_blurs: Vec<BlurInstance>,
-    pub readbacks: Vec<DeviceIntRect>,
     pub scalings: FastHashMap<TextureSource, Vec<ScalingInstance>>,
     pub svg_filters: Vec<(BatchTextures, Vec<SvgFilterInstance>)>,
     pub blits: Vec<BlitJob>,
-    // List of frame buffer outputs for this render target.
-    pub outputs: Vec<FrameOutput>,
     alpha_tasks: Vec<RenderTaskId>,
     screen_size: DeviceIntSize,
     // Track the used rect of the render target, so that
@@ -318,11 +315,9 @@ impl RenderTarget for ColorRenderTarget {
             alpha_batch_containers: Vec::new(),
             vertical_blurs: Vec::new(),
             horizontal_blurs: Vec::new(),
-            readbacks: Vec::new(),
             scalings: FastHashMap::default(),
             svg_filters: Vec::new(),
             blits: Vec::new(),
-            outputs: Vec::new(),
             alpha_tasks: Vec::new(),
             screen_size,
             used_rect: DeviceIntRect::zero(),
@@ -401,7 +396,7 @@ impl RenderTarget for ColorRenderTarget {
                         ctx.break_advanced_blend_batches,
                         ctx.batch_lookback_count,
                         *task_id,
-                        render_tasks.get_task_address(*task_id),
+                        (*task_id).into(),
                         PrimitiveVisibilityMask::all(),
                         prealloc_batch_count,
                     );
@@ -464,30 +459,20 @@ impl RenderTarget for ColorRenderTarget {
                 add_blur_instances(
                     &mut self.vertical_blurs,
                     BlurDirection::Vertical,
-                    render_tasks.get_task_address(task_id),
-                    render_tasks.get_task_address(task.children[0]),
+                    task_id.into(),
+                    task.children[0].into(),
                 );
             }
             RenderTaskKind::HorizontalBlur(..) => {
                 add_blur_instances(
                     &mut self.horizontal_blurs,
                     BlurDirection::Horizontal,
-                    render_tasks.get_task_address(task_id),
-                    render_tasks.get_task_address(task.children[0]),
+                    task_id.into(),
+                    task.children[0].into(),
                 );
             }
-            RenderTaskKind::Picture(ref task_info) => {
-                let pic = &ctx.prim_store.pictures[task_info.pic_index.0];
+            RenderTaskKind::Picture(..) => {
                 self.alpha_tasks.push(task_id);
-
-                // If this pipeline is registered as a frame output
-                // store the information necessary to do the copy.
-                if let Some(pipeline_id) = pic.frame_output_pipeline_id {
-                    self.outputs.push(FrameOutput {
-                        pipeline_id,
-                        task_id,
-                    });
-                }
             }
             RenderTaskKind::SvgFilter(ref task_info) => {
                 add_svg_filter_instances(
@@ -507,9 +492,7 @@ impl RenderTarget for ColorRenderTarget {
             RenderTaskKind::LineDecoration(..) => {
                 panic!("Should not be added to color target!");
             }
-            RenderTaskKind::Readback(device_rect) => {
-                self.readbacks.push(device_rect);
-            }
+            RenderTaskKind::Readback => {}
             RenderTaskKind::Scaling(ref info) => {
                 add_scaling_instances(
                     info,
@@ -650,7 +633,7 @@ impl RenderTarget for AlphaRenderTarget {
         }
 
         match task.kind {
-            RenderTaskKind::Readback(..) |
+            RenderTaskKind::Readback |
             RenderTaskKind::Picture(..) |
             RenderTaskKind::Blit(..) |
             RenderTaskKind::Border(..) |
@@ -663,16 +646,16 @@ impl RenderTarget for AlphaRenderTarget {
                 add_blur_instances(
                     &mut self.vertical_blurs,
                     BlurDirection::Vertical,
-                    render_tasks.get_task_address(task_id),
-                    render_tasks.get_task_address(task.children[0]),
+                    task_id.into(),
+                    task.children[0].into(),
                 );
             }
             RenderTaskKind::HorizontalBlur(..) => {
                 add_blur_instances(
                     &mut self.horizontal_blurs,
                     BlurDirection::Horizontal,
-                    render_tasks.get_task_address(task_id),
-                    render_tasks.get_task_address(task.children[0]),
+                    task_id.into(),
+                    task.children[0].into(),
                 );
             }
             RenderTaskKind::CacheMask(ref task_info) => {
@@ -698,9 +681,9 @@ impl RenderTarget for AlphaRenderTarget {
                     target_rect.size.to_f32(),
                 );
                 self.clip_batcher.add_clip_region(
-                    region_task.clip_data_address,
                     region_task.local_pos,
                     device_rect,
+                    region_task.clip_data.clone(),
                     target_rect.origin.to_f32(),
                     DevicePoint::zero(),
                     region_task.device_pixel_scale.0,
@@ -778,9 +761,9 @@ impl TextureCacheRenderTarget {
         render_tasks: &mut RenderTaskGraph,
     ) {
         profile_scope!("add_task");
-        let task_address = render_tasks.get_task_address(task_id);
-        let src_task_address = render_tasks[task_id].children.get(0).map(|src_task_id| {
-            render_tasks.get_task_address(*src_task_id)
+        let task_address = task_id.into();
+        let src_task_address = render_tasks[task_id].children.get(0).map(|&src_task_id| {
+            src_task_id.into()
         });
 
         let task = &mut render_tasks[task_id];
@@ -868,7 +851,7 @@ impl TextureCacheRenderTarget {
             RenderTaskKind::Picture(..) |
             RenderTaskKind::ClipRegion(..) |
             RenderTaskKind::CacheMask(..) |
-            RenderTaskKind::Readback(..) |
+            RenderTaskKind::Readback |
             RenderTaskKind::Scaling(..) |
             RenderTaskKind::SvgFilter(..) => {
                 panic!("BUG: unexpected task kind for texture cache target");
@@ -1035,9 +1018,9 @@ fn add_svg_filter_instances(
     };
 
     let instance = SvgFilterInstance {
-        task_address: render_tasks.get_task_address(task_id),
-        input_1_task_address: input_1_task.map(|id| render_tasks.get_task_address(id)).unwrap_or(RenderTaskAddress(0)),
-        input_2_task_address: input_2_task.map(|id| render_tasks.get_task_address(id)).unwrap_or(RenderTaskAddress(0)),
+        task_address: task_id.into(),
+        input_1_task_address: input_1_task.map(|id| id.into()).unwrap_or(RenderTaskAddress(0)),
+        input_2_task_address: input_2_task.map(|id| id.into()).unwrap_or(RenderTaskAddress(0)),
         kind,
         input_count,
         generic_int,
@@ -1092,15 +1075,4 @@ pub struct GradientJob {
     pub colors: [PremultipliedColorF; GRADIENT_FP_STOPS],
     pub axis_select: f32,
     pub start_stop: [f32; 2],
-}
-
-/// Frame output information for a given pipeline ID.
-/// Storing the task ID allows the renderer to find
-/// the target rect within the render target that this
-/// pipeline exists at.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct FrameOutput {
-    pub task_id: RenderTaskId,
-    pub pipeline_id: PipelineId,
 }

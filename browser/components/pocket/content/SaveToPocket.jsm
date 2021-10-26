@@ -34,6 +34,11 @@ ChromeUtils.defineModuleGetter(
   "AboutReaderParent",
   "resource:///actors/AboutReaderParent.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "pktTelemetry",
+  "chrome://pocket/content/pktTelemetry.jsm"
+);
 
 var EXPORTED_SYMBOLS = ["SaveToPocket"];
 
@@ -54,17 +59,14 @@ var PocketPageAction = {
       this.pageAction = PageActions.addAction(
         new PageActions.Action({
           id,
-          title: "pocket-title",
+          panelFluentID: "page-action-pocket-panel",
+          urlbarFluentID: "urlbar-pocket-button",
           pinnedToUrlbar: true,
           wantsIframe: true,
           urlbarIDOverride: "pocket-button",
           anchorIDOverride: "pocket-button",
           _insertBeforeActionID: PageActions.ACTION_ID_PIN_TAB,
           _urlbarNodeInMarkup: true,
-          onBeforePlacedInWindow(window) {
-            let action = PageActions.actionForID("pocket");
-            window.BrowserPageActions.takeActionTitleFromPanel(action);
-          },
           onIframeShowing(iframe, panel) {
             Pocket.onShownInPhotonPageActionPanel(panel, iframe);
 
@@ -112,6 +114,20 @@ var PocketPageAction = {
           },
           onLocationChange(browserWindow) {
             PocketPageAction.updateUrlbarNodeState(browserWindow);
+          },
+          onPinToUrlbarToggled() {
+            if (!this.pinnedToUrlbar) {
+              const payload = pktTelemetry.createPingPayload({
+                events: [
+                  {
+                    action: "unpin",
+                    source: "save_button",
+                  },
+                ],
+              });
+              // Send unpin event ping.
+              pktTelemetry.sendStructuredIngestionEvent(payload);
+            }
           },
         })
       );

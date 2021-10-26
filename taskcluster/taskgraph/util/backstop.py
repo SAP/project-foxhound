@@ -4,25 +4,18 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import logging
-from collections import defaultdict
+from requests import HTTPError
 
-import requests
-from mozbuild.util import memoize
-from redo import retry
-
-BACKSTOP_PUSH_INTERVAL = 10
-BACKSTOP_TIME_INTERVAL = 60  # minutes
-PUSH_ENDPOINT = (
-    "{head_repository}/json-pushes/?startID={push_id_start}&endID={push_id_end}"
+from taskgraph.util.taskcluster import (
+    find_task_id,
+    get_artifact,
+    status_task,
 )
 
-# cached push dates by project
-PUSH_DATES = defaultdict(dict)
-# cached push_ids that failed to retrieve datetime for
-FAILED_JSON_PUSH_CALLS = []
 
-logger = logging.getLogger(__name__)
+BACKSTOP_PUSH_INTERVAL = 20
+BACKSTOP_TIME_INTERVAL = 60 * 4  # minutes
+BACKSTOP_INDEX = "gecko.v2.{project}.latest.taskgraph.backstop"
 
 
 def is_backstop(
@@ -37,102 +30,52 @@ def is_backstop(
     Returns:
         bool: True if this is a backtop, otherwise False.
     """
+    # In case this is being faked on try.
+    if params.get("backstop", False):
+        return True
+
     project = params["project"]
     pushid = int(params["pushlog_id"])
     pushdate = int(params["pushdate"])
 
-    if project != "autoland":
+    if project == "try":
         return False
+    elif project != "autoland":
+        return True
 
     # On every Nth push, want to run all tasks.
     if pushid % push_interval == 0:
         return True
 
+    if time_interval <= 0:
+        return False
+
     # We also want to ensure we run all tasks at least once per N minutes.
-    if (
-        time_interval > 0
-        and minutes_between_pushes(
-            time_interval, params["head_repository"], project, pushid, pushdate
-        )
-        >= time_interval
-    ):
-        return True
-    return False
-
-
-@memoize
-def minutes_between_pushes(
-    time_interval, repository, project, cur_push_id, cur_push_date
-):
-    # figure out the minutes that have elapsed between the current push and previous one
-    # defaulting to max min so if we can't get value, defaults to run the task
-    min_between_pushes = time_interval
-    prev_push_id = cur_push_id - 1
-
-    # cache the pushdate for the current push so we can use it next time
-    PUSH_DATES[project].update({cur_push_id: cur_push_date})
-
-    # check if we already have the previous push id's datetime cached
-    prev_push_date = PUSH_DATES[project].get(prev_push_id, 0)
-
-    # we have datetime of current and previous push, so return elapsed minutes and bail
-    if cur_push_date > 0 and prev_push_date > 0:
-        return (cur_push_date - prev_push_date) / 60
-
-    # datetime for previous pushid not cached, so must retrieve it
-    # if we already tried to retrieve the datetime for this pushid
-    # before and the json-push request failed, don't try it again
-    if prev_push_id in FAILED_JSON_PUSH_CALLS:
-        return min_between_pushes
-
-    url = PUSH_ENDPOINT.format(
-        head_repository=repository,
-        push_id_start=prev_push_id - 1,
-        push_id_end=prev_push_id,
-    )
+    index = BACKSTOP_INDEX.format(project=project)
 
     try:
-        response = retry(
-            requests.get,
-            attempts=2,
-            sleeptime=10,
-            args=(url,),
-            kwargs={"timeout": 60, "headers": {"User-Agent": "TaskCluster"}},
-        )
-        prev_push_date = response.json().get(str(prev_push_id), {}).get("date", 0)
+        last_backstop_id = find_task_id(index)
+    except KeyError:
+        # Index wasn't found, implying there hasn't been a backstop push yet.
+        return True
 
-        # cache it for next time
-        PUSH_DATES[project].update({prev_push_id: prev_push_date})
+    if status_task(last_backstop_id) in ("failed", "exception"):
+        # If the last backstop failed its decision task, make this a backstop.
+        return True
 
-        # now have datetime of current and previous push
-        if cur_push_date > 0 and prev_push_date > 0:
-            min_between_pushes = (cur_push_date - prev_push_date) / 60
+    try:
+        last_pushdate = get_artifact(last_backstop_id, "public/parameters.yml")[
+            "pushdate"
+        ]
+    except HTTPError as e:
+        # If the last backstop decision task exists in the index, but
+        # parameters.yml isn't available yet, it means the decision task is
+        # still running. If that's the case, we can be pretty sure the time
+        # component will not cause a backstop, so just return False.
+        if e.response.status_code == 404:
+            return False
+        raise
 
-    # In the event of request times out, requests will raise a TimeoutError.
-    except requests.exceptions.Timeout:
-        logger.warning("json-pushes timeout, enabling backstop")
-        FAILED_JSON_PUSH_CALLS.append(prev_push_id)
-
-    # In the event of a network problem (e.g. DNS failure, refused connection, etc),
-    # requests will raise a ConnectionError.
-    except requests.exceptions.ConnectionError:
-        logger.warning("json-pushes connection error, enabling backstop")
-        FAILED_JSON_PUSH_CALLS.append(prev_push_id)
-
-    # In the event of the rare invalid HTTP response(e.g 404, 401),
-    # requests will raise an HTTPError exception
-    except requests.exceptions.HTTPError:
-        logger.warning("Bad Http response, enabling backstop")
-        FAILED_JSON_PUSH_CALLS.append(prev_push_id)
-
-    # When we get invalid JSON (i.e. 500 error), it results in a ValueError (bug 1313426)
-    except ValueError as error:
-        logger.warning("Invalid JSON, possible server error: {}".format(error))
-        FAILED_JSON_PUSH_CALLS.append(prev_push_id)
-
-    # We just print the error out as a debug message if we failed to catch the exception above
-    except requests.exceptions.RequestException as error:
-        logger.warning(error)
-        FAILED_JSON_PUSH_CALLS.append(prev_push_id)
-
-    return min_between_pushes
+    if (pushdate - last_pushdate) / 60 >= time_interval:
+        return True
+    return False

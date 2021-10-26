@@ -6,11 +6,14 @@
 
 #include "nsPageFrame.h"
 
+#include "mozilla/AppUnits.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxContext.h"
 #include "nsDeviceContext.h"
 #include "nsFontMetrics.h"
+#include "nsIFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
@@ -44,134 +47,153 @@ nsPageFrame::nsPageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
 
 nsPageFrame::~nsPageFrame() = default;
 
+nsReflowStatus nsPageFrame::ReflowPageContent(
+    nsPresContext* aPresContext, const ReflowInput& aPageReflowInput) {
+  // XXX Pay attention to the page's border and padding...
+  //
+  // Reflow our ::-moz-page-content frame, allowing it only to be as big as we
+  // are (minus margins).
+  if (mFrames.IsEmpty()) {
+    return {};
+  }
+
+  nsIFrame* frame = mFrames.FirstChild();
+  nsSize maxSize = aPresContext->GetPageSize();
+  float scale = aPresContext->GetPageScale();
+  // When the reflow size is NS_UNCONSTRAINEDSIZE it means we are reflowing
+  // a single page to print selection. So this means we want to use
+  // NS_UNCONSTRAINEDSIZE without altering it.
+  //
+  // FIXME(emilio): Is this still true?
+  maxSize.width = NSToCoordCeil(maxSize.width / scale);
+  if (maxSize.height != NS_UNCONSTRAINEDSIZE) {
+    maxSize.height = NSToCoordCeil(maxSize.height / scale);
+  }
+
+  // Get the number of Twips per pixel from the PresContext
+  const nscoord onePixel = AppUnitsPerCSSPixel();
+
+  // insurance against infinite reflow, when reflowing less than a pixel
+  // XXX Shouldn't we do something more friendly when invalid margins
+  //     are set?
+  if (maxSize.width < onePixel || maxSize.height < onePixel) {
+    NS_WARNING("Reflow aborted; no space for content");
+    return {};
+  }
+
+  ReflowInput kidReflowInput(aPresContext, aPageReflowInput, frame,
+                             LogicalSize(frame->GetWritingMode(), maxSize));
+  kidReflowInput.mFlags.mIsTopOfPage = true;
+  kidReflowInput.mFlags.mTableIsSplittable = true;
+
+  mPageContentMargin = aPresContext->GetDefaultPageMargin();
+
+  // Use the margins given in the @page rule if told to do so.
+  // We clamp to the paper's unwriteable margins to avoid clipping, *except*
+  // that we will respect a margin of zero if specified, assuming this means
+  // the document is intended to fit the paper size exactly, and the client is
+  // taking full responsibility for what happens around the edges.
+  if (mPD->mPrintSettings->GetHonorPageRuleMargins()) {
+    const auto& margin = kidReflowInput.mStyleMargin->mMargin;
+    for (const auto side : mozilla::AllPhysicalSides()) {
+      if (!margin.Get(side).IsAuto()) {
+        nscoord computed = kidReflowInput.ComputedPhysicalMargin().Side(side);
+        // Respecting a zero margin is particularly important when the client
+        // is PDF.js where the PDF already contains the margins.
+        if (computed == 0) {
+          mPageContentMargin.Side(side) = 0;
+        } else {
+          nscoord unwriteable = nsPresContext::CSSTwipsToAppUnits(
+              mPD->mPrintSettings->GetUnwriteableMarginInTwips().Side(side));
+          mPageContentMargin.Side(side) = std::max(
+              kidReflowInput.ComputedPhysicalMargin().Side(side), unwriteable);
+        }
+      }
+    }
+  }
+
+  nscoord maxWidth = maxSize.width - mPageContentMargin.LeftRight() / scale;
+  nscoord maxHeight;
+  if (maxSize.height == NS_UNCONSTRAINEDSIZE) {
+    maxHeight = NS_UNCONSTRAINEDSIZE;
+  } else {
+    maxHeight = maxSize.height - mPageContentMargin.TopBottom() / scale;
+  }
+
+  // Check the width and height, if they're too small we reset the margins
+  // back to the default.
+  if (maxWidth < onePixel || maxHeight < onePixel) {
+    mPageContentMargin = aPresContext->GetDefaultPageMargin();
+    maxWidth = maxSize.width - mPageContentMargin.LeftRight() / scale;
+    if (maxHeight != NS_UNCONSTRAINEDSIZE) {
+      maxHeight = maxSize.height - mPageContentMargin.TopBottom() / scale;
+    }
+  }
+
+  // And if they're still too small, we give up.
+  if (maxWidth < onePixel || maxHeight < onePixel) {
+    NS_WARNING("Reflow aborted; no space for content");
+    return {};
+  }
+
+  kidReflowInput.SetComputedWidth(maxWidth);
+  kidReflowInput.SetComputedHeight(maxHeight);
+
+  // calc location of frame
+  nscoord xc = mPageContentMargin.left;
+  nscoord yc = mPageContentMargin.top;
+
+  // Get the child's desired size
+  ReflowOutput kidOutput(kidReflowInput);
+  nsReflowStatus kidStatus;
+  ReflowChild(frame, aPresContext, kidOutput, kidReflowInput, xc, yc,
+              ReflowChildFlags::Default, kidStatus);
+
+  // Place and size the child
+  FinishReflowChild(frame, aPresContext, kidOutput, &kidReflowInput, xc, yc,
+                    ReflowChildFlags::Default);
+
+  NS_ASSERTION(!kidStatus.IsFullyComplete() || !frame->GetNextInFlow(),
+               "bad child flow list");
+  return kidStatus;
+}
+
 void nsPageFrame::Reflow(nsPresContext* aPresContext,
-                         ReflowOutput& aDesiredSize,
+                         ReflowOutput& aReflowOutput,
                          const ReflowInput& aReflowInput,
                          nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsPageFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
+  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aReflowOutput, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+  MOZ_ASSERT(mPD, "Need a pointer to nsSharedPageData before reflow starts");
 
   NS_ASSERTION(
       mFrames.FirstChild() && mFrames.FirstChild()->IsPageContentFrame(),
       "pageFrame must have a pageContentFrame child");
 
-  // Resize our frame allowing it only to be as big as we are
-  // XXX Pay attention to the page's border and padding...
-  [&] {
-    if (mFrames.IsEmpty()) {
-      return;
-    }
-
-    nsIFrame* frame = mFrames.FirstChild();
-    // When the reflow size is NS_UNCONSTRAINEDSIZE it means we are reflowing
-    // a single page to print selection. So this means we want to use
-    // NS_UNCONSTRAINEDSIZE without altering it
-    nscoord avHeight;
-    if (mPD->mReflowSize.height == NS_UNCONSTRAINEDSIZE) {
-      avHeight = NS_UNCONSTRAINEDSIZE;
-    } else {
-      avHeight = mPD->mReflowSize.height;
-    }
-    nsSize maxSize(mPD->mReflowSize.width, avHeight);
-    float scale = aPresContext->GetPageScale();
-    maxSize.width = NSToCoordCeil(maxSize.width / scale);
-    if (maxSize.height != NS_UNCONSTRAINEDSIZE) {
-      maxSize.height = NSToCoordCeil(maxSize.height / scale);
-    }
-    // Get the number of Twips per pixel from the PresContext
-    nscoord onePixelInTwips = nsPresContext::CSSPixelsToAppUnits(1);
-    // insurance against infinite reflow, when reflowing less than a pixel
-    // XXX Shouldn't we do something more friendly when invalid margins
-    //     are set?
-    if (maxSize.width < onePixelInTwips || maxSize.height < onePixelInTwips) {
-      NS_WARNING("Reflow aborted; no space for content");
-      return;
-    }
-
-    ReflowInput kidReflowInput(aPresContext, aReflowInput, frame,
-                               LogicalSize(frame->GetWritingMode(), maxSize));
-    kidReflowInput.mFlags.mIsTopOfPage = true;
-    kidReflowInput.mFlags.mTableIsSplittable = true;
-
-    // Use the margins given in the @page rule.
-    // If a margin is 'auto', use the margin from the print settings for that
-    // side.
-    const auto& marginStyle = kidReflowInput.mStyleMargin->mMargin;
-    for (const auto side : mozilla::AllPhysicalSides()) {
-      if (marginStyle.Get(side).IsAuto()) {
-        mPageContentMargin.Side(side) = mPD->mReflowMargin.Side(side);
-      } else {
-        mPageContentMargin.Side(side) =
-            kidReflowInput.ComputedPhysicalMargin().Side(side);
-      }
-    }
-
-    nscoord maxWidth = maxSize.width - mPageContentMargin.LeftRight() / scale;
-    nscoord maxHeight;
-    if (maxSize.height == NS_UNCONSTRAINEDSIZE) {
-      maxHeight = NS_UNCONSTRAINEDSIZE;
-    } else {
-      maxHeight = maxSize.height - mPageContentMargin.TopBottom() / scale;
-    }
-
-    // Check the width and height, if they're too small we reset the margins
-    // back to the default.
-    if (maxWidth < onePixelInTwips || maxHeight < onePixelInTwips) {
-      for (const auto side : mozilla::AllPhysicalSides()) {
-        mPageContentMargin.Side(side) = mPD->mReflowMargin.Side(side);
-      }
-      maxWidth = maxSize.width - mPageContentMargin.LeftRight() / scale;
-      if (maxHeight != NS_UNCONSTRAINEDSIZE) {
-        maxHeight = maxSize.height - mPageContentMargin.TopBottom() / scale;
-      }
-    }
-
-    // And if they're still too small we bail out.
-    if (maxWidth < onePixelInTwips || maxHeight < onePixelInTwips) {
-      NS_WARNING("Reflow aborted; no space for content");
-      return;
-    }
-
-    kidReflowInput.SetComputedWidth(maxWidth);
-    kidReflowInput.SetComputedHeight(maxHeight);
-
-    // calc location of frame
-    nscoord xc = mPageContentMargin.left;
-    nscoord yc = mPageContentMargin.top;
-
-    // Get the child's desired size
-    ReflowChild(frame, aPresContext, aDesiredSize, kidReflowInput, xc, yc,
-                ReflowChildFlags::Default, aStatus);
-
-    // Place and size the child
-    FinishReflowChild(frame, aPresContext, aDesiredSize, &kidReflowInput, xc,
-                      yc, ReflowChildFlags::Default);
-
-    NS_ASSERTION(!aStatus.IsFullyComplete() || !frame->GetNextInFlow(),
-                 "bad child flow list");
-  }();
+  // Our status is the same as our child's.
+  aStatus = ReflowPageContent(aPresContext, aReflowInput);
 
   PR_PL(("PageFrame::Reflow %p ", this));
-  PR_PL(("[%d,%d][%d,%d]\n", aDesiredSize.Width(), aDesiredSize.Height(),
+  PR_PL(("[%d,%d][%d,%d]\n", aReflowOutput.Width(), aReflowOutput.Height(),
          aReflowInput.AvailableWidth(), aReflowInput.AvailableHeight()));
 
   // Return our desired size
   WritingMode wm = aReflowInput.GetWritingMode();
-  aDesiredSize.ISize(wm) = aReflowInput.AvailableISize();
+  aReflowOutput.ISize(wm) = aReflowInput.AvailableISize();
   if (aReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE) {
-    aDesiredSize.BSize(wm) = aReflowInput.AvailableBSize();
+    aReflowOutput.BSize(wm) = aReflowInput.AvailableBSize();
   }
 
-  aDesiredSize.SetOverflowAreasToDesiredBounds();
-  FinishAndStoreOverflow(&aDesiredSize);
+  aReflowOutput.SetOverflowAreasToDesiredBounds();
+  FinishAndStoreOverflow(&aReflowOutput);
 
   PR_PL(("PageFrame::Reflow %p ", this));
   PR_PL(("[%d,%d]\n", aReflowInput.AvailableWidth(),
          aReflowInput.AvailableHeight()));
 
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
+  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aReflowOutput);
 }
 
 #ifdef DEBUG_FRAME_DUMP
@@ -199,7 +221,7 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
   if (aStr.Find(kPageAndTotal) != kNotFound) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumAndTotalsFormat.get(),
-                              mPageNum, mTotNumPages);
+                              mPageNum, mPD->mRawNumPages);
     aNewStr.ReplaceSubstring(kPageAndTotal, uStr);
   }
 
@@ -225,7 +247,8 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
   constexpr auto kPageTotal = u"&L"_ns;
   if (aStr.Find(kPageTotal) != kNotFound) {
     nsAutoString uStr;
-    nsTextFormatter::ssprintf(uStr, mPD->mPageNumFormat.get(), mTotNumPages);
+    nsTextFormatter::ssprintf(uStr, mPD->mPageNumFormat.get(),
+                              mPD->mRawNumPages);
     aNewStr.ReplaceSubstring(kPageTotal, uStr);
   }
 }
@@ -355,7 +378,7 @@ void nsPageFrame::DrawHeaderFooter(gfxContext& aRenderingContext,
       PresContext()->SetBidiEnabled();
     }
 
-    // cacl the x and y positions of the text
+    // calc the x and y positions of the text
     nscoord x =
         GetXPosition(aRenderingContext, aFontMetrics, aRect, aJust, str);
     nscoord y;
@@ -428,22 +451,6 @@ static void BuildDisplayListForExtraPage(nsDisplayListBuilder* aBuilder,
   aList->AppendToTop(&list);
 }
 
-static nsIFrame* GetNextPage(nsIFrame* aPageContentFrame) {
-  // XXX ugh
-  nsIFrame* pageFrame = aPageContentFrame->GetParent();
-  NS_ASSERTION(pageFrame->IsPageFrame(),
-               "pageContentFrame has unexpected parent");
-  nsIFrame* nextPageFrame = pageFrame->GetNextSibling();
-  if (!nextPageFrame) return nullptr;
-  NS_ASSERTION(nextPageFrame->IsPageFrame(),
-               "pageFrame's sibling is not a page frame...");
-  nsIFrame* f = nextPageFrame->PrincipalChildList().FirstChild();
-  NS_ASSERTION(f, "pageFrame has no page content frame!");
-  NS_ASSERTION(f->IsPageContentFrame(),
-               "pageFrame's child is not page content!");
-  return f;
-}
-
 static gfx::Matrix4x4 ComputePageTransform(nsIFrame* aFrame,
                                            float aAppUnitsPerPixel) {
   float scale = aFrame->PresContext()->GetPageScale();
@@ -496,9 +503,9 @@ static void PaintMarginGuides(nsIFrame* aFrame, DrawTarget* aDrawTarget,
                        /* dash offset */ 0.0f);
   DrawOptions options;
 
-  auto* pageData = static_cast<nsPageFrame*>(aFrame)->GetSharedPageData();
-  MOZ_ASSERT(pageData, "Should have page data by the time we're painting");
-  const nsMargin& margin = pageData->mReflowMargin;
+  MOZ_RELEASE_ASSERT(aFrame->IsPageFrame());
+  const nsMargin& margin =
+      static_cast<nsPageFrame*>(aFrame)->GetUsedPageContentMargin();
   int32_t appUnitsPerDevPx = aFrame->PresContext()->AppUnitsPerDevPixel();
 
   // Get the frame's rect and inset by the margins to get the edges of the
@@ -524,14 +531,91 @@ static void PaintMarginGuides(nsIFrame* aFrame, DrawTarget* aDrawTarget,
 }
 
 //------------------------------------------------------------------------------
+using PageAndOffset = std::pair<nsPageContentFrame*, nscoord>;
+
+// Returns the previous continuation PageContentFrames that have overflow areas,
+// and their offsets to the top of the given PageContentFrame |aPage|. Since the
+// iteration is done backwards, the returned pages are arranged in descending
+// order of page number.
+static nsTArray<PageAndOffset> GetPreviousPagesWithOverflow(
+    nsPageContentFrame* aPage) {
+  nsTArray<PageAndOffset> pages(8);
+
+  auto GetPreviousPageContentFrame = [](nsPageContentFrame* aPageCF) {
+    nsIFrame* prevCont = aPageCF->GetPrevContinuation();
+    MOZ_ASSERT(!prevCont || prevCont->IsPageContentFrame(),
+               "Expected nsPageContentFrame or nullptr");
+
+    return static_cast<nsPageContentFrame*>(prevCont);
+  };
+
+  nsPageContentFrame* pageCF = aPage;
+  // The collective height of all prev-continuations we've traversed so far:
+  nscoord offsetToCurrentPageTop = 0;
+  while ((pageCF = GetPreviousPageContentFrame(pageCF))) {
+    offsetToCurrentPageTop += pageCF->GetSize().Height();
+
+    if (pageCF->HasOverflowAreas()) {
+      pages.EmplaceBack(pageCF, offsetToCurrentPageTop);
+    }
+  }
+
+  return pages;
+}
+
+static void BuildPreviousPageOverflow(nsDisplayListBuilder* aBuilder,
+                                      nsPageFrame* aPageFrame,
+                                      nsPageContentFrame* aCurrentPageCF,
+                                      const nsDisplayListSet& aLists) {
+  const auto previousPagesAndOffsets =
+      GetPreviousPagesWithOverflow(aCurrentPageCF);
+
+  for (const PageAndOffset& pair : Reversed(previousPagesAndOffsets)) {
+    auto* prevPageCF = pair.first;
+    const nscoord offsetToCurrentPageTop = pair.second;
+    const auto inkOverflow = prevPageCF->InkOverflowRectRelativeToSelf();
+    const auto remainingOverflow = inkOverflow.YMost() - offsetToCurrentPageTop;
+
+    if (remainingOverflow <= 0) {
+      continue;
+    }
+
+    // This rect represents the piece of prevPageCF's overflow that ends up on
+    // the current pageContentFrame (in prevPageCF's coordinate system).
+    nsRect overflowRect = inkOverflow;
+    overflowRect.y = offsetToCurrentPageTop;
+    overflowRect.height =
+        std::min(remainingOverflow, prevPageCF->GetSize().Height());
+
+    {
+      // Convert the overflowRect to the coordinate system of aPageFrame, and
+      // set it as the visible rect for display list building.
+      const nsRect visibleRect =
+          overflowRect + prevPageCF->GetOffsetTo(aPageFrame);
+      nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
+          aBuilder, aPageFrame, visibleRect, visibleRect);
+
+      // This part is tricky. Because display items are positioned based on the
+      // frame tree, building a display list for the previous page yields
+      // display items that are outside of the current page bounds.
+      // To fix that, an additional reference frame offset is added, which
+      // shifts the display items down as if the current and previous page were
+      // one long page in the same coordinate system.
+      const nsPoint pageOffset = aCurrentPageCF->GetOffsetTo(prevPageCF);
+      const nsPoint additionalOffset(pageOffset.X(),
+                                     pageOffset.Y() - offsetToCurrentPageTop);
+      buildingForChild.SetAdditionalOffset(additionalOffset);
+
+      aPageFrame->BuildDisplayListForChild(aBuilder, prevPageCF, aLists);
+    }
+  }
+}
+
 void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                    const nsDisplayListSet& aLists) {
   nsDisplayListCollection set(aBuilder);
 
   nsPresContext* pc = PresContext();
-  if (pc->IsScreen()) {
-    DisplayBorderBackgroundOutline(aBuilder, aLists);
-  }
 
   nsIFrame* child = mFrames.FirstChild();
   float scale = pc->GetPageScale();
@@ -547,8 +631,11 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // y-value matches the top edge of the current page.  So, to clip to the
     // current page's content (in coordinates *relative* to the page content
     // frame), we just negate its y-position and add the top margin.
-    clipRect.y =
-        NSToCoordCeil((-child->GetRect().y + mPD->mReflowMargin.top) / scale);
+    //
+    // FIXME(emilio): Rather than the default margin, this should probably use
+    // mPageContentMargin?
+    clipRect.y = NSToCoordCeil(
+        (-child->GetRect().y + pc->GetDefaultPageMargin().top) / scale);
     clipRect.height = expectedPageContentHeight;
     NS_ASSERTION(clipRect.y < child->GetSize().height,
                  "Should be clipping to region inside the page content bounds");
@@ -562,12 +649,27 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // Overwrite current clip, since we're going to wrap in a transform
     // and the current clip is no longer meaningful.
     clipState.Clear();
-    clipState.ClipContainingBlockDescendants(clipRect, nullptr);
+    clipState.ClipContainingBlockDescendants(clipRect);
 
-    nsRect visibleRect = child->InkOverflowRectRelativeToSelf();
+    MOZ_ASSERT(child->IsPageContentFrame(), "unexpected child frame type");
+    auto* currentPageCF = static_cast<nsPageContentFrame*>(child);
+
+    if (StaticPrefs::layout_display_list_improve_fragmentation() &&
+        mPageNum <= 255) {
+      nsDisplayListBuilder::AutoPageNumberSetter p(aBuilder, mPageNum);
+      BuildPreviousPageOverflow(aBuilder, this, currentPageCF, set);
+    }
+
+    // Set the visible rect to ink overflow rect of the child nsPageContentFrame
+    // in parent nsPageFrame coordinate space.
+    const nsRect childOverflowRect = child->InkOverflowRectRelativeToSelf();
+    const nsRect visibleRect = childOverflowRect + child->GetOffsetTo(this);
+
     nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
-        aBuilder, child, visibleRect, visibleRect);
-    child->BuildDisplayListForStackingContext(aBuilder, &content);
+        aBuilder, this, visibleRect, visibleRect);
+    BuildDisplayListForChild(aBuilder, child, set);
+
+    set.SerializeWithCorrectZOrder(&content, child->GetContent());
 
     // We may need to paint out-of-flow frames whose placeholders are
     // on other pages. Add those pages to our display list. Note that
@@ -584,26 +686,26 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // differentiated from the ones created on the normal page.
     NS_ASSERTION(mPageNum <= 255, "Too many pages to handle OOFs");
     if (mPageNum <= 255) {
-      uint8_t oldPageNum = aBuilder->GetBuildingExtraPagesForPageNum();
-      aBuilder->SetBuildingExtraPagesForPageNum(mPageNum);
-
-      nsIFrame* page = child;
-      while ((page = GetNextPage(page)) != nullptr) {
-        nsRect childVisible = visibleRect + child->GetOffsetTo(page);
+      nsDisplayListBuilder::AutoPageNumberSetter p(aBuilder, mPageNum);
+      // The static_cast here is technically unnecessary, but it helps
+      // devirtualize the GetNextContinuation() function call if pcf has a
+      // concrete type (with an inherited `final` GetNextContinuation() impl).
+      auto* pageCF = currentPageCF;
+      while ((pageCF = static_cast<nsPageContentFrame*>(
+                  pageCF->GetNextContinuation()))) {
+        nsRect childVisible = childOverflowRect + child->GetOffsetTo(pageCF);
 
         nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
-            aBuilder, page, childVisible, childVisible);
-        BuildDisplayListForExtraPage(aBuilder, this, page, &content);
+            aBuilder, pageCF, childVisible, childVisible);
+        BuildDisplayListForExtraPage(aBuilder, this, pageCF, &content);
       }
-
-      aBuilder->SetBuildingExtraPagesForPageNum(oldPageNum);
     }
 
     // Invoke AutoBuildingDisplayList to ensure that the correct visibleRect
     // is used to compute the visible rect if AddCanvasBackgroundColorItem
     // creates a display item.
     nsDisplayListBuilder::AutoBuildingDisplayList building(
-        aBuilder, child, visibleRect, visibleRect);
+        aBuilder, child, childOverflowRect, childOverflowRect);
 
     // Add the canvas background color to the bottom of the list. This
     // happens after we've built the list so that AddCanvasBackgroundColorItem
@@ -619,45 +721,32 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                              content.GetBuildingRect(),
                                              ::ComputePageTransform);
 
-  set.Content()->AppendToTop(&content);
-
   if (pc->IsRootPaginatedDocument()) {
-    set.Content()->AppendNewToTop<nsDisplayHeaderFooter>(aBuilder, this);
+    content.AppendNewToTop<nsDisplayHeaderFooter>(aBuilder, this);
 
     // For print-preview, show margin guides if requested in the settings.
-    if (pc->Type() == nsPresContext::eContext_PrintPreview) {
-      if (!mPD->mPrintSettings) {
-        mPD->mPrintSettings = pc->GetPrintSettings();
-      }
-      bool showGuides;
-      if (mPD->mPrintSettings &&
-          NS_SUCCEEDED(mPD->mPrintSettings->GetShowMarginGuides(&showGuides)) &&
-          showGuides) {
-        set.Content()->AppendNewToTop<nsDisplayGeneric>(
-            aBuilder, this, PaintMarginGuides, "MarginGuides",
-            DisplayItemType::TYPE_MARGIN_GUIDES);
-      }
+    if (pc->Type() == nsPresContext::eContext_PrintPreview &&
+        mPD->mPrintSettings->GetShowMarginGuides()) {
+      content.AppendNewToTop<nsDisplayGeneric>(
+          aBuilder, this, PaintMarginGuides, "MarginGuides",
+          DisplayItemType::TYPE_MARGIN_GUIDES);
     }
   }
 
-  set.MoveTo(aLists);
+  aLists.Content()->AppendToTop(&content);
 }
 
 //------------------------------------------------------------------------------
-void nsPageFrame::SetPageNumInfo(int32_t aPageNumber, int32_t aTotalPages) {
-  mPageNum = aPageNumber;
-  mTotNumPages = aTotalPages;
+void nsPageFrame::DeterminePageNum() {
+  // If we have no previous continuation, we're page 1. Otherwise, we're
+  // just one more than our previous continuation's page number.
+  auto* prevContinuation = static_cast<nsPageFrame*>(GetPrevContinuation());
+  mPageNum = prevContinuation ? prevContinuation->GetPageNum() + 1 : 1;
 }
 
 void nsPageFrame::PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
                                     bool aDisableSubpixelAA) {
   nsPresContext* pc = PresContext();
-
-  if (!mPD->mPrintSettings) {
-    if (pc->Type() == nsPresContext::eContext_PrintPreview || pc->IsDynamic())
-      mPD->mPrintSettings = pc->GetPrintSettings();
-    if (!mPD->mPrintSettings) return;
-  }
 
   nsRect rect(aPt, mRect.Size());
   aRenderingContext.SetColor(sRGBColor::OpaqueBlack());
@@ -674,12 +763,8 @@ void nsPageFrame::PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
   RefPtr<nsFontMetrics> fontMet =
       pc->DeviceContext()->GetMetricsFor(mPD->mHeadFootFont, params);
 
-  nscoord ascent = 0;
-  nscoord visibleHeight = 0;
-  if (fontMet) {
-    visibleHeight = fontMet->MaxHeight();
-    ascent = fontMet->MaxAscent();
-  }
+  nscoord ascent = fontMet->MaxAscent();
+  nscoord visibleHeight = fontMet->MaxHeight();
 
   // print document headers and footers
   nsString headerLeft, headerCenter, headerRight;
@@ -739,11 +824,11 @@ nscoord nsPageBreakFrame::GetIntrinsicISize() {
 nscoord nsPageBreakFrame::GetIntrinsicBSize() { return 0; }
 
 void nsPageBreakFrame::Reflow(nsPresContext* aPresContext,
-                              ReflowOutput& aDesiredSize,
+                              ReflowOutput& aReflowOutput,
                               const ReflowInput& aReflowInput,
                               nsReflowStatus& aStatus) {
   DO_GLOBAL_REFLOW_COUNT("nsPageBreakFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
+  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aReflowOutput, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   // Override reflow, since we don't want to deal with what our
@@ -776,7 +861,7 @@ void nsPageBreakFrame::Reflow(nsPresContext* aPresContext,
   // XXX(mats) why???
   finalSize.BSize(wm) -=
       finalSize.BSize(wm) % nsPresContext::CSSPixelsToAppUnits(1);
-  aDesiredSize.SetSize(wm, finalSize);
+  aReflowOutput.SetSize(wm, finalSize);
 
   // Note: not using NS_FRAME_FIRST_REFLOW here, since it's not clear whether
   // DidReflow will always get called before the next Reflow() call.

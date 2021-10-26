@@ -9,6 +9,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/css/SheetLoadData.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/ServoBindings.h"
 #include "nsXULPrototypeCache.h"
 
@@ -25,9 +26,30 @@ using IsAlternate = css::Loader::IsAlternate;
 
 SharedStyleSheetCache* SharedStyleSheetCache::sInstance;
 
-void SharedStyleSheetCache::ClearForTest() {
-  if (sInstance) {
+void SharedStyleSheetCache::Clear(nsIPrincipal* aForPrincipal) {
+  using ContentParent = dom::ContentParent;
+
+  if (XRE_IsParentProcess()) {
+    auto forPrincipal = aForPrincipal ? Some(RefPtr(aForPrincipal)) : Nothing();
+    for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
+      Unused << cp->SendClearStyleSheetCache(forPrincipal);
+    }
+  }
+
+  if (!sInstance) {
+    return;
+  }
+
+  if (!aForPrincipal) {
     sInstance->mCompleteSheets.Clear();
+    return;
+  }
+
+  for (auto iter = sInstance->mCompleteSheets.Iter(); !iter.Done();
+       iter.Next()) {
+    if (iter.Key().Principal()->Equals(aForPrincipal)) {
+      iter.Remove();
+    }
   }
 }
 
@@ -315,6 +337,43 @@ void SharedStyleSheetCache::LoadCompletedInternal(
       MOZ_ASSERT(data->mSheet->IsConstructed() ||
                      !data->mSheet->HasForcedUniqueInner(),
                  "should not get a forced unique inner during parsing");
+      // Insert the sheet into the tree now the sheet has loaded, but only if
+      // the sheet is still relevant, and if this is a top-level sheet.
+      const bool needInsertIntoTree = [&] {
+        if (StaticPrefs::dom_expose_incomplete_stylesheets()) {
+          // No need to do that, it's already done. This is technically a bit
+          // racy, but having to reload if you hit an in-progress load while
+          // switching the pref from about:config is not a big deal.
+          return false;
+        }
+        if (!data->mLoader->GetDocument()) {
+          // Not a document load, nothing to do.
+          return false;
+        }
+        if (data->mIsPreload != css::Loader::IsPreload::No) {
+          // Preloads are not supposed to be observable.
+          return false;
+        }
+        if (data->mSheet->IsConstructed()) {
+          // Constructable sheets are not in the regular stylesheet tree.
+          return false;
+        }
+        if (data->mIsChildSheet) {
+          // A child sheet, those will get exposed from the parent, no need to
+          // insert them into the tree.
+          return false;
+        }
+        if (data->mOwningNode != data->mSheet->GetOwnerNode()) {
+          // The sheet was already removed from the tree and is no longer the
+          // current sheet of the owning node, we can bail.
+          return false;
+        }
+        return true;
+      }();
+
+      if (needInsertIntoTree) {
+        data->mLoader->InsertSheetInTree(*data->mSheet, data->mOwningNode);
+      }
       data->mSheet->SetComplete();
       data->ScheduleLoadEventIfNeeded();
     } else if (data->mSheet->IsApplicable()) {
@@ -409,7 +468,7 @@ void SharedStyleSheetCache::InsertIntoCompleteCacheIfNeeded(
         MOZ_DIAGNOSTIC_ASSERT(entry.GetData().mSheet != sheet,
                               "Same sheet, different keys?");
       } else {
-        MOZ_DIAGNOSTIC_ASSERT(
+        MOZ_ASSERT(
             entry.GetData().Expired() || aData.mLoader->ShouldBypassCache(),
             "Overriding existing complete entry?");
       }

@@ -82,6 +82,7 @@
         <html:link rel="stylesheet" href="chrome://global/skin/global.css"/>
         <html:style>${this.styles}</html:style>
         <arrowscrollbox class="menupopup-arrowscrollbox"
+                        exportparts="scrollbox: arrowscrollbox-scrollbox"
                         flex="1"
                         orient="vertical"
                         smoothscroll="false">
@@ -98,6 +99,10 @@
         }
         :host(.in-menulist) arrowscrollbox::part(scrollbox) {
           overflow: auto;
+          margin: 0;
+        }
+        :host(.in-menulist) arrowscrollbox::part(scrollbox-clip) {
+          overflow: visible;
         }
       `;
 

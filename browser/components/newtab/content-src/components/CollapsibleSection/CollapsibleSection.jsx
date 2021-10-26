@@ -112,7 +112,7 @@ export class CollapsibleSection extends React.PureComponent {
     this.props.dispatch(
       ac.UserEvent({
         event: userEvent,
-        source: this.props.source,
+        source: this.props.eventSource,
       })
     );
   }
@@ -202,6 +202,10 @@ export class CollapsibleSection extends React.PureComponent {
     } else if (!isAnimating && collapsed) {
       bodyStyle = { display: "none" };
     }
+    let titleStyle;
+    if (this.props.hideTitle) {
+      titleStyle = { visibility: "hidden" };
+    }
     return (
       <section
         className={`collapsible-section ${this.props.className}${
@@ -212,7 +216,7 @@ export class CollapsibleSection extends React.PureComponent {
         data-section-id={id}
       >
         <div className="section-top-bar">
-          <h3 className="section-title">
+          <h3 className="section-title" style={titleStyle}>
             <span className="click-target-container">
               {/* Click-targets that toggle a collapsible section should have an aria-expanded attribute; see bug 1553234 */}
               <span
@@ -259,7 +263,7 @@ export class CollapsibleSection extends React.PureComponent {
               <SectionMenu
                 id={id}
                 extraOptions={extraMenuOptions}
-                eventSource={eventSource}
+                source={eventSource}
                 showPrefName={showPrefName}
                 privacyNoticeURL={privacyNoticeURL}
                 collapsed={collapsed}

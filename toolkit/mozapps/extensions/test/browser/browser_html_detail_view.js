@@ -47,6 +47,14 @@ function checkLabel(row, name) {
   );
 }
 
+function formatUrl(contentAttribute, url) {
+  let parsedUrl = new URL(url);
+  parsedUrl.searchParams.set("utm_source", "firefox-browser");
+  parsedUrl.searchParams.set("utm_medium", "firefox-browser");
+  parsedUrl.searchParams.set("utm_content", contentAttribute);
+  return parsedUrl.href;
+}
+
 function checkLink(link, url, text = url) {
   ok(link, "There is a link");
   is(link.href, url, "The link goes to the URL");
@@ -139,7 +147,7 @@ add_task(async function enableHtmlViews() {
     {
       id: "addon1@mochi.test",
       name: "Test add-on 1",
-      creator: { name: "The creator", url: "http://example.com/me" },
+      creator: { name: "The creator", url: "http://addons.mozilla.org/me" },
       version: "3.1",
       description: "Short description",
       fullDescription: "Longer description\nWith brs!",
@@ -151,7 +159,7 @@ add_task(async function enableHtmlViews() {
         permissions: ["alarms", "contextMenus", "tabs", "webNavigation"],
       },
       reviewCount: 5,
-      reviewURL: "http://example.com/reviews",
+      reviewURL: "http://addons.mozilla.org/reviews",
       homepageURL: "http://example.com/addon1",
       updateDate: new Date("2019-03-07T01:00:00"),
       applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE,
@@ -537,7 +545,11 @@ add_task(async function testFullDetails() {
   row = rows.shift();
   checkLabel(row, "author");
   let link = row.querySelector("a");
-  checkLink(link, "http://example.com/me", "The creator");
+  let authorLink = formatUrl(
+    "addons-manager-user-profile-link",
+    "http://addons.mozilla.org/me"
+  );
+  checkLink(link, authorLink, "The creator");
 
   // Version.
   row = rows.shift();
@@ -568,7 +580,11 @@ add_task(async function testFullDetails() {
   let fullAttrs = stars.map(star => star.getAttribute("fill")).join(",");
   is(fullAttrs, "full,full,full,full,half", "Four and a half stars are full");
   link = rating.querySelector("a");
-  checkLink(link, "http://example.com/reviews", {
+  let reviewsLink = formatUrl(
+    "addons-manager-reviews-link",
+    "http://addons.mozilla.org/reviews"
+  );
+  checkLink(link, reviewsLink, {
     id: "addon-detail-reviews-link",
     args: { numberOfReviews: 5 },
   });
@@ -715,7 +731,7 @@ add_task(async function testDefaultTheme() {
   // Version.
   let version = rows.shift();
   checkLabel(version, "version");
-  is(version.lastChild.textContent, "1.0", "It's always version 1.0");
+  is(version.lastChild.textContent, "1.1", "It's always version 1.1");
 
   // Last updated.
   let lastUpdated = rows.shift();
@@ -741,8 +757,8 @@ add_task(async function testStaticTheme() {
   let preview = card.querySelector(".card-heading-image");
   ok(preview, "There is a preview");
   is(preview.src, "http://example.com/preview.png", "The preview URL is set");
-  is(preview.width, "664", "The width is set");
-  is(preview.height, "90", "The height is set");
+  is(preview.width, 664, "The width is set");
+  is(preview.height, 90, "The height is set");
   is(preview.hidden, false, "The preview is visible");
 
   // Load the detail view.
@@ -756,8 +772,8 @@ add_task(async function testStaticTheme() {
   preview = card.querySelector(".card-heading-image");
   ok(preview, "There is a preview");
   is(preview.src, "http://example.com/preview.png", "The preview URL is set");
-  is(preview.width, "664", "The width is set");
-  is(preview.height, "90", "The height is set");
+  is(preview.width, 664, "The width is set");
+  is(preview.height, 90, "The height is set");
   is(preview.hidden, false, "The preview is visible");
 
   // Check all the deck buttons are hidden.
@@ -852,8 +868,8 @@ add_task(async function testPrivateBrowsingExtension() {
   await updated;
 
   // It's still allowed in PB.
-  ok(!badge.hidden, "The PB badge is shown");
   ok(await hasPrivateAllowed(id), "PB is allowed");
+  ok(!badge.hidden, "The PB badge is shown");
 
   // Disallow PB.
   updated = BrowserTestUtils.waitForEvent(card, "update");
@@ -1062,69 +1078,6 @@ add_task(async function testPrivateBrowsingAllowedListView() {
 
   await extension.unload();
   await closeView(win);
-});
-
-add_task(async function testPermissions() {
-  async function runTest(id, permissions) {
-    let win = await loadInitialView("extension");
-    let doc = win.document;
-
-    let card = getAddonCard(doc, id);
-    ok(!card.hasAttribute("expanded"), "The list card is not expanded");
-    let loaded = waitForViewLoad(win);
-    card.querySelector('[action="expand"]').click();
-    await loaded;
-
-    card = getAddonCard(doc, id);
-    let { deck, tabGroup } = card.details;
-
-    // Check all the deck buttons are hidden.
-    assertDeckHeadingButtons(tabGroup, ["details", "permissions"]);
-
-    let permsBtn = tabGroup.querySelector('[name="permissions"]');
-    let permsShown = BrowserTestUtils.waitForEvent(deck, "view-changed");
-    permsBtn.click();
-    await permsShown;
-
-    let permsSection = card.querySelector("addon-permissions-list");
-    let rows = Array.from(permsSection.querySelectorAll(".addon-detail-row"));
-
-    info("Check displayed permissions");
-    if (permissions) {
-      for (let name in permissions) {
-        // Check the permission-info class to make sure it's for a permission.
-        let row = rows.shift();
-        ok(
-          row.classList.contains("permission-info"),
-          `There's a row for ${name}`
-        );
-      }
-    } else {
-      let row = rows.shift();
-      is(
-        doc.l10n.getAttributes(row).id,
-        "addon-permissions-empty",
-        "There's a message when no permissions are shown"
-      );
-    }
-
-    info("Check learn more link");
-    let row = rows.shift();
-    is(row.children.length, 1, "There's one child for learn more");
-    let link = row.firstElementChild;
-    let rootUrl = Services.urlFormatter.formatURLPref("app.support.baseURL");
-    let url = rootUrl + "extension-permissions";
-    is(link.href, url, "The URL is set");
-    is(link.getAttribute("target"), "_blank", "The link opens in a new tab");
-
-    await closeView(win);
-  }
-
-  info("Check permissions for add-on with permission message");
-  await runTest("addon1@mochi.test", ["<all_urls>", "tabs", "webNavigation"]);
-
-  info("Check permissions for add-on without permission messages");
-  await runTest("addon2@mochi.test");
 });
 
 // When the back button is used, its disabled state will be updated. If it

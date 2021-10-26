@@ -25,7 +25,7 @@ except ImportError:
     build = None
 
 from mozlog import commandline
-from mozprofile.cli import parse_preferences
+from mozprofile.cli import parse_preferences, parse_key_value
 
 from browsertime import BrowsertimeDesktop, BrowsertimeAndroid
 from cmdline import parse_args, CHROMIUM_DISTROS
@@ -52,12 +52,13 @@ def main(args=sys.argv[1:]):
             {
                 "fission.autostart": True,
                 "dom.serviceWorkers.parent_intercept": True,
-                "browser.tabs.documentchannel": True,
             }
         )
 
     if args.extra_prefs and args.extra_prefs.get("fission.autostart", False):
         args.enable_fission = True
+
+    args.environment = dict(parse_key_value(args.environment or [], context="--setenv"))
 
     commandline.setup_logging("raptor", args, {"tbpl": sys.stdout})
     LOG.info("Python version: %s" % sys.version)
@@ -96,8 +97,7 @@ def main(args=sys.argv[1:]):
             # peel off arguments that are specific to browsertime
             for key in outer_kwargs.keys():
                 if key.startswith("browsertime_"):
-                    value = outer_kwargs.pop(key)
-                    inner_kwargs[key] = value
+                    inner_kwargs[key] = outer_kwargs.get(key)
 
             if args.app == "firefox" or args.app in CHROMIUM_DISTROS:
                 klass = BrowsertimeDesktop
@@ -132,13 +132,14 @@ def main(args=sys.argv[1:]):
             interrupt_handler=SignalHandler(),
             enable_webrender=args.enable_webrender,
             extra_prefs=args.extra_prefs or {},
+            environment=args.environment or {},
             device_name=args.device_name,
             no_conditioned_profile=args.no_conditioned_profile,
             disable_perf_tuning=args.disable_perf_tuning,
             conditioned_profile_scenario=args.conditioned_profile_scenario,
             chimera=args.chimera,
             project=args.project,
-            verbose=args.verbose
+            verbose=args.verbose,
         )
     except Exception:
         traceback.print_exc()
@@ -161,9 +162,10 @@ def main(args=sys.argv[1:]):
                     ("timed out loading test page", "waiting for pending metrics"),
                 ]
                 if _page.get("pending_metrics") is not None:
-                    LOG.warning("page cycle {} has pending metrics: {}".format(
-                        _page["page_cycle"],
-                        _page["pending_metrics"])
+                    LOG.warning(
+                        "page cycle {} has pending metrics: {}".format(
+                            _page["page_cycle"], _page["pending_metrics"]
+                        )
                     )
 
                 LOG.critical(

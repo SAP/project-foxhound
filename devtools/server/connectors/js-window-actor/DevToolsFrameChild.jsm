@@ -19,6 +19,11 @@ XPCOMUtils.defineLazyModuleGetters(this, {
     "resource://devtools/server/actors/targets/target-actor-registry.jsm",
 });
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  WindowGlobalLogger:
+    "resource://devtools/server/connectors/js-window-actor/WindowGlobalLogger.jsm",
+});
+
 // Name of the attribute into which we save data in `sharedData` object.
 const SHARED_DATA_KEY_NAME = "DevTools:watchedPerWatcher";
 
@@ -36,7 +41,15 @@ function shouldNotifyWindowGlobal(windowGlobal, watchedBrowserId) {
   const window = Services.wm.getCurrentInnerWindowWithId(
     windowGlobal.innerWindowId
   );
-  if (!window.docShell.hasLoadedNonBlankURI) {
+  // For some unknown reason, the print preview of PDFs generates an about:blank document,
+  // which, on the parent process, has windowGlobal.documentURI.spec set to the pdf's URL.
+  // So that Frame target helper accept this WindowGlobal and instantiate a target for it.
+  // Which is great as this is a valuable document to debug.
+  // But at the end of the day, in the content process, this ends up being an about:blank document,
+  // and hasLoadedNonBlankURI is always false.
+  // As print preview uses a dialog, check for `opener` being set. It is hard to find
+  // any very good differenciator...
+  if (!window.docShell.hasLoadedNonBlankURI && !browsingContext.opener) {
     return false;
   }
 
@@ -89,31 +102,7 @@ function logWindowGlobal(windowGlobal, message) {
   if (!DEBUG) {
     return;
   }
-  const browsingContext = windowGlobal.browsingContext;
-  dump(
-    message +
-      " | BrowsingContext.browserId: " +
-      browsingContext.browserId +
-      " id: " +
-      browsingContext.id +
-      " Inner Window ID: " +
-      windowGlobal.innerWindowId +
-      " pid:" +
-      windowGlobal.osPid +
-      " isClosed:" +
-      windowGlobal.isClosed +
-      " isInProcess:" +
-      windowGlobal.isInProcess +
-      " isCurrentGlobal:" +
-      windowGlobal.isCurrentGlobal +
-      " currentRemoteType:" +
-      browsingContext.currentRemoteType +
-      " hasParent:" +
-      (browsingContext.parent ? browsingContext.parent.id : "no") +
-      " => " +
-      (windowGlobal.documentURI ? windowGlobal.documentURI.spec : "no-uri") +
-      "\n"
-  );
+  WindowGlobalLogger.logWindowGlobal(windowGlobal, message);
 }
 
 class DevToolsFrameChild extends JSWindowActorChild {
@@ -140,15 +129,13 @@ class DevToolsFrameChild extends JSWindowActorChild {
     }
 
     // Create one Target actor for each prefix/client which listen to frames
-    for (const [
-      watcherActorID,
-      { targets, connectionPrefix, browserId, resources },
-    ] of watchedDataByWatcherActor) {
+    for (const [watcherActorID, watchedData] of watchedDataByWatcherActor) {
+      const { connectionPrefix, browserId } = watchedData;
       if (
-        targets.has("frame") &&
+        watchedData.targets.includes("frame") &&
         shouldNotifyWindowGlobal(this.manager, browserId)
       ) {
-        this._createTargetActor(watcherActorID, connectionPrefix, resources);
+        this._createTargetActor(watcherActorID, connectionPrefix, watchedData);
       }
     }
   }
@@ -161,14 +148,12 @@ class DevToolsFrameChild extends JSWindowActorChild {
    * @param String parentConnectionPrefix
    *        The prefix of the DevToolsServerConnection of the Watcher Actor.
    *        This is used to compute a unique ID for the target actor.
-   * @param Set<String> initialWatchedResources
-   *        The list of resources already watched by the watcher actor.
+   * @param Object initialData
+   *        All data managed by the Watcher Actor and WatcherRegistry.jsm, containing
+   *        target types, resources types to be listened as well as breakpoints and any
+   *        other data meant to be shared across processes and threads.
    */
-  _createTargetActor(
-    watcherActorID,
-    parentConnectionPrefix,
-    initialWatchedResources
-  ) {
+  _createTargetActor(watcherActorID, parentConnectionPrefix, initialData) {
     if (this._connections.get(watcherActorID)) {
       throw new Error(
         "DevToolsFrameChild _createTargetActor was called more than once" +
@@ -198,9 +183,9 @@ class DevToolsFrameChild extends JSWindowActorChild {
       actor: targetActor,
     });
 
-    // Start listening for resources that are already being watched
-    if (initialWatchedResources.size > 0) {
-      targetActor.watchTargetResources([...initialWatchedResources]);
+    // Pass initialization data to the target actor
+    for (const type in initialData) {
+      targetActor.addWatcherDataEntry(type, initialData[type]);
     }
 
     // Immediately queue a message for the parent process,
@@ -344,28 +329,34 @@ class DevToolsFrameChild extends JSWindowActorChild {
     }
     switch (message.name) {
       case "DevToolsFrameParent:instantiate-already-available": {
-        const {
-          watcherActorID,
-          connectionPrefix,
-          watchedResources,
-        } = message.data;
+        const { watcherActorID, connectionPrefix, watchedData } = message.data;
         return this._createTargetActor(
           watcherActorID,
           connectionPrefix,
-          watchedResources
+          watchedData
         );
       }
       case "DevToolsFrameParent:destroy": {
         const { watcherActorID } = message.data;
         return this._destroyTargetActor(watcherActorID);
       }
-      case "DevToolsFrameParent:watchResources": {
-        const { watcherActorID, browserId, resourceTypes } = message.data;
-        return this._watchResources(watcherActorID, browserId, resourceTypes);
+      case "DevToolsFrameParent:addWatcherDataEntry": {
+        const { watcherActorID, browserId, type, entries } = message.data;
+        return this._addWatcherDataEntry(
+          watcherActorID,
+          browserId,
+          type,
+          entries
+        );
       }
-      case "DevToolsFrameParent:unwatchResources": {
-        const { watcherActorID, browserId, resourceTypes } = message.data;
-        return this._unwatchResources(watcherActorID, browserId, resourceTypes);
+      case "DevToolsFrameParent:removeWatcherDataEntry": {
+        const { watcherActorID, browserId, type, entries } = message.data;
+        return this._removeWatcherDataEntry(
+          watcherActorID,
+          browserId,
+          type,
+          entries
+        );
       }
       case "DevToolsFrameParent:packet":
         return this.emit("packet-received", message);
@@ -387,12 +378,19 @@ class DevToolsFrameChild extends JSWindowActorChild {
     // this special codepath once we are ready to make the top level target to
     // be destroyed on navigations. See bug 1602748 for more context.
     if (!targetActor && this.manager.browsingContext.browserId == browserId) {
-      targetActor = TargetActorRegistry.getTargetActor(browserId);
+      // Ensure retrieving the one target actor related to this connection.
+      // This allows to distinguish actors created for various toolboxes.
+      // For ex, regular toolbox versus browser console versus browser toolbox
+      const connectionPrefix = watcherActorID.replace(/watcher\d+$/, "");
+      targetActor = TargetActorRegistry.getTargetActor(
+        browserId,
+        connectionPrefix
+      );
     }
     return targetActor;
   }
 
-  _watchResources(watcherActorID, browserId, resourceTypes) {
+  _addWatcherDataEntry(watcherActorID, browserId, type, entries) {
     const targetActor = this._getTargetActorForWatcherActorID(
       watcherActorID,
       browserId
@@ -402,17 +400,17 @@ class DevToolsFrameChild extends JSWindowActorChild {
         `No target actor for this Watcher Actor ID:"${watcherActorID}" / BrowserId:${browserId}`
       );
     }
-    return targetActor.watchTargetResources(resourceTypes);
+    return targetActor.addWatcherDataEntry(type, entries);
   }
 
-  _unwatchResources(watcherActorID, browserId, resourceTypes) {
+  _removeWatcherDataEntry(watcherActorID, browserId, type, entries) {
     const targetActor = this._getTargetActorForWatcherActorID(
       watcherActorID,
       browserId
     );
-    // By the time we are calling unwatchResource, the target may already have been destroyed.
+    // By the time we are calling this, the target may already have been destroyed.
     if (targetActor) {
-      return targetActor.unwatchTargetResources(resourceTypes);
+      return targetActor.removeWatcherDataEntry(type, entries);
     }
     return null;
   }

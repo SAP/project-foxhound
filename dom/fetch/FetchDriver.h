@@ -126,7 +126,7 @@ class FetchDriver final : public nsIStreamListener,
   }
 
   // AbortFollower
-  void Abort() override;
+  void RunAbortAlgorithm() override;
 
  private:
   nsCOMPtr<nsIPrincipal> mPrincipal;
@@ -188,8 +188,7 @@ class FetchDriver final : public nsIStreamListener,
 
   void UpdateReferrerInfoFromNewChannel(nsIChannel* aChannel);
 
-  nsresult HttpFetch(
-      const nsACString& aPreferredAlternativeDataType = EmptyCString());
+  nsresult HttpFetch(const nsACString& aPreferredAlternativeDataType = ""_ns);
   // Returns the filtered response sent to the observer.
   already_AddRefed<InternalResponse> BeginAndGetFilteredResponse(
       InternalResponse* aResponse, bool aFoundOpaqueRedirect);

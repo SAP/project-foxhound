@@ -182,44 +182,11 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto flags = static_cast<int>(aArgs.args[1]);
     return broker->Open(path, flags);
   }
-#endif
 
-  static intptr_t OpenAtTrap(ArgsRef aArgs, void* aux) {
-    auto broker = static_cast<SandboxBrokerClient*>(aux);
-    auto fd = static_cast<int>(aArgs.args[0]);
-    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
-    auto flags = static_cast<int>(aArgs.args[2]);
-    if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative openat(%d, \"%s\", 0%o)", fd,
-                        path, flags);
-      return BlockedSyscallTrap(aArgs, nullptr);
-    }
-    return broker->Open(path, flags);
-  }
-
-#ifdef __NR_access
   static intptr_t AccessTrap(ArgsRef aArgs, void* aux) {
     auto broker = static_cast<SandboxBrokerClient*>(aux);
     auto path = reinterpret_cast<const char*>(aArgs.args[0]);
     auto mode = static_cast<int>(aArgs.args[1]);
-    return broker->Access(path, mode);
-  }
-#endif
-
-  static intptr_t AccessAtTrap(ArgsRef aArgs, void* aux) {
-    auto broker = static_cast<SandboxBrokerClient*>(aux);
-    auto fd = static_cast<int>(aArgs.args[0]);
-    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
-    auto mode = static_cast<int>(aArgs.args[2]);
-    // Linux's faccessat syscall has no "flags" argument.  Attempting
-    // to handle the flags != 0 case is left to userspace; this is
-    // impossible to do correctly in all cases, but that's not our
-    // problem.
-    if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative faccessat(%d, \"%s\", %d)", fd,
-                        path, mode);
-      return BlockedSyscallTrap(aArgs, nullptr);
-    }
     return broker->Access(path, mode);
   }
 
@@ -235,26 +202,6 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto path = reinterpret_cast<const char*>(aArgs.args[0]);
     auto buf = reinterpret_cast<statstruct*>(aArgs.args[1]);
     return broker->LStat(path, buf);
-  }
-
-  static intptr_t StatAtTrap(ArgsRef aArgs, void* aux) {
-    auto broker = static_cast<SandboxBrokerClient*>(aux);
-    auto fd = static_cast<int>(aArgs.args[0]);
-    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
-    auto buf = reinterpret_cast<statstruct*>(aArgs.args[2]);
-    auto flags = static_cast<int>(aArgs.args[3]);
-    if (fd != AT_FDCWD && path[0] != '/') {
-      SANDBOX_LOG_ERROR("unsupported fd-relative fstatat(%d, \"%s\", %p, %d)",
-                        fd, path, buf, flags);
-      return BlockedSyscallTrap(aArgs, nullptr);
-    }
-    if ((flags & ~AT_SYMLINK_NOFOLLOW) != 0) {
-      SANDBOX_LOG_ERROR("unsupported flags %d in fstatat(%d, \"%s\", %p, %d)",
-                        (flags & ~AT_SYMLINK_NOFOLLOW), fd, path, buf, flags);
-      return BlockedSyscallTrap(aArgs, nullptr);
-    }
-    return (flags & AT_SYMLINK_NOFOLLOW) == 0 ? broker->Stat(path, buf)
-                                              : broker->LStat(path, buf);
   }
 
   static intptr_t ChmodTrap(ArgsRef aArgs, void* aux) {
@@ -310,6 +257,178 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     auto buf = reinterpret_cast<char*>(aArgs.args[1]);
     auto size = static_cast<size_t>(aArgs.args[2]);
     return broker->Readlink(path, buf, size);
+  }
+#endif  // __NR_open
+
+  static intptr_t OpenAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto flags = static_cast<int>(aArgs.args[2]);
+    if (fd != AT_FDCWD && path[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative openat(%d, \"%s\", 0%o)", fd,
+                        path, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Open(path, flags);
+  }
+
+  static intptr_t AccessAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto mode = static_cast<int>(aArgs.args[2]);
+    // Linux's faccessat syscall has no "flags" argument.  Attempting
+    // to handle the flags != 0 case is left to userspace; this is
+    // impossible to do correctly in all cases, but that's not our
+    // problem.
+    if (fd != AT_FDCWD && path[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative faccessat(%d, \"%s\", %d)", fd,
+                        path, mode);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Access(path, mode);
+  }
+
+  static intptr_t StatAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto buf = reinterpret_cast<statstruct*>(aArgs.args[2]);
+    auto flags = static_cast<int>(aArgs.args[3]);
+
+    if (fd != AT_FDCWD && (flags & AT_EMPTY_PATH) != 0 &&
+        strcmp(path, "") == 0) {
+#ifdef __NR_fstat64
+      return DoSyscall(__NR_fstat64, fd, buf);
+#else
+      return DoSyscall(__NR_fstat, fd, buf);
+#endif
+    }
+
+    if (!broker) {
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+
+    if (fd != AT_FDCWD && path[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative fstatat(%d, \"%s\", %p, 0x%x)",
+                        fd, path, buf, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+
+    int badFlags = flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT);
+    if (badFlags != 0) {
+      SANDBOX_LOG_ERROR(
+          "unsupported flags 0x%x in fstatat(%d, \"%s\", %p, 0x%x)", badFlags,
+          fd, path, buf, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return (flags & AT_SYMLINK_NOFOLLOW) == 0 ? broker->Stat(path, buf)
+                                              : broker->LStat(path, buf);
+  }
+
+  static intptr_t ChmodAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto mode = static_cast<mode_t>(aArgs.args[2]);
+    auto flags = static_cast<int>(aArgs.args[3]);
+    if (fd != AT_FDCWD && path[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative chmodat(%d, \"%s\", 0%o, %d)",
+                        fd, path, mode, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    if (flags != 0) {
+      SANDBOX_LOG_ERROR("unsupported flags in chmodat(%d, \"%s\", 0%o, %d)", fd,
+                        path, mode, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Chmod(path, mode);
+  }
+
+  static intptr_t LinkAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto fd2 = static_cast<int>(aArgs.args[2]);
+    auto path2 = reinterpret_cast<const char*>(aArgs.args[3]);
+    auto flags = static_cast<int>(aArgs.args[4]);
+    if ((fd != AT_FDCWD && path[0] != '/') ||
+        (fd2 != AT_FDCWD && path2[0] != '/')) {
+      SANDBOX_LOG_ERROR(
+          "unsupported fd-relative linkat(%d, \"%s\", %d, \"%s\", 0x%x)", fd,
+          path, fd2, path2, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    if (flags != 0) {
+      SANDBOX_LOG_ERROR(
+          "unsupported flags in linkat(%d, \"%s\", %d, \"%s\", 0x%x)", fd, path,
+          fd2, path2, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Link(path, path2);
+  }
+
+  static intptr_t SymlinkAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto path = reinterpret_cast<const char*>(aArgs.args[0]);
+    auto fd2 = static_cast<int>(aArgs.args[1]);
+    auto path2 = reinterpret_cast<const char*>(aArgs.args[2]);
+    if (fd2 != AT_FDCWD && path2[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative symlinkat(\"%s\", %d, \"%s\")",
+                        path, fd2, path2);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Symlink(path, path2);
+  }
+
+  static intptr_t RenameAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto fd2 = static_cast<int>(aArgs.args[2]);
+    auto path2 = reinterpret_cast<const char*>(aArgs.args[3]);
+    if ((fd != AT_FDCWD && path[0] != '/') ||
+        (fd2 != AT_FDCWD && path2[0] != '/')) {
+      SANDBOX_LOG_ERROR(
+          "unsupported fd-relative renameat(%d, \"%s\", %d, \"%s\")", fd, path,
+          fd2, path2);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Rename(path, path2);
+  }
+
+  static intptr_t MkdirAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto mode = static_cast<mode_t>(aArgs.args[2]);
+    if (fd != AT_FDCWD && path[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative mkdirat(%d, \"%s\", 0%o)", fd,
+                        path, mode);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return broker->Mkdir(path, mode);
+  }
+
+  static intptr_t UnlinkAtTrap(ArgsRef aArgs, void* aux) {
+    auto broker = static_cast<SandboxBrokerClient*>(aux);
+    auto fd = static_cast<int>(aArgs.args[0]);
+    auto path = reinterpret_cast<const char*>(aArgs.args[1]);
+    auto flags = static_cast<int>(aArgs.args[2]);
+    if (fd != AT_FDCWD && path[0] != '/') {
+      SANDBOX_LOG_ERROR("unsupported fd-relative unlinkat(%d, \"%s\", 0x%x)",
+                        fd, path, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    int badFlags = flags & ~AT_REMOVEDIR;
+    if (badFlags != 0) {
+      SANDBOX_LOG_ERROR("unsupported flags 0x%x in unlinkat(%d, \"%s\", 0x%x)",
+                        badFlags, fd, path, flags);
+      return BlockedSyscallTrap(aArgs, nullptr);
+    }
+    return (flags & AT_REMOVEDIR) == 0 ? broker->Unlink(path)
+                                       : broker->Rmdir(path);
   }
 
   static intptr_t ReadlinkAtTrap(ArgsRef aArgs, void* aux) {
@@ -436,26 +555,17 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
     // If a file broker client was provided, route syscalls to it;
     // otherwise, fall through to the main policy, which will deny
     // them.
-    if (mBroker != nullptr) {
+    if (mBroker) {
       switch (sysno) {
+#ifdef __NR_open
         case __NR_open:
           return Trap(OpenTrap, mBroker);
-        case __NR_openat:
-          return Trap(OpenAtTrap, mBroker);
         case __NR_access:
           return Trap(AccessTrap, mBroker);
-        case __NR_faccessat:
-          return Trap(AccessAtTrap, mBroker);
         CASES_FOR_stat:
           return Trap(StatTrap, mBroker);
         CASES_FOR_lstat:
           return Trap(LStatTrap, mBroker);
-        CASES_FOR_fstatat:
-          return Trap(StatAtTrap, mBroker);
-        // Used by new libc and Rust's stdlib, if available.
-        // We don't have broker support yet so claim it does not exist.
-        case __NR_statx:
-          return Error(ENOSYS);
         case __NR_chmod:
           return Trap(ChmodTrap, mBroker);
         case __NR_link:
@@ -472,8 +582,38 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
           return Trap(UnlinkTrap, mBroker);
         case __NR_readlink:
           return Trap(ReadlinkTrap, mBroker);
+#endif
+        case __NR_openat:
+          return Trap(OpenAtTrap, mBroker);
+        case __NR_faccessat:
+          return Trap(AccessAtTrap, mBroker);
+        CASES_FOR_fstatat:
+          return Trap(StatAtTrap, mBroker);
+        // Used by new libc and Rust's stdlib, if available.
+        // We don't have broker support yet so claim it does not exist.
+        case __NR_statx:
+          return Error(ENOSYS);
+        case __NR_fchmodat:
+          return Trap(ChmodAtTrap, mBroker);
+        case __NR_linkat:
+          return Trap(LinkAtTrap, mBroker);
+        case __NR_mkdirat:
+          return Trap(MkdirAtTrap, mBroker);
+        case __NR_symlinkat:
+          return Trap(SymlinkAtTrap, mBroker);
+        case __NR_renameat:
+          return Trap(RenameAtTrap, mBroker);
+        case __NR_unlinkat:
+          return Trap(UnlinkAtTrap, mBroker);
         case __NR_readlinkat:
           return Trap(ReadlinkAtTrap, mBroker);
+      }
+    } else {
+      // In the absence of a broker we still need to handle the
+      // fstat-equivalent subset of fstatat; see bug 1673770.
+      switch (sysno) {
+      CASES_FOR_fstatat:
+        return Trap(StatAtTrap, nullptr);
       }
     }
 
@@ -514,21 +654,18 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
 
         // Thread synchronization
       case __NR_futex:
-        // FIXME: This could be more restrictive....
+        // FIXME(bug 1441993): This could be more restrictive.
         return Allow();
 
         // Asynchronous I/O
-      case __NR_epoll_create1:
-      case __NR_epoll_create:
-      case __NR_epoll_wait:
-      case __NR_epoll_pwait:
+      CASES_FOR_epoll_create:
+      CASES_FOR_epoll_wait:
       case __NR_epoll_ctl:
-      case __NR_ppoll:
-      case __NR_poll:
+      CASES_FOR_poll:
         return Allow();
 
         // Used when requesting a crash dump.
-      case __NR_pipe:
+      CASES_FOR_pipe:
         return Allow();
 
         // Metadata of opened files
@@ -569,6 +706,9 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
       CASES_FOR_lseek:
         return Allow();
 
+      CASES_FOR_getdents:
+        return Allow();
+
       CASES_FOR_ftruncate:
       case __NR_fallocate:
         return mMayCreateShmem ? Allow() : InvalidSyscall();
@@ -580,6 +720,10 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         // Memory mapping
       CASES_FOR_mmap:
       case __NR_munmap:
+        return Allow();
+
+        // Shared memory
+      case __NR_memfd_create:
         return Allow();
 
         // ipc::Shmem; also, glibc when creating threads:
@@ -1030,13 +1174,11 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
     if (BelowLevel(2)) {
       MOZ_ASSERT(mBroker == nullptr);
       switch (sysno) {
+#ifdef __NR_open
         case __NR_open:
-        case __NR_openat:
         case __NR_access:
-        case __NR_faccessat:
         CASES_FOR_stat:
         CASES_FOR_lstat:
-        CASES_FOR_fstatat:
         case __NR_chmod:
         case __NR_link:
         case __NR_mkdir:
@@ -1045,6 +1187,16 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
         case __NR_rmdir:
         case __NR_unlink:
         case __NR_readlink:
+#endif
+        case __NR_openat:
+        case __NR_faccessat:
+        CASES_FOR_fstatat:
+        case __NR_fchmodat:
+        case __NR_linkat:
+        case __NR_mkdirat:
+        case __NR_symlinkat:
+        case __NR_renameat:
+        case __NR_unlinkat:
         case __NR_readlinkat:
           return Allow();
       }
@@ -1087,18 +1239,11 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
 #  endif
       case __NR_fchownat:
         return Error(EPERM);
-
-        // For ORBit called by GConf (on some systems) to get proxy
-        // settings.  Can remove when bug 1325242 happens in some form.
-      case __NR_utime:
-        return Error(EPERM);
 #endif
 
       CASES_FOR_select:
-      case __NR_pselect6:
         return Allow();
 
-      CASES_FOR_getdents:
       case __NR_writev:
 #ifdef DESKTOP
       case __NR_pwrite64:
@@ -1188,7 +1333,7 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
       case __NR_times:
         return Allow();
 
-      case __NR_dup2:  // See ConnectTrapCommon
+      CASES_FOR_dup2:  // See ConnectTrapCommon
         return Allow();
 
       CASES_FOR_getuid:
@@ -1270,11 +1415,6 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
 
       case __NR_eventfd2:
         return Allow();
-
-#  ifdef __NR_memfd_create
-      case __NR_memfd_create:
-        return Allow();
-#  endif
 
 #  ifdef __NR_rt_tgsigqueueinfo
         // Only allow to send signals within the process.

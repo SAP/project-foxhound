@@ -82,32 +82,6 @@ describe("#CachedTargetingGetter", () => {
 
     assert(rejected);
   });
-  it("should check targeted message before message without targeting", async () => {
-    const messages = await OnboardingMessageProvider.getUntranslatedMessages();
-    const stub = sandbox
-      .stub(ASRouterTargeting, "checkMessageTargeting")
-      .resolves();
-    const context = {
-      attributionData: {
-        campaign: "non-fx-button",
-        source: "addons.mozilla.org",
-      },
-    };
-    await ASRouterTargeting.findMatchingMessage({
-      messages,
-      trigger: { id: "firstRun" },
-      context,
-    });
-
-    const messageCount = messages.filter(
-      message => message.trigger && message.trigger.id === "firstRun"
-    ).length;
-
-    assert.equal(stub.callCount, messageCount);
-    const calls = stub.getCalls().map(call => call.args[0]);
-    const lastCall = calls[calls.length - 1];
-    assert.equal(lastCall.id, "TRAILHEAD_1");
-  });
   describe("sortMessagesByPriority", () => {
     it("should sort messages in descending priority order", async () => {
       const [
@@ -205,7 +179,7 @@ describe("#CachedTargetingGetter", () => {
   });
 });
 describe("#CacheListAttachedOAuthClients", () => {
-  const twoHours = 2 * 60 * 60 * 1000;
+  const fourHours = 4 * 60 * 60 * 1000;
   let sandbox;
   let clock;
   let fakeFxAccount;
@@ -232,19 +206,19 @@ describe("#CacheListAttachedOAuthClients", () => {
     clock.restore();
   });
 
-  it("should only make additional request every 2 hours", async () => {
-    clock.tick(twoHours);
+  it("should only make additional request every 4 hours", async () => {
+    clock.tick(fourHours);
 
     await authClientsCache.get();
     assert.calledOnce(fxAccounts.listAttachedOAuthClients);
 
-    clock.tick(twoHours);
+    clock.tick(fourHours);
     await authClientsCache.get();
     assert.calledTwice(fxAccounts.listAttachedOAuthClients);
   });
 
-  it("should not make additional request before 2 hours", async () => {
-    clock.tick(twoHours);
+  it("should not make additional request before 4 hours", async () => {
+    clock.tick(fourHours);
 
     await authClientsCache.get();
     assert.calledOnce(fxAccounts.listAttachedOAuthClients);

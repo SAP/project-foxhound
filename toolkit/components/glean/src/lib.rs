@@ -19,7 +19,7 @@
 
 // No one is currently using the Glean SDK, so let's export it, so we know it gets
 // compiled.
-pub extern crate glean;
+pub extern crate fog;
 
 #[macro_use]
 extern crate cstr;
@@ -29,9 +29,11 @@ extern crate xpcom;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use nserror::{nsresult, NS_ERROR_FAILURE, NS_OK};
-use nsstring::{nsACString, nsCStr};
-use xpcom::interfaces::{mozIViaduct, nsIObserver, nsIPrefBranch, nsISupports};
+use nserror::{nsresult, NS_ERROR_FAILURE, NS_ERROR_NO_CONTENT, NS_OK};
+use nsstring::{nsACString, nsAString, nsCStr, nsCString, nsStr, nsString};
+use xpcom::interfaces::{
+    mozIViaduct, nsIFile, nsIObserver, nsIPrefBranch, nsIPropertyBag2, nsISupports, nsIXULAppInfo,
+};
 use xpcom::{RefPtr, XpCom};
 
 use client_info::ClientInfo;
@@ -46,29 +48,30 @@ mod core_metrics;
 /// This assembles client information and the Glean configuration and then initializes the global
 /// Glean instance.
 #[no_mangle]
-pub unsafe extern "C" fn fog_init(
-    data_path: &nsACString,
-    app_build: &nsACString,
-    app_display_version: &nsACString,
-    channel: *const c_char,
-    os_version: &nsACString,
-    architecture: &nsACString,
-) -> nsresult {
+pub unsafe extern "C" fn fog_init() -> nsresult {
+    fog::metrics::fog::initialization.start();
+
     log::debug!("Initializing FOG.");
 
-    let app_build = app_build.to_string();
-    let app_display_version = app_display_version.to_string();
+    let data_path = match get_data_path() {
+        Ok(dp) => dp,
+        Err(e) => return e,
+    };
 
-    let channel = CStr::from_ptr(channel);
-    let channel = Some(channel.to_string_lossy().to_string());
+    let (app_build, app_display_version, channel) = match get_app_info() {
+        Ok(ai) => ai,
+        Err(e) => return e,
+    };
 
-    let os_version = os_version.to_string();
-    let architecture = architecture.to_string();
+    let (os_version, architecture) = match get_system_info() {
+        Ok(si) => si,
+        Err(e) => return e,
+    };
 
     let client_info = ClientInfo {
         app_build,
         app_display_version,
-        channel,
+        channel: Some(channel),
         os_version,
         architecture,
     };
@@ -88,9 +91,10 @@ pub unsafe extern "C" fn fog_init(
     let configuration = Configuration {
         upload_enabled,
         data_path,
-        application_id: "org-mozilla-firefox".to_string(),
+        application_id: "firefox.desktop".to_string(),
         max_events: None,
         delay_ping_lifetime_io: false,
+        language_binding_name: "Rust".into(),
     };
 
     log::debug!("Configuration: {:#?}", configuration);
@@ -109,12 +113,122 @@ pub unsafe extern "C" fn fog_init(
     }
 
     if configuration.data_path.len() > 0 {
-        if let Err(e) = api::initialize(configuration, client_info) {
-            log::error!("Failed to init FOG due to {:?}", e);
-        }
+        std::thread::spawn(move || {
+            if let Err(e) = api::initialize(configuration, client_info) {
+                log::error!("Failed to init FOG due to {:?}", e);
+                return;
+            }
+
+            if let Err(e) = fog::flush_init() {
+                log::error!("Failed to flush pre-init buffer due to {:?}", e);
+                return;
+            }
+
+            fog::metrics::fog::initialization.stop();
+            schedule_fog_validation_ping();
+        });
     }
 
     NS_OK
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fog_shutdown() {
+    fog::shutdown();
+}
+
+/// Construct and return the data_path from the profile dir, or return an error.
+fn get_data_path() -> Result<String, nsresult> {
+    let dir_svc = match xpcom::services::get_DirectoryService() {
+        Some(ds) => ds,
+        _ => return Err(NS_ERROR_FAILURE),
+    };
+    let mut profile_dir = xpcom::GetterAddrefs::<nsIFile>::new();
+    unsafe {
+        dir_svc
+            .Get(
+                cstr!("ProfD").as_ptr(),
+                &nsIFile::IID,
+                profile_dir.void_ptr(),
+            )
+            .to_result()?;
+    }
+    let profile_dir = profile_dir.refptr().ok_or(NS_ERROR_FAILURE)?;
+    let mut profile_path = nsString::new();
+    unsafe {
+        (*profile_dir).GetPath(&mut *profile_path).to_result()?;
+    }
+    let profile_path = String::from_utf16(&profile_path[..]).map_err(|_| NS_ERROR_FAILURE)?;
+    let data_path = profile_path + "/datareporting/glean";
+    Ok(data_path)
+}
+
+/// Return a tuple of the build_id, app version, and build channel.
+/// If the XUL Runtime isn't a XULAppInfo (e.g. in xpcshell),
+/// build_id ad app_version will be "unknown".
+/// Other problems result in an error being returned instead.
+fn get_app_info() -> Result<(String, String, String), nsresult> {
+    let xul = xpcom::services::get_XULRuntime().ok_or(NS_ERROR_FAILURE)?;
+
+    let mut channel = nsCString::new();
+    unsafe {
+        xul.GetDefaultUpdateChannel(&mut *channel).to_result()?;
+    }
+
+    let app_info = match xul.query_interface::<nsIXULAppInfo>() {
+        Some(ai) => ai,
+        // In e.g. xpcshell the XULRuntime isn't XULAppInfo.
+        // We still want to return sensible values so tests don't explode.
+        _ => {
+            return Ok((
+                "unknown".to_owned(),
+                "unknown".to_owned(),
+                channel.to_string(),
+            ))
+        }
+    };
+
+    let mut build_id = nsCString::new();
+    unsafe {
+        app_info.GetAppBuildID(&mut *build_id).to_result()?;
+    }
+
+    let mut version = nsCString::new();
+    unsafe {
+        app_info.GetVersion(&mut *version).to_result()?;
+    }
+
+    Ok((
+        build_id.to_string(),
+        version.to_string(),
+        channel.to_string(),
+    ))
+}
+
+/// Return a tuple of os_version and architecture, or an error.
+fn get_system_info() -> Result<(String, String), nsresult> {
+    let info_service = xpcom::get_service::<nsIPropertyBag2>(cstr!("@mozilla.org/system-info;1"))
+        .ok_or(NS_ERROR_FAILURE)?;
+
+    let os_version_key: Vec<u16> = "version".encode_utf16().collect();
+    let os_version_key = &nsStr::from(&os_version_key) as &nsAString;
+    let mut os_version = nsCString::new();
+    unsafe {
+        info_service
+            .GetPropertyAsACString(os_version_key, &mut *os_version)
+            .to_result()?;
+    }
+
+    let arch_key: Vec<u16> = "arch".encode_utf16().collect();
+    let arch_key = &nsStr::from(&arch_key) as &nsAString;
+    let mut arch = nsCString::new();
+    unsafe {
+        info_service
+            .GetPropertyAsACString(arch_key, &mut *arch)
+            .to_result()?;
+    }
+
+    Ok((os_version.to_string(), arch.to_string()))
 }
 
 // Partially cargo-culted from https://searchfox.org/mozilla-central/rev/598e50d2c3cd81cd616654f16af811adceb08f9f/security/manager/ssl/cert_storage/src/lib.rs#1192
@@ -175,7 +289,7 @@ static mut PENDING_BUF: Vec<u8> = Vec::new();
 /// fog_give_ipc_buf on).
 #[no_mangle]
 pub unsafe extern "C" fn fog_serialize_ipc_buf() -> usize {
-    if let Some(buf) = glean::ipc::take_buf() {
+    if let Some(buf) = fog::ipc::take_buf() {
         PENDING_BUF = buf;
         PENDING_BUF.len()
     } else {
@@ -204,8 +318,55 @@ pub unsafe extern "C" fn fog_give_ipc_buf(buf: *mut u8, buf_len: usize) -> usize
 /// buf before and after this call.
 pub unsafe extern "C" fn fog_use_ipc_buf(buf: *const u8, buf_len: usize) {
     let slice = std::slice::from_raw_parts(buf, buf_len);
-    let _res = glean::ipc::replay_from_buf(slice);
-    /*if res.is_err() {
-        // TODO: Record the error.
-    }*/
+    let res = fog::ipc::replay_from_buf(slice);
+    if res.is_err() {
+        log::warn!("Unable to replay ipc buffer. This will result in data loss.");
+        fog::metrics::fog_ipc::replay_failures.add(1);
+    }
+}
+
+#[no_mangle]
+/// Sets the debug tag for pings assembled in the future.
+/// Returns an error result if the provided value is not a valid tag.
+pub unsafe extern "C" fn fog_set_debug_view_tag(value: &nsACString) -> nsresult {
+    let result = api::set_debug_view_tag(&value.to_string());
+    if result {
+        return NS_OK;
+    } else {
+        return NS_ERROR_FAILURE;
+    }
+}
+
+#[no_mangle]
+/// Submits a ping by name.
+/// Returns NS_OK if the ping was successfully submitted, NS_ERROR_NO_CONTENT
+/// if the ping wasn't sent, or NS_ERROR_FAILURE if some part of the ping
+/// submission mechanism failed.
+pub unsafe extern "C" fn fog_submit_ping(ping_name: &nsACString) -> nsresult {
+    match api::submit_ping(&ping_name.to_string()) {
+        Ok(true) => NS_OK,
+        Ok(false) => NS_ERROR_NO_CONTENT,
+        _ => NS_ERROR_FAILURE,
+    }
+}
+
+#[no_mangle]
+/// Turns ping logging on or off.
+/// Returns an error if the logging failed to be configured.
+pub unsafe extern "C" fn fog_set_log_pings(value: bool) -> nsresult {
+    if api::set_log_pings(value) {
+        return NS_OK;
+    } else {
+        return NS_ERROR_FAILURE;
+    }
+}
+
+fn schedule_fog_validation_ping() {
+    std::thread::spawn(|| {
+        loop {
+            // Sleep for an hour before and between submissions.
+            std::thread::sleep(std::time::Duration::from_secs(60 * 60));
+            fog::pings::fog_validation.submit(None);
+        }
+    });
 }

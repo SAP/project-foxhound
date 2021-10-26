@@ -86,6 +86,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void SetHidden(bool aHidden, mozilla::ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::hidden, aHidden, aError);
   }
+  bool Inert() const { return GetBoolAttr(nsGkAtoms::inert); }
+  void SetInert(bool aInert, mozilla::ErrorResult& aError) {
+    SetHTMLBoolAttr(nsGkAtoms::inert, aInert, aError);
+  }
   void Click(mozilla::dom::CallerType aCallerType);
   void GetAccessKey(nsString& aAccessKey) {
     GetHTMLAttr(nsGkAtoms::accesskey, aAccessKey);
@@ -173,6 +177,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void SetInputMode(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::inputmode, aValue, aRv);
   }
+  virtual void GetAutocapitalize(nsAString& aValue);
+  void SetAutocapitalize(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::autocapitalize, aValue, aRv);
+  }
 
   void GetEnterKeyHint(nsAString& aValue) {
     GetEnumAttr(nsGkAtoms::enterkeyhint, nullptr, aValue);
@@ -254,15 +262,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
  protected:
   virtual ~nsGenericHTMLElement() = default;
-
- public:
-  /**
-   * Get width and height, using given image request if attributes are unset.
-   * Pass a reference to the image request, since the method may change the
-   * value and we want to use the updated value.
-   */
-  MOZ_CAN_RUN_SCRIPT
-  nsSize GetWidthHeightForImage(RefPtr<imgRequestProxy>& aImageRequest);
 
  public:
   // Implementation for nsIContent
@@ -625,13 +624,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    */
   bool GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr, nsIURI** aURI) const;
 
-  /**
-   * Returns the current disabled state of the element.
-   *
-   * TODO(emilio): Consider moving to Element?
-   */
-  bool IsDisabled() const { return State().HasState(NS_EVENT_STATE_DISABLED); }
-
   bool IsHidden() const {
     return HasAttr(kNameSpaceID_None, nsGkAtoms::hidden);
   }
@@ -754,7 +746,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void SetHTMLBoolAttr(nsAtom* aName, bool aValue,
                        mozilla::ErrorResult& aError) {
     if (aValue) {
-      SetHTMLAttr(aName, EmptyString(), aError);
+      SetHTMLAttr(aName, u""_ns, aError);
     } else {
       UnsetHTMLAttr(aName, aError);
     }
@@ -1033,6 +1025,10 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
   virtual bool IsLabelable() const override;
 
   void GetFormAction(nsString& aValue);
+
+  // autocapitalize attribute support
+  virtual void GetAutocapitalize(nsAString& aValue) override;
+  bool IsAutocapitalizeInheriting() const;
 
  protected:
   virtual ~nsGenericHTMLFormElement();

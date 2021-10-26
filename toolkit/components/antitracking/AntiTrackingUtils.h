@@ -89,10 +89,6 @@ class AntiTrackingUtils final {
       dom::BrowsingContext* aBrowsingContext, nsIPrincipal** aPrincipal,
       nsACString& aTrackingOrigin);
 
-  // Retruns true if the given browsingContext is a first-level sub context,
-  // i.e. a first-level iframe.
-  static bool IsFirstLevelSubContext(dom::BrowsingContext* aBrowsingContext);
-
   // Retruns the cookie behavior of the given browsingContext,
   // return BEHAVIOR_REJECT when fail.
   static uint32_t GetCookieBehavior(dom::BrowsingContext* aBrowsingContext);
@@ -123,6 +119,13 @@ class AntiTrackingUtils final {
 
   static nsCString GrantedReasonToString(
       ContentBlockingNotifier::StorageAccessPermissionGrantedReason aReason);
+
+  /**
+   * This function updates all the fields used by anti-tracking when a channel
+   * is opened. We have to do this in the parent to access cross-origin info
+   * that is not exposed to child processes.
+   */
+  static void UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel);
 };
 
 }  // namespace mozilla

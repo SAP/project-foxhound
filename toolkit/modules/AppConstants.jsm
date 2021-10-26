@@ -300,13 +300,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_ALLOW_LEGACY_EXTENSIONS:
-#ifdef MOZ_ALLOW_LEGACY_EXTENSIONS
-  true,
-#else
-  false,
-#endif
-
   MENUBAR_CAN_AUTOHIDE:
 #ifdef MENUBAR_CAN_AUTOHIDE
   true,
@@ -415,6 +408,20 @@ this.AppConstants = Object.freeze({
 
   MOZ_RUST_FXA_CLIENT:
 #ifdef MOZ_RUST_FXA_CLIENT
+    true,
+#else
+    false,
+#endif
+
+  REMOTE_SETTINGS_VERIFY_SIGNATURE:
+#ifdef MOZ_THUNDERBIRD
+    false,
+#else
+    true,
+#endif
+
+  MOZ_GLEAN:
+#ifdef MOZ_GLEAN
     true,
 #else
     false,

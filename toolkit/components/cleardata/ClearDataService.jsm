@@ -166,6 +166,42 @@ const NetworkCacheCleaner = {
   },
 };
 
+const CSSCacheCleaner = {
+  deleteByHost(aHost, aOriginAttributes) {
+    return new Promise(aResolve => {
+      // Delete data from both HTTP and HTTPS sites.
+      let httpURI = Services.io.newURI("http://" + aHost);
+      let httpsURI = Services.io.newURI("https://" + aHost);
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+        httpURI,
+        aOriginAttributes
+      );
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+        httpsURI,
+        aOriginAttributes
+      );
+
+      ChromeUtils.clearStyleSheetCache(httpPrincipal);
+      ChromeUtils.clearStyleSheetCache(httpsPrincipal);
+      aResolve();
+    });
+  },
+
+  deleteByPrincipal(aPrincipal) {
+    return new Promise(aResolve => {
+      ChromeUtils.clearStyleSheetCache(aPrincipal);
+      aResolve();
+    });
+  },
+
+  deleteAll() {
+    return new Promise(aResolve => {
+      ChromeUtils.clearStyleSheetCache();
+      aResolve();
+    });
+  },
+};
+
 const ImageCacheCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
@@ -928,6 +964,11 @@ const SecuritySettingsCleaner = {
           );
         }
       }
+      let cars = Cc[
+        "@mozilla.org/security/clientAuthRememberService;1"
+      ].getService(Ci.nsIClientAuthRememberService);
+
+      cars.deleteDecisionsByHost(aHost, aOriginAttributes);
 
       aResolve();
     });
@@ -941,6 +982,10 @@ const SecuritySettingsCleaner = {
         Ci.nsISiteSecurityService
       );
       sss.clearAll();
+      let cars = Cc[
+        "@mozilla.org/security/clientAuthRememberService;1"
+      ].getService(Ci.nsIClientAuthRememberService);
+      cars.clearRememberedDecisions();
       aResolve();
     });
   },
@@ -1046,6 +1091,11 @@ const FLAGS_MAP = [
   {
     flag: Ci.nsIClearDataService.CLEAR_IMAGE_CACHE,
     cleaners: [ImageCacheCleaner],
+  },
+
+  {
+    flag: Ci.nsIClearDataService.CLEAR_CSS_CACHE,
+    cleaners: [CSSCacheCleaner],
   },
 
   {

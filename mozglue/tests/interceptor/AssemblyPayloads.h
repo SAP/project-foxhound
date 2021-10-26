@@ -11,6 +11,24 @@
 #ifndef mozilla_AssemblyPayloads_h
 #define mozilla_AssemblyPayloads_h
 
+#define PADDING_256_NOP                                              \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;" \
+  "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
+
 extern "C" {
 
 #if defined(__clang__)
@@ -43,28 +61,58 @@ __declspec(dllexport) __attribute__((naked)) void DoubleJump() {
       "jmpq *%%rax;"
 
       // 0x100 bytes padding to generate jmp rel32 instead of jmp rel8
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
+      PADDING_256_NOP
 
       "label1:"
       "jmp label2;"
       :
       : "i"(JumpDestination));
 }
+
+__declspec(dllexport) __attribute__((naked)) void NearJump() {
+  asm volatile(
+      "jae label3;"
+      "je  label3;"
+      "jne label3;"
+
+      "label4:"
+      "mov %0, %%rax;"
+      "jmpq *%%rax;"
+
+      // 0x100 bytes padding to generate jae rel32 instead of jae rel8
+      PADDING_256_NOP
+
+      "label3:"
+      "jmp label4;"
+      :
+      : "i"(JumpDestination));
+}
+
+__declspec(dllexport) __attribute__((naked)) void OpcodeFF() {
+  // Skip PUSH (FF /6) because clang prefers Opcode 50+rd
+  // to translate PUSH r64 rather than Opcode FF.
+  asm volatile(
+      "incl %eax;"
+      "decl %ebx;"
+      "call *%rcx;"
+      "jmp *(%rip);"  // Indirect jump to 0xcccccccc`cccccccc
+      "int $3;int $3;int $3;int $3;"
+      "int $3;int $3;int $3;int $3;");
+}
+
+__declspec(dllexport) __attribute__((naked)) void IndirectCall() {
+  asm volatile(
+      "call *(%rip);"  // Indirect call to 0x90909090`90909090
+      "nop;nop;nop;nop;nop;nop;nop;nop;"
+      "ret;");
+}
+
+__declspec(dllexport) __attribute__((naked)) void MovImm64() {
+  asm volatile(
+      "mov $0x1234567812345678, %r10;"
+      "nop;nop;nop");
+}
+
 #  elif defined(_M_IX86)
 constexpr uintptr_t JumpDestination = 0x7fff0000;
 
@@ -121,22 +169,7 @@ __declspec(dllexport) __attribute__((naked)) void DoubleJump() {
       "jmp *%%eax;"
 
       // 0x100 bytes padding to generate jmp rel32 instead of jmp rel8
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
-      "nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;"
+      PADDING_256_NOP
 
       "label1:"
       "jmp label2;"
@@ -144,6 +177,16 @@ __declspec(dllexport) __attribute__((naked)) void DoubleJump() {
       : "i"(JumpDestination));
 }
 #  endif
+
+#  if !defined(_M_ARM64)
+__declspec(dllexport) __attribute__((naked)) void UnsupportedOp() {
+  asm volatile(
+      "ud2;"
+      "nop;nop;nop;nop;nop;nop;nop;nop;"
+      "nop;nop;nop;nop;nop;nop;nop;nop;");
+}
+#  endif  // !defined(_M_ARM64)
+
 #endif  // defined(__clang__)
 
 }  // extern "C"

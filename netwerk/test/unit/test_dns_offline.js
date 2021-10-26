@@ -23,6 +23,7 @@ var listener1 = {
 var listener2 = {
   onLookupComplete(inRequest, inRecord, inStatus) {
     Assert.equal(inStatus, Cr.NS_OK);
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     var answer = inRecord.getNextAddrAsString();
     Assert.ok(answer == "127.0.0.1" || answer == "::1");
     test3();
@@ -33,6 +34,7 @@ var listener2 = {
 var listener3 = {
   onLookupComplete(inRequest, inRecord, inStatus) {
     Assert.equal(inStatus, Cr.NS_OK);
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     var answer = inRecord.getNextAddrAsString();
     Assert.ok(answer == "127.0.0.1" || answer == "::1");
     cleanup();
@@ -45,11 +47,15 @@ const defaultOriginAttributes = {};
 function run_test() {
   do_test_pending();
   prefs.setBoolPref("network.dns.offline-localhost", false);
+  // We always resolve localhost as it's hardcoded without the following pref:
+  prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
   ioService.offline = true;
   try {
     dns.asyncResolve(
       "localhost",
+      Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
       0,
+      null, // resolverInfo
       listener1,
       mainThread,
       defaultOriginAttributes
@@ -73,7 +79,9 @@ function test2() {
 function test2Continued() {
   dns.asyncResolve(
     "localhost",
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     0,
+    null, // resolverInfo
     listener2,
     mainThread,
     defaultOriginAttributes
@@ -90,7 +98,9 @@ function test3() {
 function test3Continued() {
   dns.asyncResolve(
     "localhost",
+    Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
     0,
+    null, // resolverInfo
     listener3,
     mainThread,
     defaultOriginAttributes
@@ -99,4 +109,5 @@ function test3Continued() {
 
 function cleanup() {
   prefs.clearUserPref("network.dns.offline-localhost");
+  prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
 }

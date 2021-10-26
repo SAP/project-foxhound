@@ -337,7 +337,7 @@ impl SpatialNode {
                             // perspective matrix using the scroll offset.
                             source_transform
                                 .pre_translate(scroll_offset)
-                                .post_translate(-scroll_offset)
+                                .then_translate(-scroll_offset)
                         }
                         ReferenceFrameKind::Perspective { scrolling_relative_to: None } |
                         ReferenceFrameKind::Transform | ReferenceFrameKind::Zoom => source_transform,
@@ -352,7 +352,7 @@ impl SpatialNode {
                     // between our reference frame and this node. Finally, we also include
                     // whatever local transformation this reference frame provides.
                     let relative_transform = resolved_transform
-                        .post_translate(snap_offset(state.parent_accumulated_scroll_offset, state.coordinate_system_relative_scale_offset.scale, global_device_pixel_scale))
+                        .then_translate(snap_offset(state.parent_accumulated_scroll_offset, state.coordinate_system_relative_scale_offset.scale, global_device_pixel_scale))
                         .to_transform()
                         .with_destination::<LayoutPixel>();
 
@@ -389,9 +389,9 @@ impl SpatialNode {
                     if reset_cs_id {
                         // If we break 2D axis alignment or have a perspective component, we need to start a
                         // new incompatible coordinate system with which we cannot share clips without masking.
-                        let transform = state.coordinate_system_relative_scale_offset
-                            .to_transform()
-                            .pre_transform(&relative_transform);
+                        let transform = relative_transform.then(
+                            &state.coordinate_system_relative_scale_offset.to_transform()
+                        );
 
                         // Push that new coordinate system and record the new id.
                         let coord_system = {
@@ -400,7 +400,7 @@ impl SpatialNode {
                             if parent_system.should_flatten {
                                 cur_transform.flatten_z_output();
                             }
-                            let world_transform = cur_transform.post_transform(&parent_system.world_transform);
+                            let world_transform = cur_transform.then(&parent_system.world_transform);
                             let determinant = world_transform.determinant();
                             info.invertible = determinant != 0.0 && !determinant.is_nan();
 
@@ -750,7 +750,9 @@ impl SpatialNode {
 /// or an explicitly defined scroll frame from the display list.
 #[derive(Copy, Clone, Debug)]
 pub enum ScrollFrameKind {
-    PipelineRoot,
+    PipelineRoot {
+        is_root_pipeline: bool,
+    },
     Explicit,
 }
 
@@ -783,7 +785,14 @@ pub struct ScrollFrameInfo {
     /// pre-scrolled in their local coordinates.
     pub external_scroll_offset: LayoutVector2D,
 
-    /// The current offset of this scroll node.
+    /// The negated scroll offset of this scroll node. including the
+    /// pre-scrolled amount. If, for example, a scroll node was pre-scrolled
+    /// to y=10 (10 pixels down from the initial unscrolled position), then
+    /// `external_scroll_offset` would be (0,10), and this `offset` field would
+    /// be (0,-10). If WebRender is then asked to change the scroll position by
+    /// an additional 10 pixels (without changing the pre-scroll amount in the
+    /// display list), `external_scroll_offset` would remain at (0,10) and
+    /// `offset` would change to (0,-20).
     pub offset: LayoutVector2D,
 }
 
@@ -819,14 +828,9 @@ impl ScrollFrameInfo {
         self,
         old_scroll_info: &ScrollFrameInfo
     ) -> ScrollFrameInfo {
-        let offset =
-            old_scroll_info.offset +
-            self.external_scroll_offset -
-            old_scroll_info.external_scroll_offset;
-
         ScrollFrameInfo {
             viewport_rect: self.viewport_rect,
-            offset,
+            offset: old_scroll_info.offset,
             scroll_sensitivity: self.scroll_sensitivity,
             scrollable_size: self.scrollable_size,
             external_id: self.external_id,
@@ -902,7 +906,7 @@ fn test_cst_perspective_relative_scroll() {
     let mut cst = SpatialTree::new();
     let pipeline_id = PipelineId::dummy();
     let ext_scroll_id = ExternalScrollId(1, pipeline_id);
-    let transform = LayoutTransform::create_perspective(100.0);
+    let transform = LayoutTransform::perspective(100.0);
 
     let root = cst.add_reference_frame(
         None,

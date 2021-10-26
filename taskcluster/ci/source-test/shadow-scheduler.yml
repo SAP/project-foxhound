@@ -10,8 +10,8 @@ job-defaults:
         max-run-time: 3600
         artifacts:
             - type: file
-              name: public/shadow-scheduler/optimized_tasks.list
-              path: /builds/worker/optimized_tasks.list
+              name: public/shadow-scheduler/optimized-tasks.json
+              path: /builds/worker/optimized-tasks.json
         env:
             DECISION_TASK_ID: {task-reference: <decision>}
     treeherder:
@@ -20,7 +20,7 @@ job-defaults:
     run-on-projects: ['autoland']
     run:
         using: mach
-        mach: taskgraph optimized -v -p task-id=$DECISION_TASK_ID --output-file /builds/worker/optimized_tasks.list
+        mach: taskgraph optimized -v --json -p task-id=$DECISION_TASK_ID --output-file /builds/worker/optimized-tasks.json
         sparse-profile: taskgraph
 
 relevant_tests:
@@ -100,6 +100,17 @@ bugbug_disperse_reduced_medium:
         env:
             TASKGRAPH_OPTIMIZE_STRATEGIES: taskgraph.optimize:experimental.bugbug_disperse_reduced_medium
 
+bugbug_reduced_manifests_config_selection_medium:
+    description: Runs the bugbug_reduced_manifests_config_selection_medium optimization strategy instead of the default.
+    treeherder:
+        symbol: SS(bugbug_r_c_s_med)
+    index:
+        product: source
+        job-name: shadow-scheduler-bugbug_reduced_manifests_config_selection_medium
+    worker:
+        env:
+            TASKGRAPH_OPTIMIZE_STRATEGIES: taskgraph.optimize:experimental.bugbug_reduced_manifests_config_selection_medium
+
 bugbug_disperse_medium_no_unseen:
     description: Runs the bugbug_disperse_medium_no_unseen optimization strategy instead of the default.
     treeherder:
@@ -154,14 +165,3 @@ bugbug_reduced_high:
     worker:
         env:
             TASKGRAPH_OPTIMIZE_STRATEGIES: taskgraph.optimize:experimental.bugbug_reduced_high
-
-seta:
-    description: Runs the SETA optimization strategy instead of the default.
-    treeherder:
-        symbol: SS(seta)
-    index:
-        product: source
-        job-name: shadow-scheduler-seta
-    worker:
-        env:
-            TASKGRAPH_OPTIMIZE_STRATEGIES: taskgraph.optimize:experimental.seta

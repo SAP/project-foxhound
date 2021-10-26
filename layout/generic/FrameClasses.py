@@ -54,7 +54,6 @@ FRAME_CLASSES = [
     Frame("nsMathMLmathBlockFrame", "Block", NOT_LEAF),
     Frame("nsMathMLmathInlineFrame", "Inline", NOT_LEAF),
     Frame("nsMathMLmencloseFrame", "None", NOT_LEAF),
-    Frame("nsMathMLmfencedFrame", "None", NOT_LEAF),
     Frame("nsMathMLmfracFrame", "None", NOT_LEAF),
     Frame("nsMathMLmmultiscriptsFrame", "None", NOT_LEAF),
     Frame("nsMathMLmoFrame", "None", NOT_LEAF),
@@ -85,7 +84,7 @@ FRAME_CLASSES = [
     Frame("nsProgressFrame", "Progress", LEAF),
     Frame("nsRangeFrame", "Range", LEAF),
     Frame("nsResizerFrame", "Box", NOT_LEAF),
-    Frame("nsRootBoxFrame", "Root", NOT_LEAF),
+    Frame("nsRootBoxFrame", "XULRoot", NOT_LEAF),
     Frame("nsRubyBaseContainerFrame", "RubyBaseContainer", NOT_LEAF),
     Frame("nsRubyBaseFrame", "RubyBase", NOT_LEAF),
     Frame("nsRubyFrame", "Ruby", NOT_LEAF),
@@ -93,12 +92,14 @@ FRAME_CLASSES = [
     Frame("nsRubyTextFrame", "RubyText", NOT_LEAF),
     Frame("nsScrollbarButtonFrame", "Box", NOT_LEAF),
     Frame("nsScrollbarFrame", "Scrollbar", NOT_LEAF),
+    Frame("nsSearchControlFrame", "SearchControl", LEAF),
     Frame("nsSelectsAreaFrame", "Block", NOT_LEAF),
     Frame("nsPageSequenceFrame", "PageSequence", NOT_LEAF),
     Frame("nsSliderFrame", "Slider", NOT_LEAF),
     Frame("nsSplitterFrame", "Box", NOT_LEAF),
     Frame("nsStackFrame", "Box", NOT_LEAF),
     Frame("nsSubDocumentFrame", "SubDocument", LEAF),
+    Frame("PrintedSheetFrame", "PrintedSheet", NOT_LEAF),
     Frame("SVGAFrame", "SVGA", NOT_LEAF),
     Frame("SVGClipPathFrame", "SVGClipPath", NOT_LEAF),
     Frame("SVGContainerFrame", "None", NOT_LEAF),
@@ -147,7 +148,6 @@ FRAME_CLASSES = [
     Frame("nsXULScrollFrame", "Scroll", NOT_LEAF),
     Frame("ViewportFrame", "Viewport", NOT_LEAF),
     Frame("WBRFrame", "Wbr", LEAF),
-
     # Non-concrete classes (for FrameIID use)
     AbstractFrame("nsContainerFrame"),
     AbstractFrame("nsLeafFrame"),
@@ -157,7 +157,6 @@ FRAME_CLASSES = [
     AbstractFrame("SVGDisplayContainerFrame"),
     AbstractFrame("SVGGradientFrame"),
     AbstractFrame("SVGPaintServerFrame"),
-
     # Interfaces (for FrameIID use)
     AbstractFrame("nsIAnonymousContentCreator"),
     AbstractFrame("nsIComboboxControlFrame"),

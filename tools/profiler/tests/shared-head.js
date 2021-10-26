@@ -6,6 +6,12 @@
  * This file contains utilities that can be shared between xpcshell tests and mochitests.
  */
 
+// The marker phases.
+const INSTANT = 0;
+const INTERVAL = 1;
+const INTERVAL_START = 2;
+const INTERVAL_END = 3;
+
 // This Services declaration may shadow another from head.js, so define it as
 // a var rather than a const.
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
@@ -18,6 +24,11 @@ const defaultSettings = {
 };
 
 function startProfiler(callersSettings) {
+  if (Services.profiler.IsActive()) {
+    throw new Error(
+      "The profiler must not be active before starting it in a test."
+    );
+  }
   const settings = Object.assign({}, defaultSettings, callersSettings);
   Services.profiler.StartProfiler(
     settings.entries,
@@ -90,6 +101,27 @@ function getPayloadsOfType(thread, type) {
 }
 
 /**
+ * Applies the marker schema to create individual objects for each marker
+ *
+ * @param {Object} thread The thread from a profile.
+ * @return {InflatedMarker[]} The markers.
+ */
+function getInflatedMarkerData(thread) {
+  const { markers, stringTable } = thread;
+  return markers.data.map(markerTuple => {
+    const marker = {};
+    for (const [key, tupleIndex] of Object.entries(markers.schema)) {
+      marker[key] = markerTuple[tupleIndex];
+      if (key === "name") {
+        // Use the string from the string table.
+        marker[key] = stringTable[marker[key]];
+      }
+    }
+    return marker;
+  });
+}
+
+/**
  * It can be helpful to force the profiler to collect a JavaScript sample. This
  * function spins on a while loop until at least one more sample is collected.
  *
@@ -120,4 +152,65 @@ async function stopAndGetProfile() {
   const profile = await Services.profiler.getProfileDataAsync();
   Services.profiler.StopProfiler();
   return profile;
+}
+
+/**
+ * Verifies that a marker is an interval marker.
+ *
+ * @param {InflatedMarker} marker
+ * @returns {boolean}
+ */
+function isIntervalMarker(inflatedMarker) {
+  return (
+    inflatedMarker.phase === 1 &&
+    typeof inflatedMarker.startTime === "number" &&
+    typeof inflatedMarker.endTime === "number"
+  );
+}
+
+/**
+ * @param {Profile} profile
+ * @returns {Thread[]}
+ */
+function getThreads(profile) {
+  const threads = [];
+
+  function getThreadsRecursive(process) {
+    for (const thread of process.threads) {
+      threads.push(thread);
+    }
+    for (const subprocess of process.processes) {
+      getThreadsRecursive(subprocess);
+    }
+  }
+
+  getThreadsRecursive(profile);
+  return threads;
+}
+
+/**
+ * Find a specific marker schema from any process of a profile.
+ *
+ * @param {Profile} profile
+ * @param {string} name
+ * @returns {MarkerSchema}
+ */
+function getSchema(profile, name) {
+  {
+    const schema = profile.meta.markerSchema.find(s => s.name === name);
+    if (schema) {
+      return schema;
+    }
+  }
+  for (const subprocess of profile.processes) {
+    const schema = subprocess.meta.markerSchema.find(s => s.name === name);
+    if (schema) {
+      return schema;
+    }
+  }
+  console.error("Parent process schema", profile.meta.markerSchema);
+  for (const subprocess of profile.processes) {
+    console.error("Child process schema", subprocess.meta.markerSchema);
+  }
+  throw new Error(`Could not find a schema for "${name}".`);
 }

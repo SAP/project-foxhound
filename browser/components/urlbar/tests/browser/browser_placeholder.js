@@ -14,11 +14,19 @@ const TEST_PRIVATE_ENGINE_BASENAME = "searchSuggestionEngine2.xml";
 var originalEngine, extraEngine, extraPrivateEngine, expectedString;
 var tabs = [];
 
+var noEngineString;
+
 add_task(async function setup() {
   originalEngine = await Services.search.getDefault();
-  expectedString = gBrowserBundle.formatStringFromName("urlbar.placeholder", [
-    originalEngine.name,
-  ]);
+  [noEngineString, expectedString] = (
+    await document.l10n.formatMessages([
+      { id: "urlbar-placeholder" },
+      {
+        id: "urlbar-placeholder-with-name",
+        args: { name: originalEngine.name },
+      },
+    ])
+  ).map(msg => msg.attributes[0].value);
 
   let rootDir = getRootDirectory(gTestPath);
   extraEngine = await SearchTestUtils.promiseNewSearchEngine(
@@ -57,10 +65,10 @@ add_task(async function test_change_default_engine_updates_placeholder() {
   await Services.search.setDefault(extraEngine);
 
   await TestUtils.waitForCondition(
-    () => gURLBar.placeholder == gURLBar.getAttribute("defaultPlaceholder"),
+    () => gURLBar.placeholder == noEngineString,
     "The placeholder should match the default placeholder for non-built-in engines."
   );
-  Assert.equal(gURLBar.placeholder, gURLBar.getAttribute("defaultPlaceholder"));
+  Assert.equal(gURLBar.placeholder, noEngineString);
 
   await Services.search.setDefault(originalEngine);
 
@@ -104,7 +112,7 @@ add_task(async function test_delayed_update_placeholder() {
   await BrowserTestUtils.switchTab(gBrowser, urlTab);
 
   await TestUtils.waitForCondition(
-    () => gURLBar.placeholder == gURLBar.getAttribute("defaultPlaceholder"),
+    () => gURLBar.placeholder == noEngineString,
     "The placeholder should have updated in the background."
   );
 
@@ -116,8 +124,13 @@ add_task(async function test_delayed_update_placeholder() {
 
   Assert.equal(
     gURLBar.placeholder,
-    gURLBar.getAttribute("defaultPlaceholder"),
+    noEngineString,
     "Placeholder should be unchanged."
+  );
+  Assert.deepEqual(
+    document.l10n.getAttributes(gURLBar.inputField),
+    { id: "urlbar-placeholder", args: null },
+    "Placeholder data should be unchanged."
   );
 
   await BrowserTestUtils.switchTab(gBrowser, urlTab);
@@ -130,9 +143,13 @@ add_task(async function test_delayed_update_placeholder() {
   // Now check when we have a URL displayed, the placeholder is updated straight away.
   BrowserSearch._updateURLBarPlaceholder(extraEngine.name, false);
 
+  await TestUtils.waitForCondition(
+    () => gURLBar.placeholder == noEngineString,
+    "The placeholder should go back to the default"
+  );
   Assert.equal(
     gURLBar.placeholder,
-    gURLBar.getAttribute("defaultPlaceholder"),
+    noEngineString,
     "Placeholder should be the default."
   );
 
@@ -145,14 +162,10 @@ add_task(async function test_private_window_no_separate_engine() {
   await Services.search.setDefault(extraEngine);
 
   await TestUtils.waitForCondition(
-    () =>
-      win.gURLBar.placeholder == win.gURLBar.getAttribute("defaultPlaceholder"),
+    () => win.gURLBar.placeholder == noEngineString,
     "The placeholder should match the default placeholder for non-built-in engines."
   );
-  Assert.equal(
-    win.gURLBar.placeholder,
-    win.gURLBar.getAttribute("defaultPlaceholder")
-  );
+  Assert.equal(win.gURLBar.placeholder, noEngineString);
 
   await Services.search.setDefault(originalEngine);
 
@@ -182,14 +195,10 @@ add_task(async function test_private_window_separate_engine() {
   await Services.search.setDefaultPrivate(extraPrivateEngine);
 
   await TestUtils.waitForCondition(
-    () =>
-      win.gURLBar.placeholder == win.gURLBar.getAttribute("defaultPlaceholder"),
+    () => win.gURLBar.placeholder == noEngineString,
     "The placeholder should match the default placeholder for non-built-in engines."
   );
-  Assert.equal(
-    win.gURLBar.placeholder,
-    win.gURLBar.getAttribute("defaultPlaceholder")
-  );
+  Assert.equal(win.gURLBar.placeholder, noEngineString);
 
   await Services.search.setDefault(extraEngine);
   await Services.search.setDefaultPrivate(originalEngine);
@@ -202,3 +211,95 @@ add_task(async function test_private_window_separate_engine() {
 
   await BrowserTestUtils.closeWindow(win);
 });
+
+add_task(async function test_search_mode_engine_web() {
+  // Add our test engine to WEB_ENGINE_NAMES so that it's recognized as a web
+  // engine.
+  UrlbarUtils.WEB_ENGINE_NAMES.add(extraEngine.name);
+
+  await doSearchModeTest(
+    {
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      engineName: extraEngine.name,
+    },
+    {
+      id: "urlbar-placeholder-search-mode-web-2",
+      args: { name: extraEngine.name },
+    }
+  );
+
+  UrlbarUtils.WEB_ENGINE_NAMES.delete(extraEngine.name);
+});
+
+add_task(async function test_search_mode_engine_other() {
+  await doSearchModeTest(
+    { engineName: extraEngine.name },
+    {
+      id: "urlbar-placeholder-search-mode-other-engine",
+      args: { name: extraEngine.name },
+    }
+  );
+});
+
+add_task(async function test_search_mode_bookmarks() {
+  await doSearchModeTest(
+    { source: UrlbarUtils.RESULT_SOURCE.BOOKMARKS },
+    { id: "urlbar-placeholder-search-mode-other-bookmarks", args: null }
+  );
+});
+
+add_task(async function test_search_mode_tabs() {
+  await doSearchModeTest(
+    { source: UrlbarUtils.RESULT_SOURCE.TABS },
+    { id: "urlbar-placeholder-search-mode-other-tabs", args: null }
+  );
+});
+
+add_task(async function test_search_mode_history() {
+  await doSearchModeTest(
+    { source: UrlbarUtils.RESULT_SOURCE.HISTORY },
+    { id: "urlbar-placeholder-search-mode-other-history", args: null }
+  );
+});
+
+/**
+ * Opens the view, clicks a one-off button to enter search mode, and asserts
+ * that the placeholder is corrrect.
+ *
+ * @param {object} expectedSearchMode
+ *   The expected search mode object for the one-off.
+ * @param {object} expectedPlaceholderL10n
+ *   The expected l10n object for the one-off.
+ */
+async function doSearchModeTest(expectedSearchMode, expectedPlaceholderL10n) {
+  // Enable update2.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.update2", true],
+      ["browser.urlbar.update2.localOneOffs", true],
+      ["browser.urlbar.update2.oneOffsRefresh", true],
+    ],
+  });
+
+  // Click the urlbar to open the top-sites view.
+  if (gURLBar.getAttribute("pageproxystate") == "invalid") {
+    gURLBar.handleRevert();
+  }
+  await UrlbarTestUtils.promisePopupOpen(window, () => {
+    EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {});
+  });
+
+  // Enter search mode.
+  await UrlbarTestUtils.enterSearchMode(window, expectedSearchMode);
+
+  // Check the placeholder.
+  Assert.deepEqual(
+    document.l10n.getAttributes(gURLBar.inputField),
+    expectedPlaceholderL10n,
+    "Placeholder has expected l10n"
+  );
+
+  await UrlbarTestUtils.exitSearchMode(window, { clickClose: true });
+  await UrlbarTestUtils.promisePopupClose(window);
+  await SpecialPowers.popPrefEnv();
+}

@@ -27,6 +27,7 @@
 #include "js/ErrorReport.h"
 #include "js/PropertyDescriptor.h"
 #include "js/RootingAPI.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "vm/JSContext.h"
@@ -39,6 +40,7 @@
 #include "vm/StringType.h"
 
 struct JSFunctionSpec;
+class JSJitInfo;
 struct JSPrincipals;
 struct JSPropertySpec;
 
@@ -53,7 +55,7 @@ class LexicalEnvironmentObject;
 class PlainObject;
 class RegExpStatics;
 class TypeDescr;
-class TypedObjectModuleObject;
+class WasmNamespaceObject;
 
 enum class ReferenceType;
 
@@ -198,6 +200,13 @@ class GlobalObject : public NativeObject {
       return nullptr;
     }
     return &global->getPrototype(key).toObject();
+  }
+
+  JSObject* maybeGetConstructor(JSProtoKey protoKey) const {
+    MOZ_ASSERT(JSProto_Null < protoKey);
+    MOZ_ASSERT(protoKey < JSProto_LIMIT);
+    const Value& v = getConstructor(protoKey);
+    return v.isObject() ? &v.toObject() : nullptr;
   }
 
   JSObject* maybeGetPrototype(JSProtoKey protoKey) const {
@@ -491,9 +500,9 @@ class GlobalObject : public NativeObject {
     return &global->getPrototype(JSProto_WeakSet).toObject().as<NativeObject>();
   }
 
-  static JSObject* getOrCreateTypedObjectModule(JSContext* cx,
-                                                Handle<GlobalObject*> global) {
-    return getOrCreateConstructor(cx, JSProto_TypedObject);
+  static JSObject* getOrCreateWebAssemblyNamespace(
+      JSContext* cx, Handle<GlobalObject*> global) {
+    return getOrCreateConstructor(cx, JSProto_WebAssembly);
   }
 
   static TypeDescr* getOrCreateScalarTypeDescr(JSContext* cx,
@@ -504,7 +513,7 @@ class GlobalObject : public NativeObject {
                                                   Handle<GlobalObject*> global,
                                                   ReferenceType type);
 
-  TypedObjectModuleObject& getTypedObjectModule() const;
+  WasmNamespaceObject& getWebAssemblyNamespace() const;
 
   static bool ensureModulePrototypesCreated(JSContext* cx,
                                             Handle<GlobalObject*> global);
@@ -864,10 +873,6 @@ class GlobalObject : public NativeObject {
   static bool initRequestedModuleProto(JSContext* cx,
                                        Handle<GlobalObject*> global);
 
-  // Implemented in builtin/TypedObject.cpp
-  static bool initTypedObjectModule(JSContext* cx,
-                                    Handle<GlobalObject*> global);
-
   static bool initStandardClasses(JSContext* cx, Handle<GlobalObject*> global);
   static bool initSelfHostingBuiltins(JSContext* cx,
                                       Handle<GlobalObject*> global,
@@ -918,7 +923,7 @@ class GlobalObject : public NativeObject {
   }
   void clearSourceURLSHolder() {
     // This is called at the start of shrinking GCs, so avoids barriers.
-    getSlotRef(SOURCE_URLS).unsafeSet(UndefinedValue());
+    getSlotRef(SOURCE_URLS).unbarrieredSet(UndefinedValue());
   }
 
   // A class used in place of a prototype during off-thread parsing.
