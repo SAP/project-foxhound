@@ -29,6 +29,7 @@
 #  include "unicode/utypes.h"
 #endif  // JS_HAS_INTL_API
 #include "util/Poison.h"
+#include "vm/ArrayBufferObject.h"
 #include "vm/BigIntType.h"
 #include "vm/DateTime.h"
 #include "vm/HelperThreads.h"
@@ -62,7 +63,7 @@ static void CheckMessageParameterCounts() {
   // parameters.
 #  define MSG_DEF(name, count, exception, format) \
     MOZ_ASSERT(MessageParameterCount(format) == count);
-#  include "js.msg"
+#  include "js/friend/ErrorNumbers.msg"
 #  undef MSG_DEF
 }
 #endif /* DEBUG */

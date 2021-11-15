@@ -49,8 +49,7 @@
 #include "mozilla/Encoding.h"
 #include "ReferrerInfo.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static LazyLogModule gEventSourceLog("EventSource");
 
@@ -235,6 +234,7 @@ class EventSourceImpl final : public nsIObserver,
     PARSE_STATE_FIELD_NAME,
     PARSE_STATE_FIRST_CHAR_OF_FIELD_VALUE,
     PARSE_STATE_FIELD_VALUE,
+    PARSE_STATE_IGNORE_FIELD_VALUE,
     PARSE_STATE_BEGIN_OF_LINE
   };
 
@@ -759,8 +759,8 @@ void EventSourceImpl::ParseSegment(const char* aBuffer, uint32_t aLength) {
     return;
   }
   char16_t buffer[1024];
-  auto dst = MakeSpan(buffer);
-  auto src = AsBytes(MakeSpan(aBuffer, aLength));
+  auto dst = Span(buffer);
+  auto src = AsBytes(Span(aBuffer, aLength));
   // XXX EOF handling is https://bugzilla.mozilla.org/show_bug.cgi?id=1369018
   for (;;) {
     uint32_t result;
@@ -1256,9 +1256,9 @@ nsresult EventSourceImpl::PrintErrorOnConsole(
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = errObj->InitWithWindowID(
-      message, mScriptFile, EmptyString(), mScriptLine, mScriptColumn,
-      nsIScriptError::errorFlag, "Event Source", mInnerWindowID);
+  rv = errObj->InitWithWindowID(message, mScriptFile, u""_ns, mScriptLine,
+                                mScriptColumn, nsIScriptError::errorFlag,
+                                "Event Source", mInnerWindowID);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // print the error message directly to the JS console
@@ -1705,8 +1705,20 @@ nsresult EventSourceImpl::ParseCharacter(char16_t aChr) {
       } else if (aChr != 0) {
         // Avoid appending the null char to the field value.
         mLastFieldValue += aChr;
+      } else if (mLastFieldName.EqualsLiteral("id")) {
+        // Ignore the whole id field if aChr is null
+        mStatus = PARSE_STATE_IGNORE_FIELD_VALUE;
+        mLastFieldValue.Truncate();
       }
 
+      break;
+
+    case PARSE_STATE_IGNORE_FIELD_VALUE:
+      if (aChr == CR_CHAR) {
+        mStatus = PARSE_STATE_CR_CHAR;
+      } else if (aChr == LF_CHAR) {
+        mStatus = PARSE_STATE_BEGIN_OF_LINE;
+      }
       break;
 
     case PARSE_STATE_BEGIN_OF_LINE:
@@ -2037,5 +2049,4 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 NS_IMPL_ADDREF_INHERITED(EventSource, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(EventSource, DOMEventTargetHelper)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

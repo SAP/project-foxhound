@@ -50,9 +50,7 @@ mozilla::LazyLogModule gMediaRecorderLog("MediaRecorder");
 #define DEFAULT_AUDIO_BITRATE_BPS 128e3  // 128kbps
 #define MAX_AUDIO_BITRATE_BPS 512e3      // 512kbps
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::media;
 
@@ -114,9 +112,9 @@ class MediaRecorderReporter final : public nsIMemoryReporter {
                 sum += size;
               }
 
-              handleReport->Callback(
-                  EmptyCString(), "explicit/media/recorder"_ns, KIND_HEAP,
-                  UNITS_BYTES, sum, "Memory used by media recorder."_ns, data);
+              handleReport->Callback(""_ns, "explicit/media/recorder"_ns,
+                                     KIND_HEAP, UNITS_BYTES, sum,
+                                     "Memory used by media recorder."_ns, data);
 
               manager->EndReport();
             },
@@ -144,6 +142,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(MediaRecorder,
                                                   DOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStream)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAudioNode)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInvalidModificationDomException)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSecurityDomException)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mUnknownDomException)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocument)
@@ -153,6 +152,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(MediaRecorder,
                                                 DOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mStream)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mAudioNode)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mInvalidModificationDomException)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSecurityDomException)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mUnknownDomException)
   tmp->UnRegisterActivityObserver();
@@ -457,7 +457,7 @@ nsString SelectMimeType(bool aHasVideo, bool aHasAudio,
   if (constrainedType && constrainedType->ExtendedType().HaveCodecs()) {
     // The constrained mime type is fully defined (it has codecs!). No need to
     // select anything.
-    result = NS_ConvertUTF8toUTF16(constrainedType->OriginalString());
+    CopyUTF8toUTF16(constrainedType->OriginalString(), result);
   } else {
     // There is no constrained mime type, or there is and it is not fully
     // defined but still valid. Select what's missing, so that we have major
@@ -707,7 +707,14 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     LOG(LogLevel::Warning,
         ("Session.NotifyTrackAdded %p Raising error due to track set change",
          this));
-    DoSessionEndTask(NS_ERROR_ABORT);
+    // There's a chance we have a sensible JS stack here.
+    if (!mRecorder->mInvalidModificationDomException) {
+      mRecorder->mInvalidModificationDomException = DOMException::Create(
+          NS_ERROR_DOM_INVALID_MODIFICATION_ERR,
+          "An attempt was made to add a track to the recorded MediaStream "
+          "during the recording"_ns);
+    }
+    DoSessionEndTask(NS_ERROR_DOM_INVALID_MODIFICATION_ERR);
   }
 
   void NotifyTrackRemoved(const RefPtr<MediaStreamTrack>& aTrack) override {
@@ -718,7 +725,14 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     LOG(LogLevel::Warning,
         ("Session.NotifyTrackRemoved %p Raising error due to track set change",
          this));
-    DoSessionEndTask(NS_ERROR_ABORT);
+    // There's a chance we have a sensible JS stack here.
+    if (!mRecorder->mInvalidModificationDomException) {
+      mRecorder->mInvalidModificationDomException = DOMException::Create(
+          NS_ERROR_DOM_INVALID_MODIFICATION_ERR,
+          "An attempt was made to remove a track from the recorded MediaStream "
+          "during the recording"_ns);
+    }
+    DoSessionEndTask(NS_ERROR_DOM_INVALID_MODIFICATION_ERR);
   }
 
   void Start() {
@@ -1966,6 +1980,10 @@ void MediaRecorder::NotifyError(nsresult aRv) {
       }
       init.mError = std::move(mSecurityDomException);
       break;
+    case NS_ERROR_DOM_INVALID_MODIFICATION_ERR:
+      MOZ_DIAGNOSTIC_ASSERT(mInvalidModificationDomException);
+      init.mError = std::move(mInvalidModificationDomException);
+      break;
     default:
       if (!mUnknownDomException) {
         LOG(LogLevel::Debug, ("MediaRecorder.NotifyError: "
@@ -2070,7 +2088,6 @@ RefPtr<MediaRecorder::SizeOfPromise> MediaRecorder::SizeOfExcludingThis(
 
 StaticRefPtr<MediaRecorderReporter> MediaRecorderReporter::sUniqueInstance;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #undef LOG

@@ -483,7 +483,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL,
                              nullptr,  // triggering element
                              cspEventListener, fileName, scriptSample, lineNum,
-                             columnNum, EmptyString(), EmptyString());
+                             columnNum, u""_ns, u""_ns);
   }
 
   return evalOK;
@@ -698,12 +698,6 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
     if (sourceURI == aTargetURI) {
       return NS_OK;
     }
-  } else if (StaticPrefs::
-                 security_view_source_reachable_from_inner_protocol() &&
-             sourceScheme.EqualsIgnoreCase(targetScheme.get()) &&
-             aTargetURI->SchemeIs("view-source")) {
-    // exception for foo: linking to view-source:foo for reftests...
-    return NS_OK;
   } else if (sourceScheme.EqualsIgnoreCase("file") &&
              targetScheme.EqualsIgnoreCase("moz-icon")) {
     // exception for file: linking to moz-icon://.ext?size=...
@@ -883,22 +877,29 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
                            &targetURIIsUIResource);
   NS_ENSURE_SUCCESS(rv, rv);
   if (targetURIIsUIResource) {
+    // ALLOW_CHROME is a flag that we pass on all loads _except_ docshell
+    // loads (since docshell loads run the loaded content with its origin
+    // principal). We are effectively allowing resource:// and chrome://
+    // URIs to load as long as they are content accessible and as long
+    // they're not loading it as a document.
     if (aFlags & nsIScriptSecurityManager::ALLOW_CHROME) {
-      // Allow a URI_IS_UI_RESOURCE source to link to a URI_IS_UI_RESOURCE
-      // target if ALLOW_CHROME is set.
-      //
-      // ALLOW_CHROME is a flag that we pass on all loads _except_ docshell
-      // loads (since docshell loads run the loaded content with its origin
-      // principal). So we're effectively allowing resource://, chrome://,
-      // and moz-icon:// source URIs to load resource://, chrome://, and
-      // moz-icon:// files, so long as they're not loading it as a document.
-      bool sourceIsUIResource;
+      bool sourceIsUIResource = false;
       rv = NS_URIChainHasFlags(aSourceBaseURI,
                                nsIProtocolHandler::URI_IS_UI_RESOURCE,
                                &sourceIsUIResource);
       NS_ENSURE_SUCCESS(rv, rv);
       if (sourceIsUIResource) {
-        return NS_OK;
+        // TODO Bug 1654488: Remove pref in CheckLoadURIFlags which
+        // allows all UI resources to load
+        if (StaticPrefs::
+                security_caps_allow_uri_is_ui_resource_in_checkloaduriflags()) {
+          return NS_OK;
+        }
+        // Special case for moz-icon URIs loaded by a local resources like
+        // e.g. chrome: or resource:
+        if (targetScheme.EqualsLiteral("moz-icon")) {
+          return NS_OK;
+        }
       }
 
       if (targetScheme.EqualsLiteral("resource")) {
@@ -1032,12 +1033,11 @@ nsresult nsScriptSecurityManager::ReportError(const char* aMessageTag,
   // using category of "SOP" so we can link to MDN
   if (aInnerWindowID != 0) {
     rv = error->InitWithWindowID(
-        message, EmptyString(), EmptyString(), 0, 0, nsIScriptError::errorFlag,
-        "SOP"_ns, aInnerWindowID, true /* From chrome context */);
+        message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag, "SOP"_ns,
+        aInnerWindowID, true /* From chrome context */);
   } else {
-    rv = error->Init(message, EmptyString(), EmptyString(), 0, 0,
-                     nsIScriptError::errorFlag, "SOP", aFromPrivateWindow,
-                     true /* From chrome context */);
+    rv = error->Init(message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag,
+                     "SOP", aFromPrivateWindow, true /* From chrome context */);
   }
   NS_ENSURE_SUCCESS(rv, rv);
   console->LogMessage(error);
@@ -1100,8 +1100,11 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
     if (aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0) {
       fixupFlags |= nsIURIFixup::FIXUP_FLAG_PRIVATE_CONTEXT;
     }
-    rv = fixup->CreateFixupURI(aTargetURIStr, fixupFlags, nullptr,
-                               getter_AddRefs(target));
+    nsCOMPtr<nsIURIFixupInfo> fixupInfo;
+    rv = fixup->GetFixupURIInfo(aTargetURIStr, fixupFlags,
+                                getter_AddRefs(fixupInfo));
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = fixupInfo->GetPreferredURI(getter_AddRefs(target));
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = CheckLoadURIWithPrincipal(aPrincipal, target, aFlags, 0);

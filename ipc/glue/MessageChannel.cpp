@@ -516,9 +516,9 @@ class ChannelCountReporter final : public nsIMemoryReporter {
           " top-level actor type %s",
           iter.Key());
 
-      aHandleReport->Callback(EmptyCString(), pathNow, KIND_OTHER, UNITS_COUNT,
+      aHandleReport->Callback(""_ns, pathNow, KIND_OTHER, UNITS_COUNT,
                               iter.Data().mNow, descNow, aData);
-      aHandleReport->Callback(EmptyCString(), pathMax, KIND_OTHER, UNITS_COUNT,
+      aHandleReport->Callback(""_ns, pathMax, KIND_OTHER, UNITS_COUNT,
                               iter.Data().mMax, descMax, aData);
     }
     return NS_OK;
@@ -2784,14 +2784,17 @@ void MessageChannel::DumpInterruptStack(const char* const pfx) const {
 
 void MessageChannel::AddProfilerMarker(const IPC::Message& aMessage,
                                        MessageDirection aDirection) {
+  mMonitor->AssertCurrentThreadOwns();
 #ifdef MOZ_GECKO_PROFILER
   if (profiler_feature_active(ProfilerFeature::IPCMessages)) {
-    // If mPeerPid is -1, messages are being sent to the current process.
-    int32_t pid = mPeerPid == -1 ? base::GetCurrentProcId() : mPeerPid;
-    PROFILER_ADD_MARKER_WITH_PAYLOAD(
-        "IPC", IPC, IPCMarkerPayload,
-        (pid, aMessage.seqno(), aMessage.type(), mSide, aDirection,
-         MessagePhase::Endpoint, aMessage.is_sync(), TimeStamp::NowUnfuzzed()));
+    int32_t pid = mListener->OtherPidMaybeInvalid();
+    if (pid != kInvalidProcessId) {
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "IPC", IPC, IPCMarkerPayload,
+          (pid, aMessage.seqno(), aMessage.type(), mSide, aDirection,
+           MessagePhase::Endpoint, aMessage.is_sync(),
+           TimeStamp::NowUnfuzzed()));
+    }
   }
 #endif
 }
@@ -2907,11 +2910,6 @@ void MessageChannel::CancelTransaction(int transaction) {
   }
 
   AssertMaybeDeferredCountCorrect();
-}
-
-bool MessageChannel::IsInTransaction() const {
-  MonitorAutoLock lock(*mMonitor);
-  return !!mTransactionStack;
 }
 
 void MessageChannel::CancelCurrentTransaction() {

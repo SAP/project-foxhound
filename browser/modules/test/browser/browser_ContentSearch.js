@@ -221,9 +221,9 @@ add_task(async function badImage() {
   );
   ok(!!expectedEngine, "Sanity check: engine should be in expected state");
   ok(
-    expectedEngine.iconData === null,
-    "Sanity check: icon array buffer of engine in expected state " +
-      "should be null: " +
+    expectedEngine.iconData ===
+      "chrome://browser/skin/search-engine-placeholder.png",
+    "Sanity check: icon of engine in expected state should be the placeholder: " +
       expectedEngine.iconData
   );
   checkMsg(finalCurrentStateMsg, {
@@ -250,7 +250,10 @@ add_task(
     // Add a form history suggestion and wait for Satchel to notify about it.
     sendEventToContent(browser, {
       type: "AddFormHistoryEntry",
-      data: searchStr + "form",
+      data: {
+        value: searchStr + "form",
+        engineName: engine.name,
+      },
     });
     await new Promise(resolve => {
       Services.obs.addObserver(function onAdd(subj, topic, data) {
@@ -480,12 +483,8 @@ var currentStateObj = async function(isPrivateWindowValue, hiddenEngine = "") {
 
 async function constructEngineObj(engine) {
   let uriFavicon = engine.getIconURLBySize(16, 16);
-  let bundle = Services.strings.createBundle(
-    "chrome://global/locale/autocomplete.properties"
-  );
   return {
     name: engine.name,
-    placeholder: bundle.formatStringFromName("searchWithEngine", [engine.name]),
     iconData: await iconDataFromURI(uriFavicon),
     isAppProvided: engine.isAppProvided,
   };
@@ -493,7 +492,9 @@ async function constructEngineObj(engine) {
 
 function iconDataFromURI(uri) {
   if (!uri) {
-    return Promise.resolve(null);
+    return Promise.resolve(
+      "chrome://browser/skin/search-engine-placeholder.png"
+    );
   }
 
   if (!uri.startsWith("data:")) {
@@ -506,7 +507,7 @@ function iconDataFromURI(uri) {
     xhr.open("GET", uri, true);
     xhr.responseType = "arraybuffer";
     xhr.onerror = () => {
-      resolve(null);
+      resolve("chrome://browser/skin/search-engine-placeholder.png");
     };
     xhr.onload = () => {
       arrayBufferIconTested = true;
@@ -515,7 +516,7 @@ function iconDataFromURI(uri) {
     try {
       xhr.send();
     } catch (err) {
-      resolve(null);
+      resolve("chrome://browser/skin/search-engine-placeholder.png");
     }
   });
 }

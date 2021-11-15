@@ -38,12 +38,11 @@ module.exports = (env, argv) => {
       "./codemirror/addon/fold/xml-fold.js",
       "./codemirror/addon/fold/foldgutter.js",
       "./codemirror/addon/runmode/runmode.js",
+      "./codemirror/addon/display/placeholder.js",
       "./codemirror/lib/codemirror.js",
     ],
     optimization: {
-      minimize: !(
-        argv?.optimization && argv.optimization.minimizer === "false"
-      ),
+      minimize: !(argv.optimization && argv.optimization.minimizer === "false"),
     },
     output: {
       path: path.resolve(__dirname, "./codemirror/"),

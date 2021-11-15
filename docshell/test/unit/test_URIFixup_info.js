@@ -1,24 +1,8 @@
-const { AddonTestUtils } = ChromeUtils.import(
-  "resource://testing-common/AddonTestUtils.jsm"
-);
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 
-const kSearchEngineID = "test_urifixup_search_engine";
-const kSearchEngineURL = "http://www.example.org/?search={searchTerms}";
-const kPrivateSearchEngineID = "test_urifixup_search_engine_private";
-const kPrivateSearchEngineURL = "http://www.example.org/?private={searchTerms}";
 const kForceDNSLookup = "browser.fixup.dns_first_for_single_words";
-
-AddonTestUtils.init(this);
-AddonTestUtils.overrideCertDB();
-AddonTestUtils.createAppInfo(
-  "xpcshell@tests.mozilla.org",
-  "XPCShell",
-  "1",
-  "42"
-);
 
 // TODO(bug 1522134), this test should also use
 // combinations of the following flags.
@@ -709,57 +693,15 @@ add_task(async function setup() {
     Services.prefs.setBoolPref(pref, true);
   }
 
-  await AddonTestUtils.promiseStartupManager();
+  await setupSearchService();
+  await addTestEngines();
 
-  Services.io
-    .getProtocolHandler("resource")
-    .QueryInterface(Ci.nsIResProtocolHandler)
-    .setSubstitution(
-      "search-extensions",
-      Services.io.newURI("chrome://mozapps/locale/searchextensions/")
-    );
-
-  var oldCurrentEngine = await Services.search.getDefault();
-  var oldPrivateEngine = await Services.search.getDefaultPrivate();
-
-  let newCurrentEngine = await Services.search.addEngineWithDetails(
-    kSearchEngineID,
-    {
-      method: "get",
-      template: kSearchEngineURL,
-    }
+  await Services.search.setDefault(
+    Services.search.getEngineByName(kSearchEngineID)
   );
-  await Services.search.setDefault(newCurrentEngine);
-
-  let newPrivateEngine = await Services.search.addEngineWithDetails(
-    kPrivateSearchEngineID,
-    {
-      method: "get",
-      template: kPrivateSearchEngineURL,
-    }
+  await Services.search.setDefaultPrivate(
+    Services.search.getEngineByName(kPrivateSearchEngineID)
   );
-  await Services.search.setDefaultPrivate(newPrivateEngine);
-
-  var selectedName = (await Services.search.getDefault()).name;
-  Assert.equal(selectedName, kSearchEngineID);
-
-  registerCleanupFunction(async function() {
-    if (oldCurrentEngine) {
-      await Services.search.setDefault(oldCurrentEngine);
-    }
-    if (oldPrivateEngine) {
-      await Services.search.setDefault(oldPrivateEngine);
-    }
-    await Services.search.removeEngine(newCurrentEngine);
-    await Services.search.removeEngine(newPrivateEngine);
-    Services.prefs.clearUserPref("keyword.enabled");
-    Services.prefs.clearUserPref("browser.fixup.typo.scheme");
-    Services.prefs.clearUserPref(kForceDNSLookup);
-    Services.prefs.clearUserPref("browser.search.separatePrivateDefault");
-    Services.prefs.clearUserPref(
-      "browser.search.separatePrivateDefault.ui.enabled"
-    );
-  });
 });
 
 var gSingleWordDNSLookup = false;
@@ -777,17 +719,30 @@ add_task(async function run_test() {
     }
   }
   Assert.equal(affectedTests.length, 0);
-  do_single_test_run();
+  await do_single_test_run();
   gSingleWordDNSLookup = true;
-  do_single_test_run();
+  await do_single_test_run();
+  gSingleWordDNSLookup = false;
+  await Services.search.setDefault(
+    Services.search.getEngineByName(kPostSearchEngineID)
+  );
+  await do_single_test_run();
 });
 
-function do_single_test_run() {
+async function do_single_test_run() {
   Services.prefs.setBoolPref(kForceDNSLookup, gSingleWordDNSLookup);
 
   let relevantTests = gSingleWordDNSLookup
     ? testcases.filter(t => t.keywordLookup)
     : testcases;
+
+  let engine = await Services.search.getDefault();
+  let engineUrl =
+    engine.name == kPostSearchEngineID
+      ? kPostSearchEngineURL
+      : kSearchEngineURL;
+  let privateEngine = await Services.search.getDefaultPrivate();
+  let privateEngineUrl = kPrivateSearchEngineURL;
 
   for (let {
     input: testInput,
@@ -820,32 +775,13 @@ function do_single_test_run() {
       );
 
       let URIInfo;
-      let fixupURIOnly = null;
-      try {
-        fixupURIOnly = Services.uriFixup.createFixupURI(testInput, flags);
-      } catch (ex) {
-        info("Caught exception: " + ex);
-        Assert.equal(expectedFixedURI, null);
-      }
-
       try {
         URIInfo = Services.uriFixup.getFixupURIInfo(testInput, flags);
       } catch (ex) {
         // Both APIs should return an error in the same cases.
         info("Caught exception: " + ex);
         Assert.equal(expectedFixedURI, null);
-        Assert.equal(fixupURIOnly, null);
         continue;
-      }
-
-      // Both APIs should then also be using the same spec.
-      Assert.equal(!!fixupURIOnly, !!URIInfo.preferredURI);
-      if (fixupURIOnly) {
-        Assert.equal(
-          fixupURIOnly.spec,
-          URIInfo.preferredURI.spec,
-          "Fixed and preferred URI should match"
-        );
       }
 
       // Check the fixedURI:
@@ -899,18 +835,14 @@ function do_single_test_run() {
             }
             let isPrivate =
               flags & Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
-            let searchEngineUrl = isPrivate
-              ? kPrivateSearchEngineURL
-              : kSearchEngineURL;
+            let searchEngineUrl = isPrivate ? privateEngineUrl : engineUrl;
             let searchURL = searchEngineUrl.replace(
               "{searchTerms}",
               urlparamInput
             );
             let spec = URIInfo.preferredURI.spec.replace(/%27/g, "'");
             Assert.equal(spec, searchURL, "should get correct search URI");
-            let providerName = isPrivate
-              ? kPrivateSearchEngineID
-              : kSearchEngineID;
+            let providerName = isPrivate ? privateEngine.name : engine.name;
             Assert.equal(
               URIInfo.keywordProviderName,
               providerName,
@@ -922,6 +854,19 @@ function do_single_test_run() {
               isPrivate
             );
             Assert.equal(kwInfo.providerName, URIInfo.providerName);
+            if (providerName == kPostSearchEngineID) {
+              Assert.ok(kwInfo.postData);
+              let submission = engine.getSubmission(urlparamInput);
+              let enginePostData = NetUtil.readInputStreamToString(
+                submission.postData,
+                submission.postData.available()
+              );
+              let postData = NetUtil.readInputStreamToString(
+                kwInfo.postData,
+                kwInfo.postData.available()
+              );
+              Assert.equal(postData, enginePostData);
+            }
           } else {
             Assert.equal(
               URIInfo.preferredURI,

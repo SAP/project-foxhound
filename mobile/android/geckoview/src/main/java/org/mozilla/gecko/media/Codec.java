@@ -6,9 +6,11 @@ package org.mozilla.gecko.media;
 
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
+import android.media.MediaCodecInfo.VideoCapabilities;
 import android.media.MediaCodecList;
 import android.media.MediaCrypto;
 import android.media.MediaFormat;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
@@ -26,6 +28,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
 /* package */ final class Codec extends ICodec.Stub implements IBinder.DeathRecipient {
     private static final String LOGTAG = "GeckoRemoteCodec";
     private static final boolean DEBUG = false;
+    public static final String SW_CODEC_PREFIX = "OMX.google.";
 
     public enum Error {
         DECODE, FATAL
@@ -312,14 +315,12 @@ import org.mozilla.gecko.gfx.GeckoSurface;
 
         private synchronized void onRelease(final Sample sample, final boolean render) {
             final Output output = mSentOutputs.poll();
-            if (output == null) {
-                if (DEBUG) {
-                    Log.d(LOGTAG, sample + " already released");
-                }
-                return;
+            if (output != null) {
+                mCodec.releaseOutputBuffer(output.index, render);
+                mSamplePool.recycleOutput(output.sample);
+            } else if (DEBUG) {
+                Log.d(LOGTAG, sample + " already released");
             }
-            mCodec.releaseOutputBuffer(output.index, render);
-            mSamplePool.recycleOutput(output.sample);
 
             sample.dispose();
         }
@@ -361,6 +362,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
     }
 
     private volatile ICodecCallbacks mCallbacks;
+    private GeckoSurface mSurface;
     private AsyncCodec mCodec;
     private InputProcessor mInputProcessor;
     private OutputProcessor mOutputProcessor;
@@ -415,14 +417,14 @@ import org.mozilla.gecko.gfx.GeckoSurface;
             return false;
         }
 
-        final List<String> found = findMatchingCodecNames(mime, flags == MediaCodec.CONFIGURE_FLAG_ENCODE);
+        final List<String> found = findMatchingCodecNames(fmt, flags == MediaCodec.CONFIGURE_FLAG_ENCODE);
         for (final String name : found) {
             final AsyncCodec codec = configureCodec(name, fmt, surface, flags, drmStubId);
             if (codec == null) {
                 Log.w(LOGTAG, "unable to configure " + name + ". Try next.");
                 continue;
             }
-            mIsHardwareAccelerated = !name.startsWith("OMX.google.");
+            mIsHardwareAccelerated = !name.startsWith(SW_CODEC_PREFIX);
             mCodec = codec;
             mInputProcessor = new InputProcessor();
             final boolean renderToSurface = surface != null;
@@ -430,6 +432,7 @@ import org.mozilla.gecko.gfx.GeckoSurface;
             mSamplePool = new SamplePool(name, renderToSurface);
             if (renderToSurface) {
                 mIsTunneledPlaybackSupported = mCodec.isTunneledPlaybackSupported(mime);
+                mSurface = surface; // Take ownership of surface.
             }
             if (DEBUG) {
                 Log.d(LOGTAG, codec.toString() + " created. Render to surface?" + renderToSurface);
@@ -440,7 +443,13 @@ import org.mozilla.gecko.gfx.GeckoSurface;
         return false;
     }
 
-    private List<String> findMatchingCodecNames(final String mimeType, final boolean isEncoder) {
+    private List<String> findMatchingCodecNames(final MediaFormat format, final boolean isEncoder) {
+        final String mimeType = format.getString(MediaFormat.KEY_MIME);
+        // Missing width and height value in format means audio;
+        // Video format should never has 0 width or height.
+        final int width = format.containsKey(MediaFormat.KEY_WIDTH) ? format.getInteger(MediaFormat.KEY_WIDTH) : 0;
+        final int height = format.containsKey(MediaFormat.KEY_HEIGHT) ? format.getInteger(MediaFormat.KEY_HEIGHT) : 0;
+
         final int numCodecs = MediaCodecList.getCodecCount();
         final List<String> found = new ArrayList<>();
         for (int i = 0; i < numCodecs; i++) {
@@ -451,12 +460,30 @@ import org.mozilla.gecko.gfx.GeckoSurface;
 
             final String[] types = info.getSupportedTypes();
             for (final String t : types) {
-                if (t.equalsIgnoreCase(mimeType)) {
-                    found.add(info.getName());
-                    if (DEBUG) {
-                        Log.d(LOGTAG, "found " + (isEncoder ? "encoder:" : "decoder:") +
-                                info.getName() + " for mime:" + mimeType);
+                if (!t.equalsIgnoreCase(mimeType)) {
+                    continue;
+                }
+                final String name = info.getName();
+                // API 21+ provide a method to query whether supplied size is supported. For
+                // older version, just avoid software video encoders.
+                if (isEncoder && width > 0 && height > 0) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        final VideoCapabilities c = info.getCapabilitiesForType(mimeType).getVideoCapabilities();
+                        if (c != null && !c.isSizeSupported(width, height)) {
+                            if (DEBUG) {
+                                Log.d(LOGTAG, name + ": " + width + "x" + height + " not supported");
+                            }
+                            continue;
+                        }
+                    } else if (name.startsWith(SW_CODEC_PREFIX)) {
+                        continue;
                     }
+                }
+
+                found.add(name);
+                if (DEBUG) {
+                    Log.d(LOGTAG, "found " + (isEncoder ? "encoder:" : "decoder:") +
+                            name + " for mime:" + mimeType);
                 }
             }
         }
@@ -651,5 +678,9 @@ import org.mozilla.gecko.gfx.GeckoSurface;
         mSamplePool = null;
         mCallbacks.asBinder().unlinkToDeath(this, 0);
         mCallbacks = null;
+        if (mSurface != null) {
+            mSurface.release();
+            mSurface = null;
+        }
     }
 }

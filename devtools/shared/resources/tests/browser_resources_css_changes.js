@@ -15,11 +15,15 @@ add_task(async function() {
     "data:text/html,<body style='color: lime;'>CSS Changes</body>"
   );
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
+
+  // CSS_CHANGE watcher doesn't record modification made before watching,
+  // so we have to start watching before doing any DOM mutation.
+  await resourceWatcher.watchResources([ResourceWatcher.TYPES.CSS_CHANGE], {
+    onAvailable: () => {},
+  });
 
   const { walker } = await targetList.targetFront.getFront("inspector");
   const nodeList = await walker.querySelectorAll(walker.rootNode, "body");
@@ -37,7 +41,7 @@ add_task(async function() {
 
   const availableResources = [];
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.CSS_CHANGE], {
-    onAvailable: ({ resource }) => availableResources.push(resource),
+    onAvailable: resources => availableResources.push(...resources),
   });
   assertResource(
     availableResources[0],
@@ -77,7 +81,7 @@ add_task(async function() {
   info("Check whether ResourceWatcher sends all resources added in this test");
   const existingResources = [];
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.CSS_CHANGE], {
-    onAvailable: ({ resource }) => existingResources.push(resource),
+    onAvailable: resources => existingResources.push(...resources),
   });
   await waitUntil(() => existingResources.length === 4);
   is(availableResources[0], existingResources[0], "1st resource is correct");
@@ -85,7 +89,7 @@ add_task(async function() {
   is(availableResources[2], existingResources[2], "3rd resource is correct");
   is(availableResources[3], existingResources[3], "4th resource is correct");
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 });
 

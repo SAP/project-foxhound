@@ -226,10 +226,6 @@ Maybe<SymbolLoader> GLContextCGL::GetSymbolLoader() const {
   return Some(SymbolLoader(*lib));
 }
 
-already_AddRefed<GLContext> GLContextProviderCGL::CreateWrappingExisting(void*, void*) {
-  return nullptr;
-}
-
 already_AddRefed<GLContext> GLContextProviderCGL::CreateForCompositorWidget(
     CompositorWidget* aCompositorWidget, bool aWebRender, bool aForceAccelerated) {
   CreateContextFlags flags = CreateContextFlags::ALLOW_OFFLINE_RENDERER;

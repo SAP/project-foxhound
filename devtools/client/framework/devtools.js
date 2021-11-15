@@ -51,9 +51,6 @@ const {
 const FORBIDDEN_IDS = new Set(["toolbox", ""]);
 const MAX_ORDINAL = 99;
 
-const CONTENT_FISSION_ENABLED_PREF = "devtools.contenttoolbox.fission";
-const FISSION_AUTOSTART_PREF = "fission.autostart";
-
 /**
  * DevTools is a class that represents a set of developer tools, it holds a
  * set of tools and keeps track of open toolboxes in the browser.
@@ -680,8 +677,8 @@ DevTools.prototype = {
    * web-extensions need to use dedicated instances of Target and cannot reuse the
    * cached instances managed by DevTools target factory.
    */
-  createTargetForTab: function(tab) {
-    return TargetFactory.createTargetForTab(tab);
+  createDescriptorForTab: function(tab) {
+    return TargetFactory.createDescriptorForTab(tab);
   },
 
   /**
@@ -836,31 +833,6 @@ DevTools.prototype = {
    */
   getToolboxes() {
     return Array.from(this._toolboxes.values());
-  },
-
-  /**
-   * Check if the content from remote frames should be displayed in the toolbox.
-   * This depends both on enabling the dedicated devtools preference as well as
-   * the fission.autostart preference.
-   */
-  isFissionContentToolboxEnabled() {
-    if (typeof this._isFissionContentToolboxEnabled === "undefined") {
-      const isContentFissionEnabled = Services.prefs.getBoolPref(
-        CONTENT_FISSION_ENABLED_PREF,
-        false
-      );
-
-      // Checking fission.autostart is not used to check if the current target
-      // is a Fission tab, but only to check if the user is currently dogfooding
-      // Fission.
-      const isFissionEnabled = Services.prefs.getBoolPref(
-        FISSION_AUTOSTART_PREF,
-        false
-      );
-      this._isFissionContentToolboxEnabled =
-        isFissionEnabled && isContentFissionEnabled;
-    }
-    return this._isFissionContentToolboxEnabled;
   },
 };
 

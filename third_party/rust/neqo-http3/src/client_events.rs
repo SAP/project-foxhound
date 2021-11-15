@@ -11,6 +11,8 @@ use crate::send_message::SendMessageEvents;
 use crate::Header;
 use crate::RecvMessageEvents;
 
+use neqo_common::event::Provider as EventProvider;
+use neqo_crypto::ResumptionToken;
 use neqo_transport::{AppError, StreamType};
 
 use std::cell::RefCell;
@@ -22,15 +24,20 @@ pub enum Http3ClientEvent {
     /// Response headers are received.
     HeaderReady {
         stream_id: u64,
-        headers: Option<Vec<Header>>,
+        headers: Vec<Header>,
+        interim: bool,
         fin: bool,
     },
     /// A stream can accept new data.
     DataWritable { stream_id: u64 },
     /// New bytes available for reading.
     DataReadable { stream_id: u64 },
-    /// Peer reset the stream.
-    Reset { stream_id: u64, error: AppError },
+    /// Peer reset the stream or there was an parsing error.
+    Reset {
+        stream_id: u64,
+        error: AppError,
+        local: bool,
+    },
     /// Peer has sent a STOP_SENDING.
     StopSending { stream_id: u64, error: AppError },
     /// A new push promise.
@@ -42,17 +49,23 @@ pub enum Http3ClientEvent {
     /// A push response headers are ready.
     PushHeaderReady {
         push_id: u64,
-        headers: Option<Vec<Header>>,
+        headers: Vec<Header>,
+        interim: bool,
         fin: bool,
     },
     /// New bytes are available on a push stream for reading.
     PushDataReadable { push_id: u64 },
     /// A push has been canceled.
     PushCanceled { push_id: u64 },
+    /// A push stream was been reset due to a HttpGeneralProtocol error.
+    /// Most common dase are malformed response headers.
+    PushReset { push_id: u64, error: AppError },
     /// New stream can be created
     RequestsCreatable,
     /// Cert authentication needed
     AuthenticationNeeded,
+    /// A new resumption token.
+    ResumptionToken(ResumptionToken),
     /// Zero Rtt has been rejected.
     ZeroRttRejected,
     /// Client has received a GOAWAY frame
@@ -68,10 +81,11 @@ pub struct Http3ClientEvents {
 
 impl RecvMessageEvents for Http3ClientEvents {
     /// Add a new `HeaderReady` event.
-    fn header_ready(&self, stream_id: u64, headers: Option<Vec<Header>>, fin: bool) {
+    fn header_ready(&self, stream_id: u64, headers: Vec<Header>, interim: bool, fin: bool) {
         self.insert(Http3ClientEvent::HeaderReady {
             stream_id,
             headers,
+            interim,
             fin,
         });
     }
@@ -82,7 +96,7 @@ impl RecvMessageEvents for Http3ClientEvents {
     }
 
     /// Add a new `Reset` event.
-    fn reset(&self, stream_id: u64, error: AppError) {
+    fn reset(&self, stream_id: u64, error: AppError, local: bool) {
         self.remove(|evt| {
             matches!(evt,
                 Http3ClientEvent::HeaderReady { stream_id: x, .. }
@@ -90,7 +104,11 @@ impl RecvMessageEvents for Http3ClientEvents {
                 | Http3ClientEvent::PushPromise { request_stream_id: x, .. }
                 | Http3ClientEvent::Reset { stream_id: x, .. } if *x == stream_id)
         });
-        self.insert(Http3ClientEvent::Reset { stream_id, error });
+        self.insert(Http3ClientEvent::Reset {
+            stream_id,
+            error,
+            local,
+        });
     }
 }
 
@@ -130,6 +148,11 @@ impl Http3ClientEvents {
         self.insert(Http3ClientEvent::PushCanceled { push_id });
     }
 
+    pub fn push_reset(&self, push_id: u64, error: AppError) {
+        self.remove_events_for_push_id(push_id);
+        self.insert(Http3ClientEvent::PushReset { push_id, error });
+    }
+
     /// Add a new `RequestCreatable` event
     pub(crate) fn new_requests_creatable(&self, stream_type: StreamType) {
         if stream_type == StreamType::BiDi {
@@ -142,6 +165,11 @@ impl Http3ClientEvents {
         self.insert(Http3ClientEvent::AuthenticationNeeded);
     }
 
+    /// Add a new resumption token event.
+    pub(crate) fn resumption_token(&self, token: ResumptionToken) {
+        self.insert(Http3ClientEvent::ResumptionToken(token));
+    }
+
     /// Add a new `ZeroRttRejected` event.
     pub(crate) fn zero_rtt_rejected(&self) {
         self.insert(Http3ClientEvent::ZeroRttRejected);
@@ -151,21 +179,6 @@ impl Http3ClientEvents {
     pub(crate) fn goaway_received(&self) {
         self.remove(|evt| matches!(evt, Http3ClientEvent::RequestsCreatable));
         self.insert(Http3ClientEvent::GoawayReceived);
-    }
-
-    /// Take all events currently in the queue.
-    pub(crate) fn events(&self) -> impl Iterator<Item = Http3ClientEvent> {
-        self.events.replace(VecDeque::new()).into_iter()
-    }
-
-    /// Check if there is any event present.
-    pub fn has_events(&self) -> bool {
-        !self.events.borrow().is_empty()
-    }
-
-    /// Take the first event.
-    pub fn next_event(&self) -> Option<Http3ClientEvent> {
-        self.events.borrow_mut().pop_front()
     }
 
     pub fn insert(&self, event: Http3ClientEvent) {
@@ -181,9 +194,14 @@ impl Http3ClientEvents {
 
     /// Add a new `StateChange` event.
     pub(crate) fn connection_state_change(&self, state: Http3State) {
-        // If closing, existing events no longer relevant.
         match state {
+            // If closing, existing events no longer relevant.
             Http3State::Closing { .. } | Http3State::Closed(_) => self.events.borrow_mut().clear(),
+            Http3State::Connected => {
+                self.remove(|evt| {
+                    matches!(evt, Http3ClientEvent::StateChange(Http3State::ZeroRtt))
+                });
+            }
             _ => (),
         }
         self.insert(Http3ClientEvent::StateChange(state));
@@ -219,5 +237,19 @@ impl Http3ClientEvents {
                 | Http3ClientEvent::PushDataReadable{ push_id: x, .. }
                 | Http3ClientEvent::PushCanceled{ push_id: x, .. } if *x == push_id)
         });
+    }
+}
+
+impl EventProvider for Http3ClientEvents {
+    type Event = Http3ClientEvent;
+
+    /// Check if there is any event present.
+    fn has_events(&self) -> bool {
+        !self.events.borrow().is_empty()
+    }
+
+    /// Take the first event.
+    fn next_event(&mut self) -> Option<Self::Event> {
+        self.events.borrow_mut().pop_front()
     }
 }

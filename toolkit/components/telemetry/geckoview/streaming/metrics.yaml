@@ -85,6 +85,8 @@ geckoview:
       The time taken to load a page. This includes all static contents, no
       dynamic content.
       Loading of about: pages is not counted.
+      Back back navigation (sometimes via BFCache) is included which is a
+      source of bimodality due to the <50ms load times.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1499418
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109
@@ -239,7 +241,7 @@ gfx.checkerboard:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - botond@mozilla.com
     expires: never
 
   peak_pixel_count:
@@ -261,7 +263,7 @@ gfx.checkerboard:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - botond@mozilla.com
     expires: never
 
   potential_duration:
@@ -286,7 +288,7 @@ gfx.checkerboard:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - botond@mozilla.com
     expires: never
 
   severity:
@@ -310,7 +312,7 @@ gfx.checkerboard:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - botond@mozilla.com
     expires: never
 
 gfx.content:
@@ -506,7 +508,7 @@ gfx.webrender:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - jmuizelaar@mozilla.com
     expires: never
 
 gfx.display:
@@ -772,7 +774,7 @@ gfx.status:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - jmuizelaar@mozilla.com
     expires: never
 
   framebuild_time:
@@ -791,7 +793,118 @@ gfx.status:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1584109#c1
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
-      - kgupta@mozilla.com
+      - jmuizelaar@mozilla.com
+    expires: never
+
+avif:
+  decode_result:
+    type: labeled_counter
+    labels:
+      - success
+      - parse_error
+      - no_primary_item
+      - decode_error
+      - size_overflow
+      - out_of_memory
+      - pipe_init_error
+      - write_buffer_error
+    gecko_datapoint: AVIF_DECODE_RESULT
+    description: >
+      Decode result of AVIF image.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827#c9
+    notification_emails:
+      - cchang@mozilla.com
+      - jbauman@mozilla.com
+    expires: never
+
+  decoder:
+    type: labeled_counter
+    labels:
+      - dav1d
+      - aom
+    gecko_datapoint: AVIF_DECODER
+    description: >
+      Decoder of AVIF image.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827#c9
+    notification_emails:
+      - cchang@mozilla.com
+      - jbauman@mozilla.com
+    expires: never
+
+  aom_decode_error:
+    type: quantity
+    unit: error code
+    gecko_datapoint: avif.aom_decode_error
+    description: >
+      Image-decode Error from AOM decoder
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827#c9
+    notification_emails:
+      - cchang@mozilla.com
+      - jbauman@mozilla.com
+    expires: never
+
+  dav1d_decode_error:
+    type: quantity
+    unit: error code
+    gecko_datapoint: avif.dav1d_decode_error
+    description: >
+      Image-decode Error from dav1d decoder
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827#c9
+    notification_emails:
+      - cchang@mozilla.com
+      - jbauman@mozilla.com
+    expires: never
+
+  yuv_color_space:
+    type: labeled_counter
+    labels:
+      - bt601
+      - bt709
+      - bt2020
+      - identity
+      - unknown
+    gecko_datapoint: AVIF_YUV_COLOR_SPACE
+    description: >
+      YUV color space of AVIF image.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827#c9
+    notification_emails:
+      - cchang@mozilla.com
+      - jbauman@mozilla.com
+    expires: never
+
+  bit_depth:
+    type: labeled_counter
+    labels:
+      - color_8
+      - color_10
+      - color_12
+      - color_16
+      - unknown
+    gecko_datapoint: AVIF_BIT_DEPTH
+    description: >
+      Bits per pixel of AVIF image.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1670827#c9
+    notification_emails:
+      - cchang@mozilla.com
+      - jbauman@mozilla.com
     expires: never
 
 network:
@@ -907,6 +1020,143 @@ network:
       - necko@mozilla.com
       - mnovotny@mozilla.com
     expires: never
+
+performance.pageload:
+  load_time:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_PAGE_LOAD_TIME_MS
+    description: >
+      Time in milliseconds from navigationStart to loadEventStart
+      for the foreground http or https root content document.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+  load_time_responsestart:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_PAGE_LOAD_TIME_FROM_RESPONSESTART_MS
+    description: >
+      Time in milliseconds from responseStart to loadEventStart
+      for the foreground http or https root content document.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+  dcl:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_DOM_CONTENT_LOADED_MS
+    description: >
+      Time in milliseconds from navigationStart to domContentLoaded
+      for the foreground http or https root content document.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+  dcl_responsestart:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_DOM_CONTENT_LOADED_FROM_RESPONSESTART_MS
+    description: >
+      Time in milliseconds from responseStart to domContentLoaded
+      for the foreground http or https root content document.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+  fcp:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_FIRST_CONTENTFUL_PAINT_MS
+    description: >
+      The time between navigationStart and the first contentful paint
+      of a foreground http or https root content document, in
+      milliseconds. The contentful paint timestamp is taken during
+      display list building and does not include rasterization or
+      compositing of that paint.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+  fcp_responsestart:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_FIRST_CONTENTFUL_PAINT_FROM_RESPONSESTART_MS
+    description: >
+      The time between responseStart and the first contentful paint
+      of a foreground http or https root content document, in
+      milliseconds. The contentful paint timestamp is taken during
+      display list building and does not include rasterization or
+      compositing of that paint.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+  req_anim_frame_callback:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_REQUEST_ANIMATION_CALLBACK_PAGELOAD_MS
+    description: >
+      Time spent in milliseconds calling all request animation frame callbacks
+      for a document before it has reached readystate complete.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
+performance.responsiveness:
+  req_anim_frame_callback:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: PERF_REQUEST_ANIMATION_CALLBACK_NON_PAGELOAD_MS
+    description: >
+      Time spent in milliseconds calling all request animation frame callbacks
+      for a document after it has reached readystate complete.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671729#c7
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: never
+
 
 performance.time:
   response_start:
@@ -1036,6 +1286,82 @@ performance.time:
       - sphilp@mozilla.com
     expires: never
 
+  load_event_start_preload:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: TIME_TO_LOAD_EVENT_START_PRELOAD_MS
+    description: >
+      Time from navigationStart to [`loadEventStart`](https://www.w3.org/TR/
+      navigation-timing/#dom-performancetiming-loadstart) as per the W3C
+      Performance Timing API. This is only submitted on when the document
+      would preload a resource (i.e., if it encounters a `<link>` element or
+      a `Link` header with `rel="preload"`), even if the `network.preload`
+      pref is disabled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188#c5
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - barret@mozilla.com
+    expires: 2021-02-24
+
+  load_event_end_preload:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: TIME_TO_LOAD_EVENT_END_PRELOAD_MS
+    description: >
+      Time from navigationStart to [`loadEventEnd`](https://www.w3.org/TR/
+      navigation-timing/#dom-performancetiming-loadend) as per the W3C
+      Performance Timing API. This is only submitted on when the document
+      would preload a resource (i.e., if it encounters a `<link>` element or
+      a `Link` header with `rel="preload"`), even if the `network.preload`
+      pref is disabled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188#c5
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - barret@mozilla.com
+    expires: 2021-02-24
+
+  load_event_start_no_preload:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: TIME_TO_LOAD_EVENT_START_NO_PRELOAD_MS
+    description: >
+      Time from navigationStart to [`loadEventStart`](https://www.w3.org/TR/
+      navigation-timing/#dom-performancetiming-loadstart) as per the W3C
+      Performance Timing API. This is only submitted on when the document
+      would not preload a resource.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188#c5
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - barret@mozilla.com
+    expires: 2021-02-24
+
+  load_event_end_no_preload:
+    type: timing_distribution
+    time_unit: millisecond
+    gecko_datapoint: TIME_TO_LOAD_EVENT_END_NO_PRELOAD_MS
+    description: >
+      Time from navigationStart to [`loadEventEnd`](https://www.w3.org/TR/
+      navigation-timing/#dom-performancetiming-loadend) as per the W3C
+      Performance Timing API. This is only submitted on when the document
+      would not preload a resource.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1657188#c5
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - barret@mozilla.com
+    expires: 2021-02-24
+
 performance.page:
   non_blank_paint:
     type: timing_distribution
@@ -1110,6 +1436,97 @@ performance.interaction:
       - mconley@mozilla.com
       - dolske@mozilla.com
     expires: never
+
+js:
+  execution_percentage:
+    type: custom_distribution
+    description: >
+      Percentage of page load time spent executing Javascript.
+    range_min: 0
+    range_max: 100
+    bucket_count: 20
+    histogram_type: linear
+    unit: percentage of execution time
+    gecko_datapoint: JS_EXECUTION_PROPORTION
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475#c6
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: 2021-03-18
+  delazification_percentage:
+    type: custom_distribution
+    description: >
+      Percentage of execution time spent during delazification for
+      JS scripts up until the page load event fires.
+    range_min: 0
+    range_max: 100
+    bucket_count: 20
+    histogram_type: linear
+    unit: percentage of execution time
+    gecko_datapoint: JS_DELAZIFICATION_PROPORTION
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475#c6
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: 2021-03-18
+  xdr_encode_percentage:
+    type: custom_distribution
+    description: >
+      Percentage of execution time spent during XDR encoding for
+      JS scripts up until the page load event fires.
+    range_min: 0
+    range_max: 100
+    bucket_count: 20
+    histogram_type: linear
+    unit: percentage of execution time
+    gecko_datapoint: JS_XDR_ENCODING_PROPORTION
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475#c6
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: 2021-03-18
+  baseline_compile_percentage:
+    type: custom_distribution
+    description: >
+      Percentage of execution time spent during Baseline compilation for
+      JS scripts up until the page load event fires.
+    range_min: 0
+    range_max: 100
+    bucket_count: 20
+    histogram_type: linear
+    unit: percentage of execution time
+    gecko_datapoint: JS_BASELINE_COMPILE_PROPORTION
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475#c6
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: 2021-03-18
+  bytecode_caching_time:
+    type: timing_distribution
+    unit: milliseconds
+    description: >
+      Time spent caching JS bytecode for scripts executed during a page load.
+    gecko_datapoint: JS_BYTECODE_CACHING_TIME
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1664475#c6
+    notification_emails:
+      - dpalmeiro@mozilla.com
+      - perfteam@mozilla.com
+    expires: 2021-03-18
 
 javascript.gc:
   total_time:
@@ -1230,4 +1647,53 @@ javascript.gc:
     notification_emails:
       - dev-telemetry-gc-alerts@mozilla.org
       - jcoppeard@mozilla.com
+    expires: never
+
+media.audio:
+  init_failure:
+    type: labeled_counter
+    labels:
+      - first
+      - other
+    gecko_datapoint: MEDIA_AUDIO_INIT_FAILURE
+    description: >
+      Failure occurs when initializing the audio stream.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671714
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671714#c10
+    notification_emails:
+      - padenot@mozilla.com
+      - kinetik@flim.org
+      - cchang@mozilla.com
+    expires: never
+
+  backend:
+    type: labeled_counter
+    labels:
+      - unknown
+      - audiounit
+      - audiounit_rust
+      - aaudio
+      - opensl
+      - wasapi
+      - winmm
+      - alsa
+      - jack
+      - oss
+      - pulse
+      - pulse_rust
+      - sndio
+      - sun
+    gecko_datapoint: MEDIA_AUDIO_BACKEND
+    description: >
+      The operating system audio backend
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671714
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1671714#c10
+    notification_emails:
+      - padenot@mozilla.com
+      - kinetik@flim.org
+      - cchang@mozilla.com
     expires: never

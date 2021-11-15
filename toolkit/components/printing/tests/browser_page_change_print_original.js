@@ -12,6 +12,10 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
  * we still show (and will therefore print) the original contents.
  */
 add_task(async function pp_after_orientation_change() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["print.tab_modal.enabled", false]],
+  });
+
   const URI = TEST_PATH + "file_page_change_print_original_1.html";
   // Can only do something if we have a print preview UI:
   if (AppConstants.platform != "win" && AppConstants.platform != "linux") {
@@ -33,10 +37,7 @@ add_task(async function pp_after_orientation_change() {
   let originalTabNavigated = BrowserTestUtils.browserStopped(browserToPrint);
 
   // Enter print preview:
-  let printPreviewEntered = BrowserTestUtils.waitForMessage(
-    ppBrowser.messageManager,
-    "Printing:Preview:Entered"
-  );
+  let printPreviewEntered = PrintHelper.waitForOldPrintPreview(ppBrowser);
   document.getElementById("cmd_printPreview").doCommand();
   await printPreviewEntered;
 
@@ -59,10 +60,7 @@ add_task(async function pp_after_orientation_change() {
       : "landscape";
   let printPreviewToolbar = document.getElementById("print-preview-toolbar");
 
-  printPreviewEntered = BrowserTestUtils.waitForMessage(
-    ppBrowser.messageManager,
-    "Printing:Preview:Entered"
-  );
+  printPreviewEntered = PrintHelper.waitForOldPrintPreview(ppBrowser);
   printPreviewToolbar.orient(orientToSwitchTo);
   await printPreviewEntered;
 

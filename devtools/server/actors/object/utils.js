@@ -4,6 +4,7 @@
 
 "use strict";
 
+const { Cu } = require("chrome");
 const { DevToolsServer } = require("devtools/server/devtools-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert } = DevToolsUtils;
@@ -411,7 +412,7 @@ function makeDebuggeeValue(targetActor, value) {
     }
   }
   const dbgGlobal = targetActor.dbg.makeGlobalObjectReference(
-    targetActor.window
+    targetActor.window || targetActor.workerGlobal
   );
   return dbgGlobal.makeDebuggeeValue(value);
 }
@@ -510,11 +511,6 @@ function createObjectGrip(targetActor, depth, object, pool) {
       decrementGripDepth: () => gripDepth--,
       createValueGrip: v => createValueGripForTarget(targetActor, v, gripDepth),
       createEnvironmentActor: env => createEnvironmentActor(env, targetActor),
-      sources: () =>
-        DevToolsUtils.reportException(
-          "WebConsoleActor",
-          Error("sources not yet implemented")
-        ),
     },
     targetActor.conn
   );

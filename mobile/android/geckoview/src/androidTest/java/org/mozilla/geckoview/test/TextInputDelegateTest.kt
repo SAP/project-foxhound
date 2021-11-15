@@ -171,17 +171,6 @@ class TextInputDelegateTest : BaseSessionTest() {
         promise.value
     }
 
-    private fun pressKey(keyCode: Int) {
-        // Create a Promise to listen to the key event, and wait on it below.
-        val promise = mainSession.evaluatePromiseJS(
-                "new Promise(r => window.addEventListener('keyup', r, { once: true }))")
-        val time = SystemClock.uptimeMillis()
-        val keyEvent = KeyEvent(time, time, KeyEvent.ACTION_DOWN, keyCode, 0)
-        mainSession.textInput.onKeyDown(keyCode, keyEvent)
-        mainSession.textInput.onKeyUp(keyCode, KeyEvent.changeAction(keyEvent, KeyEvent.ACTION_UP))
-        promise.value
-    }
-
     private fun pressKey(ic: InputConnection, keyCode: Int) {
         val promise = mainSession.evaluatePromiseJS(
                 when (id) {
@@ -248,7 +237,7 @@ class TextInputDelegateTest : BaseSessionTest() {
         mainSession.evaluateJS("document.querySelector('$id').focus(); document.querySelector('$id').blur()")
 
         // Simulate a user action so we're allowed to show/hide the keyboard.
-        pressKey(KeyEvent.KEYCODE_CTRL_LEFT)
+        mainSession.pressKey(KeyEvent.KEYCODE_CTRL_LEFT)
         mainSession.evaluateJS("document.querySelector('$id').focus()")
 
         mainSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
@@ -278,7 +267,7 @@ class TextInputDelegateTest : BaseSessionTest() {
         mainSession.waitForPageStop()
 
         // Simulate a user action so we're allowed to show/hide the keyboard.
-        pressKey(KeyEvent.KEYCODE_CTRL_LEFT)
+        mainSession.pressKey(KeyEvent.KEYCODE_CTRL_LEFT)
         mainSession.evaluateJS("document.querySelector('$id').focus()")
         mainSession.waitUntilCalled(GeckoSession.TextInputDelegate::class,
                                     "restartInput", "showSoftInput")
@@ -313,7 +302,7 @@ class TextInputDelegateTest : BaseSessionTest() {
         mainSession.waitForPageStop()
 
         // Simulate a user action so we're allowed to show/hide the keyboard.
-        pressKey(KeyEvent.KEYCODE_CTRL_LEFT)
+        mainSession.pressKey(KeyEvent.KEYCODE_CTRL_LEFT)
 
         mainSession.evaluateJS("document.querySelector('$id').focus()")
         mainSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
@@ -817,6 +806,42 @@ class TextInputDelegateTest : BaseSessionTest() {
                     "search" -> EditorInfo.IME_ACTION_SEARCH
                     "send" -> EditorInfo.IME_ACTION_SEND
                     else -> EditorInfo.IME_ACTION_NONE
+                }))
+
+            mainSession.evaluateJS("document.querySelector('$id').blur()")
+            mainSession.waitUntilCalled(GeckoSession.TextInputDelegate::class, "restartInput")
+        }
+    }
+
+    @WithDisplay(width = 512, height = 512) // Child process updates require having a display.
+    @Test fun editorInfo_autocapitalize() {
+        // no way to set autocapitalize on designmode.
+        assumeThat("Not in designmode", id, not(equalTo("#designmode")))
+
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.forms.autocapitalize" to true))
+
+        mainSession.textInput.view = View(InstrumentationRegistry.getInstrumentation().targetContext)
+
+        mainSession.loadTestPath(INPUTS_PATH)
+        mainSession.waitForPageStop()
+
+        textContent = ""
+        val values = listOf("characters", "none", "sentences", "words", "off", "on")
+        for (autocapitalize in values) {
+            mainSession.evaluateJS("""
+                document.querySelector('$id').autocapitalize = '$autocapitalize';
+                document.querySelector('$id').focus()""")
+            mainSession.waitUntilCalled(GeckoSession.TextInputDelegate::class, "restartInput")
+
+            val editorInfo = EditorInfo()
+            mainSession.textInput.onCreateInputConnection(editorInfo)
+            assertThat("EditorInfo.inputType by $autocapitalize", editorInfo.inputType and 0x00007000, equalTo(
+                when (autocapitalize) {
+                    "characters" -> InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                    "on" -> InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                    "sentences" -> InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                    "words" -> InputType.TYPE_TEXT_FLAG_CAP_WORDS
+                    else -> 0
                 }))
 
             mainSession.evaluateJS("document.querySelector('$id').blur()")

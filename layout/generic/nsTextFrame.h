@@ -161,23 +161,7 @@ class nsTextFrame : public nsIFrame {
    protected:
     void SetupJustificationSpacing(bool aPostReflow);
 
-    void InitFontGroupAndFontMetrics() const {
-      if (!mFontMetrics) {
-        if (mWhichTextRun == nsTextFrame::eInflated) {
-          if (!mFrame->InflatedFontMetrics()) {
-            float inflation = mFrame->GetFontSizeInflation();
-            mFontMetrics =
-                nsLayoutUtils::GetFontMetricsForFrame(mFrame, inflation);
-            mFrame->SetInflatedFontMetrics(mFontMetrics);
-          } else {
-            mFontMetrics = mFrame->InflatedFontMetrics();
-          }
-        } else {
-          mFontMetrics = nsLayoutUtils::GetFontMetricsForFrame(mFrame, 1.0f);
-        }
-      }
-      mFontGroup = mFontMetrics->GetThebesFontGroup();
-    }
+    void InitFontGroupAndFontMetrics() const;
 
     const RefPtr<gfxTextRun> mTextRun;
     mutable gfxFontGroup* mFontGroup;
@@ -317,6 +301,8 @@ class nsTextFrame : public nsIFrame {
             ListFlags aFlags = ListFlags()) const final;
   nsresult GetFrameName(nsAString& aResult) const final;
   void ToCString(nsCString& aBuf, int32_t* aTotalContentLength) const;
+  void ListTextRuns(FILE* out,
+                    nsTHashtable<nsVoidPtrHashKey>& aSeen) const final;
 #endif
 
   // Returns this text frame's content's text fragment.
@@ -412,11 +398,13 @@ class nsTextFrame : public nsIFrame {
                          InlineMinISizeData* aData) override;
   void AddInlinePrefISize(gfxContext* aRenderingContext,
                           InlinePrefISizeData* aData) override;
-  mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
-      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) final;
+  SizeComputationResult ComputeSize(gfxContext* aRenderingContext,
+                                    mozilla::WritingMode aWM,
+                                    const mozilla::LogicalSize& aCBSize,
+                                    nscoord aAvailableISize,
+                                    const mozilla::LogicalSize& aMargin,
+                                    const mozilla::LogicalSize& aBorderPadding,
+                                    mozilla::ComputeSizeFlags aFlags) final;
   nsRect ComputeTightBounds(DrawTarget* aDrawTarget) const final;
   nsresult GetPrefWidthTightBounds(gfxContext* aContext, nscoord* aX,
                                    nscoord* aXMost) final;

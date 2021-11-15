@@ -1,6 +1,8 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#filter dumbComments emptyLines substitution
+
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Non-static prefs that are specific to GeckoView belong in this file (unless
 // there is a compelling and documented reason for them to belong in another
@@ -11,18 +13,21 @@
 // improves readability, particular for conditional blocks that exceed a single
 // screen.
 
-#filter substitution
-
 #include mobile.js
 
 pref("privacy.trackingprotection.pbmode.enabled", false);
 
+pref("browser.tabs.remote.autostart", true);
 pref("dom.ipc.keepProcessesAlive.web", 1);
-pref("dom.ipc.processCount", 1);
+
+#ifdef RELEASE_OR_BETA
+  pref("dom.ipc.processCount", 1);
+#else
+  pref("dom.ipc.processCount", 3);
+#endif
+
 pref("dom.ipc.processPrelaunch.enabled", false);
 
-// Disable the Telemetry Event Ping
-pref("toolkit.telemetry.eventping.enabled", false);
 // Don't create the hidden window during startup.
 pref("toolkit.lazyHiddenWindow", true);
 
@@ -67,10 +72,6 @@ pref("browser.safebrowsing.features.fingerprinting.update", true);
 
 // Treat mouse as touch only on TV-ish devices
 pref("ui.android.mouse_as_touch", 2);
-
-// Fenix is currently not whitelisted for Web Authentication
-pref("security.webauth.webauthn_enable_android_fido2", false);
-pref("security.webauth.webauthn", false);
 
 // Enable autoplay permission prompts
 pref("media.geckoview.autoplay.request", true);

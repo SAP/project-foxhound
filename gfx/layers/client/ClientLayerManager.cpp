@@ -28,6 +28,7 @@
 #include "nsAString.h"
 #include "nsDisplayList.h"
 #include "nsIWidgetListener.h"
+#include "nsLayoutUtils.h"
 #include "nsTArray.h"     // for AutoTArray
 #include "nsXULAppAPI.h"  // for XRE_GetProcessType, etc
 #include "TiledLayerBuffer.h"
@@ -573,16 +574,9 @@ void ClientLayerManager::StartNewRepaintRequest(
 }
 
 void ClientLayerManager::GetFrameUniformity(FrameUniformityData* aOutData) {
-  MOZ_ASSERT(XRE_IsParentProcess(),
-             "Frame Uniformity only supported in parent process");
-
   if (HasShadowManager()) {
-    CompositorBridgeChild* child = GetRemoteRenderer();
-    child->SendGetFrameUniformity(aOutData);
-    return;
+    mForwarder->GetShadowManager()->SendGetFrameUniformity(aOutData);
   }
-
-  return LayerManager::GetFrameUniformity(aOutData);
 }
 
 void ClientLayerManager::MakeSnapshotIfRequired() {

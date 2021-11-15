@@ -3,6 +3,8 @@
 
 from __future__ import absolute_import
 
+from mach.logging import LoggingManager
+
 import pytest
 from responses import RequestsMock
 
@@ -19,7 +21,15 @@ def patch_prefherder(request):
 
     m = MonkeyPatch()
     m.setattr(
-        "taskgraph.util.bugbug._write_perfherder_data", lambda lower_is_better: None,
+        "taskgraph.util.bugbug._write_perfherder_data",
+        lambda lower_is_better: None,
     )
     yield
     m.undo()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def enable_logging():
+    """Ensure logs from taskgraph are displayed when a test fails."""
+    lm = LoggingManager()
+    lm.add_terminal_logging()

@@ -102,37 +102,9 @@ class BigInt final : public js::gc::CellWithLengthAndFlags {
 
   void traceChildren(JSTracer* trc);
 
-  static MOZ_ALWAYS_INLINE void readBarrier(BigInt* thing) {
-    if (js::gc::IsInsideNursery(thing)) {
-      return;
-    }
-    js::gc::TenuredCell::readBarrier(&thing->asTenured());
-  }
-
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(BigInt* thing) {
-    if (!thing || js::gc::IsInsideNursery(thing)) {
-      return;
-    }
-
-    js::gc::TenuredCell::writeBarrierPre(&thing->asTenured());
-  }
-
-  static void writeBarrierPost(void* cellp, BigInt* prev, BigInt* next) {
-    // See JSObject::writeBarrierPost for a description of the logic here.
-    MOZ_ASSERT(cellp);
-
-    js::gc::StoreBuffer* buffer;
-    if (next && (buffer = next->storeBuffer())) {
-      if (prev && prev->storeBuffer()) {
-        return;
-      }
-      buffer->putCell(static_cast<BigInt**>(cellp));
-      return;
-    }
-
-    if (prev && (buffer = prev->storeBuffer())) {
-      buffer->unputCell(static_cast<BigInt**>(cellp));
-    }
+  static MOZ_ALWAYS_INLINE void postWriteBarrier(void* cellp, BigInt* prev,
+                                                 BigInt* next) {
+    js::gc::PostWriteBarrierImpl<BigInt>(cellp, prev, next);
   }
 
   void finalize(JSFreeOp* fop);
@@ -480,7 +452,7 @@ extern JS::BigInt* NumberToBigInt(JSContext* cx, double d);
 
 // Parse a BigInt from a string, using the method specified for StringToBigInt.
 // Used by the BigInt constructor among other places.
-extern JS::Result<JS::BigInt*, JS::OOM&> StringToBigInt(
+extern JS::Result<JS::BigInt*, JS::OOM> StringToBigInt(
     JSContext* cx, JS::Handle<JSString*> str);
 
 // Parse a BigInt from an already-validated numeric literal.  Used by the

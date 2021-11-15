@@ -262,6 +262,25 @@ void LIRGeneratorARM::lowerForBitAndAndBranch(LBitAndAndBranch* baab,
   add(baab, mir);
 }
 
+void LIRGeneratorARM::lowerWasmBuiltinTruncateToInt32(
+    MWasmBuiltinTruncateToInt32* ins) {
+  MDefinition* opd = ins->input();
+  MOZ_ASSERT(opd->type() == MIRType::Double || opd->type() == MIRType::Float32);
+
+  if (opd->type() == MIRType::Double) {
+    define(new (alloc()) LWasmBuiltinTruncateDToInt32(
+               useRegister(opd), useFixedAtStart(ins->tls(), WasmTlsReg),
+               LDefinition::BogusTemp()),
+           ins);
+    return;
+  }
+
+  define(new (alloc()) LWasmBuiltinTruncateFToInt32(
+             useRegister(opd), useFixedAtStart(ins->tls(), WasmTlsReg),
+             LDefinition::BogusTemp()),
+         ins);
+}
+
 void LIRGeneratorARM::lowerUntypedPhiInput(MPhi* phi, uint32_t inputPosition,
                                            LBlock* block, size_t lirIndex) {
   MDefinition* operand = phi->getOperand(inputPosition);
@@ -388,8 +407,8 @@ void LIRGeneratorARM::lowerModI(MMod* mod) {
   }
 
   if (HasIDIV()) {
-    LModI* lir = new (alloc())
-        LModI(useRegister(mod->lhs()), useRegister(mod->rhs()), temp());
+    LModI* lir =
+        new (alloc()) LModI(useRegister(mod->lhs()), useRegister(mod->rhs()));
     if (mod->fallible()) {
       assignSnapshot(lir, BailoutKind::DoubleOutput);
     }
@@ -397,8 +416,9 @@ void LIRGeneratorARM::lowerModI(MMod* mod) {
     return;
   }
 
-  LSoftModI* lir = new (alloc()) LSoftModI(
-      useFixedAtStart(mod->lhs(), r0), useFixedAtStart(mod->rhs(), r1), temp());
+  LSoftModI* lir =
+      new (alloc()) LSoftModI(useFixedAtStart(mod->lhs(), r0),
+                              useFixedAtStart(mod->rhs(), r1), tempFixed(r2));
 
   if (mod->fallible()) {
     assignSnapshot(lir, BailoutKind::DoubleOutput);
@@ -408,37 +428,51 @@ void LIRGeneratorARM::lowerModI(MMod* mod) {
 }
 
 void LIRGeneratorARM::lowerDivI64(MDiv* div) {
+  MOZ_CRASH("We use MWasmBuiltinDivI64 instead.");
+}
+
+void LIRGeneratorARM::lowerWasmBuiltinDivI64(MWasmBuiltinDivI64* div) {
   if (div->isUnsigned()) {
-    lowerUDivI64(div);
+    LUDivOrModI64* lir =
+        new (alloc()) LUDivOrModI64(useInt64RegisterAtStart(div->lhs()),
+                                    useInt64RegisterAtStart(div->rhs()),
+                                    useFixedAtStart(div->tls(), WasmTlsReg));
+    defineReturn(lir, div);
     return;
   }
 
   LDivOrModI64* lir = new (alloc()) LDivOrModI64(
-      useInt64RegisterAtStart(div->lhs()), useInt64RegisterAtStart(div->rhs()));
+      useInt64RegisterAtStart(div->lhs()), useInt64RegisterAtStart(div->rhs()),
+      useFixedAtStart(div->tls(), WasmTlsReg));
   defineReturn(lir, div);
 }
 
 void LIRGeneratorARM::lowerModI64(MMod* mod) {
+  MOZ_CRASH("We use MWasmBuiltinModI64 instead.");
+}
+
+void LIRGeneratorARM::lowerWasmBuiltinModI64(MWasmBuiltinModI64* mod) {
   if (mod->isUnsigned()) {
-    lowerUModI64(mod);
+    LUDivOrModI64* lir =
+        new (alloc()) LUDivOrModI64(useInt64RegisterAtStart(mod->lhs()),
+                                    useInt64RegisterAtStart(mod->rhs()),
+                                    useFixedAtStart(mod->tls(), WasmTlsReg));
+    defineReturn(lir, mod);
     return;
   }
 
   LDivOrModI64* lir = new (alloc()) LDivOrModI64(
-      useInt64RegisterAtStart(mod->lhs()), useInt64RegisterAtStart(mod->rhs()));
+      useInt64RegisterAtStart(mod->lhs()), useInt64RegisterAtStart(mod->rhs()),
+      useFixedAtStart(mod->tls(), WasmTlsReg));
   defineReturn(lir, mod);
 }
 
 void LIRGeneratorARM::lowerUDivI64(MDiv* div) {
-  LUDivOrModI64* lir = new (alloc()) LUDivOrModI64(
-      useInt64RegisterAtStart(div->lhs()), useInt64RegisterAtStart(div->rhs()));
-  defineReturn(lir, div);
+  MOZ_CRASH("We use MWasmBuiltinDivI64 instead.");
 }
 
 void LIRGeneratorARM::lowerUModI64(MMod* mod) {
-  LUDivOrModI64* lir = new (alloc()) LUDivOrModI64(
-      useInt64RegisterAtStart(mod->lhs()), useInt64RegisterAtStart(mod->rhs()));
-  defineReturn(lir, mod);
+  MOZ_CRASH("We use MWasmBuiltinModI64 instead.");
 }
 
 void LIRGenerator::visitPowHalf(MPowHalf* ins) {
@@ -944,18 +978,31 @@ void LIRGenerator::visitSubstr(MSubstr* ins) {
 }
 
 void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {
+  MOZ_CRASH("We don't use MWasmTruncateToInt64 for arm");
+}
+
+void LIRGeneratorARM::lowerWasmBuiltinTruncateToInt64(
+    MWasmBuiltinTruncateToInt64* ins) {
   MDefinition* opd = ins->input();
+  MDefinition* tls = ins->tls();
   MOZ_ASSERT(opd->type() == MIRType::Double || opd->type() == MIRType::Float32);
 
-  defineReturn(new (alloc()) LWasmTruncateToInt64(useRegisterAtStart(opd)),
+  defineReturn(new (alloc()) LWasmTruncateToInt64(
+                   useRegisterAtStart(opd), useFixedAtStart(tls, WasmTlsReg)),
                ins);
 }
 
 void LIRGenerator::visitInt64ToFloatingPoint(MInt64ToFloatingPoint* ins) {
+  MOZ_CRASH("We use BuiltinInt64ToFloatingPoint instead.");
+}
+
+void LIRGeneratorARM::lowerBuiltinInt64ToFloatingPoint(
+    MBuiltinInt64ToFloatingPoint* ins) {
   MOZ_ASSERT(ins->type() == MIRType::Double || ins->type() == MIRType::Float32);
 
-  auto* lir = new (alloc()) LInt64ToFloatingPointCall();
-  lir->setInt64Operand(0, useInt64RegisterAtStart(ins->input()));
+  auto* lir = new (alloc())
+      LInt64ToFloatingPointCall(useInt64RegisterAtStart(ins->input()),
+                                useFixedAtStart(ins->tls(), WasmTlsReg));
   defineReturn(lir, ins);
 }
 

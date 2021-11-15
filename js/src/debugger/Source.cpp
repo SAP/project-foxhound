@@ -14,13 +14,15 @@
 #include <string.h>  // for memcpy
 #include <utility>   // for move
 
-#include "jsapi.h"        // for JS_ReportErrorNumberASCII, JS_CopyStringCharsZ
-#include "jsfriendapi.h"  // for GetErrorMessage, JS_NewUint8Array
+#include "jsapi.h"  // for JS_ReportErrorNumberASCII, JS_CopyStringCharsZ
 
 #include "debugger/Debugger.h"  // for DebuggerSourceReferent, Debugger
 #include "debugger/Script.h"    // for DebuggerScript
 #include "gc/Tracer.h"  // for TraceManuallyBarrieredCrossCompartmentEdge
 #include "js/CompilationAndEvaluation.h"  // for Compile
+#include "js/experimental/TypedData.h"    // for JS_NewUint8Array
+#include "js/friend/ErrorMessages.h"      // for GetErrorMessage, JSMSG_*
+#include "js/SourceText.h"                // for JS::SourceOwnership
 #include "vm/BytecodeUtil.h"              // for JSDVG_SEARCH_STACK
 #include "vm/JSContext.h"                 // for JSContext (ptr only)
 #include "vm/JSObject.h"                  // for JSObject, RequireObject

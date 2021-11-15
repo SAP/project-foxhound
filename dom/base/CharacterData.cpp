@@ -44,8 +44,7 @@
 #  include "nsAccessibilityService.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 CharacterData::CharacterData(already_AddRefed<dom::NodeInfo>&& aNodeInfo)
     : nsIContent(std::move(aNodeInfo)) {
@@ -300,7 +299,7 @@ nsresult CharacterData::SetTextInternal(
     if (aLength) {
       to.Append(aBuffer, aLength);
       if (!bidi && (!document || !document->GetBidiEnabled())) {
-        bidi = HasRTLChars(MakeSpan(aBuffer, aLength));
+        bidi = HasRTLChars(Span(aBuffer, aLength));
       }
     }
     if (endOffset != textLength) {
@@ -600,5 +599,4 @@ void CharacterData::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
   *aNodeSize += mText.SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

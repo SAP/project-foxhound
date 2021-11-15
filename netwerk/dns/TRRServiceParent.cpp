@@ -20,6 +20,9 @@
 namespace mozilla {
 namespace net {
 
+static const char kRolloutURIPref[] = "doh-rollout.uri";
+static const char kRolloutModePref[] = "doh-rollout.mode";
+
 static const char* gTRRUriCallbackPrefs[] = {
     "network.trr.uri", "network.trr.mode", kRolloutURIPref, kRolloutModePref,
     nullptr,
@@ -74,9 +77,7 @@ TRRServiceParent::Observe(nsISupports* aSubject, const char* aTopic,
     if (link) {
       nsTArray<nsCString> suffixList;
       link->GetDnsSuffixList(suffixList);
-      bool platformDisabledTRR = TRRService::CheckPlatformDNSStatus(link);
-      Unused << SendUpdatePlatformDNSInformation(suffixList,
-                                                 platformDisabledTRR);
+      Unused << SendUpdatePlatformDNSInformation(suffixList);
     }
 
     if (!strcmp(aTopic, NS_NETWORK_LINK_TOPIC) && mURISetByDetection) {

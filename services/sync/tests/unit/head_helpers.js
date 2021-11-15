@@ -678,13 +678,6 @@ function bookmarkNodesToInfos(nodes) {
     if (node.children) {
       info.children = bookmarkNodesToInfos(node.children);
     }
-    // Check orphan parent anno.
-    if (PlacesUtils.annotations.itemHasAnnotation(node.id, "sync/parent")) {
-      info.requestedParent = PlacesUtils.annotations.getItemAnnotation(
-        node.id,
-        "sync/parent"
-      );
-    }
     return info;
   });
 }
@@ -702,9 +695,20 @@ async function assertBookmarksTreeMatches(rootGuid, expected, message) {
   }
 }
 
-function bufferedBookmarksEnabled() {
-  return Services.prefs.getBoolPref(
-    "services.sync.engine.bookmarks.buffer",
-    false
+function add_bookmark_test(task) {
+  const { BookmarksEngine } = ChromeUtils.import(
+    "resource://services-sync/engines/bookmarks.js"
   );
+
+  add_task(async function() {
+    _(`Running bookmarks test ${task.name}`);
+    let engine = new BookmarksEngine(Service);
+    await engine.initialize();
+    await engine._resetClient();
+    try {
+      await task(engine);
+    } finally {
+      await engine.finalize();
+    }
+  });
 }

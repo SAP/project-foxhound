@@ -7,8 +7,9 @@
 #ifndef vm_Shape_h
 #define vm_Shape_h
 
+#include "js/shadow/Shape.h"  // JS::shadow::Shape, JS::shadow::BaseShape
+
 #include "mozilla/Attributes.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
@@ -27,6 +28,7 @@
 #include "gc/MaybeRooted.h"
 #include "gc/Rooting.h"
 #include "js/HashTable.h"
+#include "js/Id.h"  // JS::PropertyKey
 #include "js/MemoryMetrics.h"
 #include "js/RootingAPI.h"
 #include "js/UbiNode.h"
@@ -711,9 +713,7 @@ class BaseShape : public gc::TenuredCellWithNonGCPointer<const JSClass> {
   /* Class of referring object, stored in the cell header */
   const JSClass* clasp() const { return headerPtr(); }
 
-  uint32_t flags;     /* Vector of above flags. */
-  uint32_t slotSpan_; /* Object slot span for BaseShapes at
-                       * dictionary last properties. */
+  uint32_t flags; /* Vector of above flags. */
 
   /* For owned BaseShapes, the canonical unowned BaseShape. */
   GCPtrUnownedBaseShape unowned_;
@@ -796,15 +796,6 @@ class BaseShape : public gc::TenuredCellWithNonGCPointer<const JSClass> {
 
   void maybePurgeCache(JSFreeOp* fop) { cache_.maybePurgeCache(fop, this); }
 
-  uint32_t slotSpan() const {
-    MOZ_ASSERT(isOwned());
-    return slotSpan_;
-  }
-  void setSlotSpan(uint32_t slotSpan) {
-    MOZ_ASSERT(isOwned());
-    slotSpan_ = slotSpan;
-  }
-
   /*
    * Lookup base shapes from the zone's baseShapes table, adding if not
    * already found.
@@ -838,7 +829,7 @@ class BaseShape : public gc::TenuredCellWithNonGCPointer<const JSClass> {
  private:
   static void staticAsserts() {
     static_assert(offsetOfHeaderPtr() ==
-                  offsetof(js::shadow::BaseShape, clasp_));
+                  offsetof(JS::shadow::BaseShape, clasp_));
     static_assert(sizeof(BaseShape) % gc::CellAlignBytes == 0,
                   "Things inheriting from gc::Cell must have a size that's "
                   "a multiple of gc::CellAlignBytes");
@@ -952,7 +943,7 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   BaseShape* base() const { return headerPtr(); }
 
  protected:
-  const GCPtrId propid_;
+  const GCPtr<JS::PropertyKey> propid_;
 
   // Flags that are not modified after the Shape is created. Off-thread Ion
   // compilation can access the immutableFlags word, so we don't want any
@@ -1451,11 +1442,11 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   void fixupShapeTreeAfterMovingGC();
 
   static void staticAsserts() {
-    static_assert(offsetOfBaseShape() == offsetof(js::shadow::Shape, base));
+    static_assert(offsetOfBaseShape() == offsetof(JS::shadow::Shape, base));
     static_assert(offsetof(Shape, immutableFlags) ==
-                  offsetof(js::shadow::Shape, immutableFlags));
-    static_assert(FIXED_SLOTS_SHIFT == js::shadow::Shape::FIXED_SLOTS_SHIFT);
-    static_assert(FIXED_SLOTS_MASK == js::shadow::Shape::FIXED_SLOTS_MASK);
+                  offsetof(JS::shadow::Shape, immutableFlags));
+    static_assert(FIXED_SLOTS_SHIFT == JS::shadow::Shape::FIXED_SLOTS_SHIFT);
+    static_assert(FIXED_SLOTS_MASK == JS::shadow::Shape::FIXED_SLOTS_MASK);
   }
 };
 
@@ -1498,12 +1489,10 @@ class MOZ_RAII AutoRooterGetterSetter {
 
  public:
   inline AutoRooterGetterSetter(JSContext* cx, uint8_t attrs, GetterOp* pgetter,
-                                SetterOp* psetter
-                                    MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+                                SetterOp* psetter);
 
  private:
   mozilla::Maybe<Rooted<Inner>> inner;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 struct EmptyShape : public js::Shape {

@@ -42,10 +42,16 @@ function debounce(func, wait) {
 }
 
 export class _Base extends React.PureComponent {
-  componentWillMount() {
-    if (this.props.isFirstrun) {
-      global.document.body.classList.add("welcome", "hide-main");
-    }
+  constructor(props) {
+    super(props);
+    this.state = {
+      message: {},
+    };
+    this.notifyContent = this.notifyContent.bind(this);
+  }
+
+  notifyContent(state) {
+    this.setState(state);
   }
 
   componentWillUnmount() {
@@ -61,8 +67,6 @@ export class _Base extends React.PureComponent {
       "activity-stream",
       // If we skipped the about:welcome overlay and removed the CSS classes
       // we don't want to add them back to the Activity Stream view
-      document.body.classList.contains("welcome") ? "welcome" : "",
-      document.body.classList.contains("hide-main") ? "hide-main" : "",
       document.body.classList.contains("inline-onboarding")
         ? "inline-onboarding"
         : "",
@@ -84,8 +88,10 @@ export class _Base extends React.PureComponent {
     return (
       <ErrorBoundary className="base-content-fallback">
         <React.Fragment>
-          <BaseContent {...this.props} />
-          {isDevtoolsEnabled ? <ASRouterAdmin /> : null}
+          <BaseContent {...this.props} adminContent={this.state} />
+          {isDevtoolsEnabled ? (
+            <ASRouterAdmin notifyContent={this.notifyContent} />
+          ) : null}
         </React.Fragment>
       </ErrorBoundary>
     );
@@ -109,7 +115,12 @@ export class BaseContent extends React.PureComponent {
   }
 
   onWindowScroll() {
-    const SCROLL_THRESHOLD = 34;
+    const prefs = this.props.Prefs.values;
+    // Show logo only if the logo is enabled and pocket is not enabled.
+    const showLogo =
+      prefs["logowordmark.alwaysVisible"] &&
+      !(prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"]);
+    const SCROLL_THRESHOLD = showLogo ? 179 : 34;
     if (global.scrollY > SCROLL_THRESHOLD && !this.state.fixedSearch) {
       this.setState({ fixedSearch: true });
     } else if (global.scrollY <= SCROLL_THRESHOLD && this.state.fixedSearch) {
@@ -141,6 +152,10 @@ export class BaseContent extends React.PureComponent {
       !pocketEnabled &&
       filteredSections.filter(section => section.enabled).length === 0;
     const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
+    const showLogo =
+      prefs["logowordmark.alwaysVisible"] &&
+      (!prefs["feeds.section.topstories"] ||
+        (!prefs["feeds.system.topstories"] && prefs.region));
 
     const outerClassName = [
       "outer-wrapper",
@@ -151,6 +166,7 @@ export class BaseContent extends React.PureComponent {
         !noSectionsEnabled &&
         "fixed-search",
       prefs.showSearch && noSectionsEnabled && "only-search",
+      showLogo && "visible-logo",
     ]
       .filter(v => v)
       .join(" ");
@@ -163,7 +179,7 @@ export class BaseContent extends React.PureComponent {
               <div className="non-collapsible-section">
                 <ErrorBoundary>
                   <Search
-                    showLogo={noSectionsEnabled}
+                    showLogo={noSectionsEnabled || showLogo}
                     handoffEnabled={searchHandoffEnabled}
                     {...props.Search}
                   />
@@ -171,6 +187,7 @@ export class BaseContent extends React.PureComponent {
               </div>
             )}
             <ASRouterUISurface
+              adminContent={this.props.adminContent}
               appUpdateChannel={this.props.Prefs.values.appUpdateChannel}
               fxaEndpoint={this.props.Prefs.values.fxa_endpoint}
               dispatch={this.props.dispatch}

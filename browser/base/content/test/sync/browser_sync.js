@@ -22,7 +22,7 @@ add_task(async function test_ui_state_notification_calls_updateAllUI() {
 });
 
 add_task(async function test_ui_state_signedin() {
-  await openTabAndPanel();
+  await openTabAndRemoteTabsPanel();
 
   const relativeDateAnchor = new Date();
   let state = {
@@ -45,11 +45,6 @@ add_task(async function test_ui_state_signedin() {
   };
 
   gSync.updateAllUI(state);
-  checkPanelUIStatusBar({
-    label: "foo@bar.com",
-    fxastatus: "signedin",
-    syncing: false,
-  });
   checkRemoteTabsPanel("PanelUI-remotetabs-main", false);
   checkMenuBarItem("sync-syncnowitem");
   checkFxaToolbarButtonPanel({
@@ -70,7 +65,17 @@ add_task(async function test_ui_state_signedin() {
   });
   checkFxAAvatar("signedin");
   gSync.relativeTimeFormat = origRelativeTimeFormat;
-  await closeTabAndPanel();
+  await closeRemoteTabsPanel();
+
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    label: "foo@bar.com",
+    fxastatus: "signedin",
+    syncing: false,
+  });
+
+  await closeTabAndMainPanel();
 });
 
 add_task(async function test_ui_state_syncing() {
@@ -101,7 +106,7 @@ add_task(async function test_ui_state_syncing() {
 });
 
 add_task(async function test_ui_state_unconfigured() {
-  await openTabAndPanel();
+  await openTabAndRemoteTabsPanel();
 
   let state = {
     status: UIState.STATUS_NOT_CONFIGURED,
@@ -133,11 +138,19 @@ add_task(async function test_ui_state_unconfigured() {
     ],
   });
   checkFxAAvatar("not_configured");
-  await closeTabAndPanel();
+  await closeRemoteTabsPanel();
+
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    label: signedOffLabel,
+  });
+
+  await closeTabAndMainPanel();
 });
 
 add_task(async function test_ui_state_syncdisabled() {
-  await openTabAndPanel();
+  await openTabAndRemoteTabsPanel();
 
   let state = {
     status: UIState.STATUS_SIGNED_IN,
@@ -148,11 +161,6 @@ add_task(async function test_ui_state_syncdisabled() {
   };
 
   gSync.updateAllUI(state);
-  checkPanelUIStatusBar({
-    label: "foo@bar.com",
-    fxastatus: "signedin",
-    syncing: false,
-  });
   checkRemoteTabsPanel("PanelUI-remotetabs-syncdisabled", false);
   checkMenuBarItem("sync-enable");
   checkFxaToolbarButtonPanel({
@@ -174,11 +182,21 @@ add_task(async function test_ui_state_syncdisabled() {
     ],
   });
   checkFxAAvatar("signedin");
-  await closeTabAndPanel();
+  await closeRemoteTabsPanel();
+
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    label: "foo@bar.com",
+    fxastatus: "signedin",
+    syncing: false,
+  });
+
+  await closeTabAndMainPanel();
 });
 
 add_task(async function test_ui_state_unverified() {
-  await openTabAndPanel();
+  await openTabAndRemoteTabsPanel();
 
   let state = {
     status: UIState.STATUS_NOT_VERIFIED,
@@ -191,11 +209,6 @@ add_task(async function test_ui_state_unverified() {
   const expectedLabel = gSync.fxaStrings.GetStringFromName(
     "account.finishAccountSetup"
   );
-  checkPanelUIStatusBar({
-    label: expectedLabel,
-    fxastatus: "unverified",
-    syncing: false,
-  });
 
   checkRemoteTabsPanel("PanelUI-remotetabs-unverified", false);
   checkMenuBarItem("sync-unverifieditem");
@@ -217,11 +230,20 @@ add_task(async function test_ui_state_unverified() {
     ],
   });
   checkFxAAvatar("unverified");
-  await closeTabAndPanel();
+  await closeRemoteTabsPanel();
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    label: expectedLabel,
+    fxastatus: "unverified",
+    syncing: false,
+  });
+
+  await closeTabAndMainPanel();
 });
 
 add_task(async function test_ui_state_loginFailed() {
-  await openTabAndPanel();
+  await openTabAndRemoteTabsPanel();
 
   let state = {
     status: UIState.STATUS_LOGIN_FAILED,
@@ -234,11 +256,6 @@ add_task(async function test_ui_state_loginFailed() {
     "account.reconnectToFxA"
   );
 
-  checkPanelUIStatusBar({
-    label: expectedLabel,
-    fxastatus: "login-failed",
-    syncing: false,
-  });
   checkRemoteTabsPanel("PanelUI-remotetabs-reauthsync", false);
   checkMenuBarItem("sync-reauthitem");
   checkFxaToolbarButtonPanel({
@@ -259,7 +276,87 @@ add_task(async function test_ui_state_loginFailed() {
     ],
   });
   checkFxAAvatar("login-failed");
-  await closeTabAndPanel();
+  await closeRemoteTabsPanel();
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    label: expectedLabel,
+    fxastatus: "login-failed",
+    syncing: false,
+  });
+
+  await closeTabAndMainPanel();
+});
+
+add_task(async function test_account_settings_state_signedin() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
+  const relativeDateAnchor = new Date();
+  let state = {
+    status: UIState.STATUS_SIGNED_IN,
+    syncEnabled: true,
+    email: "foo@bar.com",
+    displayName: "Foo Bar",
+    avatarURL: "https://foo.bar",
+    lastSync: new Date(),
+    syncing: false,
+  };
+
+  const origRelativeTimeFormat = gSync.relativeTimeFormat;
+  gSync.relativeTimeFormat = {
+    formatBestUnit(date) {
+      return origRelativeTimeFormat.formatBestUnit(date, {
+        now: relativeDateAnchor,
+      });
+    },
+  };
+
+  gSync.updateAllUI(state);
+
+  await checkAccountPanel([
+    "PanelUI-fxa-menu-account-settings-button",
+    "PanelUI-fxa-menu-account-signout-button",
+  ]);
+  await closeRemoteTabsPanel();
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    label: "foo@bar.com",
+    fxastatus: "signedin",
+    syncing: false,
+  });
+
+  await closeTabAndMainPanel();
+});
+
+add_task(async function test_app_menu_fxa_disabled() {
+  const newWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  Services.prefs.setBoolPref("identity.fxaccounts.enabled", true);
+  newWin.gSync.onFxaDisabled();
+
+  let menuButton = newWin.document.getElementById("PanelUI-menu-button");
+  menuButton.click();
+  await BrowserTestUtils.waitForEvent(newWin.PanelUI.mainView, "ViewShown");
+
+  ok(
+    BrowserTestUtils.is_hidden(
+      newWin.document.getElementById("appMenu-fxa-status")
+    ),
+    "Fxa status is hidden"
+  );
+
+  [...newWin.document.querySelectorAll(".sync-ui-item")].forEach(
+    e => (e.hidden = false)
+  );
+  let mainView = newWin.document.getElementById("appMenu-mainView");
+  let hidden = BrowserTestUtils.waitForEvent(
+    newWin.document,
+    "popuphidden",
+    true
+  );
+  mainView.closest("panel").hidePopup();
+  await hidden;
+  await BrowserTestUtils.closeWindow(newWin);
 });
 
 function checkPanelUIStatusBar({ label, fxastatus, syncing }) {
@@ -403,42 +500,6 @@ function checkFxAAvatar(fxaStatus) {
   }
 }
 
-add_task(async function test_account_settings_state_signedin() {
-  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
-  const relativeDateAnchor = new Date();
-  let state = {
-    status: UIState.STATUS_SIGNED_IN,
-    syncEnabled: true,
-    email: "foo@bar.com",
-    displayName: "Foo Bar",
-    avatarURL: "https://foo.bar",
-    lastSync: new Date(),
-    syncing: false,
-  };
-
-  const origRelativeTimeFormat = gSync.relativeTimeFormat;
-  gSync.relativeTimeFormat = {
-    formatBestUnit(date) {
-      return origRelativeTimeFormat.formatBestUnit(date, {
-        now: relativeDateAnchor,
-      });
-    },
-  };
-
-  gSync.updateAllUI(state);
-  checkPanelUIStatusBar({
-    label: "foo@bar.com",
-    fxastatus: "signedin",
-    syncing: false,
-  });
-
-  await checkAccountPanel([
-    "PanelUI-fxa-menu-account-settings-button",
-    "PanelUI-fxa-menu-account-signout-button",
-  ]);
-  await closeTabAndPanel();
-});
-
 async function checkAccountPanel(enabledItems) {
   let fxaButton = document.getElementById("fxa-toolbar-menu-button");
   fxaButton.click();
@@ -506,7 +567,7 @@ function promiseObserver(topic) {
   });
 }
 
-async function openTabAndPanel() {
+async function openTabAndRemoteTabsPanel() {
   await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
 
   let fxaButton = document.getElementById("fxa-toolbar-menu-button");
@@ -524,10 +585,23 @@ async function openTabAndPanel() {
   await BrowserTestUtils.waitForEvent(remoteTabsView, "ViewShown");
 }
 
-async function closeTabAndPanel() {
+async function closeRemoteTabsPanel() {
   let fxaView = document.getElementById("PanelUI-fxa");
   let hidden = BrowserTestUtils.waitForEvent(document, "popuphidden", true);
   fxaView.closest("panel").hidePopup();
+  await hidden;
+}
+
+async function openMainPanel() {
+  let menuButton = document.getElementById("PanelUI-menu-button");
+  menuButton.click();
+  await BrowserTestUtils.waitForEvent(window.PanelUI.mainView, "ViewShown");
+}
+
+async function closeTabAndMainPanel() {
+  let mainView = document.getElementById("appMenu-mainView");
+  let hidden = BrowserTestUtils.waitForEvent(document, "popuphidden", true);
+  mainView.closest("panel").hidePopup();
   await hidden;
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);

@@ -65,20 +65,20 @@ class nsNestedAboutURI final : public nsSimpleNestedURI {
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
 
   // Override StartClone(), the nsISerializable methods, and
-  // GetClassIDNoAlloc; this last is needed to make our nsISerializable impl
-  // work right.
   virtual nsSimpleURI* StartClone(RefHandlingEnum aRefHandlingMode,
                                   const nsACString& newRef) override;
   NS_IMETHOD Mutate(nsIURIMutator** _retval) override;
+  NS_IMETHOD_(void) Serialize(ipc::URIParams& aParams) override;
 
+  // nsISerializable
   NS_IMETHOD Read(nsIObjectInputStream* aStream) override;
   NS_IMETHOD Write(nsIObjectOutputStream* aStream) override;
-  NS_IMETHOD GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) override;
 
   nsIURI* GetBaseURI() const { return mBaseURI; }
 
  protected:
   nsCOMPtr<nsIURI> mBaseURI;
+  bool Deserialize(const mozilla::ipc::URIParams&);
   nsresult ReadPrivate(nsIObjectInputStream* stream);
 
  public:

@@ -140,9 +140,10 @@
 //! Given these invariants, we argue why each optimization preserves execution
 //! semantics below (grep for "Preserves execution semantics").
 
-use crate::binemit::{Addend, CodeOffset, CodeSink, Reloc, Stackmap};
+use crate::binemit::{Addend, CodeOffset, CodeSink, Reloc, StackMap};
 use crate::ir::{ExternalName, Opcode, SourceLoc, TrapCode};
 use crate::machinst::{BlockIndex, MachInstLabelUse, VCodeInst};
+use crate::timing;
 
 use log::trace;
 use smallvec::SmallVec;
@@ -168,8 +169,8 @@ pub struct MachBuffer<I: VCodeInst> {
     call_sites: SmallVec<[MachCallSite; 16]>,
     /// Any source location mappings referring to this code.
     srclocs: SmallVec<[MachSrcLoc; 64]>,
-    /// Any stackmaps referring to this code.
-    stackmaps: SmallVec<[MachStackMap; 8]>,
+    /// Any stack maps referring to this code.
+    stack_maps: SmallVec<[MachStackMap; 8]>,
     /// The current source location in progress (after `start_srcloc()` and
     /// before `end_srcloc()`).  This is a (start_offset, src_loc) tuple.
     cur_srcloc: Option<(CodeOffset, SourceLoc)>,
@@ -177,9 +178,12 @@ pub struct MachBuffer<I: VCodeInst> {
     label_offsets: SmallVec<[CodeOffset; 16]>,
     /// Label aliases: when one label points to an unconditional jump, and that
     /// jump points to another label, we can redirect references to the first
-    /// label immediately to the second. (We don't chase arbitrarily deep to
-    /// avoid problems with cycles, but rather only one level, i.e.  through one
-    /// jump.)
+    /// label immediately to the second.
+    ///
+    /// Invariant: we don't have label-alias cycles. We ensure this by,
+    /// before setting label A to alias label B, resolving B's alias
+    /// target (iteratively until a non-aliased label); if B is already
+    /// aliased to A, then we cannot alias A back to B.
     label_aliases: SmallVec<[MachLabel; 16]>,
     /// Constants that must be emitted at some point.
     pending_constants: SmallVec<[MachLabelConstant; 16]>,
@@ -230,8 +234,8 @@ pub struct MachBufferFinalized {
     call_sites: SmallVec<[MachCallSite; 16]>,
     /// Any source location mappings referring to this code.
     srclocs: SmallVec<[MachSrcLoc; 64]>,
-    /// Any stackmaps referring to this code.
-    stackmaps: SmallVec<[MachStackMap; 8]>,
+    /// Any stack maps referring to this code.
+    stack_maps: SmallVec<[MachStackMap; 8]>,
 }
 
 static UNKNOWN_LABEL_OFFSET: CodeOffset = 0xffff_ffff;
@@ -257,8 +261,20 @@ impl MachLabel {
     }
 }
 
+/// A stack map extent, when creating a stack map.
+pub enum StackMapExtent {
+    /// The stack map starts at this instruction, and ends after the number of upcoming bytes
+    /// (note: this is a code offset diff).
+    UpcomingBytes(CodeOffset),
+
+    /// The stack map started at the given offset and ends at the current one. This helps
+    /// architectures where the instruction size has not a fixed length.
+    StartedAtOffset(CodeOffset),
+}
+
 impl<I: VCodeInst> MachBuffer<I> {
-    /// Create a new section, known to start at `start_offset` and with a size limited to `length_limit`.
+    /// Create a new section, known to start at `start_offset` and with a size limited to
+    /// `length_limit`.
     pub fn new() -> MachBuffer<I> {
         MachBuffer {
             data: SmallVec::new(),
@@ -266,7 +282,7 @@ impl<I: VCodeInst> MachBuffer<I> {
             traps: SmallVec::new(),
             call_sites: SmallVec::new(),
             srclocs: SmallVec::new(),
-            stackmaps: SmallVec::new(),
+            stack_maps: SmallVec::new(),
             cur_srcloc: None,
             label_offsets: SmallVec::new(),
             label_aliases: SmallVec::new(),
@@ -489,13 +505,19 @@ impl<I: VCodeInst> MachBuffer<I> {
     }
 
     /// Resolve a label to an offset, if known. May return `UNKNOWN_LABEL_OFFSET`.
-    fn resolve_label_offset(&self, label: MachLabel) -> CodeOffset {
-        let alias = self.label_aliases[label.0 as usize];
-        if alias != UNKNOWN_LABEL {
-            self.label_offsets[alias.0 as usize]
-        } else {
-            self.label_offsets[label.0 as usize]
+    fn resolve_label_offset(&self, mut label: MachLabel) -> CodeOffset {
+        let mut iters = 0;
+        while self.label_aliases[label.0 as usize] != UNKNOWN_LABEL {
+            label = self.label_aliases[label.0 as usize];
+            // To protect against an infinite loop (despite our assurances to
+            // ourselves that the invariants make this impossible), assert out
+            // after 1M iterations. The number of basic blocks is limited
+            // in most contexts anyway so this should be impossible to hit with
+            // a legitimate input.
+            iters += 1;
+            assert!(iters < 1_000_000, "Unexpected cycle in label aliases");
         }
+        self.label_offsets[label.0 as usize]
 
         // Post-invariant: no mutations.
     }
@@ -809,6 +831,35 @@ impl<I: VCodeInst> MachBuffer<I> {
                 // Set any label equal to current branch's start as an alias of
                 // the branch's target, if the target is not the branch itself
                 // (i.e., an infinite loop).
+                //
+                // We cannot perform this aliasing if the target of this branch
+                // ultimately aliases back here; if so, we need to keep this
+                // branch, so break out of this loop entirely (and clear the
+                // latest-branches list below).
+                //
+                // Note that this check is what prevents cycles from forming in
+                // `self.label_aliases`. To see why, consider an arbitrary start
+                // state:
+                //
+                // label_aliases[L1] = L2, label_aliases[L2] = L3, ..., up to
+                // Ln, which is not aliased.
+                //
+                // We would create a cycle if we assigned label_aliases[Ln]
+                // = L1.  Note that the below assignment is the only write
+                // to label_aliases.
+                //
+                // By our other invariants, we have that Ln (`l` below)
+                // resolves to the offset `b.start`, because it is in the
+                // set `b.labels_at_this_branch`.
+                //
+                // If L1 were already aliased, through some arbitrarily deep
+                // chain, to Ln, then it must also resolve to this offset
+                // `b.start`.
+                //
+                // By checking the resolution of `L1` against this offset,
+                // and aborting this branch-simplification if they are
+                // equal, we prevent the below assignment from ever creating
+                // a cycle.
                 if self.resolve_label_offset(b.target) != b.start {
                     let redirected = b.labels_at_this_branch.len();
                     for &l in &b.labels_at_this_branch {
@@ -834,7 +885,10 @@ impl<I: VCodeInst> MachBuffer<I> {
                         trace!(" -> after label redirects, restarting loop");
                         continue;
                     }
+                } else {
+                    break;
                 }
+
                 let b = self.latest_branches.last().unwrap();
 
                 // Examine any immediately preceding branch.
@@ -1074,6 +1128,8 @@ impl<I: VCodeInst> MachBuffer<I> {
 
     /// Finish any deferred emissions and/or fixups.
     pub fn finish(mut self) -> MachBufferFinalized {
+        let _tt = timing::vcode_emit_finish();
+
         // Ensure that all labels are defined. This is a full (release-mode)
         // assert because we must avoid looping indefinitely below; an
         // unresolved label will prevent the fixup_records vec from emptying.
@@ -1095,7 +1151,7 @@ impl<I: VCodeInst> MachBuffer<I> {
             traps: self.traps,
             call_sites: self.call_sites,
             srclocs: self.srclocs,
-            stackmaps: self.stackmaps,
+            stack_maps: self.stack_maps,
         }
     }
 
@@ -1156,19 +1212,28 @@ impl<I: VCodeInst> MachBuffer<I> {
         }
     }
 
-    /// Add stackmap metadata for this program point: a set of stack offsets
+    /// Add stack map metadata for this program point: a set of stack offsets
     /// (from SP upward) that contain live references.
     ///
-    /// The `offset_to_fp` value is the offset from the nominal SP (at which the
-    /// `stack_offsets` are based) and the FP value. By subtracting
-    /// `offset_to_fp` from each `stack_offsets` element, one can obtain
-    /// live-reference offsets from FP instead.
-    pub fn add_stackmap(&mut self, insn_len: CodeOffset, stackmap: Stackmap) {
-        let offset = self.cur_offset();
-        self.stackmaps.push(MachStackMap {
-            offset,
-            offset_end: offset + insn_len,
-            stackmap,
+    /// The `offset_to_fp` value is the offset from the nominal SP (at which the `stack_offsets`
+    /// are based) and the FP value. By subtracting `offset_to_fp` from each `stack_offsets`
+    /// element, one can obtain live-reference offsets from FP instead.
+    pub fn add_stack_map(&mut self, extent: StackMapExtent, stack_map: StackMap) {
+        let (start, end) = match extent {
+            StackMapExtent::UpcomingBytes(insn_len) => {
+                let start_offset = self.cur_offset();
+                (start_offset, start_offset + insn_len)
+            }
+            StackMapExtent::StartedAtOffset(start_offset) => {
+                let end_offset = self.cur_offset();
+                debug_assert!(end_offset >= start_offset);
+                (start_offset, end_offset)
+            }
+        };
+        self.stack_maps.push(MachStackMap {
+            offset: start,
+            offset_end: end,
+            stack_map,
         });
     }
 }
@@ -1230,9 +1295,9 @@ impl MachBufferFinalized {
         sink.end_codegen();
     }
 
-    /// Get the stackmap metadata for this code.
-    pub fn stackmaps(&self) -> &[MachStackMap] {
-        &self.stackmaps[..]
+    /// Get the stack map metadata for this code.
+    pub fn stack_maps(&self) -> &[MachStackMap] {
+        &self.stack_maps[..]
     }
 }
 
@@ -1313,17 +1378,17 @@ pub struct MachSrcLoc {
     pub loc: SourceLoc,
 }
 
-/// Record of stackmap metadata: stack offsets containing references.
+/// Record of stack map metadata: stack offsets containing references.
 #[derive(Clone, Debug)]
 pub struct MachStackMap {
-    /// The code offset at which this stackmap applies.
+    /// The code offset at which this stack map applies.
     pub offset: CodeOffset,
     /// The code offset just past the "end" of the instruction: that is, the
     /// offset of the first byte of the following instruction, or equivalently,
     /// the start offset plus the instruction length.
     pub offset_end: CodeOffset,
-    /// The Stackmap itself.
-    pub stackmap: Stackmap,
+    /// The stack map itself.
+    pub stack_map: StackMap,
 }
 
 /// Record of branch instruction in the buffer, to facilitate editing.
@@ -1559,5 +1624,151 @@ mod test {
         let buf2 = buf2.finish();
 
         assert_eq!(&buf.data[2000000..], &buf2.data[..]);
+    }
+
+    #[test]
+    fn test_multiple_redirect() {
+        // label0:
+        //   cbz x0, label1
+        //   b label2
+        // label1:
+        //   b label3
+        // label2:
+        //   nop
+        //   nop
+        //   b label0
+        // label3:
+        //   b label4
+        // label4:
+        //   b label5
+        // label5:
+        //   b label7
+        // label6:
+        //   nop
+        // label7:
+        //   ret
+        //
+        // -- should become:
+        //
+        // label0:
+        //   cbz x0, label7
+        // label2:
+        //   nop
+        //   nop
+        //   b label0
+        // label6:
+        //   nop
+        // label7:
+        //   ret
+
+        let flags = settings::Flags::new(settings::builder());
+        let mut buf = MachBuffer::new();
+        let mut state = Default::default();
+
+        buf.reserve_labels_for_blocks(8);
+
+        buf.bind_label(label(0));
+        let inst = Inst::CondBr {
+            kind: CondBrKind::Zero(xreg(0)),
+            taken: target(1),
+            not_taken: target(2),
+        };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(1));
+        let inst = Inst::Jump { dest: target(3) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(2));
+        let inst = Inst::Nop4;
+        inst.emit(&mut buf, &flags, &mut state);
+        inst.emit(&mut buf, &flags, &mut state);
+        let inst = Inst::Jump { dest: target(0) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(3));
+        let inst = Inst::Jump { dest: target(4) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(4));
+        let inst = Inst::Jump { dest: target(5) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(5));
+        let inst = Inst::Jump { dest: target(7) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(6));
+        let inst = Inst::Nop4;
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(7));
+        let inst = Inst::Ret;
+        inst.emit(&mut buf, &flags, &mut state);
+
+        let buf = buf.finish();
+
+        let golden_data = vec![
+            0xa0, 0x00, 0x00, 0xb4, // cbz x0, 0x14
+            0x1f, 0x20, 0x03, 0xd5, // nop
+            0x1f, 0x20, 0x03, 0xd5, // nop
+            0xfd, 0xff, 0xff, 0x17, // b 0
+            0x1f, 0x20, 0x03, 0xd5, // nop
+            0xc0, 0x03, 0x5f, 0xd6, // ret
+        ];
+
+        assert_eq!(&golden_data[..], &buf.data[..]);
+    }
+
+    #[test]
+    fn test_handle_branch_cycle() {
+        // label0:
+        //   b label1
+        // label1:
+        //   b label2
+        // label2:
+        //   b label3
+        // label3:
+        //   b label4
+        // label4:
+        //   b label1  // note: not label0 (to make it interesting).
+        //
+        // -- should become:
+        //
+        // label0, label1, ..., label4:
+        //   b label0
+        let flags = settings::Flags::new(settings::builder());
+        let mut buf = MachBuffer::new();
+        let mut state = Default::default();
+
+        buf.reserve_labels_for_blocks(5);
+
+        buf.bind_label(label(0));
+        let inst = Inst::Jump { dest: target(1) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(1));
+        let inst = Inst::Jump { dest: target(2) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(2));
+        let inst = Inst::Jump { dest: target(3) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(3));
+        let inst = Inst::Jump { dest: target(4) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        buf.bind_label(label(4));
+        let inst = Inst::Jump { dest: target(1) };
+        inst.emit(&mut buf, &flags, &mut state);
+
+        let buf = buf.finish();
+
+        let golden_data = vec![
+            0x00, 0x00, 0x00, 0x14, // b 0
+        ];
+
+        assert_eq!(&golden_data[..], &buf.data[..]);
     }
 }

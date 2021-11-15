@@ -1,7 +1,7 @@
 add_task(async function() {
   await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });
   const contentDocument = gBrowser.contentDocument;
-  const dialogOverlay = content.gSubDialog._preloadDialog._overlay;
+  let dialogOverlay = content.gSubDialog._preloadDialog._overlay;
 
   async function languagesSubdialogOpened() {
     const promiseSubDialogLoaded = promiseLoadSubDialog(
@@ -10,7 +10,8 @@ add_task(async function() {
     contentDocument.getElementById("chooseLanguage").click();
     const win = await promiseSubDialogLoaded;
     win.Preferences.forceEnableInstantApply();
-    is(dialogOverlay.style.visibility, "visible", "The dialog is visible.");
+    dialogOverlay = content.gSubDialog._topDialog._overlay;
+    ok(!BrowserTestUtils.is_hidden(dialogOverlay), "The dialog is visible.");
     return win;
   }
 
@@ -19,14 +20,14 @@ add_task(async function() {
     closeBtn.doCommand();
   }
 
-  is(dialogOverlay.style.visibility, "", "The dialog is invisible.");
+  ok(BrowserTestUtils.is_hidden(dialogOverlay), "The dialog is invisible.");
   let win = await languagesSubdialogOpened();
   ok(
     win.document.getElementById("spoofEnglish").hidden,
     "The 'Request English' checkbox is hidden."
   );
   closeLanguagesSubdialog();
-  is(dialogOverlay.style.visibility, "", "The dialog is invisible.");
+  ok(BrowserTestUtils.is_hidden(dialogOverlay), "The dialog is invisible.");
 
   await SpecialPowers.pushPrefEnv({
     set: [

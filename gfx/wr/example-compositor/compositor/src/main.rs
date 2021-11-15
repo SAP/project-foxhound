@@ -363,7 +363,6 @@ fn main() {
     let opts = webrender::RendererOptions {
         clear_color: Some(ColorF::new(1.0, 1.0, 1.0, 1.0)),
         debug_flags,
-        enable_picture_caching: true,
         compositor_config,
         ..webrender::RendererOptions::default()
     };
@@ -383,10 +382,9 @@ fn main() {
         notifier,
         opts,
         None,
-        device_size,
     ).unwrap();
     let api = sender.create_api();
-    let document_id = api.add_document(device_size, 0);
+    let document_id = api.add_document(device_size);
     let device_pixel_ratio = 1.0;
     let mut current_epoch = Epoch(0);
     let root_pipeline_id = PipelineId(0, 0);
@@ -399,7 +397,7 @@ fn main() {
     txn.set_root_pipeline(root_pipeline_id);
 
     if let Invalidations::Scrolling = inv_mode {
-        let mut root_builder = DisplayListBuilder::new(root_pipeline_id, layout_size);
+        let mut root_builder = DisplayListBuilder::new(root_pipeline_id);
 
         build_display_list(
             &mut root_builder,
@@ -437,7 +435,7 @@ fn main() {
 
             match inv_mode {
                 Invalidations::Small | Invalidations::Large => {
-                    let mut root_builder = DisplayListBuilder::new(root_pipeline_id, layout_size);
+                    let mut root_builder = DisplayListBuilder::new(root_pipeline_id);
 
                     build_display_list(
                         &mut root_builder,

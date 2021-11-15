@@ -6,7 +6,7 @@
 
 #include "TimeoutExecutor.h"
 
-#include "mozilla/AbstractEventQueue.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/dom/TimeoutManager.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIEventTarget.h"
@@ -15,8 +15,7 @@
 
 extern mozilla::LazyLogModule gTimeoutLog;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_ISUPPORTS(TimeoutExecutor, nsIRunnable, nsITimerCallback, nsINamed)
 
@@ -254,5 +253,4 @@ TimeoutExecutor::GetName(nsACString& aNameOut) {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

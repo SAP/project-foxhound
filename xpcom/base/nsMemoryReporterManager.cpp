@@ -86,7 +86,7 @@ using namespace dom;
   return NS_ERROR_FAILURE;
 }
 
-[[nodiscard]] static nsresult GetProcSelfSmapsPrivate(int64_t* aN) {
+[[nodiscard]] static nsresult GetProcSelfSmapsPrivate(int64_t* aN, pid_t aPid) {
   // You might be tempted to calculate USS by subtracting the "shared" value
   // from the "resident" value in /proc/<pid>/statm. But at least on Linux,
   // statm's "shared" value actually counts pages backed by files, which has
@@ -94,7 +94,7 @@ using namespace dom;
   // on the other hand appears to give us the correct information.
 
   nsTArray<MemoryMapping> mappings(1024);
-  MOZ_TRY(GetMemoryMappings(mappings));
+  MOZ_TRY(GetMemoryMappings(mappings, aPid));
 
   int64_t amount = 0;
   for (auto& mapping : mappings) {
@@ -119,8 +119,9 @@ using namespace dom;
 }
 
 #  define HAVE_RESIDENT_UNIQUE_REPORTER 1
-[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(int64_t* aN) {
-  return GetProcSelfSmapsPrivate(aN);
+[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(
+    int64_t* aN, pid_t aPid = 0) {
+  return GetProcSelfSmapsPrivate(aN, aPid);
 }
 
 #  ifdef HAVE_MALLINFO
@@ -454,7 +455,8 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
   return base <= aAddr && aAddr < (base + size);
 }
 
-[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(
+    int64_t* aN, mach_port_t aPort = 0) {
   if (!aN) {
     return NS_ERROR_FAILURE;
   }
@@ -475,7 +477,7 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
     mach_port_t objectName;
 
     kern_return_t kr = mach_vm_region(
-        mach_task_self(), &addr, &size, VM_REGION_TOP_INFO,
+        aPort ? aPort : mach_task_self(), &addr, &size, VM_REGION_TOP_INFO,
         reinterpret_cast<vm_region_info_t>(&info), &infoCount, &objectName);
     if (kr == KERN_INVALID_ADDRESS) {
       // Done iterating VM regions.
@@ -510,7 +512,8 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
   }
 
   vm_size_t pageSize;
-  if (host_page_size(mach_host_self(), &pageSize) != KERN_SUCCESS) {
+  if (host_page_size(aPort ? aPort : mach_task_self(), &pageSize) !=
+      KERN_SUCCESS) {
     pageSize = PAGE_SIZE;
   }
 
@@ -555,13 +558,14 @@ static bool InSharedRegion(mach_vm_address_t aAddr, cpu_type_t aType) {
 
 #  define HAVE_RESIDENT_UNIQUE_REPORTER 1
 
-[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(int64_t* aN) {
+[[nodiscard]] static nsresult ResidentUniqueDistinguishedAmount(
+    int64_t* aN, HANDLE aProcess = nullptr) {
   // Determine how many entries we need.
   PSAPI_WORKING_SET_INFORMATION tmp;
   DWORD tmpSize = sizeof(tmp);
   memset(&tmp, 0, tmpSize);
 
-  HANDLE proc = GetCurrentProcess();
+  HANDLE proc = aProcess ? aProcess : GetCurrentProcess();
   QueryWorkingSet(proc, &tmp, tmpSize);
 
   // Fudge the size in case new entries are added between calls.
@@ -880,7 +884,7 @@ class WindowsAddressSpaceReporter final : public nsIMemoryReporter {
       // Append the segment count.
       path.AppendPrintf("(segments=%u)", entry->mCount);
 
-      aHandleReport->Callback(EmptyCString(), path, KIND_OTHER, UNITS_BYTES,
+      aHandleReport->Callback(""_ns, path, KIND_OTHER, UNITS_BYTES,
                               entry->mSize, "From MEMORY_BASIC_INFORMATION."_ns,
                               aData);
     }
@@ -1201,7 +1205,8 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
                             nsISupports* aData, bool aAnonymize) override {
     jemalloc_stats_t stats;
-    jemalloc_stats(&stats);
+    jemalloc_bin_stats_t bin_stats[JEMALLOC_MAX_STATS_BINS];
+    jemalloc_stats(&stats, bin_stats);
 
     // clang-format off
     MOZ_COLLECT_REPORT(
@@ -1218,11 +1223,18 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
     // We mark this and the other heap-overhead reporters as KIND_NONHEAP
     // because KIND_HEAP memory means "counted in heap-allocated", which
     // this is not.
-    MOZ_COLLECT_REPORT(
-      "explicit/heap-overhead/bin-unused", KIND_NONHEAP, UNITS_BYTES,
-      stats.bin_unused,
-"Unused bytes due to fragmentation in the bins used for 'small' (<= 2 KiB) "
-"allocations. These bytes will be used if additional allocations occur.");
+    for (auto& bin : bin_stats) {
+      if (!bin.size) {
+        continue;
+      }
+      nsPrintfCString path("explicit/heap-overhead/bin-unused/bin-%zu",
+          bin.size);
+      aHandleReport->Callback(EmptyCString(), path, KIND_NONHEAP, UNITS_BYTES,
+        bin.bytes_unused,
+        nsLiteralCString(
+          "Unused bytes in all runs of all bins for this size class"),
+        aData);
+    }
 
     if (stats.waste > 0) {
       MOZ_COLLECT_REPORT(
@@ -1259,7 +1271,6 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
     MOZ_COLLECT_REPORT(
       "heap-chunksize", KIND_OTHER, UNITS_BYTES, stats.chunksize,
       "Size of chunks.");
-
     // clang-format on
 
     return NS_OK;
@@ -1408,7 +1419,7 @@ class ThreadsReporter final : public nsIMemoryReporter {
                            thread.mName.get(), thread.mThreadId);
 
       aHandleReport->Callback(
-          EmptyCString(), path, KIND_NONHEAP, UNITS_BYTES, thread.mPrivateSize,
+          ""_ns, path, KIND_NONHEAP, UNITS_BYTES, thread.mPrivateSize,
           nsLiteralCString("The sizes of thread stacks which have been "
                            "committed to memory."),
           aData);
@@ -1569,12 +1580,6 @@ nsMemoryReporterManager::Init() {
   }
   isInited = true;
 
-#if defined(HAVE_JEMALLOC_STATS) && defined(MOZ_GLUE_IN_PROGRAM)
-  if (!jemalloc_stats) {
-    return NS_ERROR_FAILURE;
-  }
-#endif
-
 #ifdef HAVE_JEMALLOC_STATS
   RegisterStrongReporter(new JemallocHeapReporter());
 #endif
@@ -1693,7 +1698,7 @@ nsMemoryReporterManager::GetReports(
   return GetReportsExtended(aHandleReport, aHandleReportData, aFinishReporting,
                             aFinishReportingData, aAnonymize,
                             /* minimize = */ false,
-                            /* DMDident = */ EmptyString());
+                            /* DMDident = */ u""_ns);
 }
 
 NS_IMETHODIMP
@@ -2371,17 +2376,43 @@ nsMemoryReporterManager::GetResidentUnique(int64_t* aAmount) {
 #endif
 }
 
+typedef
+#ifdef XP_WIN
+    HANDLE
+#elif XP_MACOSX
+    mach_port_t
+#elif XP_LINUX
+    pid_t
+#else
+    int /*dummy type */
+#endif
+        ResidentUniqueArg;
+
+#if defined(XP_WIN) || defined(XP_MACOSX) || defined(XP_LINUX)
+
 /*static*/
-int64_t nsMemoryReporterManager::ResidentUnique() {
-#ifdef HAVE_RESIDENT_UNIQUE_REPORTER
+int64_t nsMemoryReporterManager::ResidentUnique(ResidentUniqueArg aProcess) {
+  int64_t amount = 0;
+  nsresult rv = ResidentUniqueDistinguishedAmount(&amount, aProcess);
+  NS_ENSURE_SUCCESS(rv, 0);
+  return amount;
+}
+
+#else
+
+/*static*/
+int64_t nsMemoryReporterManager::ResidentUnique(ResidentUniqueArg) {
+#  ifdef HAVE_RESIDENT_UNIQUE_REPORTER
   int64_t amount = 0;
   nsresult rv = ResidentUniqueDistinguishedAmount(&amount);
   NS_ENSURE_SUCCESS(rv, 0);
   return amount;
-#else
+#  else
   return 0;
-#endif
+#  endif
 }
+
+#endif  // XP_{WIN, MACOSX, LINUX, *}
 
 NS_IMETHODIMP
 nsMemoryReporterManager::GetHeapAllocated(int64_t* aAmount) {

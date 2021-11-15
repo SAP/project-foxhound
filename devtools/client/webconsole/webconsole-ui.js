@@ -4,7 +4,6 @@
 
 "use strict";
 
-const { gDevTools } = require("devtools/client/framework/devtools");
 const EventEmitter = require("devtools/shared/event-emitter");
 const Services = require("Services");
 const {
@@ -61,6 +60,8 @@ class WebConsoleUI {
     this.hud = hud;
     this.hudId = this.hud.hudId;
     this.isBrowserConsole = this.hud.isBrowserConsole;
+    // Map of all stacktrace resources keyed by network event's channelId
+    this.netEventStackTraces = new Map();
 
     this.isBrowserToolboxConsole =
       this.hud.currentTarget &&
@@ -201,12 +202,23 @@ class WebConsoleUI {
       this._onTargetDestroy
     );
 
-    // TODO: Re-enable as part of Bug 1627167.
-    // const resourceWatcher = this.hud.resourceWatcher;
-    // resourceWatcher.unwatchResources(
-    //   [resourceWatcher.TYPES.CONSOLE_MESSAGE],
-    //   this._onResourceAvailable
-    // );
+    const resourceWatcher = this.hud.resourceWatcher;
+    resourceWatcher.unwatchResources(
+      [
+        resourceWatcher.TYPES.CONSOLE_MESSAGE,
+        resourceWatcher.TYPES.ERROR_MESSAGE,
+        resourceWatcher.TYPES.PLATFORM_MESSAGE,
+        resourceWatcher.TYPES.NETWORK_EVENT,
+        resourceWatcher.TYPES.NETWORK_EVENT_STACKTRACE,
+      ],
+      {
+        onAvailable: this._onResourceAvailable,
+        onUpdated: this._onResourceUpdated,
+      }
+    );
+    resourceWatcher.unwatchResources([resourceWatcher.TYPES.CSS_MESSAGE], {
+      onAvailable: this._onResourceAvailable,
+    });
 
     for (const proxy of this.getAllProxies()) {
       proxy.disconnect();
@@ -338,6 +350,7 @@ class WebConsoleUI {
         resourceWatcher.TYPES.ERROR_MESSAGE,
         resourceWatcher.TYPES.PLATFORM_MESSAGE,
         resourceWatcher.TYPES.NETWORK_EVENT,
+        resourceWatcher.TYPES.NETWORK_EVENT_STACKTRACE,
       ],
       {
         onAvailable: this._onResourceAvailable,
@@ -353,26 +366,70 @@ class WebConsoleUI {
     });
   }
 
-  _onResourceAvailable({ resourceType, targetFront, resource }) {
-    const { TYPES } = this.hud.resourceWatcher;
-    // Ignore messages forwarded from content processes if we're in fission browser toolbox.
-    if (
-      !this.wrapper ||
-      ((resourceType === TYPES.ERROR_MESSAGE ||
-        resourceType === TYPES.CSS_MESSAGE) &&
-        resource.pageError?.isForwardedFromContentProcess &&
-        (this.isBrowserToolboxConsole || this.isBrowserConsole) &&
-        this.fissionSupport)
-    ) {
+  _onResourceAvailable(resources) {
+    if (!this.hud) {
       return;
     }
-    this.wrapper.dispatchMessageAdd(resource);
+    const messages = [];
+    for (const resource of resources) {
+      const { TYPES } = this.hud.resourceWatcher;
+      // Ignore messages forwarded from content processes if we're in fission browser toolbox.
+      if (
+        !this.wrapper ||
+        ((resource.resourceType === TYPES.ERROR_MESSAGE ||
+          resource.resourceType === TYPES.CSS_MESSAGE) &&
+          resource.pageError?.isForwardedFromContentProcess &&
+          (this.isBrowserToolboxConsole || this.isBrowserConsole) &&
+          this.fissionSupport)
+      ) {
+        continue;
+      }
+
+      if (resource.resourceType === TYPES.NETWORK_EVENT_STACKTRACE) {
+        this.netEventStackTraces.set(resource.resourceId, resource);
+        continue;
+      }
+
+      if (resource.resourceType === TYPES.NETWORK_EVENT) {
+        // Add the stacktrace
+        if (this.netEventStackTraces.has(resource.resourceId)) {
+          const {
+            stacktraceAvailable,
+            lastFrame,
+            targetFront,
+          } = this.netEventStackTraces.get(resource.resourceId);
+
+          resource.cause.stacktraceAvailable = stacktraceAvailable;
+          resource.cause.lastFrame = lastFrame;
+          this.netEventStackTraces.delete(resource.resourceId);
+
+          if (
+            this.wrapper?.networkDataProvider?.stackTraceRequestInfoByActorID
+          ) {
+            this.wrapper.networkDataProvider.stackTraceRequestInfoByActorID.set(
+              resource.actor,
+              {
+                targetFront,
+                resourceId: resource.resourceId,
+              }
+            );
+          }
+        }
+      }
+
+      messages.push(resource);
+    }
+    this.wrapper.dispatchMessagesAdd(messages);
   }
 
-  _onResourceUpdated({ resourceType, targetFront, resource }) {
-    if (resourceType == this.hud.resourceWatcher.TYPES.NETWORK_EVENT) {
-      this.wrapper.dispatchMessageUpdate(resource);
-    }
+  _onResourceUpdated(updates) {
+    const messageUpdates = updates
+      .filter(
+        ({ resource }) =>
+          resource.resourceType == this.hud.resourceWatcher.TYPES.NETWORK_EVENT
+      )
+      .map(({ resource }) => resource);
+    this.wrapper.dispatchMessagesUpdate(messageUpdates);
   }
 
   /**
@@ -413,20 +470,31 @@ class WebConsoleUI {
       return;
     }
 
-    // Allow frame, but only in content toolbox, when the fission/content toolbox pref is
-    // set. i.e. still ignore them in the content of the browser toolbox as we inspect
-    // messages via the process targets
-    // Also ignore workers as they are not supported yet. (see bug 1592584)
-    const isContentToolbox = this.hud.targetList.targetFront.isLocalTab;
-    const listenForFrames =
-      isContentToolbox && gDevTools.isFissionContentToolboxEnabled();
-    if (
-      targetFront.targetType != this.hud.targetList.TYPES.PROCESS &&
-      (targetFront.targetType != this.hud.targetList.TYPES.FRAME ||
-        !listenForFrames)
-    ) {
+    // Allow frame, but only in content toolbox, i.e. still ignore them in
+    // the context of the browser toolbox as we inspect messages via the process targets
+    const listenForFrames = this.hud.targetList.targetFront.isLocalTab;
+
+    const { TYPES } = this.hud.targetList;
+    const isWorkerTarget =
+      targetFront.targetType == TYPES.WORKER ||
+      targetFront.targetType == TYPES.SHARED_WORKER ||
+      targetFront.targetType == TYPES.SERVICE_WORKER;
+
+    const acceptTarget =
+      // Unconditionally accept all process targets, this should only happens in the
+      // multiprocess browser toolbox/console
+      targetFront.targetType == TYPES.PROCESS ||
+      (targetFront.targetType == TYPES.FRAME && listenForFrames) ||
+      // Accept worker targets if the platform dispatching of worker messages to the main
+      // thread is disabled (e.g. we get them directly from the worker target).
+      (isWorkerTarget &&
+        !this.hud.targetList.rootFront.traits
+          .workerConsoleApiMessagesDispatchedToMainThread);
+
+    if (!acceptTarget) {
       return;
     }
+
     const proxy = new WebConsoleConnectionProxy(this, targetFront);
     this.additionalProxies.set(targetFront, proxy);
     await proxy.connect();
@@ -622,8 +690,12 @@ class WebConsoleUI {
     this[id] = node;
   }
 
-  // Retrieves the debugger's currently selected frame front
-  async getFrameActor() {
+  /**
+   * Retrieves the actorID of the debugger's currently selected FrameFront.
+   *
+   * @return {String} actorID of the FrameFront
+   */
+  getFrameActor() {
     const state = this.hud.getDebuggerFrames();
     if (!state) {
       return null;

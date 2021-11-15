@@ -22,22 +22,12 @@ XPCOMUtils.defineLazyServiceGetters(this, {
   gEnvironment: ["@mozilla.org/process/environment;1", "nsIEnvironment"],
 });
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "gModernConfig",
-  SearchUtils.BROWSER_SEARCH_PREF + "modernConfig",
-  false
-);
-
 XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
   return console.createInstance({
     prefix: "OpenSearchEngine",
     maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
   });
 });
-
-const SEARCH_BUNDLE = "chrome://global/locale/search/search.properties";
-const BRAND_BUNDLE = "chrome://branding/locale/brand.properties";
 
 const OPENSEARCH_NS_10 = "http://a9.com/-/spec/opensearch/1.0/";
 const OPENSEARCH_NS_11 = "http://a9.com/-/spec/opensearch/1.1/";
@@ -83,9 +73,6 @@ function ENSURE_WARN(assertion, message, resultCode) {
 class OpenSearchEngine extends SearchEngine {
   // The data describing the engine, in the form of an XML document element.
   _data = null;
-  // A function to be invoked when this engine object's addition completes (or
-  // fails). Only used for installation via addEngine.
-  _installCallback = null;
 
   /**
    * Constructor.
@@ -146,10 +133,8 @@ class OpenSearchEngine extends SearchEngine {
     }
 
     super({
-      // These engines are never app-provided in modern config.
-      isAppProvided: gModernConfig ? false : options.isAppProvided,
+      isAppProvided: false,
       loadPath: OpenSearchEngine.getAnonymizedLoadPath(shortName, file, uri),
-      shortName,
     });
   }
 
@@ -157,9 +142,12 @@ class OpenSearchEngine extends SearchEngine {
    * Retrieves the engine data from a URI. Initializes the engine, flushes to
    * disk, and notifies the search service once initialization is complete.
    *
-   * @param {string|nsIURI} uri The uri to load the search plugin from.
+   * @param {string|nsIURI} uri
+   *   The uri to load the search plugin from.
+   * @param {function} [callback]
+   *   A callback to receive any details of errors.
    */
-  _initFromURIAndLoad(uri) {
+  _initFromURIAndLoad(uri, callback) {
     let loadURI = uri instanceof Ci.nsIURI ? uri : SearchUtils.makeURI(uri);
     ENSURE_WARN(
       loadURI,
@@ -181,7 +169,11 @@ class OpenSearchEngine extends SearchEngine {
       }
     }
     this._uri = loadURI;
-    var listener = new SearchUtils.LoadListener(chan, this, this._onLoad);
+
+    var listener = new SearchUtils.LoadListener(
+      chan,
+      this._onLoad.bind(this, callback)
+    );
     chan.notificationCallbacks = listener;
     chan.asyncOpen(listener);
   }
@@ -238,126 +230,86 @@ class OpenSearchEngine extends SearchEngine {
    * triggers parsing of the data. The engine is then flushed to disk. Notifies
    * the search service once initialization is complete.
    *
+   * @param {function} callback
+   *   A callback to receive success or failure notifications. May be null.
    * @param {array} bytes
    *  The loaded search engine data.
-   * @param {nsISearchEngine} engine
-   *  The engine being loaded.
    */
-  _onLoad(bytes, engine) {
-    /**
-     * Handle an error during the load of an engine by notifying the engine's
-     * error callback, if any.
-     *
-     * @param {number} [errorCode]
-     *   The relevant error code.
-     */
-    function onError(errorCode = Ci.nsISearchService.ERROR_UNKNOWN_FAILURE) {
-      // Notify the callback of the failure
-      if (engine._installCallback) {
-        engine._installCallback(errorCode);
+  _onLoad(callback, bytes) {
+    let onError = errorCode => {
+      if (this._engineToUpdate) {
+        logConsole.warn("Failed to update", this._engineToUpdate.name);
       }
-    }
-
-    function promptError(strings = {}, error = undefined) {
-      onError(error);
-
-      if (engine._engineToUpdate) {
-        // We're in an update, so just fail quietly
-        logConsole.warn("Failed to update", engine._engineToUpdate.name);
-        return;
-      }
-      var brandBundle = Services.strings.createBundle(BRAND_BUNDLE);
-      var brandName = brandBundle.GetStringFromName("brandShortName");
-
-      var searchBundle = Services.strings.createBundle(SEARCH_BUNDLE);
-      var msgStringName = strings.error || "error_loading_engine_msg2";
-      var titleStringName = strings.title || "error_loading_engine_title";
-      var title = searchBundle.GetStringFromName(titleStringName);
-      var text = searchBundle.formatStringFromName(msgStringName, [
-        brandName,
-        engine._location,
-      ]);
-
-      Services.ww.getNewPrompter(null).alert(title, text);
-    }
+      callback?.(errorCode);
+    };
 
     if (!bytes) {
-      promptError();
+      onError(Ci.nsISearchService.ERROR_DOWNLOAD_FAILURE);
       return;
     }
 
     var parser = new DOMParser();
     var doc = parser.parseFromBuffer(bytes, "text/xml");
-    engine._data = doc.documentElement;
+    this._data = doc.documentElement;
 
     try {
-      // Initialize the engine from the obtained data
-      engine._initFromData();
+      this._initFromData();
     } catch (ex) {
       logConsole.error("_onLoad: Failed to init engine!", ex);
-      // Report an error to the user
+
       if (ex.result == Cr.NS_ERROR_FILE_CORRUPTED) {
-        promptError({
-          error: "error_invalid_engine_msg2",
-          title: "error_invalid_format_title",
-        });
+        onError(Ci.nsISearchService.ERROR_ENGINE_CORRUPTED);
       } else {
-        promptError();
+        onError(Ci.nsISearchService.ERROR_DOWNLOAD_FAILURE);
       }
       return;
     }
 
-    if (engine._engineToUpdate) {
-      let engineToUpdate = engine._engineToUpdate.wrappedJSObject;
+    if (this._engineToUpdate) {
+      let engineToUpdate = this._engineToUpdate.wrappedJSObject;
 
-      // Make this new engine use the old engine's shortName, and preserve
-      // metadata.
-      engine._shortName = engineToUpdate._shortName;
+      // Preserve metadata and loadPath.
       Object.keys(engineToUpdate._metaData).forEach(key => {
-        engine.setAttr(key, engineToUpdate.getAttr(key));
+        this.setAttr(key, engineToUpdate.getAttr(key));
       });
-      engine._loadPath = engineToUpdate._loadPath;
+      this._loadPath = engineToUpdate._loadPath;
 
       // Keep track of the last modified date, so that we can make conditional
       // requests for future updates.
-      engine.setAttr("updatelastmodified", new Date().toUTCString());
+      this.setAttr("updatelastmodified", new Date().toUTCString());
 
       // Set the new engine's icon, if it doesn't yet have one.
-      if (!engine._iconURI && engineToUpdate._iconURI) {
-        engine._iconURI = engineToUpdate._iconURI;
+      if (!this._iconURI && engineToUpdate._iconURI) {
+        this._iconURI = engineToUpdate._iconURI;
       }
     } else {
       // Check that when adding a new engine (e.g., not updating an
       // existing one), a duplicate engine does not already exist.
-      if (Services.search.getEngineByName(engine.name)) {
+      if (Services.search.getEngineByName(this.name)) {
         onError(Ci.nsISearchService.ERROR_DUPLICATE_ENGINE);
         logConsole.debug("_onLoad: duplicate engine found, bailing");
         return;
       }
 
-      engine._shortName = SearchUtils.sanitizeName(engine.name);
-      engine._loadPath = OpenSearchEngine.getAnonymizedLoadPath(
-        engine._shortName,
+      this._loadPath = OpenSearchEngine.getAnonymizedLoadPath(
+        SearchUtils.sanitizeName(this.name),
         null,
-        engine._uri
+        this._uri
       );
-      if (engine._extensionID) {
-        engine._loadPath += ":" + engine._extensionID;
+      if (this._extensionID) {
+        this._loadPath += ":" + this._extensionID;
       }
-      engine.setAttr(
+      this.setAttr(
         "loadPathHash",
-        SearchUtils.getVerificationHash(engine._loadPath)
+        SearchUtils.getVerificationHash(this._loadPath)
       );
     }
 
     // Notify the search service of the successful load. It will deal with
-    // updates by checking aEngine._engineToUpdate.
-    SearchUtils.notifyAction(engine, SearchUtils.MODIFIED_TYPE.LOADED);
+    // updates by checking this._engineToUpdate.
+    SearchUtils.notifyAction(this, SearchUtils.MODIFIED_TYPE.LOADED);
 
-    // Notify the callback if needed
-    if (engine._installCallback) {
-      engine._installCallback();
-    }
+    callback?.();
   }
 
   /**
@@ -410,7 +362,6 @@ class OpenSearchEngine extends SearchEngine {
     // specified
     var method = element.getAttribute("method") || "GET";
     var template = element.getAttribute("template");
-    var resultDomain = element.getAttribute("resultdomain");
 
     let rels = [];
     if (element.hasAttribute("rel")) {
@@ -426,7 +377,7 @@ class OpenSearchEngine extends SearchEngine {
     }
 
     try {
-      var url = new EngineURL(type, method, template, resultDomain);
+      var url = new EngineURL(type, method, template);
     } catch (ex) {
       throw Components.Exception(
         "_parseURL: failed to add " + template + " as a URL",
@@ -447,49 +398,9 @@ class OpenSearchEngine extends SearchEngine {
           // Ignore failure
           logConsole.error("_parseURL: Url element has an invalid param");
         }
-      } else if (
-        param.localName == "MozParam" &&
-        // We only support MozParams for default search engines
-        this.isAppProvided
-      ) {
-        let condition = param.getAttribute("condition");
-
-        if (!condition) {
-          continue;
-        }
-
-        // We can't make these both use _addMozParam due to the fallback
-        // handling - WebExtension parameters get treated as MozParams even
-        // if they are not, and hence don't have the condition parameter, so
-        // we can't warn for them.
-        switch (condition) {
-          case "purpose":
-            url.addParam(
-              param.getAttribute("name"),
-              param.getAttribute("value"),
-              param.getAttribute("purpose")
-            );
-            break;
-          case "pref":
-            url._addMozParam({
-              pref: param.getAttribute("pref"),
-              name: param.getAttribute("name"),
-              condition: "pref",
-            });
-            break;
-          default:
-            // MozParams must have a condition to be valid
-            logConsole.error(
-              "Parsing engine:",
-              this._location,
-              "MozParam:",
-              param.getAttribute("name"),
-              "has an unknown condition:",
-              condition
-            );
-            break;
-        }
       }
+      // Note: MozParams are not supported for OpenSearch engines as they
+      // cannot be app-provided engines.
     }
 
     this._urls.push(url);

@@ -37,8 +37,7 @@ static mozilla::LazyLogModule sMediaCapabilitiesLog("MediaCapabilities");
 #define LOG(msg, ...) \
   DDMOZ_LOG(sMediaCapabilitiesLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static nsCString VideoConfigurationToStr(const VideoConfiguration* aConfig) {
   if (!aConfig) {
@@ -213,23 +212,21 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
 
     if (type == TrackInfo::kAudioTrack) {
       // There's no need to create an audio decoder has we only want to know if
-      // such codec is supported
-      RefPtr<PDMFactory> pdm = new PDMFactory();
-      if (!pdm->Supports(*config, nullptr /* decoder doctor */)) {
-        auto info = MakeUnique<MediaCapabilitiesInfo>(
-            false /* supported */, false /* smooth */,
-            false /* power efficient */);
-        LOG("%s -> %s", MediaDecodingConfigurationToStr(aConfiguration).get(),
-            MediaCapabilitiesInfoToStr(info.get()).get());
-        promise->MaybeResolve(std::move(info));
-        return promise.forget();
-      }
-      // We can assume that if we could create the decoder, then we can play it.
-      // We report that we can play it smoothly and in an efficient fashion.
-      promises.AppendElement(CapabilitiesPromise::CreateAndResolve(
-          MediaCapabilitiesInfo(true /* supported */, true /* smooth */,
-                                true /* power efficient */),
-          __func__));
+      // such codec is supported. We do need to call the PDMFactory::Supports
+      // API outside the main thread to get accurate results.
+      promises.AppendElement(
+          InvokeAsync(taskQueue, __func__, [config = std::move(config)]() {
+            RefPtr<PDMFactory> pdm = new PDMFactory();
+            SupportDecoderParams params{*config};
+            if (!pdm->Supports(params, nullptr /* decoder doctor */)) {
+              return CapabilitiesPromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                          __func__);
+            }
+            return CapabilitiesPromise::CreateAndResolve(
+                MediaCapabilitiesInfo(true /* supported */, true /* smooth */,
+                                      true /* power efficient */),
+                __func__);
+          }));
       continue;
     }
 
@@ -247,7 +244,7 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
           // MediaDataDecoder keeps a reference to the config object, so we must
           // keep it alive until the decoder has been shutdown.
           CreateDecoderParams params{
-              *config, taskQueue, compositor,
+              *config, compositor,
               CreateDecoderParams::VideoFrameRate(frameRate),
               TrackInfo::kVideoTrack};
           // We want to ensure that all decoder's queries are occurring only
@@ -288,6 +285,11 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
                           if (aValue.IsReject()) {
                             p = CapabilitiesPromise::CreateAndReject(
                                 std::move(aValue.RejectValue()), __func__);
+                          } else if (nsContentUtils::ShouldResistFingerprinting()) {
+                            p = CapabilitiesPromise::CreateAndResolve(
+                                MediaCapabilitiesInfo(true /* supported */,
+                                true /* smooth */, false /* power efficient */),
+                                __func__);
                           } else {
                             MOZ_ASSERT(config->IsVideo());
                             if (StaticPrefs::media_mediacapabilities_from_database()) {
@@ -608,5 +610,4 @@ bool MediaCapabilitiesInfo::WrapObject(
                                              aReflector);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -12,6 +12,7 @@ mod boilerplate;
 
 use crate::boilerplate::{Example, HandyDandyRectBuilder};
 use webrender::api::*;
+use webrender::render_api::*;
 use webrender::api::units::*;
 
 // This example uses the push_iframe API to nest a second pipeline's displaylist
@@ -35,7 +36,7 @@ impl Example for App {
         let sub_bounds = (0, 0).to(sub_size.width as i32, sub_size.height as i32);
 
         let sub_pipeline_id = PipelineId(pipeline_id.0, 42);
-        let mut sub_builder = DisplayListBuilder::new(sub_pipeline_id, sub_bounds.size);
+        let mut sub_builder = DisplayListBuilder::new(sub_pipeline_id);
         let mut space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         sub_builder.push_simple_stacking_context(

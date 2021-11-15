@@ -7,9 +7,9 @@
 #include "mozilla/dom/BrowserBridgeHost.h"
 
 #include "mozilla/Unused.h"
+#include "nsFrameLoader.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserBridgeHost)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -37,14 +37,9 @@ nsILoadContext* BrowserBridgeHost::GetLoadContext() const {
   return mBridge->GetLoadContext();
 }
 
-void BrowserBridgeHost::LoadURL(nsIURI* aURI,
-                                nsIPrincipal* aTriggeringPrincipal) {
-  MOZ_ASSERT(aURI);
-  MOZ_ASSERT(aTriggeringPrincipal);
-
-  nsAutoCString spec;
-  aURI->GetSpec(spec);
-  Unused << mBridge->SendLoadURL(spec, aTriggeringPrincipal);
+void BrowserBridgeHost::LoadURL(nsDocShellLoadState* aLoadState) {
+  MOZ_ASSERT(aLoadState);
+  Unused << mBridge->SendLoadURL(aLoadState);
 }
 
 void BrowserBridgeHost::ResumeLoad(uint64_t aPendingSwitchId) {
@@ -89,5 +84,4 @@ already_AddRefed<nsIWidget> BrowserBridgeHost::GetWidget() const {
   return widget.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

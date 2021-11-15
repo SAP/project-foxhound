@@ -9,17 +9,18 @@
 #include "BasicLayers.h"
 
 #include "GeckoProfiler.h"
-#include "LayersLogging.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/UpdateImageHelper.h"
 #include "nsDisplayList.h"
+#include "nsLayoutUtils.h"
 #include "WebRenderCanvasRenderer.h"
 
 #ifdef XP_WIN
@@ -57,9 +58,13 @@ KnowsCompositor* WebRenderLayerManager::AsKnowsCompositor() { return mWrChild; }
 
 bool WebRenderLayerManager::Initialize(
     PCompositorBridgeChild* aCBChild, wr::PipelineId aLayersId,
-    TextureFactoryIdentifier* aTextureFactoryIdentifier) {
+    TextureFactoryIdentifier* aTextureFactoryIdentifier, nsCString& aError) {
   MOZ_ASSERT(mWrChild == nullptr);
   MOZ_ASSERT(aTextureFactoryIdentifier);
+
+  // When we fail to initialize WebRender, it is useful to know if it has ever
+  // succeeded, or if this is the first attempt.
+  static bool hasInitialized = false;
 
   LayoutDeviceIntSize size = mWidget->GetClientSize();
   PWebRenderBridgeChild* bridge =
@@ -70,16 +75,28 @@ bool WebRenderLayerManager::Initialize(
     // reinitialization. We can expect to be notified again to reinitialize
     // (which may or may not be using WebRender).
     gfxCriticalNote << "Failed to create WebRenderBridgeChild.";
+    aError.Assign(hasInitialized
+                      ? "FEATURE_FAILURE_WEBRENDER_INITIALIZE_IPDL_POST"_ns
+                      : "FEATURE_FAILURE_WEBRENDER_INITIALIZE_IPDL_FIRST"_ns);
     return false;
   }
 
   TextureFactoryIdentifier textureFactoryIdentifier;
   wr::MaybeIdNamespace idNamespace;
   // Sync ipc
-  bridge->SendEnsureConnected(&textureFactoryIdentifier, &idNamespace);
+  if (!bridge->SendEnsureConnected(&textureFactoryIdentifier, &idNamespace,
+                                   &aError)) {
+    gfxCriticalNote << "Failed as lost WebRenderBridgeChild.";
+    aError.Assign(hasInitialized
+                      ? "FEATURE_FAILURE_WEBRENDER_INITIALIZE_SYNC_POST"_ns
+                      : "FEATURE_FAILURE_WEBRENDER_INITIALIZE_SYNC_FIRST"_ns);
+    return false;
+  }
+
   if (textureFactoryIdentifier.mParentBackend == LayersBackend::LAYERS_NONE ||
       idNamespace.isNothing()) {
     gfxCriticalNote << "Failed to connect WebRenderBridgeChild.";
+    aError.Append(hasInitialized ? "_POST"_ns : "_FIRST"_ns);
     return false;
   }
 
@@ -88,6 +105,7 @@ bool WebRenderLayerManager::Initialize(
   WrBridge()->IdentifyTextureHost(textureFactoryIdentifier);
   WrBridge()->SetNamespace(idNamespace.ref());
   *aTextureFactoryIdentifier = textureFactoryIdentifier;
+  hasInitialized = true;
   return true;
 }
 
@@ -136,6 +154,14 @@ WebRenderLayerManager::~WebRenderLayerManager() {
 
 CompositorBridgeChild* WebRenderLayerManager::GetCompositorBridgeChild() {
   return WrBridge()->GetCompositorBridgeChild();
+}
+
+void WebRenderLayerManager::GetBackendName(nsAString& name) {
+  if (WrBridge()->UsingSoftwareWebRender()) {
+    name.AssignLiteral("WebRender (Software)");
+  } else {
+    name.AssignLiteral("WebRender");
+  }
 }
 
 uint32_t WebRenderLayerManager::StartFrameTimeRecording(int32_t aBufferSize) {
@@ -292,9 +318,8 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
   WrBridge()->BeginTransaction();
 
   LayoutDeviceIntSize size = mWidget->GetClientSize();
-  wr::LayoutSize contentSize{(float)size.width, (float)size.height};
 
-  wr::DisplayListBuilder builder(WrBridge()->GetPipeline(), contentSize,
+  wr::DisplayListBuilder builder(WrBridge()->GetPipeline(),
                                  mLastDisplayListSize, &mDisplayItemCache);
 
   wr::IpcResourceUpdateQueue resourceUpdates(WrBridge());
@@ -352,7 +377,9 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     }
     mScrollData.SetPaintSequenceNumber(mPaintSequenceNumber);
     if (dumpEnabled) {
-      mScrollData.Dump();
+      std::stringstream str;
+      str << mScrollData;
+      print_stderr(str);
     }
   }
 
@@ -472,7 +499,8 @@ void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
   }
 
   IntRect bounds = ToOutsideIntRect(mTarget->GetClipExtents());
-  if (!WrBridge()->SendGetSnapshot(texture->GetIPDLActor())) {
+  bool needsYFlip = false;
+  if (!WrBridge()->SendGetSnapshot(texture->GetIPDLActor(), &needsYFlip)) {
     return;
   }
 
@@ -496,14 +524,6 @@ void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
   Rect dst(bounds.X(), bounds.Y(), bounds.Width(), bounds.Height());
   Rect src(0, 0, bounds.Width(), bounds.Height());
 
-  // The data we get from webrender is upside down. So flip and translate up so
-  // the image is rightside up. Webrender always does a full screen readback.
-#ifdef XP_WIN
-  // ANGLE with WR does not need y flip
-  const bool needsYFlip = !WrBridge()->GetCompositorUseANGLE();
-#else
-  const bool needsYFlip = true;
-#endif
   Matrix m;
   if (needsYFlip) {
     m = Matrix::Scaling(1.0, -1.0).PostTranslate(0.0, aSize.height);
@@ -720,6 +740,10 @@ void WebRenderLayerManager::ClearAsyncAnimations() {
 void WebRenderLayerManager::WrReleasedImages(
     const nsTArray<wr::ExternalImageKeyPair>& aPairs) {
   mStateManager.WrReleasedImages(aPairs);
+}
+
+void WebRenderLayerManager::GetFrameUniformity(FrameUniformityData* aOutData) {
+  WrBridge()->SendGetFrameUniformity(aOutData);
 }
 
 }  // namespace layers

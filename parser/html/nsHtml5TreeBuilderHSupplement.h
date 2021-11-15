@@ -183,7 +183,7 @@ void errStartSelectWhereEndSelectExpected();
 
 void errStartTagWithSelectOpen(nsAtom* aName);
 
-void errBadStartTagInHead(nsAtom* aName);
+void errBadStartTagInNoscriptInHead(nsAtom* aName);
 
 void errImage();
 
@@ -218,8 +218,6 @@ void errEndTagBr();
 void errNoElementToCloseButEndTagSeen(nsAtom* aName);
 
 void errHtmlStartTagInForeignContext(nsAtom* aName);
-
-void errTableClosedWhileCaptionOpen();
 
 void errNoTableRowToClose();
 

@@ -29,15 +29,11 @@ namespace dom {
 namespace {
 
 const uint32_t kDefaultSet = 0;
-const uint32_t kPrivateSet = 1;
-const uint32_t kSessionSet = 2;
+const uint32_t kSessionSet = 1;
 
-inline uint32_t GetDataSetIndex(bool aPrivate, bool aSessionOnly) {
-  if (aPrivate) {
-    return kPrivateSet;
-  }
-
-  if (aSessionOnly) {
+inline uint32_t GetDataSetIndex(bool aPrivateBrowsing,
+                                bool aSessionScopedOrLess) {
+  if (!aPrivateBrowsing && aSessionScopedOrLess) {
     return kSessionSet;
   }
 
@@ -45,7 +41,8 @@ inline uint32_t GetDataSetIndex(bool aPrivate, bool aSessionOnly) {
 }
 
 inline uint32_t GetDataSetIndex(const LocalStorage* aStorage) {
-  return GetDataSetIndex(aStorage->IsPrivate(), aStorage->IsSessionOnly());
+  return GetDataSetIndex(aStorage->IsPrivateBrowsing(),
+                         aStorage->IsSessionScopedOrLess());
 }
 
 }  // namespace
@@ -129,18 +126,17 @@ LocalStorageCache::Release(void) {
 void LocalStorageCache::Init(LocalStorageManager* aManager, bool aPersistent,
                              nsIPrincipal* aPrincipal,
                              const nsACString& aQuotaOriginScope) {
+  MOZ_ASSERT(!aQuotaOriginScope.IsEmpty());
+
   if (mInitialized) {
     return;
   }
 
   mInitialized = true;
   aPrincipal->OriginAttributesRef().CreateSuffix(mOriginSuffix);
+  mPrivateBrowsingId = aPrincipal->GetPrivateBrowsingId();
   mPersistent = aPersistent;
-  if (aQuotaOriginScope.IsEmpty()) {
-    mQuotaOriginScope = Origin();
-  } else {
-    mQuotaOriginScope = aQuotaOriginScope;
-  }
+  mQuotaOriginScope = aQuotaOriginScope;
 
   if (mPersistent) {
     mManager = aManager;
@@ -153,7 +149,7 @@ void LocalStorageCache::Init(LocalStorageManager* aManager, bool aPersistent,
   MOZ_ASSERT(mOriginSuffix.IsEmpty() !=
              StringBeginsWith(mQuotaOriginScope, "^"_ns));
 
-  mUsage = aManager->GetOriginUsage(mQuotaOriginScope);
+  mUsage = aManager->GetOriginUsage(mQuotaOriginScope, mPrivateBrowsingId);
 }
 
 void LocalStorageCache::NotifyObservers(const LocalStorage* aStorage,
@@ -175,7 +171,8 @@ void LocalStorageCache::NotifyObservers(const LocalStorage* aStorage,
 }
 
 inline bool LocalStorageCache::Persist(const LocalStorage* aStorage) const {
-  return mPersistent && !aStorage->IsSessionOnly() && !aStorage->IsPrivate();
+  return mPersistent &&
+         (aStorage->IsPrivateBrowsing() || !aStorage->IsSessionScopedOrLess());
 }
 
 const nsCString LocalStorageCache::Origin() const {
@@ -220,7 +217,8 @@ void LocalStorageCache::Preload() {
     return;
   }
 
-  StorageDBChild* storageChild = StorageDBChild::GetOrCreate();
+  StorageDBChild* storageChild =
+      StorageDBChild::GetOrCreate(mPrivateBrowsingId);
   if (!storageChild) {
     mLoaded = true;
     mLoadResult = NS_ERROR_FAILURE;
@@ -260,7 +258,7 @@ void LocalStorageCache::WaitForPreload(Telemetry::HistogramID aTelemetryID) {
   // No need to check sDatabase for being non-null since preload is either
   // done before we've shut the DB down or when the DB could not start,
   // preload has not even be started.
-  StorageDBChild::Get()->SyncPreload(this);
+  StorageDBChild::Get(mPrivateBrowsingId)->SyncPreload(this);
 }
 
 nsresult LocalStorageCache::GetLength(const LocalStorage* aStorage,
@@ -386,7 +384,7 @@ nsresult LocalStorageCache::SetItem(const LocalStorage* aStorage,
 #endif
 
   if (Persist(aStorage)) {
-    StorageDBChild* storageChild = StorageDBChild::Get();
+    StorageDBChild* storageChild = StorageDBChild::Get(mPrivateBrowsingId);
     if (!storageChild) {
       NS_ERROR(
           "Writing to localStorage after the database has been shut down"
@@ -435,7 +433,7 @@ nsresult LocalStorageCache::RemoveItem(const LocalStorage* aStorage,
 #endif
 
   if (Persist(aStorage)) {
-    StorageDBChild* storageChild = StorageDBChild::Get();
+    StorageDBChild* storageChild = StorageDBChild::Get(mPrivateBrowsingId);
     if (!storageChild) {
       NS_ERROR(
           "Writing to localStorage after the database has been shut down"
@@ -486,7 +484,7 @@ nsresult LocalStorageCache::Clear(const LocalStorage* aStorage,
 #endif
 
   if (Persist(aStorage) && (refresh || hadData)) {
-    StorageDBChild* storageChild = StorageDBChild::Get();
+    StorageDBChild* storageChild = StorageDBChild::Get(mPrivateBrowsingId);
     if (!storageChild) {
       NS_ERROR(
           "Writing to localStorage after the database has been shut down"
@@ -516,11 +514,6 @@ void LocalStorageCache::UnloadItems(uint32_t aUnloadFlags) {
 
     mData[kDefaultSet].mKeys.Clear();
     ProcessUsageDelta(kDefaultSet, -mData[kDefaultSet].mOriginQuotaUsage);
-  }
-
-  if (aUnloadFlags & kUnloadPrivate) {
-    mData[kPrivateSet].mKeys.Clear();
-    ProcessUsageDelta(kPrivateSet, -mData[kPrivateSet].mOriginQuotaUsage);
   }
 
   if (aUnloadFlags & kUnloadSession) {
@@ -582,7 +575,7 @@ void LocalStorageCache::LoadWait() {
 
 StorageUsage::StorageUsage(const nsACString& aOriginScope)
     : mOriginScope(aOriginScope) {
-  mUsage[kDefaultSet] = mUsage[kPrivateSet] = mUsage[kSessionSet] = 0LL;
+  mUsage[kDefaultSet] = mUsage[kSessionSet] = 0LL;
 }
 
 namespace {

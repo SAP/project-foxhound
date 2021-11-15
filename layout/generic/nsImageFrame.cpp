@@ -148,10 +148,13 @@ static bool SizeDependsOnIntrinsicSize(const ReflowInput& aReflowInput) {
   // min-width: min-content and such can also affect our intrinsic size.
   // but note that those keywords on the block axis behave like auto, so we
   // don't need to check them.
+  //
+  // Flex item's min-[width|height]:auto resolution depends on intrinsic size.
   return !position.mHeight.ConvertsToLength() ||
          !position.mWidth.ConvertsToLength() ||
          DependsOnIntrinsicSize(position.MinISize(wm)) ||
-         DependsOnIntrinsicSize(position.MaxISize(wm));
+         DependsOnIntrinsicSize(position.MaxISize(wm)) ||
+         aReflowInput.mFrame->IsFlexItem();
 }
 
 nsIFrame* NS_NewImageFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
@@ -197,9 +200,12 @@ bool nsImageFrame::ShouldShowBrokenImageIcon() const {
            (imageStatus & imgIRequest::STATUS_ERROR);
   }
 
-  nsCOMPtr<nsIImageLoadingContent> loader = do_QueryInterface(mContent);
-  MOZ_ASSERT(loader);
-  return loader->GetImageBlockingStatus() != nsIContentPolicy::ACCEPT;
+  nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
+  MOZ_ASSERT(imageLoader);
+  // Show the broken image icon only if we've tried to perform a load at all
+  // (that is, if we have a current uri).
+  nsCOMPtr<nsIURI> currentURI = imageLoader->GetCurrentURI();
+  return !!currentURI;
 }
 
 nsImageFrame* nsImageFrame::CreateContinuingFrame(
@@ -297,8 +303,26 @@ void nsImageFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsAtomicContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
+void nsImageFrame::MaybeRecordContentUrlOnImageTelemetry() {
+  if (mKind != Kind::ImageElement) {
+    return;
+  }
+  const auto& content = *StyleContent();
+  if (content.ContentCount() != 1) {
+    return;
+  }
+  const auto& item = content.ContentAt(0);
+  if (!item.IsUrl()) {
+    return;
+  }
+  PresContext()->Document()->SetUseCounter(
+      eUseCounter_custom_ContentUrlOnImageContent);
+}
+
 void nsImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
   nsAtomicContainerFrame::DidSetComputedStyle(aOldStyle);
+
+  MaybeRecordContentUrlOnImageTelemetry();
 
   auto newOrientation = StyleVisibility()->mImageOrientation;
 
@@ -514,25 +538,26 @@ bool nsImageFrame::UpdateIntrinsicSize() {
   return mIntrinsicSize != oldIntrinsicSize;
 }
 
-static AspectRatio ComputeAspectRatio(imgIContainer* aImage,
-                                      bool aUseMappedRatio,
-                                      const nsImageFrame& aFrame) {
+static AspectRatio ComputeIntrinsicRatio(imgIContainer* aImage,
+                                         bool aUseMappedRatio,
+                                         const nsImageFrame& aFrame) {
   const ComputedStyle& style = *aFrame.Style();
   if (style.StyleDisplay()->IsContainSize()) {
     return AspectRatio();
   }
 
-  const StyleAspectRatio& ratio = style.StylePosition()->mAspectRatio;
-  if (!ratio.auto_) {
-    return ratio.ratio.AsRatio().ToLayoutRatio();
-  }
   if (aImage) {
     if (Maybe<AspectRatio> fromImage = aImage->GetIntrinsicRatio()) {
       return *fromImage;
     }
   }
-  if (aUseMappedRatio && ratio.HasMappedRatio()) {
-    return ratio.ratio.AsRatio().ToLayoutRatio();
+  if (aUseMappedRatio) {
+    const StyleAspectRatio& ratio = style.StylePosition()->mAspectRatio;
+    if (ratio.auto_ && ratio.HasRatio()) {
+      // Return the mapped intrinsic aspect ratio stored in
+      // nsStylePosition::mAspectRatio.
+      return ratio.ratio.AsRatio().ToLayoutRatio();
+    }
   }
   if (aFrame.ShouldShowBrokenImageIcon()) {
     return AspectRatio(1.0f);
@@ -543,7 +568,7 @@ static AspectRatio ComputeAspectRatio(imgIContainer* aImage,
 bool nsImageFrame::UpdateIntrinsicRatio() {
   AspectRatio oldIntrinsicRatio = mIntrinsicRatio;
   mIntrinsicRatio =
-      ComputeAspectRatio(mImage, ShouldUseMappedAspectRatio(), *this);
+      ComputeIntrinsicRatio(mImage, ShouldUseMappedAspectRatio(), *this);
   return mIntrinsicRatio != oldIntrinsicRatio;
 }
 
@@ -631,14 +656,8 @@ nsRect nsImageFrame::SourceRectToDest(const nsIntRect& aRect) {
   return r;
 }
 
-// Note that we treat NS_EVENT_STATE_SUPPRESSED images as "OK".  This means
-// that we'll construct image frames for them as needed if their display is
-// toggled from "none" (though we won't paint them, unless their visibility
-// is changed too).
-#define BAD_STATES (NS_EVENT_STATE_BROKEN | NS_EVENT_STATE_USERDISABLED)
-
 static bool ImageOk(EventStates aState) {
-  return !aState.HasAtLeastOneOfStates(BAD_STATES);
+  return !aState.HasState(NS_EVENT_STATE_BROKEN);
 }
 
 static bool HasAltText(const Element& aElement) {
@@ -940,15 +959,15 @@ void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
   UpdateIntrinsicRatio();
 }
 
-LogicalSize nsImageFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsImageFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
-    ComputeSizeFlags aFlags) {
+    const LogicalSize& aBorderPadding, ComputeSizeFlags aFlags) {
   EnsureIntrinsicSizeAndRatio();
-  return ComputeSizeWithIntrinsicDimensions(
-      aRenderingContext, aWM, mIntrinsicSize, mIntrinsicRatio, aCBSize, aMargin,
-      aBorder, aPadding, aFlags);
+  return {ComputeSizeWithIntrinsicDimensions(
+              aRenderingContext, aWM, mIntrinsicSize, GetAspectRatio(), aCBSize,
+              aMargin, aBorderPadding, aFlags),
+          AspectRatioUsage::None};
 }
 
 // XXXdholbert This function's clients should probably just be calling
@@ -1761,12 +1780,13 @@ static bool OldImageHasDifferentRatio(const nsImageFrame& aFrame,
     return false;
   }
 
-  auto currentRatio = aFrame.GetComputedIntrinsicRatio();
+  auto currentRatio = aFrame.GetIntrinsicRatio();
   // If we have an image, we need to have a current request.
   // Same if we had an image.
   const bool hasRequest = true;
 #ifdef DEBUG
-  auto currentRatioRecomputed = ComputeAspectRatio(&aImage, hasRequest, aFrame);
+  auto currentRatioRecomputed =
+      ComputeIntrinsicRatio(&aImage, hasRequest, aFrame);
   // If the image encounters an error after decoding the size (and we run
   // UpdateIntrinsicRatio) then the image will return the empty AspectRatio and
   // the aspect ratio we compute here will be different from what was computed
@@ -1780,7 +1800,7 @@ static bool OldImageHasDifferentRatio(const nsImageFrame& aFrame,
           currentRatio == currentRatioRecomputed,
       "aspect-ratio got out of sync during paint? How?");
 #endif
-  auto oldRatio = ComputeAspectRatio(aPrevImage, hasRequest, aFrame);
+  auto oldRatio = ComputeIntrinsicRatio(aPrevImage, hasRequest, aFrame);
   return oldRatio != currentRatio;
 }
 
@@ -2438,28 +2458,19 @@ void nsImageFrame::List(FILE* out, const char* aPrefix,
 #endif
 
 nsIFrame::LogicalSides nsImageFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+    const Maybe<SkipSidesDuringReflow>&) const {
   LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
     return skip;
   }
-  if (nullptr != GetPrevInFlow()) {
+  if (GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
-  if (nullptr != GetNextInFlow()) {
+  if (GetNextInFlow()) {
     skip |= eLogicalSideBitsBEnd;
   }
   return skip;
-}
-
-nsresult nsImageFrame::GetIntrinsicImageSize(nsSize& aSize) {
-  if (mIntrinsicSize.width && mIntrinsicSize.height) {
-    aSize.SizeTo(*mIntrinsicSize.width, *mIntrinsicSize.height);
-    return NS_OK;
-  }
-
-  return NS_ERROR_FAILURE;
 }
 
 nsresult nsImageFrame::LoadIcon(const nsAString& aSpec,
@@ -2489,7 +2500,7 @@ nsresult nsImageFrame::LoadIcon(const nsAString& aSpec,
       nullptr,                          /* principal (not relevant for icons) */
       0, loadGroup, gIconLoad, nullptr, /* No context */
       nullptr, /* Not associated with any particular document */
-      loadFlags, nullptr, contentPolicyType, EmptyString(),
+      loadFlags, nullptr, contentPolicyType, u""_ns,
       false, /* aUseUrgentStartForChannel */
       false, /* aLinkPreload */
       aRequest);
@@ -2699,7 +2710,7 @@ static bool IsInAutoWidthTableCellForQuirk(nsIFrame* aFrame) {
 void nsImageFrame::AddInlineMinISize(gfxContext* aRenderingContext,
                                      nsIFrame::InlineMinISizeData* aData) {
   nscoord isize = nsLayoutUtils::IntrinsicForContainer(
-      aRenderingContext, this, nsLayoutUtils::MIN_ISIZE);
+      aRenderingContext, this, IntrinsicISizeType::MinISize);
   bool canBreak = !IsInAutoWidthTableCellForQuirk(this);
   aData->DefaultAddInlineMinISize(this, isize, canBreak);
 }

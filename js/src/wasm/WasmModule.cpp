@@ -21,11 +21,14 @@
 #include <chrono>
 #include <thread>
 
-#include "builtin/TypedObject.h"
 #include "jit/JitOptions.h"
-#include "js/BuildId.h"  // JS::BuildIdCharVector
+#include "js/BuildId.h"                 // JS::BuildIdCharVector
+#include "js/experimental/TypedData.h"  // JS_NewUint8Array
+#include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "threading/LockGuard.h"
-#include "vm/PlainObject.h"  // js::PlainObject
+#include "vm/HelperThreadState.h"  // Tier2GeneratorTask
+#include "vm/PlainObject.h"        // js::PlainObject
+#include "wasm/TypedObject.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
 #include "wasm/WasmInstance.h"
@@ -47,14 +50,17 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
   SharedBytes bytecode_;
   SharedModule module_;
   Atomic<bool> cancelled_;
+  JSTelemetrySender telemetrySender_;
 
  public:
   Tier2GeneratorTaskImpl(const CompileArgs& compileArgs,
-                         const ShareableBytes& bytecode, Module& module)
+                         const ShareableBytes& bytecode, Module& module,
+                         JSTelemetrySender telemetrySender)
       : compileArgs_(&compileArgs),
         bytecode_(&bytecode),
         module_(&module),
-        cancelled_(false) {}
+        cancelled_(false),
+        telemetrySender_(telemetrySender) {}
 
   ~Tier2GeneratorTaskImpl() override {
     module_->tier2Listener_ = nullptr;
@@ -63,10 +69,11 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
 
   void cancel() override { cancelled_ = true; }
 
-  void runTaskLocked(AutoLockHelperThreadState& locked) override {
+  void runHelperThreadTask(AutoLockHelperThreadState& locked) override {
     {
       AutoUnlockHelperThreadState unlock(locked);
-      runTask();
+      CompileTier2(*compileArgs_, bytecode_->bytes, *module_, &cancelled_,
+                   telemetrySender_);
     }
 
     // During shutdown the main thread will wait for any ongoing (cancelled)
@@ -78,9 +85,6 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
     js_delete(this);
   }
 
-  void runTask() {
-    CompileTier2(*compileArgs_, bytecode_->bytes, *module_, &cancelled_);
-  }
   ThreadType threadType() override {
     return ThreadType::THREAD_TYPE_WASM_TIER2;
   }
@@ -93,10 +97,12 @@ Module::~Module() {
 }
 
 void Module::startTier2(const CompileArgs& args, const ShareableBytes& bytecode,
-                        JS::OptimizedEncodingListener* listener) {
+                        JS::OptimizedEncodingListener* listener,
+                        JSTelemetrySender telemetrySender) {
   MOZ_ASSERT(!testingTier2Active_);
 
-  auto task = MakeUnique<Tier2GeneratorTaskImpl>(args, bytecode, *this);
+  auto task = MakeUnique<Tier2GeneratorTaskImpl>(args, bytecode, *this,
+                                                 telemetrySender);
   if (!task) {
     return;
   }
@@ -543,58 +549,6 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
   Instance& instance = instanceObj->instance();
   const SharedTableVector& tables = instance.tables();
 
-  // Bulk memory changes the error checking behavior: we apply segments
-  // in-order and terminate if one has an out-of-bounds range.
-  // We enable bulk memory semantics if shared memory is enabled.
-#ifdef ENABLE_WASM_BULKMEM_OPS
-  const bool eagerBoundsCheck = false;
-#else
-  // Bulk memory must be available if shared memory is enabled.
-  const bool eagerBoundsCheck =
-      !cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled();
-#endif
-
-  if (eagerBoundsCheck) {
-    // Perform all error checks up front so that this function does not perform
-    // partial initialization if an error is reported. In addition, we need to
-    // to report OOBs as a link error when bulk-memory is disabled.
-
-    for (const ElemSegment* seg : elemSegments_) {
-      if (!seg->active()) {
-        continue;
-      }
-
-      uint32_t tableLength = tables[seg->tableIndex]->length();
-      uint32_t offset =
-          EvaluateOffsetInitExpr(globalImportValues, seg->offset());
-
-      if (offset > tableLength || tableLength - offset < seg->length()) {
-        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_WASM_BAD_FIT, "elem", "table");
-        return false;
-      }
-    }
-
-    if (memoryObj) {
-      uint32_t memoryLength = memoryObj->volatileMemoryLength();
-      for (const DataSegment* seg : dataSegments_) {
-        if (!seg->active()) {
-          continue;
-        }
-
-        uint32_t offset =
-            EvaluateOffsetInitExpr(globalImportValues, seg->offset());
-
-        if (offset > memoryLength ||
-            memoryLength - offset < seg->bytes.length()) {
-          JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                   JSMSG_WASM_BAD_FIT, "data", "memory");
-          return false;
-        }
-      }
-    }
-  }
-
   // Write data/elem segments into memories/tables.
 
   for (const ElemSegment* seg : elemSegments_) {
@@ -603,13 +557,11 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
           EvaluateOffsetInitExpr(globalImportValues, seg->offset());
       uint32_t count = seg->length();
 
-      if (!eagerBoundsCheck) {
-        uint32_t tableLength = tables[seg->tableIndex]->length();
-        if (offset > tableLength || tableLength - offset < count) {
-          JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                   JSMSG_WASM_OUT_OF_BOUNDS);
-          return false;
-        }
+      uint32_t tableLength = tables[seg->tableIndex]->length();
+      if (offset > tableLength || tableLength - offset < count) {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_WASM_OUT_OF_BOUNDS);
+        return false;
       }
 
       if (!instance.initElems(seg->tableIndex, *seg, offset, 0, count)) {
@@ -619,7 +571,7 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
   }
 
   if (memoryObj) {
-    uint32_t memoryLength = memoryObj->volatileMemoryLength();
+    uint32_t memoryLength = memoryObj->volatileMemoryLength32();
     uint8_t* memoryBase =
         memoryObj->buffer().dataPointerEither().unwrap(/* memcpy */);
 
@@ -632,12 +584,10 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
           EvaluateOffsetInitExpr(globalImportValues, seg->offset());
       uint32_t count = seg->bytes.length();
 
-      if (!eagerBoundsCheck) {
-        if (offset > memoryLength || memoryLength - offset < count) {
-          JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                   JSMSG_WASM_OUT_OF_BOUNDS);
-          return false;
-        }
+      if (offset > memoryLength || memoryLength - offset < count) {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_WASM_OUT_OF_BOUNDS);
+        return false;
       }
       memcpy(memoryBase + offset, seg->bytes.begin(), count);
     }
@@ -771,7 +721,7 @@ bool Module::instantiateMemory(JSContext* cx,
     MOZ_ASSERT_IF(!metadata().isAsmJS(), memory->buffer().isWasm());
 
     if (!CheckLimits(cx, declaredMin, declaredMax,
-                     uint64_t(memory->volatileMemoryLength()),
+                     uint64_t(memory->volatileMemoryLength32()),
                      memory->buffer().wasmMaxSize(), metadata().isAsmJS(),
                      "Memory")) {
       return false;
@@ -783,7 +733,7 @@ bool Module::instantiateMemory(JSContext* cx,
   } else {
     MOZ_ASSERT(!metadata().isAsmJS());
 
-    if (declaredMin / PageSize > MaxMemoryPages) {
+    if (declaredMin / PageSize > MaxMemory32Pages) {
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                JSMSG_WASM_MEM_IMP_LIMIT);
       return false;
@@ -792,7 +742,7 @@ bool Module::instantiateMemory(JSContext* cx,
     RootedArrayBufferObjectMaybeShared buffer(cx);
     Limits l(declaredMin, declaredMax,
              declaredShared ? Shareable::True : Shareable::False);
-    if (!CreateWasmBuffer(cx, l, &buffer)) {
+    if (!CreateWasmBuffer(cx, MemoryKind::Memory32, l, &buffer)) {
       return false;
     }
 
@@ -850,7 +800,7 @@ bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
     RootedObject proto(
         cx, &cx->global()->getPrototype(JSProto_WasmTable).toObject());
     tableObj.set(WasmTableObject::create(cx, td.initialLength, td.maximumLength,
-                                         td.kind, proto));
+                                         td.elemType, proto));
     if (!tableObj) {
       return false;
     }
@@ -1254,11 +1204,12 @@ static bool MakeStructField(JSContext* cx, const ValType& v, bool isMutable,
     case ValType::Ref:
       switch (v.refTypeKind()) {
         case RefType::TypeIndex:
+        case RefType::Eq:
           t = GlobalObject::getOrCreateReferenceTypeDescr(
               cx, cx->global(), ReferenceType::TYPE_OBJECT);
           break;
         case RefType::Func:
-        case RefType::Any:
+        case RefType::Extern:
           t = GlobalObject::getOrCreateReferenceTypeDescr(
               cx, cx->global(), ReferenceType::TYPE_WASM_ANYREF);
           break;
@@ -1295,29 +1246,23 @@ bool Module::makeStructTypeDescrs(
   MOZ_CRASH("Should not have seen any struct types");
 #else
 
-#  ifndef JS_HAS_TYPED_OBJECTS
-#    error "GC types require TypedObject"
-#  endif
-
   // Not just any prototype object will do, we must have the actual
   // StructTypePrototype.
-  RootedObject typedObjectModule(
-      cx, GlobalObject::getOrCreateTypedObjectModule(cx, cx->global()));
-  if (!typedObjectModule) {
+  RootedObject namespaceObject(
+      cx, GlobalObject::getOrCreateWebAssemblyNamespace(cx, cx->global()));
+  if (!namespaceObject) {
     return false;
   }
 
-  RootedNativeObject toModule(cx, &typedObjectModule->as<NativeObject>());
+  RootedNativeObject toModule(cx, &namespaceObject->as<NativeObject>());
   RootedObject prototype(
-      cx,
-      &toModule->getReservedSlot(TypedObjectModuleObject::StructTypePrototype)
-           .toObject());
+      cx, &toModule->getReservedSlot(WasmNamespaceObject::StructTypePrototype)
+               .toObject());
 
   for (const StructType& structType : structTypes()) {
     RootedIdVector ids(cx);
     RootedValueVector fieldTypeObjs(cx);
     Vector<StructFieldProps> fieldProps(cx);
-    bool allowConstruct = true;
 
     uint32_t k = 0;
     for (StructField sf : structType.fields_) {
@@ -1330,7 +1275,6 @@ bool Module::makeStructTypeDescrs(
         // from JS.  Wasm however sees one i64 field with appropriate
         // mutability.
         sf.isMutable = false;
-        allowConstruct = false;
 
         if (!MakeStructField(cx, ValType::I64, sf.isMutable, "_%d_low", k, &ids,
                              &fieldTypeObjs, &fieldProps)) {
@@ -1344,7 +1288,6 @@ bool Module::makeStructTypeDescrs(
         // Ditto v128 fields.  These turn into four adjacent i32 fields, using
         // the standard xyzw convention.
         sf.isMutable = false;
-        allowConstruct = false;
 
         if (!MakeStructField(cx, ValType::V128, sf.isMutable, "_%d_x", k, &ids,
                              &fieldTypeObjs, &fieldProps)) {
@@ -1372,7 +1315,6 @@ bool Module::makeStructTypeDescrs(
         if (v.isTypeIndex()) {
           // Validation ensures that v references a struct type here.
           sf.isMutable = false;
-          allowConstruct = false;
         }
 
         if (!MakeStructField(cx, v, sf.isMutable, "_%d", k++, &ids,
@@ -1387,9 +1329,7 @@ bool Module::makeStructTypeDescrs(
     // prevent JS from constructing instances of them.
 
     Rooted<StructTypeDescr*> structTypeDescr(
-        cx, StructMetaTypeDescr::createFromArrays(cx, prototype,
-                                                  /* opaque= */ true,
-                                                  allowConstruct, ids,
+        cx, StructMetaTypeDescr::createFromArrays(cx, prototype, ids,
                                                   fieldTypeObjs, fieldProps));
 
     if (!structTypeDescr || !structTypeDescrs.append(structTypeDescr)) {

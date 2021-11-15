@@ -12,7 +12,6 @@
 #include "GLContextTypes.h"
 #include "mozilla/widget/nsWaylandDisplay.h"
 #include "mozilla/widget/va_drmcommon.h"
-#include "mozilla/widget/DMABufLibWrapper.h"
 
 typedef void* EGLImageKHR;
 typedef void* EGLSyncKHR;
@@ -31,8 +30,6 @@ typedef enum {
   DMABUF_ALPHA = 1 << 0,
   // Surface is used as texture and may be also shared
   DMABUF_TEXTURE = 1 << 1,
-  // Automatically create wl_buffer / EGLImage in Create routines.
-  DMABUF_CREATE_WL_BUFFER = 1 << 2,
   // Use modifiers. Such dmabuf surface may have more planes
   // and complex internal structure (tiling/compression/etc.)
   // so we can't do direct rendering to it.
@@ -95,7 +92,6 @@ class DMABufSurface {
   // Set and get a global surface UID. The UID is shared across process
   // and it's used to track surface lifetime in various parts of rendering
   // engine.
-  void SetUID(uint32_t aUID) { mUID = aUID; };
   uint32_t GetUID() const { return mUID; };
 
   // Creates a global reference counter objects attached to the surface.
@@ -123,6 +119,10 @@ class DMABufSurface {
 
   // Release all underlying data.
   virtual void ReleaseSurface() = 0;
+
+#ifdef DEBUG
+  virtual void DumpToFile(const char* pFile){};
+#endif
 
   DMABufSurface(SurfaceType aSurfaceType);
 
@@ -171,7 +171,6 @@ class DMABufSurfaceRGBA : public DMABufSurface {
 
   DMABufSurfaceRGBA* GetAsDMABufSurfaceRGBA() { return this; }
 
-  bool Resize(int aWidth, int aHeight);
   void Clear();
 
   void ReleaseSurface();
@@ -202,11 +201,9 @@ class DMABufSurfaceRGBA : public DMABufSurface {
 
   uint32_t GetTextureCount() { return 1; };
 
-  void SetWLBuffer(struct wl_buffer* aWLBuffer);
-  wl_buffer* GetWLBuffer();
-  void WLBufferDetach() { mWLBufferAttached = false; };
-  bool WLBufferIsAttached() { return mWLBufferAttached; };
-  void WLBufferSetAttached() { mWLBufferAttached = true; };
+#ifdef DEBUG
+  virtual void DumpToFile(const char* pFile);
+#endif
 
   DMABufSurfaceRGBA();
 
@@ -216,7 +213,6 @@ class DMABufSurfaceRGBA : public DMABufSurface {
   bool Create(int aWidth, int aHeight, int aDMABufSurfaceFlags);
   bool Create(const mozilla::layers::SurfaceDescriptor& aDesc);
 
-  bool CreateWLBuffer();
   void ImportSurfaceDescriptor(const mozilla::layers::SurfaceDescriptor& aDesc);
 
  private:
@@ -226,13 +222,9 @@ class DMABufSurfaceRGBA : public DMABufSurface {
   int mHeight;
   mozilla::widget::GbmFormat* mGmbFormat;
 
-  wl_buffer* mWLBuffer;
   EGLImageKHR mEGLImage;
   GLuint mTexture;
   uint32_t mGbmBufferFlags;
-
-  bool mWLBufferAttached;
-  bool mFastWLBufferCreation;
 };
 
 class DMABufSurfaceYUV : public DMABufSurface {
@@ -261,7 +253,7 @@ class DMABufSurfaceYUV : public DMABufSurface {
   GLuint GetTexture(int aPlane = 0) { return mTexture[aPlane]; };
   EGLImageKHR GetEGLImage(int aPlane = 0) { return mEGLImage[aPlane]; };
 
-  uint32_t GetTextureCount() { return 2; };
+  uint32_t GetTextureCount();
 
   void SetYUVColorSpace(mozilla::gfx::YUVColorSpace aColorSpace) {
     mColorSpace = aColorSpace;
@@ -281,11 +273,10 @@ class DMABufSurfaceYUV : public DMABufSurface {
   bool Create(const mozilla::layers::SurfaceDescriptor& aDesc);
   bool Create(int aWidth, int aHeight, void** aPixelData, int* aLineSizes);
   bool CreateYUVPlane(int aPlane, int aWidth, int aHeight, int aDrmFormat);
+  void UpdateYUVPlane(int aPlane, void* aPixelData, int aLineSize);
 
   void ImportSurfaceDescriptor(
       const mozilla::layers::SurfaceDescriptorDMABuf& aDesc);
-
-  mozilla::gfx::SurfaceFormat mSurfaceFormat;
 
   int mWidth[DMABUF_BUFFER_PLANES];
   int mHeight[DMABUF_BUFFER_PLANES];

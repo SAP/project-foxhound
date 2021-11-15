@@ -62,10 +62,12 @@ let RemotePageAccessManager = {
         "services.settings.last_update_seconds",
       ],
       RPMGetAppBuildID: ["*"],
+      RPMGetInnerMostURI: ["*"],
       RPMIsWindowPrivate: ["*"],
       RPMAddToHistogram: ["*"],
     },
     "about:httpsonlyerror": {
+      RPMGetFormatURLPref: ["app.support.baseURL"],
       RPMSendAsyncMessage: ["goBack", "openInsecure"],
     },
     "about:certificate": {
@@ -102,6 +104,7 @@ let RemotePageAccessManager = {
       ],
       RPMPrefIsLocked: ["security.tls.version.min"],
       RPMAddToHistogram: ["*"],
+      RPMGetInnerMostURI: ["*"],
       RPMGetHttpResponseHeader: ["*"],
     },
     "about:newinstall": {
@@ -118,10 +121,13 @@ let RemotePageAccessManager = {
         "OpenSearchPreferences",
         "SearchHandoff",
       ],
-      RPMSendQuery: ["ShouldShowSearchBanner"],
+      RPMSendQuery: ["ShouldShowSearchBanner", "ShouldShowVPNPromo"],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
-      RPMGetFormatURLPref: ["app.support.baseURL"],
+      RPMGetFormatURLPref: [
+        "app.support.baseURL",
+        "browser.privatebrowsing.vpnpromourl",
+      ],
       RPMIsWindowPrivate: ["*"],
     },
     "about:protections": {
@@ -130,6 +136,7 @@ let RemotePageAccessManager = {
         "OpenAboutLogins",
         "OpenSyncPreferences",
         "ClearMonitorCache",
+        "RecordEntryPoint",
       ],
       RPMSendQuery: [
         "FetchUserLoginsData",
@@ -137,12 +144,15 @@ let RemotePageAccessManager = {
         "FetchContentBlockingEvents",
         "FetchMobileDeviceConnected",
         "GetShowProxyCard",
+        "FetchEntryPoint",
+        "FetchVPNSubStatus",
+        "FetchShowVPNCard",
       ],
       RPMAddMessageListener: ["*"],
       RPMRemoveMessageListener: ["*"],
       RPMSetBoolPref: [
-        "browser.contentblocking.report.hide_lockwise_app",
         "browser.contentblocking.report.show_mobile_app",
+        "browser.contentblocking.report.hide_vpn_banner",
       ],
       RPMGetBoolPref: [
         "browser.contentblocking.report.lockwise.enabled",
@@ -153,8 +163,9 @@ let RemotePageAccessManager = {
         "privacy.trackingprotection.fingerprinting.enabled",
         "privacy.trackingprotection.enabled",
         "privacy.trackingprotection.socialtracking.enabled",
-        "browser.contentblocking.report.hide_lockwise_app",
         "browser.contentblocking.report.show_mobile_app",
+        "browser.contentblocking.report.hide_vpn_banner",
+        "browser.contentblocking.report.vpn.enabled",
       ],
       RPMGetStringPref: [
         "browser.contentblocking.category",
@@ -166,6 +177,11 @@ let RemotePageAccessManager = {
         "browser.contentblocking.report.lockwise.mobile-ios.url",
         "browser.contentblocking.report.mobile-ios.url",
         "browser.contentblocking.report.mobile-android.url",
+        "browser.contentblocking.report.vpn.url",
+        "browser.contentblocking.report.vpn-promo.url",
+        "browser.contentblocking.report.vpn-android.url",
+        "browser.contentblocking.report.vpn-ios.url",
+        "browser.contentblocking.report.vpn_platforms",
       ],
       RPMGetIntPref: ["network.cookie.cookieBehavior"],
       RPMGetFormatURLPref: [
@@ -264,25 +280,25 @@ let RemotePageAccessManager = {
    * @returns non-null whitelist if access is allowed or null otherwise
    */
   checkAllowAccessToFeature(aPrincipal, aFeature, aDocument) {
-    let uri;
-    if (aPrincipal.isNullPrincipal || !aPrincipal.URI) {
-      // Null principals have a null-principal URI, but for the sake of remote
-      // pages we want to access the "real" document URI directly, e.g. if the
+    let spec;
+    if (!aPrincipal.isContentPrincipal) {
+      // For the sake of remote pages, when the principal has no uri,
+      // we want to access the "real" document URI directly, e.g. if the
       // about: page is sandboxed.
       if (!aDocument) {
         return null;
       }
-
-      uri = aDocument.documentURIObject;
+      if (!aDocument.documentURIObject.schemeIs("about")) {
+        return null;
+      }
+      spec =
+        aDocument.documentURIObject.prePath +
+        aDocument.documentURIObject.filePath;
     } else {
-      uri = aPrincipal.URI;
-    }
-
-    // Cut query params
-    let spec = uri.prePath + uri.filePath;
-
-    if (!uri.schemeIs("about")) {
-      return null;
+      if (!aPrincipal.schemeIs("about")) {
+        return null;
+      }
+      spec = aPrincipal.prepath + aPrincipal.filePath;
     }
 
     // Check if there is an entry for that requestying URI in the accessMap;

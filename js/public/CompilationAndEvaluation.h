@@ -165,6 +165,25 @@ extern JS_PUBLIC_API JSScript* Compile(JSContext* cx,
                                        SourceText<mozilla::Utf8Unit>& srcBuf);
 
 /**
+ * Compile the provided script using the given options, and register an encoder
+ * on is script source, such that all functions can be encoded as they are
+ * parsed. This strategy is used to avoid blocking the main thread in a
+ * non-interruptible way.
+ *
+ * See also JS::FinishIncrementalEncoding.
+ *
+ * Return the script on success, or return null on failure (usually with an
+ * error reported)
+ */
+extern JS_PUBLIC_API JSScript* CompileAndStartIncrementalEncoding(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    SourceText<char16_t>& srcBuf);
+
+extern JS_PUBLIC_API JSScript* CompileAndStartIncrementalEncoding(
+    JSContext* cx, const ReadOnlyCompileOptions& options,
+    SourceText<mozilla::Utf8Unit>& srcBuf);
+
+/**
  * Compile the UTF-8 contents of the given file into a script.  It is an error
  * if the file contains invalid UTF-8.  Return the script on success, or return
  * null on failure (usually with an error reported).
@@ -180,19 +199,6 @@ extern JS_PUBLIC_API JSScript* CompileUtf8File(
  */
 extern JS_PUBLIC_API JSScript* CompileUtf8Path(
     JSContext* cx, const ReadOnlyCompileOptions& options, const char* filename);
-
-extern JS_PUBLIC_API JSScript* CompileForNonSyntacticScope(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<char16_t>& srcBuf);
-
-/**
- * Compile the provided UTF-8 data into a script in a non-syntactic scope.  It
- * is an error if the data contains invalid UTF-8.  Return the script on
- * success, or return null on failure (usually with an error reported).
- */
-extern JS_PUBLIC_API JSScript* CompileForNonSyntacticScope(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<mozilla::Utf8Unit>& srcBuf);
 
 /**
  * Compile a function with envChain plus the global as its scope chain.
@@ -226,15 +232,6 @@ extern JS_PUBLIC_API JSFunction* CompileFunctionUtf8(
     JSContext* cx, HandleObjectVector envChain,
     const ReadOnlyCompileOptions& options, const char* name, unsigned nargs,
     const char* const* argnames, const char* utf8, size_t length);
-
-/*
- * Associate an element wrapper and attribute name with a previously compiled
- * script, for debugging purposes. Calling this function is optional, but should
- * be done before script execution if it is required.
- */
-extern JS_PUBLIC_API bool InitScriptSourceElement(
-    JSContext* cx, Handle<JSScript*> script, Handle<JSObject*> element,
-    Handle<JSString*> elementAttrName = nullptr);
 
 /*
  * For a script compiled with the hideScriptFromDebugger option, expose the

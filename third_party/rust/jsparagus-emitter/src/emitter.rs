@@ -62,6 +62,16 @@ pub enum ThrowMsgKind {
     AssignToCall = 0,
     IteratorNoThrow = 1,
     CantDeleteSuper = 2,
+    PrivateDoubleInit = 3,
+    MissingPrivateOnGet = 4,
+    MissingPrivateOnSet = 5,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ThrowCondition {
+    ThrowHas = 0,
+    ThrowHasNot = 1,
+    NoThrow = 2,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -145,11 +155,13 @@ pub struct InstructionWriter {
 #[derive(Debug)]
 pub struct EmitOptions {
     pub no_script_rval: bool,
+    pub extent: SourceExtent,
 }
 impl EmitOptions {
-    pub fn new() -> Self {
+    pub fn new(extent: SourceExtent) -> Self {
         Self {
             no_script_rval: false,
+            extent,
         }
     }
 }
@@ -555,8 +567,8 @@ impl InstructionWriter {
         self.emit_op(Opcode::InitHiddenElem);
     }
 
-    pub fn init_private_elem(&mut self) {
-        self.emit_op(Opcode::InitPrivateElem);
+    pub fn init_locked_elem(&mut self) {
+        self.emit_op(Opcode::InitLockedElem);
     }
 
     pub fn init_prop_getter(&mut self, name_index: GCThingIndex) {
@@ -613,10 +625,6 @@ impl InstructionWriter {
         self.emit_op(Opcode::CallElem);
     }
 
-    pub fn get_private_elem(&mut self) {
-        self.emit_op(Opcode::GetPrivateElem);
-    }
-
     pub fn length(&mut self, name_index: GCThingIndex) {
         self.emit_op(Opcode::Length);
         self.write_g_c_thing_index(name_index);
@@ -640,10 +648,6 @@ impl InstructionWriter {
         self.emit_op(Opcode::StrictSetElem);
     }
 
-    pub fn set_private_elem(&mut self) {
-        self.emit_op(Opcode::SetPrivateElem);
-    }
-
     pub fn del_prop(&mut self, name_index: GCThingIndex) {
         self.emit_op(Opcode::DelProp);
         self.write_g_c_thing_index(name_index);
@@ -664,6 +668,12 @@ impl InstructionWriter {
 
     pub fn has_own(&mut self) {
         self.emit_op(Opcode::HasOwn);
+    }
+
+    pub fn check_private_field(&mut self, throw_condition: ThrowCondition, msg_kind: ThrowMsgKind) {
+        self.emit_op(Opcode::CheckPrivateField);
+        self.write_u8(throw_condition as u8);
+        self.write_u8(msg_kind as u8);
     }
 
     pub fn super_base(&mut self) {
@@ -804,8 +814,9 @@ impl InstructionWriter {
         self.write_u32(source_end);
     }
 
-    pub fn function_proto(&mut self) {
-        self.emit_op(Opcode::FunctionProto);
+    pub fn builtin_object(&mut self, kind: u8) {
+        self.emit_op(Opcode::BuiltinObject);
+        self.write_u8(kind);
     }
 
     pub fn call(&mut self, argc: u16) {
@@ -1473,6 +1484,7 @@ impl InstructionWriter {
     pub fn into_stencil(
         self,
         script_data_list: &mut ImmutableScriptDataList,
+        extent: SourceExtent,
     ) -> Result<ScriptStencil, EmitError> {
         let main_offset: usize = self.main_offset.into();
         let nfixed: u32 = self.max_fixed_slots.into();
@@ -1500,7 +1512,7 @@ impl InstructionWriter {
         Ok(ScriptStencil::top_level_script(
             self.gcthings.into(),
             immutable_script_data,
-            SourceExtent::top_level_script(1, 0),
+            extent,
         ))
     }
 }

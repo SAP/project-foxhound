@@ -21,6 +21,9 @@ const gNetLinkSvc =
   Cc["@mozilla.org/network/network-link-service;1"].getService(
     Ci.nsINetworkLinkService
   );
+const gDNSService = Cc["@mozilla.org/network/dns-service;1"].getService(
+  Ci.nsIDNSService
+);
 
 const gRequestNetworkingData = {
   http: gDashboard.requestHttpConnections,
@@ -104,6 +107,14 @@ function displayDns(data) {
     suffix_tbody.appendChild(row);
   }
   suffixParent.replaceChild(suffix_tbody, suffixContent);
+
+  let trr_url_tbody = document.createElement("tbody");
+  trr_url_tbody.id = "dns_trr_url";
+  let trr_url = document.createElement("tr");
+  trr_url.appendChild(col(gDNSService.currentTrrURI));
+  trr_url_tbody.appendChild(trr_url);
+  let prevURL = document.getElementById("dns_trr_url");
+  prevURL.parentNode.replaceChild(trr_url_tbody, prevURL);
 
   let cont = document.getElementById("dns_content");
   let parent = cont.parentNode;
@@ -274,9 +285,7 @@ function init() {
 
   let clearDNSCache = document.getElementById("clearDNSCache");
   clearDNSCache.addEventListener("click", function() {
-    Cc["@mozilla.org/network/dns-service;1"]
-      .getService(Ci.nsIDNSService)
-      .clearCache(true);
+    gDNSService.clearCache(true);
   });
 
   let setLogButton = document.getElementById("set-log-file-button");
@@ -502,7 +511,12 @@ window.addEventListener("pageshow", function() {
 function doLookup() {
   let host = document.getElementById("host").value;
   if (host) {
-    gDashboard.requestDNSLookup(host, displayDNSLookup);
+    try {
+      gDashboard.requestDNSLookup(host, displayDNSLookup);
+    } catch (e) {}
+    try {
+      gDashboard.requestDNSHTTPSRRLookup(host, displayHTTPSRRLookup);
+    } catch (e) {}
   }
 }
 
@@ -516,6 +530,55 @@ function displayDNSLookup(data) {
     for (let address of data.address) {
       let row = document.createElement("tr");
       row.appendChild(col(address));
+      new_cont.appendChild(row);
+    }
+  } else {
+    new_cont.appendChild(col(data.error));
+  }
+
+  parent.replaceChild(new_cont, cont);
+}
+
+function displayHTTPSRRLookup(data) {
+  let cont = document.getElementById("https_rr_content");
+  let parent = cont.parentNode;
+  let new_cont = document.createElement("tbody");
+  new_cont.setAttribute("id", "https_rr_content");
+
+  if (data.answer) {
+    for (let record of data.records) {
+      let row = document.createElement("tr");
+      let alpn = record.alpn ? `alpn="${record.alpn.alpn}" ` : "";
+      let noDefaultAlpn = record.noDefaultAlpn ? "noDefaultAlpn " : "";
+      let port = record.port ? `port="${record.port.port}" ` : "";
+      let echconfig = record.echconfig
+        ? `echconfig="${record.echconfig.echconfig}" `
+        : "";
+      let ipv4hint = "";
+      let ipv6hint = "";
+      if (record.ipv4Hint) {
+        let ipv4Str = "";
+        for (let addr of record.ipv4Hint.address) {
+          ipv4Str += `${addr}, `;
+        }
+        // Remove ", " at the end.
+        ipv4Str = ipv4Str.slice(0, -2);
+        ipv4hint = `ipv4hint="${ipv4Str}" `;
+      }
+      if (record.ipv6Hint) {
+        let ipv6Str = "";
+        for (let addr of record.ipv6Hint.address) {
+          ipv6Str += `${addr}, `;
+        }
+        // Remove ", " at the end.
+        ipv6Str = ipv6Str.slice(0, -2);
+        ipv6hint = `ipv6hint="${ipv6Str}" `;
+      }
+
+      let str = `${record.priority} ${record.name} `;
+      str += `(${alpn}${noDefaultAlpn}${port}`;
+      str += `${ipv4hint}${echconfig}${ipv6hint})`;
+      row.appendChild(col(str));
       new_cont.appendChild(row);
     }
   } else {

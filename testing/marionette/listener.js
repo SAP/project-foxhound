@@ -15,57 +15,38 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-const { accessibility } = ChromeUtils.import(
-  "chrome://marionette/content/accessibility.js"
-);
-const { action } = ChromeUtils.import("chrome://marionette/content/action.js");
-const { atom } = ChromeUtils.import("chrome://marionette/content/atom.js");
-const { Capabilities, PageLoadStrategy } = ChromeUtils.import(
-  "chrome://marionette/content/capabilities.js"
-);
-const { element, WebElement } = ChromeUtils.import(
-  "chrome://marionette/content/element.js"
-);
-const {
-  ElementNotInteractableError,
-  InsecureCertificateError,
-  InvalidArgumentError,
-  InvalidSelectorError,
-  NoSuchElementError,
-  NoSuchFrameError,
-  TimeoutError,
-  UnknownError,
-} = ChromeUtils.import("chrome://marionette/content/error.js");
-const { Sandboxes, evaluate, sandbox } = ChromeUtils.import(
-  "chrome://marionette/content/evaluate.js"
-);
-const { event } = ChromeUtils.import("chrome://marionette/content/event.js");
-const { ContentEventObserverService } = ChromeUtils.import(
-  "chrome://marionette/content/dom.js"
-);
-const { pprint, truncate } = ChromeUtils.import(
-  "chrome://marionette/content/format.js"
-);
-const { interaction } = ChromeUtils.import(
-  "chrome://marionette/content/interaction.js"
-);
-const { legacyaction } = ChromeUtils.import(
-  "chrome://marionette/content/legacyaction.js"
-);
-const { Log } = ChromeUtils.import("chrome://marionette/content/log.js");
-const { navigate } = ChromeUtils.import(
-  "chrome://marionette/content/navigate.js"
-);
-const { proxy } = ChromeUtils.import("chrome://marionette/content/proxy.js");
+XPCOMUtils.defineLazyModuleGetters(this, {
+  OS: "resource://gre/modules/osfile.jsm",
+
+  accessibility: "chrome://marionette/content/accessibility.js",
+  action: "chrome://marionette/content/action.js",
+  atom: "chrome://marionette/content/atom.js",
+  ContentEventObserverService: "chrome://marionette/content/dom.js",
+  element: "chrome://marionette/content/element.js",
+  error: "chrome://marionette/content/error.js",
+  evaluate: "chrome://marionette/content/evaluate.js",
+  event: "chrome://marionette/content/event.js",
+  interaction: "chrome://marionette/content/interaction.js",
+  legacyaction: "chrome://marionette/content/legacyaction.js",
+  Log: "chrome://marionette/content/log.js",
+  MarionettePrefs: "chrome://marionette/content/prefs.js",
+  pprint: "chrome://marionette/content/format.js",
+  proxy: "chrome://marionette/content/proxy.js",
+  sandbox: "chrome://marionette/content/evaluate.js",
+  Sandboxes: "chrome://marionette/content/evaluate.js",
+  truncate: "chrome://marionette/content/format.js",
+  WebElement: "chrome://marionette/content/element.js",
+});
 
 XPCOMUtils.defineLazyGetter(this, "logger", () => Log.getWithPrefix(contentId));
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
+const contentFrameMessageManager = this;
 const contentId = content.docShell.browsingContext.id;
 
 const curContainer = {
   _frame: null,
-  shadowRoot: null,
+  _parentFrame: null,
 
   get frame() {
     return this._frame;
@@ -73,9 +54,12 @@ const curContainer = {
 
   set frame(frame) {
     this._frame = frame;
+    this._parentFrame = frame.parent;
+    this.id = frame.browsingContext.id;
+  },
 
-    this.id = this._frame.browsingContext.id;
-    this.shadowRoot = null;
+  get parentFrame() {
+    return this._parentFrame;
   },
 };
 
@@ -86,14 +70,6 @@ addEventListener("dblclick", event.DoubleClickTracker.resetClick);
 addEventListener("unload", event.DoubleClickTracker.resetClick, true);
 
 const seenEls = new element.Store();
-
-Object.defineProperty(this, "capabilities", {
-  get() {
-    let payload = sendSyncMessage("Marionette:WebDriver:GetCapabilities");
-    return Capabilities.fromJSON(payload[0]);
-  },
-  configurable: true,
-});
 
 let legacyactions = new legacyaction.Chain();
 
@@ -107,403 +83,6 @@ const eventObservers = new ContentEventObserverService(
   content,
   sendAsyncMessage.bind(this)
 );
-
-/**
- * The load listener singleton helps to keep track of active page load
- * activities, and can be used by any command which might cause a navigation
- * to happen. In the specific case of a process change of the frame script it
- * allows to continue observing the current page load.
- */
-const loadListener = {
-  commandID: null,
-  seenBeforeUnload: false,
-  seenUnload: false,
-  timeout: null,
-  timerPageLoad: null,
-  timerPageUnload: null,
-
-  /**
-   * Start listening for page unload/load events.
-   *
-   * @param {number} commandID
-   *     ID of the currently handled message between the driver and
-   *     listener.
-   * @param {number} timeout
-   *     Timeout in seconds the method has to wait for the page being
-   *     finished loading.
-   * @param {number} startTime
-   *     Unix timestap when the navitation request got triggered.
-   * @param {boolean=} waitForUnloaded
-   *     If true wait for page unload events, otherwise only for page
-   *     load events.
-   */
-  start(commandID, timeout, startTime, waitForUnloaded = true) {
-    this.commandID = commandID;
-    this.timeout = timeout;
-
-    this.seenBeforeUnload = false;
-    this.seenUnload = false;
-
-    this.timerPageLoad = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-    this.timerPageUnload = null;
-
-    // In case the frame script has been moved to a differnt process,
-    // wait the remaining time
-    timeout = startTime + timeout - new Date().getTime();
-
-    if (timeout <= 0) {
-      this.notify(this.timerPageLoad);
-      return;
-    }
-
-    if (waitForUnloaded) {
-      addEventListener("beforeunload", this, true);
-      addEventListener("hashchange", this, true);
-      addEventListener("pagehide", this, true);
-      addEventListener("popstate", this, true);
-      addEventListener("unload", this, true);
-
-      Services.obs.addObserver(this, "outer-window-destroyed");
-    } else {
-      // The frame script has been moved to a differnt content process.
-      // Due to the time it takes to re-register the browser in Marionette,
-      // it can happen that page load events are missed before the listeners
-      // are getting attached again. By checking the document readyState the
-      // command can return immediately if the page load is already done.
-      let readyState = content.document.readyState;
-      let documentURI = content.document.documentURI;
-      logger.trace(truncate`Check readyState ${readyState} for ${documentURI}`);
-      // If the page load has already finished, don't setup listeners and
-      // timers but return immediatelly.
-      if (this.handleReadyState(readyState, documentURI)) {
-        return;
-      }
-
-      addEventListener("DOMContentLoaded", loadListener, true);
-      addEventListener("pageshow", loadListener, true);
-    }
-
-    this.timerPageLoad.initWithCallback(
-      this,
-      timeout,
-      Ci.nsITimer.TYPE_ONE_SHOT
-    );
-  },
-
-  /**
-   * Stop listening for page unload/load events.
-   */
-  stop() {
-    if (this.timerPageLoad) {
-      this.timerPageLoad.cancel();
-    }
-
-    if (this.timerPageUnload) {
-      this.timerPageUnload.cancel();
-    }
-
-    removeEventListener("beforeunload", this, true);
-    removeEventListener("hashchange", this, true);
-    removeEventListener("pagehide", this, true);
-    removeEventListener("popstate", this, true);
-    removeEventListener("DOMContentLoaded", this, true);
-    removeEventListener("pageshow", this, true);
-    removeEventListener("unload", this, true);
-
-    // In case the observer was added before the frame script has been moved
-    // to a different process, it will no longer be available. Exceptions can
-    // be ignored.
-    try {
-      Services.obs.removeObserver(this, "outer-window-destroyed");
-    } catch (e) {}
-  },
-
-  /**
-   * Callback for registered DOM events.
-   */
-  handleEvent(event) {
-    // Only care about events from the currently selected browsing context,
-    // whereby some of those do not bubble up to the window.
-    if (
-      event.target != curContainer.frame &&
-      event.target != curContainer.frame.document
-    ) {
-      return;
-    }
-
-    let location = event.target.documentURI || event.target.location.href;
-    logger.trace(truncate`Received DOM event ${event.type} for ${location}`);
-
-    switch (event.type) {
-      case "beforeunload":
-        this.seenBeforeUnload = true;
-        break;
-
-      case "unload":
-        this.seenUnload = true;
-        break;
-
-      case "pagehide":
-        this.seenUnload = true;
-
-        removeEventListener("hashchange", this, true);
-        removeEventListener("pagehide", this, true);
-        removeEventListener("popstate", this, true);
-
-        // Now wait until the target page has been loaded
-        addEventListener("DOMContentLoaded", this, true);
-        addEventListener("pageshow", this, true);
-        break;
-
-      case "hashchange":
-      case "popstate":
-        this.stop();
-        sendOk(this.commandID);
-        break;
-
-      case "DOMContentLoaded":
-      case "pageshow":
-        this.handleReadyState(
-          event.target.readyState,
-          event.target.documentURI
-        );
-        break;
-    }
-  },
-
-  /**
-   * Checks the value of readyState for the current page
-   * load activity, and resolves the command if the load
-   * has been finished. It also takes care of the selected
-   * page load strategy.
-   *
-   * @param {string} readyState
-   *     Current ready state of the document.
-   * @param {string} documentURI
-   *     Current document URI of the document.
-   *
-   * @return {boolean}
-   *     True if the page load has been finished.
-   */
-  handleReadyState(readyState, documentURI) {
-    let finished = false;
-
-    switch (readyState) {
-      case "interactive":
-        if (documentURI.startsWith("about:certerror")) {
-          this.stop();
-          sendError(new InsecureCertificateError(), this.commandID);
-          finished = true;
-        } else if (/about:.*(error)\?/.exec(documentURI)) {
-          this.stop();
-          sendError(
-            new UnknownError(`Reached error page: ${documentURI}`),
-            this.commandID
-          );
-          finished = true;
-
-          // Return early with a page load strategy of eager, and also
-          // special-case about:blocked pages which should be treated as
-          // non-error pages but do not raise a pageshow event. about:blank
-          // is also treaded specifically here, because it gets temporary
-          // loaded for new content processes, and we only want to rely on
-          // complete loads for it.
-        } else if (
-          (capabilities.get("pageLoadStrategy") === PageLoadStrategy.Eager &&
-            documentURI != "about:blank") ||
-          /about:blocked\?/.exec(documentURI)
-        ) {
-          this.stop();
-          sendOk(this.commandID);
-          finished = true;
-        }
-
-        break;
-
-      case "complete":
-        this.stop();
-        sendOk(this.commandID);
-        finished = true;
-
-        break;
-    }
-
-    return finished;
-  },
-
-  /**
-   * Callback for navigation timeout timer.
-   */
-  notify(timer) {
-    switch (timer) {
-      case this.timerPageUnload:
-        // In the case when a document has a beforeunload handler
-        // registered, the currently active command will return immediately
-        // due to the modal dialog observer in proxy.js.
-        //
-        // Otherwise the timeout waiting for the document to start
-        // navigating is increased by 5000 ms to ensure a possible load
-        // event is not missed. In the common case such an event should
-        // occur pretty soon after beforeunload, and we optimise for this.
-        if (this.seenBeforeUnload) {
-          this.seenBeforeUnload = null;
-          this.timerPageUnload.initWithCallback(
-            this,
-            5000,
-            Ci.nsITimer.TYPE_ONE_SHOT
-          );
-
-          // If no page unload has been detected, ensure to properly stop
-          // the load listener, and return from the currently active command.
-        } else if (!this.seenUnload) {
-          logger.debug(
-            "Canceled page load listener because no navigation " +
-              "has been detected"
-          );
-          this.stop();
-          sendOk(this.commandID);
-        }
-        break;
-
-      case this.timerPageLoad:
-        this.stop();
-        sendError(
-          new TimeoutError(`Timeout loading page after ${this.timeout}ms`),
-          this.commandID
-        );
-        break;
-    }
-  },
-
-  observe(subject, topic) {
-    logger.trace(`Received observer notification ${topic}`);
-
-    const winId = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
-    const bc = BrowsingContext.get(curContainer.id);
-
-    switch (topic) {
-      // In the case when the currently selected frame is closed,
-      // there will be no further load events. Stop listening immediately.
-      case "outer-window-destroyed":
-        if (bc.window.windowUtils.outerWindowID == winId) {
-          this.stop();
-          sendOk(this.commandID);
-        }
-        break;
-    }
-  },
-
-  /**
-   * Continue to listen for page load events after the frame script has been
-   * moved to a different content process.
-   *
-   * @param {number} commandID
-   *     ID of the currently handled message between the driver and
-   *     listener.
-   * @param {number} timeout
-   *     Timeout in milliseconds the method has to wait for the page
-   *     being finished loading.
-   * @param {number} startTime
-   *     Unix timestap when the navitation request got triggered.
-   */
-  waitForLoadAfterFramescriptReload(commandID, timeout, startTime) {
-    this.start(commandID, timeout, startTime, false);
-  },
-
-  /**
-   * Use a trigger callback to initiate a page load, and attach listeners if
-   * a page load is expected.
-   *
-   * @param {function} trigger
-   *     Callback that triggers the page load.
-   * @param {number} commandID
-   *     ID of the currently handled message between the driver and listener.
-   * @param {number} pageTimeout
-   *     Timeout in milliseconds the method has to wait for the page
-   *    finished loading.
-   * @param {boolean=} loadEventExpected
-   *     Optional flag, which indicates that navigate has to wait for the page
-   *     finished loading.
-   * @param {string=} url
-   *     Optional URL, which is used to check if a page load is expected.
-   */
-  async navigate(
-    trigger,
-    commandID,
-    timeout,
-    loadEventExpected = true,
-    useUnloadTimer = false
-  ) {
-    // Only wait if the page load strategy is not `none`
-    loadEventExpected =
-      loadEventExpected &&
-      capabilities.get("pageLoadStrategy") !== PageLoadStrategy.None;
-
-    if (loadEventExpected) {
-      let startTime = new Date().getTime();
-      this.start(commandID, timeout, startTime, true);
-    }
-
-    await trigger();
-
-    try {
-      if (!loadEventExpected) {
-        sendOk(commandID);
-        return;
-      }
-
-      // If requested setup a timer to detect a possible page load
-      if (useUnloadTimer) {
-        this.timerPageUnload = Cc["@mozilla.org/timer;1"].createInstance(
-          Ci.nsITimer
-        );
-        this.timerPageUnload.initWithCallback(
-          this,
-          200,
-          Ci.nsITimer.TYPE_ONE_SHOT
-        );
-      }
-    } catch (e) {
-      if (loadEventExpected) {
-        this.stop();
-      }
-
-      sendError(e, commandID);
-    }
-  },
-};
-
-/**
- * Called when listener is first started up.  The listener sends its
- * unique window ID and its current URI to the actor.  If the actor returns
- * an ID, we start the listeners. Otherwise, nothing happens.
- */
-function registerSelf() {
-  logger.trace("Frame script loaded");
-
-  curContainer.frame = content;
-
-  sandboxes.clear();
-  legacyactions.mouseEventsOnly = false;
-  action.inputStateMap = new Map();
-  action.inputsToCancel = [];
-
-  let reply = sendSyncMessage("Marionette:Register", {
-    frameId: contentId,
-  });
-  if (reply.length == 0) {
-    logger.error("No reply from Marionette:Register");
-    return;
-  }
-
-  if (reply[0].frameId === contentId) {
-    logger.trace("Frame script registered");
-    startListeners();
-    sendAsyncMessage("Marionette:ListenersAttached", {
-      frameId: contentId,
-    });
-  }
-}
 
 // Eventually we will not have a closure for every single command,
 // but use a generic dispatch for all listener commands.
@@ -540,8 +119,10 @@ function dispatch(fn) {
   };
 }
 
+let clickElementFn = dispatch(clickElement);
 let getActiveElementFn = dispatch(getActiveElement);
 let getBrowsingContextIdFn = dispatch(getBrowsingContextId);
+let getCurrentUrlFn = dispatch(getCurrentUrl);
 let getElementAttributeFn = dispatch(getElementAttribute);
 let getElementPropertyFn = dispatch(getElementProperty);
 let getElementTextFn = dispatch(getElementText);
@@ -556,34 +137,35 @@ let isElementSelectedFn = dispatch(isElementSelected);
 let clearElementFn = dispatch(clearElement);
 let isElementDisplayedFn = dispatch(isElementDisplayed);
 let getElementValueOfCssPropertyFn = dispatch(getElementValueOfCssProperty);
-let switchToShadowRootFn = dispatch(switchToShadowRoot);
 let singleTapFn = dispatch(singleTap);
 let performActionsFn = dispatch(performActions);
 let releaseActionsFn = dispatch(releaseActions);
 let actionChainFn = dispatch(actionChain);
 let multiActionFn = dispatch(multiAction);
-let executeFn = dispatch(execute);
-let executeInSandboxFn = dispatch(executeInSandbox);
+let executeScriptFn = dispatch(executeScript);
 let sendKeysToElementFn = dispatch(sendKeysToElement);
-let reftestWaitFn = dispatch(reftestWait);
+let setBrowsingContextIdFn = dispatch(setBrowsingContextId);
 
 function startListeners() {
+  if (!MarionettePrefs.useActors) {
+    eventDispatcher.enable();
+  }
+
   addMessageListener("Marionette:actionChain", actionChainFn);
-  addMessageListener("Marionette:cancelRequest", cancelRequest);
   addMessageListener("Marionette:clearElement", clearElementFn);
-  addMessageListener("Marionette:clickElement", clickElement);
+  addMessageListener("Marionette:clickElement", clickElementFn);
   addMessageListener("Marionette:Deregister", deregister);
   addMessageListener("Marionette:DOM:AddEventListener", domAddEventListener);
   addMessageListener(
     "Marionette:DOM:RemoveEventListener",
     domRemoveEventListener
   );
-  addMessageListener("Marionette:execute", executeFn);
-  addMessageListener("Marionette:executeInSandbox", executeInSandboxFn);
+  addMessageListener("Marionette:executeScript", executeScriptFn);
   addMessageListener("Marionette:findElementContent", findElementContentFn);
   addMessageListener("Marionette:findElementsContent", findElementsContentFn);
   addMessageListener("Marionette:getActiveElement", getActiveElementFn);
   addMessageListener("Marionette:getBrowsingContextId", getBrowsingContextIdFn);
+  addMessageListener("Marionette:getCurrentUrl", getCurrentUrlFn);
   addMessageListener("Marionette:getElementAttribute", getElementAttributeFn);
   addMessageListener("Marionette:getElementProperty", getElementPropertyFn);
   addMessageListener("Marionette:getElementRect", getElementRectFn);
@@ -595,34 +177,30 @@ function startListeners() {
   );
   addMessageListener("Marionette:getPageSource", getPageSourceFn);
   addMessageListener("Marionette:getScreenshotRect", getScreenshotRectFn);
-  addMessageListener("Marionette:goBack", goBack);
-  addMessageListener("Marionette:goForward", goForward);
   addMessageListener("Marionette:isElementDisplayed", isElementDisplayedFn);
   addMessageListener("Marionette:isElementEnabled", isElementEnabledFn);
   addMessageListener("Marionette:isElementSelected", isElementSelectedFn);
   addMessageListener("Marionette:multiAction", multiActionFn);
-  addMessageListener("Marionette:navigateTo", navigateTo);
   addMessageListener("Marionette:performActions", performActionsFn);
-  addMessageListener("Marionette:refresh", refresh);
-  addMessageListener("Marionette:reftestWait", reftestWaitFn);
   addMessageListener("Marionette:releaseActions", releaseActionsFn);
   addMessageListener("Marionette:sendKeysToElement", sendKeysToElementFn);
   addMessageListener("Marionette:Session:Delete", deleteSession);
+  addMessageListener("Marionette:setBrowsingContextId", setBrowsingContextIdFn);
   addMessageListener("Marionette:singleTap", singleTapFn);
   addMessageListener("Marionette:switchToFrame", switchToFrame);
   addMessageListener("Marionette:switchToParentFrame", switchToParentFrame);
-  addMessageListener("Marionette:switchToShadowRoot", switchToShadowRootFn);
-  addMessageListener("Marionette:waitForPageLoaded", waitForPageLoaded);
 }
 
 function deregister() {
+  if (!MarionettePrefs.useActors) {
+    eventDispatcher.disable();
+  }
+
   removeMessageListener("Marionette:actionChain", actionChainFn);
-  removeMessageListener("Marionette:cancelRequest", cancelRequest);
   removeMessageListener("Marionette:clearElement", clearElementFn);
-  removeMessageListener("Marionette:clickElement", clickElement);
+  removeMessageListener("Marionette:clickElement", clickElementFn);
   removeMessageListener("Marionette:Deregister", deregister);
-  removeMessageListener("Marionette:execute", executeFn);
-  removeMessageListener("Marionette:executeInSandbox", executeInSandboxFn);
+  removeMessageListener("Marionette:executeScript", executeScriptFn);
   removeMessageListener("Marionette:findElementContent", findElementContentFn);
   removeMessageListener(
     "Marionette:findElementsContent",
@@ -633,6 +211,7 @@ function deregister() {
     "Marionette:getBrowsingContextId",
     getBrowsingContextIdFn
   );
+  removeMessageListener("Marionette:getCurrentUrl", getCurrentUrlFn);
   removeMessageListener(
     "Marionette:getElementAttribute",
     getElementAttributeFn
@@ -647,23 +226,21 @@ function deregister() {
   );
   removeMessageListener("Marionette:getPageSource", getPageSourceFn);
   removeMessageListener("Marionette:getScreenshotRect", getScreenshotRectFn);
-  removeMessageListener("Marionette:goBack", goBack);
-  removeMessageListener("Marionette:goForward", goForward);
   removeMessageListener("Marionette:isElementDisplayed", isElementDisplayedFn);
   removeMessageListener("Marionette:isElementEnabled", isElementEnabledFn);
   removeMessageListener("Marionette:isElementSelected", isElementSelectedFn);
   removeMessageListener("Marionette:multiAction", multiActionFn);
-  removeMessageListener("Marionette:navigateTo", navigateTo);
   removeMessageListener("Marionette:performActions", performActionsFn);
-  removeMessageListener("Marionette:refresh", refresh);
   removeMessageListener("Marionette:releaseActions", releaseActionsFn);
   removeMessageListener("Marionette:sendKeysToElement", sendKeysToElementFn);
   removeMessageListener("Marionette:Session:Delete", deleteSession);
+  removeMessageListener(
+    "Marionette:setBrowsingContextId",
+    setBrowsingContextIdFn
+  );
   removeMessageListener("Marionette:singleTap", singleTapFn);
   removeMessageListener("Marionette:switchToFrame", switchToFrame);
   removeMessageListener("Marionette:switchToParentFrame", switchToParentFrame);
-  removeMessageListener("Marionette:switchToShadowRoot", switchToShadowRootFn);
-  removeMessageListener("Marionette:waitForPageLoaded", waitForPageLoaded);
 }
 
 function deleteSession() {
@@ -733,130 +310,40 @@ function sendError(err, uuid) {
   sendToServer(uuid, err);
 }
 
-async function execute(script, args, opts) {
-  let sb = sandbox.createMutable(curContainer.frame);
+async function executeScript(script, args, opts = {}) {
+  let sb;
+
+  if (opts.useSandbox) {
+    sb = sandboxes.get(opts.sandboxName, opts.newSandbox);
+  } else {
+    sb = sandbox.createMutable(curContainer.frame);
+  }
+
   return evaluate.sandbox(sb, script, args, opts);
 }
 
-async function executeInSandbox(script, args, opts) {
-  let sb = sandboxes.get(opts.sandboxName, opts.newSandbox);
-  return evaluate.sandbox(sb, script, args, opts);
-}
-
-function emitTouchEvent(type, touch) {
-  logger.info(
-    `Emitting Touch event of type ${type} ` +
-      `to element with id: ${touch.target.id} ` +
-      `and tag name: ${touch.target.tagName} ` +
-      `at coordinates (${touch.clientX}), ` +
-      `${touch.clientY}) relative to the viewport`
-  );
-
-  const win = curContainer.frame;
-  if (win.docShell.asyncPanZoomEnabled && legacyactions.scrolling) {
-    let ev = {
-      index: 0,
-      type,
-      id: touch.identifier,
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      screenX: touch.screenX,
-      screenY: touch.screenY,
-      radiusX: touch.radiusX,
-      radiusY: touch.radiusY,
-      rotation: touch.rotationAngle,
-      force: touch.force,
-    };
-    sendSyncMessage("Marionette:emitTouchEvent", ev);
-    return;
-  }
-
-  // we get here if we're not in asyncPacZoomEnabled land, or if we're
-  // the main process
-  win.windowUtils.sendTouchEvent(
-    type,
-    [touch.identifier],
-    [touch.clientX],
-    [touch.clientY],
-    [touch.radiusX],
-    [touch.radiusY],
-    [touch.rotationAngle],
-    [touch.force],
-    0
-  );
-}
-
 /**
- * Function that perform a single tap
+ * Function that performs a single tap.
  */
-async function singleTap(el, corx, cory) {
-  // after this block, the element will be scrolled into view
-  let visible = element.isVisible(el, corx, cory);
-  if (!visible) {
-    throw new ElementNotInteractableError(
-      "Element is not currently visible and may not be manipulated"
-    );
-  }
-
-  let a11y = accessibility.get(capabilities.get("moz:accessibilityChecks"));
-  let acc = await a11y.getAccessible(el, true);
-  a11y.assertVisible(acc, el, visible);
-  a11y.assertActionable(acc, el);
-  if (!curContainer.frame.document.createTouch) {
-    legacyactions.mouseEventsOnly = true;
-  }
-  let c = element.coordinates(el, corx, cory);
-  if (!legacyactions.mouseEventsOnly) {
-    let touchId = legacyactions.nextTouchId++;
-    let touch = createATouch(el, c.x, c.y, touchId);
-    emitTouchEvent("touchstart", touch);
-    emitTouchEvent("touchend", touch);
-  }
-  legacyactions.mouseTap(el.ownerDocument, c.x, c.y);
-}
-
-/**
- * Function to create a touch based on the element
- * corx and cory are relative to the viewport, id is the touchId
- */
-function createATouch(el, corx, cory, touchId) {
-  let doc = el.ownerDocument;
-  let win = doc.defaultView;
-  let [
-    clientX,
-    clientY,
-    pageX,
-    pageY,
-    screenX,
-    screenY,
-  ] = legacyactions.getCoordinateInfo(el, corx, cory);
-  let atouch = doc.createTouch(
-    win,
-    el,
-    touchId,
-    pageX,
-    pageY,
-    screenX,
-    screenY,
-    clientX,
-    clientY
-  );
-  return atouch;
+async function singleTap(el, corx, cory, capabilities) {
+  return legacyactions.singleTap(el, corx, cory, capabilities);
 }
 
 /**
  * Perform a series of grouped actions at the specified points in time.
  *
- * @param {obj} msg
- *      Object with an |actions| attribute that is an Array of objects
- *      each of which represents an action sequence.
+ * @param {Object} msg
+ *     Object with an |actions| attribute that is an Array of objects
+ *     each of which represents an action sequence.
+ * @param {Object} capabilities
+ *     Object with a list of WebDriver session capabilities.
  */
-async function performActions(msg) {
+async function performActions(msg, capabilities) {
   let chain = action.Chain.fromJSON(msg.actions);
   await action.dispatch(
     chain,
     curContainer.frame,
-    !capabilities.get("moz:useNonSpecCompliantPointerOrigin")
+    !capabilities["moz:useNonSpecCompliantPointerOrigin"]
   );
 }
 
@@ -882,17 +369,7 @@ async function releaseActions() {
  * Start action chain on one finger.
  */
 function actionChain(chain, touchId) {
-  let touchProvider = {};
-  touchProvider.createATouch = createATouch;
-  touchProvider.emitTouchEvent = emitTouchEvent;
-
-  return legacyactions.dispatchActions(
-    chain,
-    touchId,
-    curContainer,
-    seenEls,
-    touchProvider
-  );
+  return legacyactions.dispatchActions(chain, touchId, curContainer, seenEls);
 }
 
 function emitMultiEvents(type, touch, touches) {
@@ -969,7 +446,7 @@ function setDispatch(batches, touches, batchIndex = 0) {
       case "press":
         el = seenEls.get(pack[2], curContainer.frame);
         c = element.coordinates(el, pack[3], pack[4]);
-        touch = createATouch(el, c.x, c.y, touchId);
+        touch = legacyactions.createATouch(el, c.x, c.y, touchId);
         multiLast[touchId] = touch;
         touches.push(touch);
         emitMultiEvents("touchstart", touch, touches);
@@ -987,7 +464,12 @@ function setDispatch(batches, touches, batchIndex = 0) {
       case "move":
         el = seenEls.get(pack[2], curContainer.frame);
         c = element.coordinates(el);
-        touch = createATouch(multiLast[touchId].target, c.x, c.y, touchId);
+        touch = legacyactions.createATouch(
+          multiLast[touchId].target,
+          c.x,
+          c.y,
+          touchId
+        );
         touchIndex = touches.indexOf(lastTouch);
         touches[touchIndex] = touch;
         multiLast[touchId] = touch;
@@ -1084,150 +566,6 @@ function multiAction(args, maxLen) {
 }
 
 /**
- * Cancel the polling and remove the event listener associated with a
- * current navigation request in case we're interupted by an onbeforeunload
- * handler and navigation doesn't complete.
- */
-function cancelRequest() {
-  loadListener.stop();
-}
-
-/**
- * This implements the latter part of a get request (for the case we need
- * to resume one when the frame script has been moved to a different content
- * process in the middle of a navigate request). This is most of of the work
- * of a navigate request, but doesn't assume DOMContentLoaded is yet to fire.
- *
- * @param {number} commandID
- *     ID of the currently handled message between the driver and
- *     listener.
- * @param {number} pageTimeout
- *     Timeout in seconds the method has to wait for the page being
- *     finished loading.
- * @param {number} startTime
- *     Unix timestap when the navitation request got triggered.
- */
-function waitForPageLoaded(msg) {
-  let { commandID, pageTimeout, startTime } = msg.json;
-  loadListener.waitForLoadAfterFramescriptReload(
-    commandID,
-    pageTimeout,
-    startTime
-  );
-}
-
-/**
- * Navigate to the given URL.  The operation will be performed on the
- * current browsing context, which means it handles the case where we
- * navigate within an iframe.  All other navigation is handled by the driver
- * (in chrome space).
- */
-async function navigateTo(msg) {
-  let { commandID, pageTimeout, url, loadEventExpected } = msg.json;
-
-  try {
-    await loadListener.navigate(
-      () => {
-        curContainer.frame.location = url;
-      },
-      commandID,
-      pageTimeout,
-      loadEventExpected
-    );
-  } catch (e) {
-    sendError(e, commandID);
-  }
-}
-
-/**
- * Cause the browser to traverse one step backward in the joint history
- * of the current browsing context.
- *
- * @param {number} commandID
- *     ID of the currently handled message between the driver and
- *     listener.
- * @param {number} pageTimeout
- *     Timeout in milliseconds the method has to wait for the page being
- *     finished loading.
- */
-async function goBack(msg) {
-  let { commandID, pageTimeout } = msg.json;
-
-  try {
-    await loadListener.navigate(
-      () => {
-        curContainer.frame.history.back();
-      },
-      commandID,
-      pageTimeout
-    );
-  } catch (e) {
-    sendError(e, commandID);
-  }
-}
-
-/**
- * Cause the browser to traverse one step forward in the joint history
- * of the current browsing context.
- *
- * @param {number} commandID
- *     ID of the currently handled message between the driver and
- *     listener.
- * @param {number} pageTimeout
- *     Timeout in milliseconds the method has to wait for the page being
- *     finished loading.
- */
-async function goForward(msg) {
-  let { commandID, pageTimeout } = msg.json;
-
-  try {
-    await loadListener.navigate(
-      () => {
-        curContainer.frame.history.forward();
-      },
-      commandID,
-      pageTimeout
-    );
-  } catch (e) {
-    sendError(e, commandID);
-  }
-}
-
-/**
- * Causes the browser to reload the page in in current top-level browsing
- * context.
- *
- * @param {number} commandID
- *     ID of the currently handled message between the driver and
- *     listener.
- * @param {number} pageTimeout
- *     Timeout in milliseconds the method has to wait for the page being
- *     finished loading.
- */
-async function refresh(msg) {
-  let { commandID, pageTimeout } = msg.json;
-
-  try {
-    // We need to move to the top frame before navigating
-    curContainer.frame = content;
-    sendSyncMessage("Marionette:switchedToFrame", {
-      frameValue: null,
-      browsingContextId: curContainer.id,
-    });
-
-    await loadListener.navigate(
-      () => {
-        curContainer.frame.location.reload(true);
-      },
-      commandID,
-      pageTimeout
-    );
-  } catch (e) {
-    sendError(e, commandID);
-  }
-}
-
-/**
  * Get source of the current browsing context's DOM.
  */
 function getPageSource() {
@@ -1269,7 +607,7 @@ async function findElementsContent(strategy, selector, opts = {}) {
 function getActiveElement() {
   let el = curContainer.frame.document.activeElement;
   if (!el) {
-    throw new NoSuchElementError();
+    throw new error.NoSuchElementError();
   }
   return evaluate.toJSON(el, seenEls);
 }
@@ -1291,47 +629,40 @@ function getBrowsingContextId(topContext = false) {
 }
 
 /**
+ * Set the current browsing context.
+ *
+ * @param {number} browsingContextId
+ *     Id of the current BrowsingContext.
+ */
+function setBrowsingContextId(browsingContextId) {
+  const bc = BrowsingContext.get(browsingContextId);
+  curContainer.frame = bc.window;
+}
+
+/**
+ * Return the current visible URL.
+ *
+ * @return {string}
+ *     Current visible URL.
+ */
+function getCurrentUrl() {
+  return content.location.href;
+}
+
+/**
  * Send click event to element.
  *
- * @param {number} commandID
- *     ID of the currently handled message between the driver and
- *     listener.
- * @param {WebElement} webElRef
- *     Reference to the web element to click.
- * @param {number} pageTimeout
- *     Timeout in milliseconds the method has to wait for the page being
- *     finished loading.
+ * @param {WebElement} el
+ *     Element to click.
+ * @param {Object} capabilities
+ *     Object with a list of WebDriver session capabilities.
  */
-async function clickElement(msg) {
-  let { commandID, webElRef, pageTimeout } = msg.json;
-
-  try {
-    let webEl = WebElement.fromJSON(webElRef);
-    let el = seenEls.get(webEl, curContainer.frame);
-
-    let loadEventExpected = true;
-    let target = getElementAttribute(el, "target");
-
-    if (target === "_blank") {
-      loadEventExpected = false;
-    }
-
-    await loadListener.navigate(
-      () => {
-        return interaction.clickElement(
-          el,
-          capabilities.get("moz:accessibilityChecks"),
-          capabilities.get("moz:webdriverClick")
-        );
-      },
-      commandID,
-      pageTimeout,
-      loadEventExpected,
-      true
-    );
-  } catch (e) {
-    sendError(e, commandID);
-  }
+function clickElement(el, capabilities) {
+  return interaction.clickElement(
+    el,
+    capabilities["moz:accessibilityChecks"],
+    capabilities["moz:webdriverClick"]
+  );
 }
 
 function getElementAttribute(el, name) {
@@ -1375,10 +706,10 @@ function getElementTagName(el) {
  * Also performs additional accessibility checks if enabled by session
  * capability.
  */
-function isElementDisplayed(el) {
+function isElementDisplayed(el, capabilities) {
   return interaction.isElementDisplayed(
     el,
-    capabilities.get("moz:accessibilityChecks")
+    capabilities["moz:accessibilityChecks"]
   );
 }
 
@@ -1407,10 +738,10 @@ function getElementRect(el) {
   };
 }
 
-function isElementEnabled(el) {
+function isElementEnabled(el, capabilities) {
   return interaction.isElementEnabled(
     el,
-    capabilities.get("moz:accessibilityChecks")
+    capabilities["moz:accessibilityChecks"]
   );
 }
 
@@ -1420,18 +751,18 @@ function isElementEnabled(el) {
  * This operation only makes sense on input elements of the Checkbox-
  * and Radio Button states, or option elements.
  */
-function isElementSelected(el) {
+function isElementSelected(el, capabilities) {
   return interaction.isElementSelected(
     el,
-    capabilities.get("moz:accessibilityChecks")
+    capabilities["moz:accessibilityChecks"]
   );
 }
 
-async function sendKeysToElement(el, val) {
+async function sendKeysToElement(el, val, capabilities) {
   let opts = {
-    strictFileInteractability: capabilities.get("strictFileInteractability"),
-    accessibilityChecks: capabilities.get("moz:accessibilityChecks"),
-    webdriverClick: capabilities.get("moz:webdriverClick"),
+    strictFileInteractability: capabilities.strictFileInteractability,
+    accessibilityChecks: capabilities["moz:accessibilityChecks"],
+    webdriverClick: capabilities["moz:webdriverClick"],
   };
   await interaction.sendKeysToElement(el, val, opts);
 }
@@ -1441,46 +772,14 @@ function clearElement(el) {
   interaction.clearElement(el);
 }
 
-/** Switch the current context to the specified host's Shadow DOM. */
-function switchToShadowRoot(el) {
-  if (!element.isElement(el)) {
-    // If no host element is passed, attempt to find a parent shadow
-    // root or, if none found, unset the current shadow root
-    if (curContainer.shadowRoot) {
-      let parent;
-      try {
-        parent = curContainer.shadowRoot.host;
-      } catch (e) {
-        // There is a chance that host element is dead and we are trying to
-        // access a dead object.
-        curContainer.shadowRoot = null;
-        return;
-      }
-      while (parent && !(parent instanceof curContainer.frame.ShadowRoot)) {
-        parent = parent.parentNode;
-      }
-      curContainer.shadowRoot = parent;
-    }
-    return;
-  }
-
-  let foundShadowRoot = el.shadowRoot;
-  if (!foundShadowRoot) {
-    throw new NoSuchElementError(pprint`Unable to locate shadow root: ${el}`);
-  }
-  curContainer.shadowRoot = foundShadowRoot;
-}
-
 /**
  * Switch to the parent frame of the current frame. If the frame is the
  * top most is the current frame then no action will happen.
  */
 function switchToParentFrame(msg) {
-  curContainer.frame = curContainer.frame.parent;
-  let parentElement = seenEls.add(curContainer.frame);
+  curContainer.frame = curContainer.parentFrame;
 
   sendSyncMessage("Marionette:switchedToFrame", {
-    frameValue: parentElement.uuid,
     browsingContextId: curContainer.id,
   });
 
@@ -1502,7 +801,6 @@ function switchToFrame({ json }) {
   let { commandID, element, focus, id } = json;
 
   let foundFrame;
-  let frameWebEl;
   let wantedFrame = null;
 
   // check if curContainer.frame reference is dead
@@ -1519,7 +817,6 @@ function switchToFrame({ json }) {
   if (id == null && !element) {
     curContainer.frame = content;
     sendSyncMessage("Marionette:switchedToFrame", {
-      frameValue: null,
       browsingContextId: curContainer.id,
     });
 
@@ -1538,7 +835,9 @@ function switchToFrame({ json }) {
 
   if (webEl) {
     if (!seenEls.has(webEl)) {
-      let err = new NoSuchElementError(`Unable to locate element: ${webEl}`);
+      let err = new error.NoSuchElementError(
+        `Unable to locate element: ${webEl}`
+      );
       sendError(err, commandID);
       return;
     }
@@ -1578,13 +877,11 @@ function switchToFrame({ json }) {
           frameEl = frames[id].frameElement;
           if (frameEl !== null) {
             foundFrame = frameEl.contentWindow;
-            frameWebEl = seenEls.add(frameEl.wrappedJSObject);
           } else {
             // If foundFrame is null at this point then we have the top
             // level browsing context so should treat it accordingly.
             curContainer.frame = content;
             sendSyncMessage("Marionette:switchedToFrame", {
-              frameValue: null,
               browsingContextId: curContainer.id,
             });
 
@@ -1610,20 +907,16 @@ function switchToFrame({ json }) {
 
   if (!foundFrame) {
     let failedFrame = id || element;
-    let err = new NoSuchFrameError(`Unable to locate frame: ${failedFrame}`);
+    let err = new error.NoSuchFrameError(
+      `Unable to locate frame: ${failedFrame}`
+    );
     sendError(err, commandID);
     return;
   }
 
   curContainer.frame = foundFrame;
 
-  // send a synchronous message to let the server update the currently active
-  // frame element (for getActiveFrame)
-  if (!frameWebEl) {
-    frameWebEl = seenEls.add(foundFrame.wrappedJSObject);
-  }
   sendSyncMessage("Marionette:switchedToFrame", {
-    frameValue: frameWebEl.uuid,
     browsingContextId: curContainer.id,
   });
 
@@ -1689,150 +982,130 @@ function getScreenshotRect({ el, full = true, scroll = true } = {}) {
   return rect;
 }
 
-function flushRendering() {
-  let content = curContainer.frame;
-  let anyPendingPaintsGeneratedInDescendants = false;
-
-  let windowUtils = content.windowUtils;
-
-  function flushWindow(win) {
-    let utils = win.windowUtils;
-    let afterPaintWasPending = utils.isMozAfterPaintPending;
-
-    let root = win.document.documentElement;
-    if (root) {
-      try {
-        // Flush pending restyles and reflows for this window (layout)
-        root.getBoundingClientRect();
-      } catch (e) {
-        logger.error("flushWindow failed", e);
-      }
-    }
-
-    if (!afterPaintWasPending && utils.isMozAfterPaintPending) {
-      anyPendingPaintsGeneratedInDescendants = true;
-    }
-
-    for (let i = 0; i < win.frames.length; ++i) {
-      flushWindow(win.frames[i]);
-    }
-  }
-  flushWindow(content);
-
-  if (
-    anyPendingPaintsGeneratedInDescendants &&
-    !windowUtils.isMozAfterPaintPending
-  ) {
-    logger.error(
-      "Descendant frame generated a MozAfterPaint event, " +
-        "but the root document doesn't have one!"
-    );
-  }
-}
-
-async function reftestWait(url, remote) {
-  let win = curContainer.frame;
-  let document = curContainer.frame.document;
-  let reftestWait;
-
-  if (document.location.href !== url || document.readyState != "complete") {
-    reftestWait = await documentLoad(win, url);
-    win = curContainer.frame;
-    document = curContainer.frame.document;
-  } else {
-    reftestWait = document.documentElement.classList.contains("reftest-wait");
-  }
-
-  logger.debug("Waiting for event loop to spin");
-  await new Promise(resolve => win.setTimeout(resolve, 0));
-
-  await paintComplete(win, remote);
-
-  let root = document.documentElement;
-  if (reftestWait) {
-    let event = new Event("TestRendered", { bubbles: true });
-    root.dispatchEvent(event);
-    logger.info("Emitted TestRendered event");
-    await reftestWaitRemoved(win, root);
-    await paintComplete(win, remote);
-  }
-  if (
-    win.innerWidth < document.documentElement.scrollWidth ||
-    win.innerHeight < document.documentElement.scrollHeight
-  ) {
-    logger.warn(
-      `${url} overflows viewport (width: ${document.documentElement.scrollWidth}, height: ${document.documentElement.scrollHeight})`
-    );
-  }
-}
-
-function documentLoad(win, url) {
-  logger.debug(truncate`Waiting for page load of ${url}`);
-  return new Promise(resolve => {
-    let maybeResolve = event => {
-      if (
-        event.target === curContainer.frame.document &&
-        event.target.location.href === url
-      ) {
-        let reftestWait = win.document.documentElement.classList.contains(
-          "reftest-wait"
-        );
-        removeEventListener("load", maybeResolve, { once: true });
-        resolve(reftestWait);
-      }
-    };
-    addEventListener("load", maybeResolve, true);
-  });
-}
-
-function paintComplete(win, remote) {
-  logger.debug("Waiting for rendering");
-  let windowUtils = content.windowUtils;
-  return new Promise(resolve => {
-    let maybeResolve = () => {
-      flushRendering();
-      if (remote) {
-        // Flush display (paint)
-        windowUtils.updateLayerTree();
-      }
-      if (windowUtils.isMozAfterPaintPending) {
-        logger.debug(`reftestWait: ${windowUtils.isMozAfterPaintPending}`);
-        win.addEventListener("MozAfterPaint", maybeResolve, { once: true });
-      } else {
-        // resolve at the start of the next frame in case of leftover paints
-        win.requestAnimationFrame(() => {
-          win.requestAnimationFrame(resolve);
-        });
-      }
-    };
-    maybeResolve();
-  });
-}
-
-function reftestWaitRemoved(win, root) {
-  logger.debug("Waiting for reftest-wait removal");
-  return new Promise(resolve => {
-    let observer = new win.MutationObserver(() => {
-      if (!root.classList.contains("reftest-wait")) {
-        observer.disconnect();
-        logger.debug("reftest-wait removed");
-        win.setTimeout(resolve, 0);
-      }
-    });
-    if (root.classList.contains("reftest-wait")) {
-      observer.observe(root, { attributes: true });
-    } else {
-      win.setTimeout(resolve, 0);
-    }
-  });
-}
-
 function domAddEventListener(msg) {
   eventObservers.add(msg.json.type);
 }
 
 function domRemoveEventListener(msg) {
   eventObservers.remove(msg.json.type);
+}
+
+const eventDispatcher = {
+  enabled: false,
+
+  enable() {
+    if (this.enabled) {
+      return;
+    }
+
+    addEventListener("unload", this, false);
+
+    addEventListener("beforeunload", this, true);
+    addEventListener("pagehide", this, true);
+    addEventListener("popstate", this, true);
+
+    addEventListener("DOMContentLoaded", this, true);
+    addEventListener("hashchange", this, true);
+    addEventListener("pageshow", this, true);
+
+    this.enabled = true;
+  },
+
+  disable() {
+    if (!this.enabled) {
+      return;
+    }
+
+    removeEventListener("unload", this, false);
+
+    removeEventListener("beforeunload", this, true);
+    removeEventListener("pagehide", this, true);
+    removeEventListener("popstate", this, true);
+
+    removeEventListener("DOMContentLoaded", this, true);
+    removeEventListener("hashchange", this, true);
+    removeEventListener("pageshow", this, true);
+
+    this.enabled = false;
+  },
+
+  handleEvent(event) {
+    const { target, type } = event;
+
+    // An unload event indicates that the framescript died because of a process
+    // change, or that the tab / window has been closed.
+    if (type === "unload" && target === contentFrameMessageManager) {
+      logger.trace(`Frame script unloaded`);
+      sendAsyncMessage("Marionette:Unloaded", {
+        browsingContext: content.docShell.browsingContext,
+      });
+      return;
+    }
+
+    // Only care about events from the currently selected browsing context,
+    // whereby some of those do not bubble up to the window.
+    if (![curContainer.frame, curContainer.frame.document].includes(target)) {
+      return;
+    }
+
+    // Ignore invalid combinations of load events and document's readyState.
+    if (
+      (type === "DOMContentLoaded" && target.readyState != "interactive") ||
+      (type === "pageshow" && target.readyState != "complete")
+    ) {
+      logger.warn(
+        `Ignoring event '${type}' because document has an invalid ` +
+          `readyState of '${target.readyState}'.`
+      );
+      return;
+    }
+
+    if (type === "pagehide") {
+      // The content window has been replaced. Immediately register the page
+      // load events again so that we don't miss possible load events
+      addEventListener("DOMContentLoaded", this, true);
+      addEventListener("pageshow", this, true);
+    }
+
+    sendAsyncMessage("Marionette:NavigationEvent", {
+      browsingContext: content.docShell.browsingContext,
+      documentURI: target.documentURI,
+      readyState: target.readyState,
+      type,
+    });
+  },
+};
+
+/**
+ * Called when listener is first started up.  The listener sends its
+ * unique window ID and its current URI to the actor.  If the actor returns
+ * an ID, we start the listeners. Otherwise, nothing happens.
+ */
+function registerSelf() {
+  logger.trace("Frame script loaded");
+
+  curContainer.frame = content;
+
+  sandboxes.clear();
+  legacyactions.mouseEventsOnly = false;
+  action.inputStateMap = new Map();
+  action.inputsToCancel = [];
+
+  let reply = sendSyncMessage("Marionette:Register", {
+    frameId: contentId,
+  });
+
+  if (reply.length == 0) {
+    logger.error("No reply from Marionette:Register");
+    return;
+  }
+
+  if (reply[0].frameId === contentId) {
+    startListeners();
+    sendAsyncMessage("Marionette:ListenersAttached", {
+      frameId: contentId,
+    });
+  }
 }
 
 // Call register self when we get loaded

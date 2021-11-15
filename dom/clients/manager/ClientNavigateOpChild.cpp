@@ -7,6 +7,8 @@
 #include "ClientNavigateOpChild.h"
 
 #include "ClientState.h"
+#include "ClientSource.h"
+#include "ClientSourceChild.h"
 #include "mozilla/Unused.h"
 #include "nsIDocShell.h"
 #include "nsDocShellLoadState.h"
@@ -18,8 +20,7 @@
 #include "nsURLHelper.h"
 #include "ReferrerInfo.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -248,7 +249,7 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
 
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(url);
   loadState->SetTriggeringPrincipal(principal);
-
+  loadState->SetTriggeringSandboxFlags(doc->GetSandboxFlags());
   loadState->SetCsp(doc->GetCsp());
 
   auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
@@ -329,5 +330,4 @@ void ClientNavigateOpChild::Init(const ClientNavigateOpConstructorArgs& aArgs) {
       ->Track(mPromiseRequestHolder);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

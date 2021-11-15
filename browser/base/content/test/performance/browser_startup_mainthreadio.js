@@ -33,6 +33,8 @@ const LINUX = AppConstants.platform == "linux";
 const WIN = AppConstants.platform == "win";
 const MAC = AppConstants.platform == "macosx";
 
+const kSharedFontList = SpecialPowers.getBoolPref("gfx.e10s.font-list.shared");
+
 /* This is an object mapping string phases of startup to lists of known cases
  * of IO happening on the main thread. Ideally, IO should not be on the main
  * thread, and should happen as late as possible (see above).
@@ -261,7 +263,7 @@ const startupPhases = {
       // Side-effect of bug 1412090, via sandboxing (but the real
       // problem there is main-thread CPU use; see bug 1439412)
       path: "*ld.so.conf*",
-      condition: LINUX,
+      condition: LINUX && !AppConstants.MOZ_CODE_COVERAGE && !kSharedFontList,
       read: 22,
       close: 11,
     },
@@ -336,7 +338,7 @@ const startupPhases = {
     {
       // Sandbox policy construction
       path: "*ld.so.conf*",
-      condition: LINUX,
+      condition: LINUX && !AppConstants.MOZ_CODE_COVERAGE,
       read: 22,
       close: 11,
     },
@@ -445,6 +447,14 @@ const startupPhases = {
     {
       path: "XREAppFeat:webcompat-reporter@mozilla.org.xpi",
       condition: !WIN,
+      ignoreIfUnused: true,
+      stat: 1,
+      close: 1,
+    },
+    {
+      // Bug 1660582 - access while running on windows10 hardware.
+      path: "ProfD:wmfvpxvideo.guard",
+      condition: WIN,
       ignoreIfUnused: true,
       stat: 1,
       close: 1,
@@ -778,16 +788,16 @@ add_task(async function() {
         continue;
       }
 
-      // Convert to lower case before comparing because the OS X test machines
-      // have the 'Firefox' folder in 'Library/Application Support' created
-      // as 'firefox' for some reason.
-      let filename = marker.filename.toLowerCase();
-
-      if (!filename) {
+      if (!marker.filename) {
         // We are still missing the filename on some mainthreadio markers,
         // these markers are currently useless for the purpose of this test.
         continue;
       }
+
+      // Convert to lower case before comparing because the OS X test machines
+      // have the 'Firefox' folder in 'Library/Application Support' created
+      // as 'firefox' for some reason.
+      let filename = marker.filename.toLowerCase();
 
       if (!WIN && filename == "/dev/urandom") {
         continue;
@@ -796,6 +806,14 @@ add_task(async function() {
       // /dev/shm is always tmpfs (a memory filesystem); this isn't
       // really I/O any more than mmap/munmap are.
       if (LINUX && filename.startsWith("/dev/shm/")) {
+        continue;
+      }
+
+      // "Files" from memfd_create() are similar to tmpfs but never
+      // exist in the filesystem; however, they have names which are
+      // exposed in procfs, and the I/O interposer observes when
+      // they're close()d.
+      if (LINUX && filename.startsWith("/memfd:")) {
         continue;
       }
 

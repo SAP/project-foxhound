@@ -553,6 +553,16 @@ function handleRequest(req, res) {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Alt-Svc", "h3-27=" + req.headers["x-altsvc"]);
   }
+  // for use with test_http3.js
+  else if (u.pathname === "/http3-test2") {
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader(
+      "Alt-Svc",
+      "h2=foo2.example.com:8000,h3-27=" +
+        req.headers["x-altsvc"] +
+        ",h3-29=foo2.example.com:8443"
+    );
+  }
   // for use with test_trr.js
   else if (u.pathname === "/dns-cname") {
     // asking for cname.example.com
@@ -725,7 +735,7 @@ function handleRequest(req, res) {
             "hex"
           ),
         });
-      } else if (packet.questions[0].type == "HTTPSSVC") {
+      } else if (packet.questions[0].type == "HTTPS") {
         answers.push({
           name: packet.questions[0].name,
           type: packet.questions[0].type,
@@ -735,7 +745,7 @@ function handleRequest(req, res) {
           data: {
             priority: 1,
             name: "some.domain.stuff.",
-            values: [{ key: "esniconfig", value: "testytestystringstring" }],
+            values: [{ key: "echconfig", value: "testytestystringstring" }],
           },
         });
       }
@@ -843,7 +853,7 @@ function handleRequest(req, res) {
             { key: "no-default-alpn" },
             { key: "port", value: 8888 },
             { key: "ipv4hint", value: "1.2.3.4" },
-            { key: "esniconfig", value: "123..." },
+            { key: "echconfig", value: "123..." },
             { key: "ipv6hint", value: "::1" },
             { key: 30, value: "somelargestring" },
           ],
@@ -861,7 +871,7 @@ function handleRequest(req, res) {
           values: [
             { key: "alpn", value: "h2" },
             { key: "ipv4hint", value: ["1.2.3.4", "5.6.7.8"] },
-            { key: "esniconfig", value: "abc..." },
+            { key: "echconfig", value: "abc..." },
             { key: "ipv6hint", value: ["::1", "fe80::794f:6d2c:3d5e:7836"] },
           ],
         },
@@ -878,6 +888,96 @@ function handleRequest(req, res) {
           values: [],
         },
       });
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
+    });
+    return;
+  } else if (u.pathname === "/httpssvc_as_altsvc") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      if (packet.questions[0].type == "HTTPS") {
+        answers.push({
+          name: packet.questions[0].name,
+          type: packet.questions[0].type,
+          ttl: 55,
+          class: "IN",
+          flush: false,
+          data: {
+            priority: 1,
+            name: "foo.example.com",
+            values: [
+              { key: "alpn", value: "h2" },
+              { key: "port", value: serverPort },
+              { key: 30, value: "somelargestring" },
+            ],
+          },
+        });
+      } else {
+        answers.push({
+          name: packet.questions[0].name,
+          type: "A",
+          ttl: 55,
+          flush: false,
+          data: "127.0.0.1",
+        });
+      }
+
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
+    });
+    return;
+  } else if (u.pathname === "/httpssvc_use_iphint") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      answers.push({
+        name: packet.questions[0].name,
+        type: "HTTPS",
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: {
+          priority: 1,
+          name: ".",
+          values: [
+            { key: "alpn", value: "h2" },
+            { key: "port", value: serverPort },
+            { key: "ipv4hint", value: "127.0.0.1" },
+          ],
+        },
+      });
+
       let buf = dnsPacket.encode({
         type: "response",
         id: packet.id,

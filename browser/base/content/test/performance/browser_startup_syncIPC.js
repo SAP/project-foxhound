@@ -20,20 +20,14 @@ const startupPhases = {
   // to run before we have even selected the user profile.
   "before profile selection": [],
 
-  "before opening first browser window": [
-    {
-      name: "PLayerTransaction::Msg_GetTextureFactoryIdentifier",
-      condition: LINUX,
-      maxCount: 1,
-    },
-  ],
+  "before opening first browser window": [],
 
   // We reach this phase right after showing the first browser window.
   // This means that any I/O at this point delayed first paint.
   "before first paint": [
     {
       name: "PLayerTransaction::Msg_GetTextureFactoryIdentifier",
-      condition: MAC,
+      condition: (MAC && !WEBRENDER) || LINUX,
       maxCount: 1,
     },
     {
@@ -45,6 +39,11 @@ const startupPhases = {
       name: "PWebRenderBridge::Msg_EnsureConnected",
       condition: WIN && WEBRENDER,
       maxCount: 2,
+    },
+    {
+      name: "PWebRenderBridge::Msg_EnsureConnected",
+      condition: MAC && WEBRENDER,
+      maxCount: 1,
     },
     {
       // bug 1373773
@@ -191,6 +190,18 @@ const startupPhases = {
       ignoreIfUnused: true,
       maxCount: 1,
     },
+    {
+      name: "PContent::Reply_BeginDriverCrashGuard",
+      condition: WIN,
+      ignoreIfUnused: true, // Bug 1660590 - found while running test on windows hardware
+      maxCount: 1,
+    },
+    {
+      name: "PContent::Reply_EndDriverCrashGuard",
+      condition: WIN,
+      ignoreIfUnused: true, // Bug 1660590 - found while running test on windows hardware
+      maxCount: 1,
+    },
   ],
 
   // Things that are expected to be completely out of the startup path
@@ -218,7 +229,7 @@ const startupPhases = {
     {
       // bug 1554234
       name: "PLayerTransaction::Msg_GetTextureFactoryIdentifier",
-      condition: WIN,
+      condition: WIN || LINUX,
       ignoreIfUnused: true, // intermittently occurs in "before handling user events"
       maxCount: 1,
     },
@@ -255,6 +266,12 @@ const startupPhases = {
     {
       name: "PWebRenderBridge::Msg_GetSnapshot",
       condition: WIN && WEBRENDER,
+      ignoreIfUnused: true,
+      maxCount: 1,
+    },
+    {
+      name: "PCompositorBridge::Msg_MakeSnapshot",
+      condition: WIN,
       ignoreIfUnused: true,
       maxCount: 1,
     },

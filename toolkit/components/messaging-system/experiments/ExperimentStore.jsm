@@ -5,7 +5,8 @@
 "use strict";
 
 /**
- * @typedef {import("../@types/ExperimentManager").Enrollment} Enrollment
+ * @typedef {import("./@types/ExperimentManager").Enrollment} Enrollment
+ * @typedef {import("./@types/ExperimentManager").FeatureConfig} FeatureConfig
  */
 
 const EXPORTED_SYMBOLS = ["ExperimentStore"];
@@ -22,41 +23,59 @@ class ExperimentStore extends SharedDataMap {
   }
 
   /**
-   * Given a group identifier, find an active experiment that matches that group identifier.
-   * For example, getExperimentForGroup("B") would return an experiment with groups ["A", "B", "C"]
-   * This assumes, for now, that there is only one active experiment per group per browser.
+   * Given a feature identifier, find an active experiment that matches that feature identifier.
+   * This assumes, for now, that there is only one active experiment per feature per browser.
    *
-   * @param {string} group
+   * @param {string} featureId
    * @returns {Enrollment|undefined} An active experiment if it exists
    * @memberof ExperimentStore
    */
-  getExperimentForGroup(group) {
-    for (const experiment of this.getAll()) {
-      if (experiment.active && experiment.branch.groups?.includes(group)) {
-        return experiment;
-      }
-    }
-    return undefined;
+  getExperimentForFeature(featureId) {
+    return this.getAllActive().find(
+      experiment => experiment.branch.feature?.featureId === featureId
+    );
   }
 
   /**
-   * Check if an active experiment already exists for a set of groups
+   * Return FeatureConfig from first active experiment where it can be found
+   * @param {{slug: string, featureId: string, sendExposurePing: bool}}
+   * @returns {Branch | null}
+   */
+  activateBranch({ slug, featureId, sendExposurePing = true }) {
+    for (let experiment of this.getAllActive()) {
+      if (
+        experiment?.branch.feature.featureId === featureId ||
+        experiment.slug === slug
+      ) {
+        if (sendExposurePing) {
+          this._emitExperimentExposure({
+            experimentSlug: experiment.slug,
+            branchSlug: experiment.branch.slug,
+            featureId,
+          });
+        }
+        // Default to null for feature-less experiments where we're only
+        // interested in exposure.
+        return experiment?.branch || null;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Check if an active experiment already exists for a feature
    *
-   * @param {Array<string>} groups
-   * @returns {boolean} Does an active experiment exist for that group?
+   * @param {string} featureId
+   * @returns {boolean} Does an active experiment exist for that feature?
    * @memberof ExperimentStore
    */
-  hasExperimentForGroups(groups) {
-    if (!groups || !groups.length) {
+  hasExperimentForFeature(featureId) {
+    if (!featureId) {
       return false;
     }
-    for (const experiment of this.getAll()) {
-      if (
-        experiment.active &&
-        experiment.branch.groups?.filter(g => groups.includes(g)).length
-      ) {
-        return true;
-      }
+    if (this.activateBranch({ featureId })?.feature.featureId === featureId) {
+      return true;
     }
     return false;
   }
@@ -65,6 +84,10 @@ class ExperimentStore extends SharedDataMap {
    * @returns {Enrollment[]}
    */
   getAll() {
+    if (!this._data) {
+      return [];
+    }
+
     return Object.values(this._data);
   }
 
@@ -73,6 +96,18 @@ class ExperimentStore extends SharedDataMap {
    */
   getAllActive() {
     return this.getAll().filter(experiment => experiment.active);
+  }
+
+  _emitExperimentUpdates(experiment) {
+    this.emit(`update:${experiment.slug}`, experiment);
+    this.emit(`update:${experiment.branch.feature.featureId}`, experiment);
+  }
+
+  /**
+   * @param {{featureId: string, experimentSlug: string, branchSlug: string}} experimentData
+   */
+  _emitExperimentExposure(experimentData) {
+    this.emit("exposure", experimentData);
   }
 
   /**
@@ -86,6 +121,7 @@ class ExperimentStore extends SharedDataMap {
       );
     }
     this.set(experiment.slug, experiment);
+    this._emitExperimentUpdates(experiment);
   }
 
   /**
@@ -100,6 +136,8 @@ class ExperimentStore extends SharedDataMap {
         `Tried to update experiment ${slug} bug it doesn't exist`
       );
     }
-    this.set(slug, { ...oldProperties, ...newProperties });
+    const updatedExperiment = { ...oldProperties, ...newProperties };
+    this.set(slug, updatedExperiment);
+    this._emitExperimentUpdates(updatedExperiment);
   }
 }

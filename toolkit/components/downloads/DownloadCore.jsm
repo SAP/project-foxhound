@@ -110,7 +110,7 @@ function deserializeUnknownProperties(aObject, aSerializable, aFilterFn) {
  */
 async function isPlaceholder(path) {
   try {
-    if ((await OS.File.stat(path)).size == 0) {
+    if ((await IOUtils.stat(path)).size == 0) {
       return true;
     }
   } catch (ex) {
@@ -643,6 +643,23 @@ Download.prototype = {
       );
     }
 
+    if (
+      this.error?.reputationCheckVerdict == DownloadError.BLOCK_VERDICT_INSECURE
+    ) {
+      // In this Error case, the download was actually canceled before it was
+      // passed to the Download UI. So we need to start the download here.
+      this.error = null;
+      this.succeeded = false;
+      this.hasBlockedData = false;
+      this.start().catch(e => {
+        this.error = e;
+        this._notifyChange();
+      });
+      this._notifyChange();
+      this._promiseUnblock = DownloadIntegration.downloadDone(this);
+      return this._promiseUnblock;
+    }
+
     if (!this.hasBlockedData) {
       return Promise.reject(
         new Error("unblock may only be called on Downloads with blocked data.")
@@ -651,7 +668,7 @@ Download.prototype = {
 
     this._promiseUnblock = (async () => {
       try {
-        await OS.File.move(this.target.partFilePath, this.target.path);
+        await IOUtils.move(this.target.partFilePath, this.target.path);
         await this.target.refresh();
       } catch (ex) {
         await this.refresh();
@@ -966,7 +983,7 @@ Download.prototype = {
         this.target.partFilePath
       ) {
         try {
-          let stat = await OS.File.stat(this.target.partFilePath);
+          let stat = await IOUtils.stat(this.target.partFilePath);
 
           // Ignore the result if the state has changed meanwhile.
           if (!this.stopped || this._finalized) {
@@ -982,7 +999,7 @@ Download.prototype = {
             );
           }
         } catch (ex) {
-          if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
+          if (ex.name != "NotFoundError") {
             throw ex;
           }
           // Ignore the result if the state has changed meanwhile.
@@ -1112,6 +1129,10 @@ Download.prototype = {
           );
         }
         changeMade = true;
+      }
+
+      if (this.hasProgress && this.target && !this.target.partFileExists) {
+        this.target.refreshPartFileState();
       }
     }
 
@@ -1510,6 +1531,12 @@ DownloadTarget.prototype = {
   exists: false,
 
   /**
+   * Indicates whether the part file exists. Like `exists`, this is updated
+   * dynamically to reduce I/O compared to checking the target file directly.
+   */
+  partFileExists: false,
+
+  /**
    * Size in bytes of the target file, or zero if the download has not finished.
    *
    * Even if the target file does not exist anymore, this property may still
@@ -1540,15 +1567,31 @@ DownloadTarget.prototype = {
    */
   async refresh() {
     try {
-      this.size = (await OS.File.stat(this.path)).size;
+      this.size = (await IOUtils.stat(this.path)).size;
       this.exists = true;
     } catch (ex) {
       // Report any error not caused by the file not being there. In any case,
       // the size of the download is not updated and the known value is kept.
-      if (!(ex instanceof OS.File.Error && ex.becauseNoSuchFile)) {
+      if (ex.name != "NotFoundError") {
         Cu.reportError(ex);
       }
       this.exists = false;
+    }
+    this.refreshPartFileState();
+  },
+
+  async refreshPartFileState() {
+    if (!this.partFilePath) {
+      this.partFileExists = false;
+      return;
+    }
+    try {
+      this.partFileExists = (await IOUtils.stat(this.partFilePath)).size > 0;
+    } catch (ex) {
+      if (ex.name != "NotFoundError") {
+        Cu.reportError(ex);
+      }
+      this.partFileExists = false;
     }
   },
 
@@ -1690,6 +1733,7 @@ var DownloadError = function(aProperties) {
  */
 DownloadError.BLOCK_VERDICT_MALWARE = "Malware";
 DownloadError.BLOCK_VERDICT_POTENTIALLY_UNWANTED = "PotentiallyUnwanted";
+DownloadError.BLOCK_VERDICT_INSECURE = "Insecure";
 DownloadError.BLOCK_VERDICT_UNCOMMON = "Uncommon";
 
 DownloadError.prototype = {
@@ -2231,6 +2275,9 @@ DownloadCopySaver.prototype = {
             uri: download.source.url,
             contentPolicyType: Ci.nsIContentPolicy.TYPE_SAVEAS_DOWNLOAD,
             loadingPrincipal: download.source.loadingPrincipal,
+            // triggeringPrincipal must be the system principal to prevent the
+            // request from being mistaken as a third-party request.
+            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
             securityFlags:
               Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
           });
@@ -2257,6 +2304,9 @@ DownloadCopySaver.prototype = {
         // and also prevents its caching.
         if (channel instanceof Ci.nsIHttpChannelInternal) {
           channel.channelIsForDownload = true;
+
+          // Include cookies even if cookieBehavior is BEHAVIOR_REJECT_FOREIGN.
+          channel.forceAllowThirdPartyCookie = true;
         }
 
         if (
@@ -2266,12 +2316,12 @@ DownloadCopySaver.prototype = {
           keepPartialData
         ) {
           try {
-            let stat = await OS.File.stat(partFilePath);
+            let stat = await IOUtils.stat(partFilePath);
             channel.resumeAt(stat.size, this.entityID);
             resumeAttempted = true;
             resumeFromBytes = stat.size;
           } catch (ex) {
-            if (!(ex instanceof OS.File.Error) || !ex.becauseNoSuchFile) {
+            if (ex.name != "NotFoundError") {
               throw ex;
             }
           }
@@ -2359,7 +2409,7 @@ DownloadCopySaver.prototype = {
     }
 
     if (partFilePath) {
-      await OS.File.move(partFilePath, targetPath);
+      await IOUtils.move(partFilePath, targetPath);
     }
   },
 
@@ -2381,18 +2431,13 @@ DownloadCopySaver.prototype = {
     // Defined inline so removeData can be shared with DownloadLegacySaver.
     async function _tryToRemoveFile(path) {
       try {
-        await OS.File.remove(path);
+        await IOUtils.remove(path);
       } catch (ex) {
         // On Windows we may get an access denied error instead of a no such
         // file error if the file existed before, and was recently deleted. This
         // is likely to happen when the component that executed the download has
         // just deleted the target file itself.
-        if (
-          !(
-            ex instanceof OS.File.Error &&
-            (ex.becauseNoSuchFile || ex.becauseAccessDenied)
-          )
-        ) {
+        if (!["NotFoundError", "NotAllowedError"].includes(ex.name)) {
           Cu.reportError(ex);
         }
       }

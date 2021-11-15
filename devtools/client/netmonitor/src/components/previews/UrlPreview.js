@@ -22,7 +22,7 @@ const TreeRow = createFactory(
 );
 
 loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/reps").MODE;
+  return require("devtools/client/shared/components/reps/index").MODE;
 });
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
@@ -230,6 +230,18 @@ class UrlPreview extends Component {
           if (path == `/${method}`) {
             onTogglePreview(!member.open);
           }
+        },
+        contextMenuFormatters: {
+          copyFormatter: (member, baseCopyFormatter) => {
+            const { value, level, hasChildren } = member;
+            if (hasChildren && level == 0) {
+              const { scheme, filename, host, query } = value;
+              return `${scheme}://${host}${filename}${
+                query ? "?" + new URLSearchParams(query).toString() : ""
+              }`;
+            }
+            return baseCopyFormatter(member);
+          },
         },
       })
     );

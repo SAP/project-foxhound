@@ -8,7 +8,7 @@
 
 #include "mozilla/Assertions.h"  // MOZ_CRASH
 
-#include "jsfriendapi.h"  // JSErrNum, JSMSG_*
+#include "js/friend/ErrorMessages.h"  // JSErrNum, JSMSG_*
 
 JSErrNum js::ThrowMsgKindToErrNum(ThrowMsgKind kind) {
   switch (kind) {
@@ -18,6 +18,11 @@ JSErrNum js::ThrowMsgKindToErrNum(ThrowMsgKind kind) {
       return JSMSG_ITERATOR_NO_THROW;
     case ThrowMsgKind::CantDeleteSuper:
       return JSMSG_CANT_DELETE_SUPER;
+    case ThrowMsgKind::PrivateDoubleInit:
+      return JSMSG_PRIVATE_FIELD_DOUBLE;
+    case ThrowMsgKind::MissingPrivateOnGet:
+    case ThrowMsgKind::MissingPrivateOnSet:
+      return JSMSG_UNDECLARED_PRIVATE;
   }
 
   MOZ_CRASH("Unexpected message kind");

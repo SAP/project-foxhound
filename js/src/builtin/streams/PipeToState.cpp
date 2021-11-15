@@ -6,14 +6,13 @@
 
 /* ReadableStream.prototype.pipeTo state. */
 
-#include "builtin/streams/PipeToState.h"
+#include "builtin/streams/PipeToState-inl.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Attributes.h"  // MOZ_MUST_USE
 #include "mozilla/Maybe.h"  // mozilla::Maybe, mozilla::Nothing, mozilla::Some
 
-#include "jsapi.h"        // JS_ReportErrorNumberASCII
-#include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*
+#include "jsapi.h"  // JS_ReportErrorNumberASCII
 
 #include "builtin/Promise.h"  // js::RejectPromiseWithPendingError
 #include "builtin/streams/ReadableStream.h"        // js::ReadableStream
@@ -22,12 +21,15 @@
 #include "builtin/streams/WritableStreamDefaultWriter.h"  // js::CreateWritableStreamDefaultWriter, js::WritableStreamDefaultWriter
 #include "builtin/streams/WritableStreamOperations.h"  // js::WritableStreamCloseQueuedOrInFlight
 #include "builtin/streams/WritableStreamWriterOperations.h"  // js::WritableStreamDefaultWriter{GetDesiredSize,Release,Write}
-#include "js/CallArgs.h"    // JS::CallArgsFromVp, JS::CallArgs
-#include "js/Class.h"       // JSClass, JSCLASS_HAS_RESERVED_SLOTS
-#include "js/Promise.h"     // JS::AddPromiseReactions
-#include "js/RootingAPI.h"  // JS::Handle, JS::Rooted
+#include "js/CallArgs.h"              // JS::CallArgsFromVp, JS::CallArgs
+#include "js/Class.h"                 // JSClass, JSCLASS_HAS_RESERVED_SLOTS
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Promise.h"               // JS::AddPromiseReactions
+#include "js/RootingAPI.h"            // JS::Handle, JS::Rooted
 #include "js/Value.h"  // JS::{,Int32,Magic,Object}Value, JS::UndefinedHandleValue
+#include "vm/JSContext.h"      // JSContext
 #include "vm/PromiseObject.h"  // js::PromiseObject
+#include "vm/Runtime.h"        // JSRuntime
 
 #include "builtin/streams/HandlerFunction-inl.h"  // js::ExtraValueFromHandler, js::NewHandler{,WithExtraValue}, js::TargetFromHandler
 #include "builtin/streams/ReadableStreamReader-inl.h"  // js::UnwrapReaderFromStream, js::UnwrapStreamFromReader
@@ -35,6 +37,7 @@
 #include "builtin/streams/WritableStreamDefaultWriter-inl.h"  // js::UnwrapStreamFromWriter
 #include "vm/JSContext-inl.h"  // JSContext::check
 #include "vm/JSObject-inl.h"   // js::NewBuiltinClassInstance
+#include "vm/Realm-inl.h"      // js::AutoRealm
 
 using mozilla::Maybe;
 using mozilla::Nothing;
@@ -1103,6 +1106,38 @@ static MOZ_MUST_USE bool StartPiping(JSContext* cx, Handle<PipeToState*> state,
 }
 
 /**
+ * Stream spec, 4.8.1. ReadableStreamPipeTo ( source, dest,
+ *                                            preventClose, preventAbort,
+ *                                            preventCancel[, signal] )
+ * Step 14.1 abortAlgorithm.
+ */
+static MOZ_MUST_USE bool PerformAbortAlgorithm(JSContext* cx,
+                                               Handle<PipeToState*> state) {
+  cx->check(state);
+
+  // Step 14.1: Let abortAlgorithm be the following steps:
+  // Step 14.1.1: Let error be a new "AbortError" DOMException.
+  // Step 14.1.2: Let actions be an empty ordered set.
+  // Step 14.1.3: If preventAbort is false, append the following action to
+  //              actions:
+  // Step 14.1.3.1: If dest.[[state]] is "writable", return
+  //                ! WritableStreamAbort(dest, error).
+  // Step 14.1.3.2: Otherwise, return a promise resolved with undefined.
+  // Step 14.1.4: If preventCancel is false, append the following action action
+  //              to actions:
+  // Step 14.1.4.1: If source.[[state]] is "readable", return
+  //                ! ReadableStreamCancel(source, error).
+  // Step 14.1.4.2: Otherwise, return a promise resolved with undefined.
+  // Step 14.1.5: Shutdown with an action consisting of getting a promise to
+  //              wait for all of the actions in actions, and with error.
+  // XXX jwalden
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                            JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED,
+                            "abortAlgorithm steps");
+  return false;
+}
+
+/**
  * Stream spec, 3.4.11. ReadableStreamPipeTo ( source, dest,
  *                                             preventClose, preventAbort,
  *                                             preventCancel, signal )
@@ -1114,25 +1149,27 @@ static MOZ_MUST_USE bool StartPiping(JSContext* cx, Handle<PipeToState*> state,
     Handle<WritableStream*> unwrappedDest, bool preventClose, bool preventAbort,
     bool preventCancel, Handle<JSObject*> signal) {
   cx->check(promise);
+  cx->check(signal);
+
+  Rooted<PipeToState*> state(cx,
+                             NewTenuredBuiltinClassInstance<PipeToState>(cx));
+  if (!state) {
+    return nullptr;
+  }
 
   // Step 4. Assert: signal is undefined or signal is an instance of the
   //         AbortSignal interface.
-#ifdef DEBUG
+  MOZ_ASSERT(state->getFixedSlot(Slot_Signal).isUndefined());
   if (signal) {
-    // XXX jwalden need to add JSAPI hooks to recognize AbortSignal instances
+    // |signal| is double-checked to be an |AbortSignal| further down.
+    state->initFixedSlot(Slot_Signal, ObjectValue(*signal));
   }
-#endif
 
   // Step 5: Assert: ! IsReadableStreamLocked(source) is false.
   MOZ_ASSERT(!unwrappedSource->locked());
 
   // Step 6: Assert: ! IsWritableStreamLocked(dest) is false.
   MOZ_ASSERT(!unwrappedDest->isLocked());
-
-  Rooted<PipeToState*> state(cx, NewBuiltinClassInstance<PipeToState>(cx));
-  if (!state) {
-    return nullptr;
-  }
 
   MOZ_ASSERT(state->getFixedSlot(Slot_Promise).isUndefined());
   state->initFixedSlot(Slot_Promise, ObjectValue(*promise));
@@ -1182,8 +1219,44 @@ static MOZ_MUST_USE bool StartPiping(JSContext* cx, Handle<PipeToState*> state,
   // Step 12 ("Let promise be a new promise.") was performed by the caller and
   // |promise| was its result.
 
+  // XXX This used to be step 13 but is now step 14, all the step-comments of
+  //     the overall algorithm need renumbering.
   // Step 13: If signal is not undefined,
-  // XXX jwalden need JSAPI to add an algorithm/steps to an AbortSignal
+  if (signal) {
+    // Step 14.2: If signal’s aborted flag is set, perform abortAlgorithm and
+    //         return promise.
+    bool aborted;
+    {
+      // Sadly, we can't assert |signal| is an |AbortSignal| here because it
+      // could have become a nuked CCW since it was type-checked.
+      JSObject* unwrappedSignal = UnwrapSignalFromPipeToState(cx, state);
+      if (!unwrappedSignal) {
+        return nullptr;
+      }
+
+      JSRuntime* rt = cx->runtime();
+      MOZ_ASSERT(unwrappedSignal->hasClass(rt->maybeAbortSignalClass()));
+
+      AutoRealm ar(cx, unwrappedSignal);
+      aborted = rt->abortSignalIsAborted(unwrappedSignal);
+    }
+    if (aborted) {
+      if (!PerformAbortAlgorithm(cx, state)) {
+        return nullptr;
+      }
+
+      // Returning |state| here will cause |promise| to be returned by the
+      // overall algorithm.
+      return state;
+    }
+
+    // Step 14.3: Add abortAlgorithm to signal.
+    // XXX jwalden need JSAPI to add an algorithm/steps to an AbortSignal
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED,
+                              "adding abortAlgorithm to signal");
+    return nullptr;
+  }
 
   // Step 14: In parallel, using reader and writer, read all chunks from source
   //          and write them to dest.

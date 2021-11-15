@@ -65,10 +65,10 @@ function resolveURIInternal(aCmdLine, aArgument) {
   var uriFixup = Services.uriFixup;
 
   if (!(uri instanceof Ci.nsIFileURL)) {
-    return uriFixup.createFixupURI(
+    return Services.uriFixup.getFixupURIInfo(
       aArgument,
       uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS
-    );
+    ).preferredURI;
   }
 
   try {
@@ -83,7 +83,7 @@ function resolveURIInternal(aCmdLine, aArgument) {
   // doesn't exist. Try URI fixup heuristics: see bug 290782.
 
   try {
-    uri = uriFixup.createFixupURI(aArgument, 0);
+    uri = Services.uriFixup.getFixupURIInfo(aArgument).preferredURI;
   } catch (e) {
     Cu.reportError(e);
   }
@@ -301,9 +301,11 @@ function openBrowserWindow(
         ).usePrivateBrowsing = true;
       }
 
+      let openTime = win.openTime;
       win.location = chromeURL;
       win.arguments = args; // <-- needs to be a plain JS array here.
 
+      ChromeUtils.addProfilerMarker("earlyBlankWindowVisible", openTime);
       return win;
     }
   }
@@ -676,7 +678,7 @@ nsBrowserContentHandler.prototype = {
             overridePage = Services.urlFormatter.formatURLPref(
               "startup.homepage_override_url"
             );
-            let update = UpdateManager.activeUpdate;
+            let update = UpdateManager.readyUpdate;
             if (
               update &&
               Services.vc.compare(update.appVersion, old_mstone) > 0
@@ -689,7 +691,7 @@ nsBrowserContentHandler.prototype = {
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);
             break;
           case OVERRIDE_NEW_BUILD_ID:
-            if (UpdateManager.activeUpdate) {
+            if (UpdateManager.readyUpdate) {
               // Send the update ping to signal that the update was successful.
               UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
             }

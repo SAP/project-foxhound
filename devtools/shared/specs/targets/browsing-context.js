@@ -35,7 +35,7 @@ types.addDictType("browsingContextTarget.window", {
 });
 
 types.addDictType("browsingContextTarget.workers", {
-  workers: "array:workerTarget",
+  workers: "array:workerDescriptor",
 });
 
 types.addDictType("browsingContextTarget.reload", {
@@ -143,21 +143,16 @@ const browsingContextTargetSpecPrototype = {
       type: "workerListChanged",
     },
 
-    // The thread actor is no longer emitting newSource event in the name of the target
-    // actor (bug 1269919), but as we may still connect to older servers which still do,
-    // we have to keep it being mentioned here. Otherwise the event is considered as a
-    // response to a request and confuses the packet ordering.
-    // We can remove that once FF66 is no longer supported.
-    newSource: {
-      type: "newSource",
-    },
-
     "resource-available-form": {
       type: "resource-available-form",
       resources: Arg(0, "array:json"),
     },
     "resource-destroyed-form": {
       type: "resource-destroyed-form",
+      resources: Arg(0, "array:json"),
+    },
+    "resource-updated-form": {
+      type: "resource-updated-form",
       resources: Arg(0, "array:json"),
     },
   },

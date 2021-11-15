@@ -8,6 +8,9 @@
 
 #include "jsexn.h"
 
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/friend/WindowProxy.h"    // js::IsWindowProxy
+#include "js/Object.h"                // JS::GetBuiltinClass
 #include "js/Proxy.h"
 #include "vm/ErrorObject.h"
 #include "vm/JSContext.h"
@@ -194,34 +197,6 @@ bool ForwardingProxyHandler::hasOwn(JSContext* cx, HandleObject proxy,
   return HasOwnProperty(cx, target, id, bp);
 }
 
-bool ForwardingProxyHandler::hasPrivate(JSContext* cx, HandleObject proxy,
-                                        HandleId id, bool* bp) const {
-  // Always use hasOwn, as private fields don't traverse prototypes.
-  return hasOwn(cx, proxy, id, bp);
-};
-bool ForwardingProxyHandler::getPrivate(JSContext* cx, HandleObject proxy,
-                                        HandleValue receiver, HandleId id,
-                                        MutableHandleValue vp) const {
-  return get(cx, proxy, receiver, id, vp);
-};
-bool ForwardingProxyHandler::setPrivate(JSContext* cx, HandleObject proxy,
-                                        HandleId id, HandleValue v,
-                                        HandleValue receiver,
-                                        ObjectOpResult& result) const {
-  if (hasPrototype()) {
-    return BaseProxyHandler::set(cx, proxy, id, v, receiver, result);
-  }
-
-  return set(cx, proxy, id, v, receiver, result);
-};
-
-bool ForwardingProxyHandler::definePrivateField(JSContext* cx,
-                                                HandleObject proxy, HandleId id,
-                                                Handle<PropertyDescriptor> desc,
-                                                ObjectOpResult& result) const {
-  return defineProperty(cx, proxy, id, desc, result);
-}
-
 bool ForwardingProxyHandler::getOwnEnumerablePropertyKeys(
     JSContext* cx, HandleObject proxy, MutableHandleIdVector props) const {
   assertEnteredPolicy(cx, proxy, JSID_VOID, ENUMERATE);
@@ -252,7 +227,7 @@ bool ForwardingProxyHandler::hasInstance(JSContext* cx, HandleObject proxy,
 bool ForwardingProxyHandler::getBuiltinClass(JSContext* cx, HandleObject proxy,
                                              ESClass* cls) const {
   RootedObject target(cx, proxy->as<ProxyObject>().target());
-  return GetBuiltinClass(cx, target, cls);
+  return JS::GetBuiltinClass(cx, target, cls);
 }
 
 bool ForwardingProxyHandler::isArray(JSContext* cx, HandleObject proxy,

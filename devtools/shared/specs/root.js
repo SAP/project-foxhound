@@ -12,7 +12,7 @@ const {
 } = require("devtools/shared/protocol");
 
 types.addDictType("root.listWorkers", {
-  workers: "array:workerTarget",
+  workers: "array:workerDescriptor",
 });
 types.addDictType("root.listServiceWorkerRegistrations", {
   registrations: "array:serviceWorkerRegistration",
@@ -90,11 +90,6 @@ const rootSpecPrototype = {
       response: {
         processDescriptor: RetVal("processDescriptor"),
       },
-    },
-
-    protocolDescription: {
-      request: {},
-      response: RetVal("json"),
     },
 
     requestTypes: {

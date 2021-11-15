@@ -44,22 +44,14 @@ avoid-blacklist-and-whitelist:
         - browser/base/content/test/static/browser_misused_characters_in_strings.js
         - browser/base/content/test/static/browser_parsable_css.js
         - browser/base/content/test/static/browser_parsable_script.js
+        - browser/base/content/test/tabMediaIndicator/browser_mute_webAudio.js
         - browser/base/content/test/tabs/browser_new_file_whitelisted_http_tab.js
         - browser/components/downloads/content/contentAreaDownloadsView.xhtml
         - browser/components/enterprisepolicies/helpers/WebsiteFilter.jsm
         - browser/components/migration/ChromeMigrationUtils.jsm
         - browser/components/migration/ChromeProfileMigrator.jsm
-        - browser/components/newtab/content-src/asrouter/docs/debugging-docs.md
-        - browser/components/newtab/content-src/asrouter/README.md
         - browser/components/newtab/data/content/activity-stream.bundle.js
-        - browser/components/newtab/docs/v2-system-addon/preferences.md
-        - browser/components/newtab/lib/ASRouter.jsm
-        - browser/components/newtab/lib/ASRouterTriggerListeners.jsm
-        - browser/components/newtab/lib/PersonalityProvider/RecipeExecutor.jsm
-        - browser/components/newtab/test/unit/asrouter/ASRouter.test.js
-        - browser/components/newtab/test/unit/asrouter/TargetingDocs.test.js
-        - browser/components/newtab/test/unit/lib/PersonalityProvider/RecipeExecutor.test.js
-        - browser/components/pioneer/content/pioneer.js
+        - browser/components/ion/content/ion.js
         - browser/components/preferences/privacy.inc.xhtml
         - browser/components/preferences/privacy.js
         - browser/components/resistfingerprinting/test/mochitest/test_bug1354633_media_error.html
@@ -119,7 +111,7 @@ avoid-blacklist-and-whitelist:
         - dom/ipc/ContentParent.cpp
         - dom/ipc/fuzztest/content_parent_ipc_libfuzz.cpp
         - dom/ipc/URLClassifierParent.cpp
-        - dom/media/AutoplayPolicy.cpp
+        - dom/media/autoplay/AutoplayPolicy.cpp
         - dom/media/gmp/GMPChild.cpp
         - dom/media/ipc/RDDProcessManager.cpp
         - dom/media/ipc/RemoteDecoderManagerParent.cpp
@@ -128,10 +120,14 @@ avoid-blacklist-and-whitelist:
         - dom/media/platforms/apple/AppleVTDecoder.cpp
         - dom/media/platforms/wmf/DXVA2Manager.cpp
         - dom/media/platforms/wmf/WMFVideoMFTManager.cpp
-        - dom/media/test/file_autoplay_policy_key_blacklist.html
-        - dom/media/test/test_autoplay_policy_key_blacklist.html
-        - dom/media/test/test_autoplay_policy_permission.html
+        - dom/media/autoplay/test/mochitest/file_autoplay_policy_key_blacklist.html
+        - dom/media/autoplay/test/mochitest/test_autoplay_policy_key_blacklist.html
+        - dom/media/autoplay/test/mochitest/test_autoplay_policy_permission.html
         - dom/media/webm/WebMDecoder.cpp
+        - dom/media/webrtc/jsapi/PeerConnectionMedia.cpp
+        - dom/media/webrtc/libwebrtcglue/VideoConduit.cpp
+        - dom/media/webrtc/transport/stun_socket_filter.cpp
+        - dom/media/webrtc/transport/test/ice_unittest.cpp
         - dom/plugins/base/nsPluginHost.h
         - dom/plugins/ipc/PluginQuirks.cpp
         - dom/push/PushServiceWebSocket.jsm
@@ -158,6 +154,7 @@ avoid-blacklist-and-whitelist:
         - dom/security/test/csp/test_worker_src.html
         - dom/security/test/unit/test_isOriginPotentiallyTrustworthy.js
         - dom/serviceworkers/test/test_error_reporting.html
+        - dom/serviceworkers/test/test_openWindow.html
         - dom/smil/SMILTimeValueSpec.cpp
         - dom/smil/SMILTimeValueSpec.h
         - dom/tests/mochitest/dom-level0/idn_child.html
@@ -206,10 +203,6 @@ avoid-blacklist-and-whitelist:
         - layout/tools/reftest/reftestcommandline.py
         - layout/tools/reftest/runreftest.py
         - layout/tools/reftest/selftest/conftest.py
-        - media/mtransport/stun_socket_filter.cpp
-        - media/mtransport/test/ice_unittest.cpp
-        - media/webrtc/signaling/src/media-conduit/VideoConduit.cpp
-        - media/webrtc/signaling/src/peerconnection/PeerConnectionMedia.cpp
         - mfbt/Attributes.h
         - mobile/android/app/geckoview-prefs.js
         - mobile/android/app/mobile.js
@@ -223,9 +216,7 @@ avoid-blacklist-and-whitelist:
         - netwerk/base/nsURLHelper.cpp
         - netwerk/cache/nsDiskCacheDeviceSQL.cpp
         - netwerk/cookie/CookieCommons.h
-        - netwerk/dns/nsDNSService2.cpp
         - netwerk/dns/nsHostResolver.cpp
-        - netwerk/dns/nsHostResolver.h
         - netwerk/dns/nsIDNService.cpp
         - netwerk/dns/nsIDNService.h
         - netwerk/dns/TRR.cpp
@@ -263,6 +254,7 @@ avoid-blacklist-and-whitelist:
         - netwerk/test/unit/test_idn_urls.js
         - netwerk/test/unit/test_trr_httpssvc.js
         - netwerk/test/unit/test_trr.js
+        - netwerk/test/unit/test_use_httpssvc.js
         - netwerk/url-classifier/AsyncUrlChannelClassifier.cpp
         - netwerk/url-classifier/nsChannelClassifier.cpp
         - netwerk/url-classifier/nsChannelClassifier.h
@@ -334,6 +326,7 @@ avoid-blacklist-and-whitelist:
         - testing/mozharness/configs/unittests/mac_unittest.py
         - testing/mozharness/configs/unittests/win_unittest.py
         - testing/profiles/unittest-required/user.js
+        - testing/raptor/browsertime/browsertime_scenario.js
         - testing/raptor/raptor/control_server.py
         - testing/raptor/raptor/manifest.py
         - testing/specialpowers/content/SpecialPowersChild.jsm
@@ -354,6 +347,7 @@ avoid-blacklist-and-whitelist:
         - toolkit/components/antitracking/StorageAccess.cpp
         - toolkit/components/antitracking/test/browser/antitracking_head.js
         - toolkit/components/antitracking/test/browser/browser_siteSpecificWorkArounds.js
+        - toolkit/components/antitracking/test/browser/browser_socialtracking_save_image.js
         - toolkit/components/antitracking/test/xpcshell/test_rejectForeignAllowList.js
         - toolkit/components/crashes/CrashManager.jsm
         - toolkit/components/crashes/tests/xpcshell/test_crash_manager.js
@@ -407,7 +401,6 @@ avoid-blacklist-and-whitelist:
         - toolkit/content/aboutUrlClassifier.js
         - toolkit/content/aboutUrlClassifier.xhtml
         - toolkit/content/tests/browser/browser_delay_autoplay_webAudio.js
-        - toolkit/content/tests/browser/browser_mute_webAudio.js
         - toolkit/crashreporter/client/ping.cpp
         - toolkit/crashreporter/CrashAnnotations.cpp
         - toolkit/crashreporter/generate_crash_reporter_sources.py
@@ -450,6 +443,7 @@ avoid-blacklist-and-whitelist:
         - toolkit/mozapps/extensions/test/xpinstall/browser_doorhanger_installs.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile3.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4.js
+        - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4_postDownload.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_whitelist.js
         - toolkit/mozapps/extensions/test/xpinstall/head.js
         - toolkit/xre/nsAppRunner.cpp

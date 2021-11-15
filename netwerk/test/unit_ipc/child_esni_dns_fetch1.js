@@ -35,10 +35,11 @@ DNSListener.prototype.QueryInterface = ChromeUtils.generateQI([
 add_task(async function testEsniRequest() {
   // use the h2 server as DOH provider
   let listenerEsni = new DNSListener();
-  let request = dns.asyncResolveByType(
+  let request = dns.asyncResolve(
     "_esni.example.com",
     dns.RESOLVE_TYPE_TXT,
     0,
+    null, // resolverInfo
     listenerEsni,
     mainThread,
     defaultOriginAttributes
@@ -56,10 +57,11 @@ add_task(async function testEsniRequest() {
 add_task(async function testEsniHTTPSSVC() {
   // use the h2 server as DOH provider
   let listenerEsni = new DNSListener();
-  let request = dns.asyncResolveByType(
+  let request = dns.asyncResolve(
     "httpssvc_esni.example.com",
     dns.RESOLVE_TYPE_HTTPSSVC,
     0,
+    null, // resolverInfo
     listenerEsni,
     mainThread,
     defaultOriginAttributes
@@ -69,6 +71,6 @@ add_task(async function testEsniHTTPSSVC() {
   Assert.equal(inRequest, request, "correct request was used");
   Assert.equal(inStatus, Cr.NS_OK, "status OK");
   let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
-  let esni = answer[0].values[0].QueryInterface(Ci.nsISVCParamEsniConfig);
-  Assert.equal(esni.esniConfig, "testytestystringstring", "got correct answer");
+  let esni = answer[0].values[0].QueryInterface(Ci.nsISVCParamEchConfig);
+  Assert.equal(esni.echconfig, "testytestystringstring", "got correct answer");
 });

@@ -105,45 +105,6 @@ async function testOneTool(toolbox, toolID) {
 async function testReload(shortcut, toolbox) {
   info(`Reload with ${shortcut}`);
 
-  const walker = (await toolbox.target.getFront("inspector")).walker;
-
-  const observer = {
-    _isDocumentUnloaded: false,
-    _isNewRooted: false,
-    onRootDestroyed(mutations) {
-      this._isDocumentUnloaded = true;
-    },
-    onNewRootNode() {
-      this._isNewRooted = true;
-    },
-    isReady() {
-      return this._isDocumentUnloaded && this._isNewRooted;
-    },
-  };
-
-  observer.onRootDestroyed = observer.onRootDestroyed.bind(observer);
-  observer.onNewRootNode = observer.onNewRootNode.bind(observer);
-  walker.on("root-destroyed", observer.onRootDestroyed);
-  walker.watchRootNode(observer.onNewRootNode);
-
-  // If we have a jsdebugger panel, wait for it to complete its reload
-  const jsdebugger = toolbox.getPanel("jsdebugger");
-  let onReloaded = Promise.resolve;
-  if (jsdebugger) {
-    onReloaded = jsdebugger.once("reloaded");
-  }
-
-  const loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-
-  toolbox.win.focus();
-  synthesizeKeyShortcut(L10N.getStr(shortcut), toolbox.win);
+  await sendToolboxReloadShortcut(L10N.getStr(shortcut), toolbox);
   reloadsSent++;
-
-  await loadPromise;
-
-  // Wait for root-destroyed and root-available to be fired.
-  await waitUntil(() => observer.isReady());
-  walker.off("root-destroyed", observer.onRootDestroyed);
-  walker.unwatchRootNode(observer.onNewRootNode);
-  await onReloaded;
 }

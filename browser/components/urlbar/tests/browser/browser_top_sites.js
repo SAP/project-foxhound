@@ -132,7 +132,11 @@ add_task(async function topSitesShown() {
   }
 });
 
-add_task(async function selectSearchTopSite() {
+// This subtest can be removed when update2 is on by default.
+add_task(async function selectSearchTopSite_legacy() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.update2", false]],
+  });
   await updateTopSites(
     sites => sites && sites[0] && sites[0].searchTopSite,
     true
@@ -172,6 +176,55 @@ add_task(async function selectSearchTopSite() {
   await UrlbarTestUtils.promisePopupClose(window, () => {
     gURLBar.blur();
   });
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function selectSearchTopSite() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.update2", true]],
+  });
+  await updateTopSites(
+    sites => sites && sites[0] && sites[0].searchTopSite,
+    true
+  );
+  await UrlbarTestUtils.promisePopupOpen(window, () => {
+    if (gURLBar.getAttribute("pageproxystate") == "invalid") {
+      gURLBar.handleRevert();
+    }
+    EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {});
+  });
+  await UrlbarTestUtils.promiseSearchComplete(window);
+
+  let amazonSearch = await UrlbarTestUtils.waitForAutocompleteResultAt(
+    window,
+    0
+  );
+
+  Assert.equal(
+    amazonSearch.result.type,
+    UrlbarUtils.RESULT_TYPE.SEARCH,
+    "First result should have SEARCH type."
+  );
+
+  Assert.equal(
+    amazonSearch.result.payload.keyword,
+    "@amazon",
+    "First result should have the Amazon keyword."
+  );
+
+  let searchPromise = UrlbarTestUtils.promiseSearchComplete(window);
+  EventUtils.synthesizeMouseAtCenter(amazonSearch, {});
+  await searchPromise;
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: amazonSearch.result.payload.engine,
+    entry: "topsites_urlbar",
+  });
+  await UrlbarTestUtils.exitSearchMode(window, { backspace: true });
+
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    gURLBar.blur();
+  });
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function topSitesBookmarksAndTabs() {
@@ -410,25 +463,51 @@ add_task(async function topSitesDisabled() {
   });
   await checkDoesNotOpenOnFocus();
   await SpecialPowers.popPrefEnv();
+});
 
-  // Top Sites should not be shown in private windows.
+add_task(async function topSitesPrivateWindow() {
+  // Top Sites should also be shown in private windows.
   let privateWin = await BrowserTestUtils.openNewBrowserWindow({
     private: true,
   });
-  await checkDoesNotOpenOnFocus(privateWin);
+  await addTestVisits();
+  let sites = AboutNewTab.getTopSites();
+  Assert.equal(
+    sites.length,
+    7,
+    "The test suite browser should have 7 Top Sites."
+  );
+  let urlbar = privateWin.gURLBar;
+  await UrlbarTestUtils.promisePopupOpen(privateWin, () => {
+    if (urlbar.getAttribute("pageproxystate") == "invalid") {
+      urlbar.handleRevert();
+    }
+    EventUtils.synthesizeMouseAtCenter(urlbar.inputField, {}, privateWin);
+  });
+  Assert.ok(urlbar.view.isOpen, "UrlbarView should be open.");
+  await UrlbarTestUtils.promiseSearchComplete(privateWin);
 
-  // Top sites should also not be shown in a private window if the search string
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(privateWin),
+    7,
+    "The number of results should be the same as the number of Top Sites (7)."
+  );
+
+  // Top sites should also be shown in a private window if the search string
   // gets cleared.
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window: privateWin,
     value: "example",
   });
-  privateWin.gURLBar.select();
+  urlbar.select();
   EventUtils.synthesizeKey("KEY_Backspace", {}, privateWin);
-  // Because the panel opening may not be immediate, we must wait a bit.
-  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-  await new Promise(resolve => setTimeout(resolve, 500));
-  Assert.ok(!privateWin.gURLBar.view.isOpen, "check urlbar panel is not open");
+  Assert.ok(urlbar.view.isOpen, "UrlbarView should be open.");
+  await UrlbarTestUtils.promiseSearchComplete(privateWin);
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(privateWin),
+    7,
+    "The number of results should be the same as the number of Top Sites (7)."
+  );
 
   await BrowserTestUtils.closeWindow(privateWin);
 

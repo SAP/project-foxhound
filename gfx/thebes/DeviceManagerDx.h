@@ -8,6 +8,7 @@
 
 #include "gfxPlatform.h"
 #include "gfxTelemetry.h"
+#include "gfxTypes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
@@ -92,12 +93,14 @@ class DeviceManagerDx final {
   bool GetOutputFromMonitor(HMONITOR monitor, RefPtr<IDXGIOutput>* aOutOutput);
 
   // Check if the current adapter supports hardware stretching
-  bool CheckHardwareStretchingSupport();
+  void CheckHardwareStretchingSupport(HwStretchingSupport& aRv);
 
   bool CreateCompositorDevices();
   void CreateContentDevices();
   void CreateDirectCompositionDevice();
   bool CreateCanvasDevice();
+
+  static HANDLE CreateDCompSurfaceHandle();
 
   void GetCompositorDevices(
       RefPtr<ID3D11Device>* aOutDevice,

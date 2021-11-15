@@ -192,7 +192,7 @@ Tasks of the ``docker-image`` kind build the Docker images in which other
 Docker tasks run.
 
 The tasks to generate each docker image have predictable labels:
-``build-docker-image-<name>``.
+``docker-image-<name>``.
 
 Docker images are built from subdirectories of ``taskcluster/docker``, using
 ``docker build``.  There is currently no capability for one Docker image to
@@ -451,6 +451,10 @@ release-partner-repack
 ----------------------
 Generates customized versions of releases for partners.
 
+release-partner-attribution
+---------------------------
+Generates attributed versions of releases for partners.
+
 release-partner-repack-chunking-dummy
 -------------------------------------
 Chunks the partner repacks by locale.
@@ -482,6 +486,10 @@ External signing of partner repacks.
 release-partner-repack-beetmover
 --------------------------------
 Moves the partner repacks to S3 buckets.
+
+release-partner-attribution-beetmover
+-------------------------------------
+Moves the partner attributions to S3 buckets.
 
 release-partner-repack-bouncer-sub
 ----------------------------------
@@ -704,3 +712,7 @@ Upload macOS and windows system symbols to tecken.
 scriptworker-canary
 -------------------
 Push tasks to try to test new scriptworker deployments.
+
+updatebot
+------------------
+Check for updates to (supported) third party libraries, and manage their lifecycle.

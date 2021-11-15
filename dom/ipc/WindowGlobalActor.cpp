@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/WindowGlobalActor.h"
 
+#include "AutoplayPolicy.h"
 #include "nsContentUtils.h"
 #include "mozJSComponentLoader.h"
 #include "mozilla/ContentBlockingAllowList.h"
@@ -14,10 +15,14 @@
 #include "mozilla/dom/JSWindowActorParent.h"
 #include "mozilla/dom/JSWindowActorChild.h"
 #include "mozilla/dom/JSWindowActorProtocol.h"
+#include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 
-namespace mozilla {
-namespace dom {
+#include "nsGlobalWindowInner.h"
+
+namespace mozilla::dom {
 
 // CORPP 3.1.3 https://mikewest.github.io/corpp/#integration-html
 static nsILoadInfo::CrossOriginEmbedderPolicy InheritedPolicy(
@@ -94,6 +99,17 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
       nsContentUtils::IsThirdPartyTrackingResourceWindow(aWindow);
   fields.mIsSecureContext = aWindow->IsSecureContext();
 
+  // Initialze permission fields
+  fields.mAutoplayPermission =
+      AutoplayPolicy::GetSiteAutoplayPermission(init.principal());
+  fields.mPopupPermission = PopupBlocker::GetPopupPermission(init.principal());
+
+  // Initialize top level permission fields
+  if (aWindow->GetBrowsingContext()->IsTop()) {
+    fields.mShortcutsPermission =
+        nsGlobalWindowInner::GetShortcutsPermission(init.principal());
+  }
+
   auto policy = doc->GetEmbedderPolicy();
   if (policy.isSome()) {
     fields.mEmbedderPolicy = *policy;
@@ -115,6 +131,9 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
 
   nsCOMPtr<nsITransportSecurityInfo> securityInfo;
   if (nsCOMPtr<nsIChannel> channel = doc->GetChannel()) {
+    nsCOMPtr<nsILoadInfo> loadInfo(channel->LoadInfo());
+    fields.mIsOriginalFrameSource = loadInfo->GetOriginalFrameSrcLoad();
+
     nsCOMPtr<nsISupports> securityInfoSupports;
     channel->GetSecurityInfo(getter_AddRefs(securityInfoSupports));
     securityInfo = do_QueryInterface(securityInfoSupports);
@@ -145,5 +164,4 @@ already_AddRefed<JSActorProtocol> WindowGlobalActor::MatchingJSActorProtocol(
   return proto.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

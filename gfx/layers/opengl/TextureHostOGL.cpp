@@ -29,7 +29,7 @@
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/layers/AndroidHardwareBuffer.h"
 #  include "mozilla/webrender/RenderAndroidHardwareBufferTextureHost.h"
-#  include "mozilla/webrender/RenderAndroidSurfaceTextureHostOGL.h"
+#  include "mozilla/webrender/RenderAndroidSurfaceTextureHost.h"
 #endif
 
 #ifdef MOZ_WAYLAND
@@ -657,8 +657,8 @@ void SurfaceTextureHost::DeallocateDeviceData() {
 void SurfaceTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
-      new wr::RenderAndroidSurfaceTextureHostOGL(mSurfTex, mSize, mFormat,
-                                                 mContinuousUpdate);
+      new wr::RenderAndroidSurfaceTextureHost(mSurfTex, mSize, mFormat,
+                                              mContinuousUpdate);
   wr::RenderThread::Get()->RegisterExternalImage(wr::AsUint64(aExternalImageId),
                                                  texture.forget());
 }
@@ -699,17 +699,18 @@ void SurfaceTextureHost::PushDisplayItems(wr::DisplayListBuilder& aBuilder,
                                           const wr::LayoutRect& aClip,
                                           wr::ImageRendering aFilter,
                                           const Range<wr::ImageKey>& aImageKeys,
-                                          const bool aPreferCompositorSurface) {
+                                          PushDisplayItemFlagSet aFlags) {
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
     case gfx::SurfaceFormat::R8G8B8A8:
     case gfx::SurfaceFormat::B8G8R8A8:
     case gfx::SurfaceFormat::B8G8R8X8: {
       MOZ_ASSERT(aImageKeys.length() == 1);
-      aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
-                         !(mFlags & TextureFlags::NON_PREMULTIPLIED),
-                         wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
-                         aPreferCompositorSurface);
+      aBuilder.PushImage(
+          aBounds, aClip, true, aFilter, aImageKeys[0],
+          !(mFlags & TextureFlags::NON_PREMULTIPLIED),
+          wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
+          aFlags.contains(PushDisplayItemFlag::PREFER_COMPOSITOR_SURFACE));
       break;
     }
     default: {
@@ -727,8 +728,8 @@ AndroidHardwareBufferTextureHost::Create(
     TextureFlags aFlags, const SurfaceDescriptorAndroidHardwareBuffer& aDesc) {
   RefPtr<AndroidHardwareBuffer> buffer =
       AndroidHardwareBuffer::FromFileDescriptor(
-          const_cast<ipc::FileDescriptor&>(aDesc.handle()), aDesc.size(),
-          aDesc.format());
+          const_cast<ipc::FileDescriptor&>(aDesc.handle()), aDesc.bufferId(),
+          aDesc.size(), aDesc.format());
   if (!buffer) {
     return nullptr;
   }
@@ -751,7 +752,7 @@ void AndroidHardwareBufferTextureHost::DestroyEGLImage() {
   if (mEGLImage && gl()) {
     const auto& gle = gl::GLContextEGL::Cast(gl());
     const auto& egl = gle->mEgl;
-    egl->fDestroyImage(egl->Display(), mEGLImage);
+    egl->fDestroyImage(mEGLImage);
     mEGLImage = EGL_NO_IMAGE;
   }
 }
@@ -790,11 +791,10 @@ void AndroidHardwareBufferTextureHost::PrepareTextureSource(
         LOCAL_EGL_NONE,
     };
 
-    EGLClientBuffer clientBuffer = egl->fGetNativeClientBufferANDROID(
+    EGLClientBuffer clientBuffer = egl->mLib->fGetNativeClientBufferANDROID(
         mAndroidHardwareBuffer->GetNativeBuffer());
-    mEGLImage =
-        egl->fCreateImage(egl->Display(), EGL_NO_CONTEXT,
-                          LOCAL_EGL_NATIVE_BUFFER_ANDROID, clientBuffer, attrs);
+    mEGLImage = egl->fCreateImage(
+        EGL_NO_CONTEXT, LOCAL_EGL_NATIVE_BUFFER_ANDROID, clientBuffer, attrs);
   }
 
   GLenum textureTarget = LOCAL_GL_TEXTURE_EXTERNAL;
@@ -853,6 +853,36 @@ gl::GLContext* AndroidHardwareBufferTextureHost::gl() const {
 }
 
 bool AndroidHardwareBufferTextureHost::Lock() {
+  if (!mAndroidHardwareBuffer) {
+    return false;
+  }
+
+  auto fenceFd = mAndroidHardwareBuffer->GetAndResetAcquireFence();
+  if (fenceFd.IsValid()) {
+    const auto& gle = gl::GLContextEGL::Cast(gl());
+    const auto& egl = gle->mEgl;
+
+    auto rawFD = fenceFd.TakePlatformHandle();
+    const EGLint attribs[] = {LOCAL_EGL_SYNC_NATIVE_FENCE_FD_ANDROID,
+                              rawFD.get(), LOCAL_EGL_NONE};
+
+    EGLSync sync =
+        egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, attribs);
+    if (sync) {
+      // Release fd here, since it is owned by EGLSync
+      Unused << rawFD.release();
+
+      if (egl->IsExtensionSupported(gl::EGLExtension::KHR_wait_sync)) {
+        egl->fWaitSync(sync, 0);
+      } else {
+        egl->fClientWaitSync(sync, 0, LOCAL_EGL_FOREVER);
+      }
+      egl->fDestroySync(sync);
+    } else {
+      gfxCriticalNote << "Failed to create EGLSync from acquire fence fd";
+    }
+  }
+
   return mTextureSource && mTextureSource->IsValid();
 }
 
@@ -895,6 +925,30 @@ void AndroidHardwareBufferTextureHost::DeallocateDeviceData() {
     mTextureSource = nullptr;
   }
   DestroyEGLImage();
+}
+
+void AndroidHardwareBufferTextureHost::SetAcquireFence(
+    mozilla::ipc::FileDescriptor&& aFenceFd) {
+  if (!mAndroidHardwareBuffer) {
+    return;
+  }
+  mAndroidHardwareBuffer->SetAcquireFence(std::move(aFenceFd));
+}
+
+void AndroidHardwareBufferTextureHost::SetReleaseFence(
+    mozilla::ipc::FileDescriptor&& aFenceFd) {
+  if (!mAndroidHardwareBuffer) {
+    return;
+  }
+  mAndroidHardwareBuffer->SetReleaseFence(std::move(aFenceFd));
+}
+
+mozilla::ipc::FileDescriptor
+AndroidHardwareBufferTextureHost::GetAndResetReleaseFence() {
+  if (!mAndroidHardwareBuffer) {
+    return mozilla::ipc::FileDescriptor();
+  }
+  return mAndroidHardwareBuffer->GetAndResetReleaseFence();
 }
 
 void AndroidHardwareBufferTextureHost::CreateRenderTexture(
@@ -941,18 +995,18 @@ void AndroidHardwareBufferTextureHost::PushResourceUpdates(
 void AndroidHardwareBufferTextureHost::PushDisplayItems(
     wr::DisplayListBuilder& aBuilder, const wr::LayoutRect& aBounds,
     const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
-    const Range<wr::ImageKey>& aImageKeys,
-    const bool aPreferCompositorSurface) {
+    const Range<wr::ImageKey>& aImageKeys, PushDisplayItemFlagSet aFlags) {
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
     case gfx::SurfaceFormat::R8G8B8A8:
     case gfx::SurfaceFormat::B8G8R8A8:
     case gfx::SurfaceFormat::B8G8R8X8: {
       MOZ_ASSERT(aImageKeys.length() == 1);
-      aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
-                         !(mFlags & TextureFlags::NON_PREMULTIPLIED),
-                         wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
-                         aPreferCompositorSurface);
+      aBuilder.PushImage(
+          aBounds, aClip, true, aFilter, aImageKeys[0],
+          !(mFlags & TextureFlags::NON_PREMULTIPLIED),
+          wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
+          aFlags.contains(PushDisplayItemFlag::PREFER_COMPOSITOR_SURFACE));
       break;
     }
     default: {
@@ -995,7 +1049,8 @@ void EGLImageTextureSource::BindTexture(GLenum aTextureUnit,
     const auto& gle = GLContextEGL::Cast(gl);
     const auto& egl = gle->mEgl;
 
-    return egl->HasKHRImageBase() && egl->HasKHRImageTexture2D() &&
+    return egl->HasKHRImageBase() &&
+           egl->IsExtensionSupported(EGLExtension::KHR_gl_texture_2D_image) &&
            gl->IsExtensionSupported(GLContext::OES_EGL_image);
   }();
   MOZ_ASSERT(supportsEglImage, "EGLImage not supported or disabled in runtime");
@@ -1058,13 +1113,15 @@ bool EGLImageTextureHost::Lock() {
   if (!gl || !gl->MakeCurrent()) {
     return false;
   }
+  const auto& gle = GLContextEGL::Cast(gl);
+  const auto& egl = gle->mEgl;
 
-  auto* egl = gl::GLLibraryEGL::Get();
   EGLint status = LOCAL_EGL_CONDITION_SATISFIED;
 
   if (mSync) {
-    MOZ_ASSERT(egl->IsExtensionSupported(GLLibraryEGL::KHR_fence_sync));
-    status = egl->fClientWaitSync(egl->Display(), mSync, 0, LOCAL_EGL_FOREVER);
+    MOZ_ASSERT(egl->IsExtensionSupported(EGLExtension::KHR_fence_sync));
+    // XXX eglWaitSyncKHR() is better api. Bug 1660434 is going to fix it.
+    status = egl->fClientWaitSync(mSync, 0, LOCAL_EGL_FOREVER);
   }
 
   if (status != LOCAL_EGL_CONDITION_SATISFIED) {
@@ -1143,13 +1200,13 @@ void EGLImageTextureHost::PushResourceUpdates(
 void EGLImageTextureHost::PushDisplayItems(
     wr::DisplayListBuilder& aBuilder, const wr::LayoutRect& aBounds,
     const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
-    const Range<wr::ImageKey>& aImageKeys,
-    const bool aPreferCompositorSurface) {
+    const Range<wr::ImageKey>& aImageKeys, PushDisplayItemFlagSet aFlags) {
   MOZ_ASSERT(aImageKeys.length() == 1);
-  aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
-                     !(mFlags & TextureFlags::NON_PREMULTIPLIED),
-                     wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
-                     aPreferCompositorSurface);
+  aBuilder.PushImage(
+      aBounds, aClip, true, aFilter, aImageKeys[0],
+      !(mFlags & TextureFlags::NON_PREMULTIPLIED),
+      wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
+      aFlags.contains(PushDisplayItemFlag::PREFER_COMPOSITOR_SURFACE));
 }
 
 //

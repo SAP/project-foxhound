@@ -24,7 +24,6 @@
 #include "mozilla/Unused.h"
 #include "mozilla/net/FileChannelParent.h"
 #include "mozilla/net/DNSRequestParent.h"
-#include "mozilla/net/ChannelDiverterParent.h"
 #include "mozilla/net/ClassifierDummyChannelParent.h"
 #include "mozilla/net/IPCTransportProvider.h"
 #include "mozilla/net/RequestContextService.h"
@@ -554,24 +553,6 @@ mozilla::ipc::IPCResult NeckoParent::RecvCancelHTMLDNSPrefetch(
   return IPC_OK();
 }
 
-PChannelDiverterParent* NeckoParent::AllocPChannelDiverterParent(
-    const ChannelDiverterArgs& channel) {
-  return new ChannelDiverterParent();
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvPChannelDiverterConstructor(
-    PChannelDiverterParent* actor, const ChannelDiverterArgs& channel) {
-  auto parent = static_cast<ChannelDiverterParent*>(actor);
-  parent->Init(channel);
-  return IPC_OK();
-}
-
-bool NeckoParent::DeallocPChannelDiverterParent(
-    PChannelDiverterParent* parent) {
-  delete static_cast<ChannelDiverterParent*>(parent);
-  return true;
-}
-
 PTransportProviderParent* NeckoParent::AllocPTransportProviderParent() {
   RefPtr<TransportProviderParent> res = new TransportProviderParent();
   return res.forget().take();
@@ -634,7 +615,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvOnAuthAvailable(
   CallbackMap().erase(aCallbackId);
 
   RefPtr<nsAuthInformationHolder> holder =
-      new nsAuthInformationHolder(0, EmptyString(), EmptyCString());
+      new nsAuthInformationHolder(0, u""_ns, ""_ns);
   holder->SetUsername(aUser);
   holder->SetPassword(aPassword);
   holder->SetDomain(aDomain);

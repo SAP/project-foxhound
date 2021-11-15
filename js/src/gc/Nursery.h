@@ -14,6 +14,7 @@
 
 #include "gc/GCParallelTask.h"
 #include "gc/Heap.h"
+#include "js/AllocPolicy.h"
 #include "js/Class.h"
 #include "js/HeapAPI.h"
 #include "js/TracingAPI.h"
@@ -41,6 +42,7 @@
   _(FreeMallocedBuffers, "frSlts")            \
   _(ClearStoreBuffer, "clrSB")                \
   _(ClearNursery, "clear")                    \
+  _(PurgeStringToAtomCache, "pStoA")          \
   _(Pretenure, "pretnr")
 
 template <typename T>
@@ -88,7 +90,7 @@ class NurseryDecommitTask : public GCParallelTask {
   void queueRange(size_t newCapacity, NurseryChunk& chunk,
                   const AutoLockHelperThreadState& lock);
 
-  void run() override;
+  void run(AutoLockHelperThreadState& lock) override;
   void decommitChunk(gc::Chunk* chunk);
   void decommitRange(AutoLockHelperThreadState& lock);
 
@@ -133,7 +135,7 @@ class TenuringTracer : public JSTracer {
 
   // The store buffers need to be able to call these directly.
   void traceObject(JSObject* src);
-  void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t length);
+  void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t end);
   void traceSlots(JS::Value* vp, uint32_t nslots);
   void traceString(JSString* src);
   void traceBigInt(JS::BigInt* src);
@@ -244,9 +246,7 @@ class Nursery {
   gc::Cell* allocateBigInt(JS::Zone* zone, size_t size) {
     return allocateCell(zone, size, JS::TraceKind::BigInt);
   }
-  gc::Cell* allocateString(JS::Zone* zone, size_t size) {
-    return allocateCell(zone, size, JS::TraceKind::String);
-  }
+  gc::Cell* allocateString(JS::Zone* zone, size_t size);
 
   static size_t nurseryCellHeaderSize() {
     return sizeof(gc::NurseryCellHeader);

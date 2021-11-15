@@ -51,6 +51,10 @@ decltype(D3D11CreateDevice)* sD3D11CreateDeviceFn = nullptr;
 // It should only be used within CreateDirectCompositionDevice.
 decltype(DCompositionCreateDevice2)* sDcompCreateDevice2Fn = nullptr;
 
+// It should only be used within CreateDCompSurfaceHandle
+decltype(DCompositionCreateSurfaceHandle)* sDcompCreateSurfaceHandleFn =
+    nullptr;
+
 // We don't have access to the DirectDrawCreateEx type in gfxWindowsPlatform.h,
 // since it doesn't include ddraw.h, so we use a static here. It should only
 // be used within InitializeDirectDrawConfig.
@@ -121,6 +125,14 @@ bool DeviceManagerDx::LoadDcomp() {
 
   sDcompCreateDevice2Fn = (decltype(DCompositionCreateDevice2)*)GetProcAddress(
       module, "DCompositionCreateDevice2");
+  if (!sDcompCreateDevice2Fn) {
+    return false;
+  }
+
+  // Load optional API for external compositing
+  sDcompCreateSurfaceHandleFn =
+      (decltype(DCompositionCreateSurfaceHandle)*)::GetProcAddress(
+          module, "DCompositionCreateSurfaceHandle");
   if (!sDcompCreateDevice2Fn) {
     return false;
   }
@@ -198,41 +210,55 @@ bool DeviceManagerDx::GetOutputFromMonitor(HMONITOR monitor,
   return false;
 }
 
-bool DeviceManagerDx::CheckHardwareStretchingSupport() {
+void DeviceManagerDx::CheckHardwareStretchingSupport(HwStretchingSupport& aRv) {
   RefPtr<IDXGIAdapter> adapter = GetDXGIAdapter();
 
   if (!adapter) {
     NS_WARNING(
         "Failed to acquire a DXGI adapter for checking hardware stretching "
         "support.");
-    return false;
+    ++aRv.mError;
+    return;
   }
 
-  nsTArray<DXGI_OUTPUT_DESC1> outputs;
   for (UINT i = 0;; ++i) {
     RefPtr<IDXGIOutput> output = nullptr;
-    if (FAILED(adapter->EnumOutputs(i, getter_AddRefs(output)))) {
+    HRESULT result = adapter->EnumOutputs(i, getter_AddRefs(output));
+    if (result == DXGI_ERROR_NOT_FOUND) {
+      // No more outputs to check.
+      break;
+    }
+
+    if (FAILED(result)) {
+      ++aRv.mError;
       break;
     }
 
     RefPtr<IDXGIOutput6> output6 = nullptr;
     if (FAILED(output->QueryInterface(__uuidof(IDXGIOutput6),
                                       getter_AddRefs(output6)))) {
-      break;
+      ++aRv.mError;
+      continue;
     }
 
     UINT flags = 0;
     if (FAILED(output6->CheckHardwareCompositionSupport(&flags))) {
-      break;
+      ++aRv.mError;
+      continue;
     }
 
-    // XXX Do we need add a check about which flags are supported?
-    if (flags) {
-      return true;
+    bool fullScreen = flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN;
+    bool window = flags & DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED;
+    if (fullScreen && window) {
+      ++aRv.mBoth;
+    } else if (fullScreen) {
+      ++aRv.mFullScreenOnly;
+    } else if (window) {
+      ++aRv.mWindowOnly;
+    } else {
+      ++aRv.mNone;
     }
   }
-
-  return false;
 }
 
 #ifdef DEBUG
@@ -288,7 +314,7 @@ bool DeviceManagerDx::CreateCompositorDevices() {
   // Fallback from WR to D3D11 Non-WR compositor without re-creating gpu process
   // could happen when WR causes error. In this case, the attachments are loaded
   // synchronously.
-  if (!gfx::gfxVars::UseWebRender()) {
+  if (!gfx::gfxVars::UseWebRender() || gfx::gfxVars::UseSoftwareWebRender()) {
     PreloadAttachmentsOnCompositorThread();
   }
 
@@ -413,6 +439,22 @@ void DeviceManagerDx::CreateDirectCompositionDevice() {
   mDirectCompositionDevice = compositionDevice;
 }
 
+/* static */
+HANDLE DeviceManagerDx::CreateDCompSurfaceHandle() {
+  if (!sDcompCreateSurfaceHandleFn) {
+    return 0;
+  }
+
+  HANDLE handle = 0;
+  HRESULT hr = sDcompCreateSurfaceHandleFn(COMPOSITIONOBJECT_ALL_ACCESS,
+                                           nullptr, &handle);
+  if (FAILED(hr)) {
+    return 0;
+  }
+
+  return handle;
+}
+
 void DeviceManagerDx::ImportDeviceInfo(const D3D11DeviceStatus& aDeviceStatus) {
   MOZ_ASSERT(!ProcessOwnsCompositor());
 
@@ -477,8 +519,9 @@ IDXGIAdapter1* DeviceManagerDx::GetDXGIAdapter() {
     // should never reach here. Furthermore, the UI process does not create
     // devices when using a GPU process.
     //
-    // So, this should only ever get called on the content process.
-    MOZ_ASSERT(XRE_IsContentProcess());
+    // So, this should only ever get called on the content process or RDD
+    // process
+    MOZ_ASSERT(XRE_IsContentProcess() || XRE_IsRDDProcess());
 
     // In the child process, we search for the adapter that matches the parent
     // process. The first adapter can be mismatched on dual-GPU systems.
@@ -623,11 +666,13 @@ void DeviceManagerDx::CreateCompositorDevice(FeatureState& d3d11) {
 
   if (!textureSharingWorks) {
     gfxConfig::SetFailed(Feature::D3D11_HW_ANGLE, FeatureStatus::Broken,
-                         "Texture sharing doesn't work");
+                         "Texture sharing doesn't work",
+                         "FEATURE_FAILURE_HW_ANGLE_NEEDS_TEXTURE_SHARING"_ns);
   }
   if (D3D11Checks::DoesRenderTargetViewNeedRecreating(device)) {
     gfxConfig::SetFailed(Feature::D3D11_HW_ANGLE, FeatureStatus::Broken,
-                         "RenderTargetViews need recreating");
+                         "RenderTargetViews need recreating",
+                         "FEATURE_FAILURE_HW_ANGLE_NEEDS_RTV_RECREATION"_ns);
   }
   if (XRE_IsParentProcess()) {
     // It seems like this may only happen when we're using the NVIDIA gpu
@@ -1346,8 +1391,6 @@ IDirectDraw7* DeviceManagerDx::GetDirectDraw() { return mDirectDraw; }
 void DeviceManagerDx::GetCompositorDevices(
     RefPtr<ID3D11Device>* aOutDevice,
     RefPtr<layers::DeviceAttachmentsD3D11>* aOutAttachments) {
-  MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread());
-
   RefPtr<ID3D11Device> device;
   {
     MutexAutoLock lock(mDeviceLock);
@@ -1386,7 +1429,8 @@ void DeviceManagerDx::PreloadAttachmentsOnCompositorThread() {
     return;
   }
 
-  bool enableAL = gfxConfig::IsEnabled(Feature::ADVANCED_LAYERS);
+  bool enableAL = gfxConfig::IsEnabled(Feature::ADVANCED_LAYERS) &&
+                  !gfx::gfxVars::UseSoftwareWebRender();
 
   RefPtr<Runnable> task = NS_NewRunnableFunction(
       "DeviceManagerDx::PreloadAttachmentsOnCompositorThread",

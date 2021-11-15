@@ -13,8 +13,7 @@
 #include "mozilla/dom/DocumentType.h"
 #include "nsTextNode.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // QueryInterface implementation for DOMImplementation
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMImplementation)
@@ -128,8 +127,8 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   RefPtr<DocumentType> doctype =
       NS_NewDOMDocumentType(mOwner->NodeInfoManager(),
                             nsGkAtoms::html,  // aName
-                            EmptyString(),    // aPublicId
-                            EmptyString(),    // aSystemId
+                            u""_ns,           // aPublicId
+                            u""_ns,           // aSystemId
                             VoidString());    // aInternalSubset
 
   nsCOMPtr<nsIGlobalObject> scriptHandlingObject =
@@ -138,10 +137,10 @@ nsresult DOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
   NS_ENSURE_STATE(!mScriptObject || scriptHandlingObject);
 
   nsCOMPtr<Document> doc;
-  nsresult rv = NS_NewDOMDocument(
-      getter_AddRefs(doc), EmptyString(), EmptyString(), doctype, mDocumentURI,
-      mBaseURI, mOwner->NodePrincipal(), true, scriptHandlingObject,
-      DocumentFlavorLegacyGuess);
+  nsresult rv =
+      NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, doctype,
+                        mDocumentURI, mBaseURI, mOwner->NodePrincipal(), true,
+                        scriptHandlingObject, DocumentFlavorLegacyGuess);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<Element> root =
@@ -187,5 +186,4 @@ already_AddRefed<Document> DOMImplementation::CreateHTMLDocument(
   return document.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

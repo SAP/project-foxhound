@@ -69,7 +69,7 @@ var AboutReader = function(actor, articlePromise) {
 
   this._docRef = Cu.getWeakReference(doc);
   this._winRef = Cu.getWeakReference(win);
-  this._innerWindowId = win.windowUtils.currentInnerWindowID;
+  this._innerWindowId = win.windowGlobalChild.innerWindowId;
 
   this._article = null;
   this._languagePromise = new Promise(resolve => {
@@ -361,7 +361,12 @@ AboutReader.prototype = {
       case "touchstart":
       /* fall through */
       case "mousedown":
-        if (!target.closest(".dropdown-popup")) {
+        if (
+          !target.closest(".dropdown-popup") &&
+          // Skip handling the toggle button here becase
+          // the dropdown will get toggled with the 'click' event.
+          !target.classList.contains("dropdown-toggle")
+        ) {
           this._closeDropdowns();
         }
         break;
@@ -1097,6 +1102,7 @@ AboutReader.prototype = {
     this._doc.addEventListener("scroll", this);
 
     dropdown.classList.add("open");
+    this._toolbarElement.classList.add("dropdown-open");
 
     this._toolbarContainerElement.classList.add("dropdown-open");
     this._toggleToolbarFixedPosition(true);
@@ -1118,6 +1124,7 @@ AboutReader.prototype = {
     for (let dropdown of openDropdowns) {
       dropdown.classList.remove("open");
     }
+    this._toolbarElement.classList.remove("dropdown-open");
 
     if (haveOpenDropdowns) {
       this._toolbarContainerElement.classList.remove("dropdown-open");

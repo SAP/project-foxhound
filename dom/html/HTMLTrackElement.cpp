@@ -10,7 +10,7 @@
 #include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLMediaElement.h"
-#include "WebVTTListener.h"
+#include "mozilla/dom/WebVTTListener.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/HTMLTrackElementBinding.h"
@@ -51,8 +51,7 @@ nsGenericHTMLElement* NS_NewHTMLTrackElement(
   return new (nim) mozilla::dom::HTMLTrackElement(nodeInfo.forget());
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Map html attribute string values to TextTrackKind enums.
 static constexpr nsAttrValue::EnumTable kKindTable[] = {
@@ -526,5 +525,4 @@ void HTMLTrackElement::DispatchTestEvent(const nsAString& aName) {
   DispatchTrustedEvent(aName);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

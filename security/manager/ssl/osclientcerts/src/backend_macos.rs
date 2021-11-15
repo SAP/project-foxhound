@@ -26,6 +26,7 @@ use core_foundation::string::*;
 // etc.. This is easier.
 include!("bindings_macos.rs");
 
+use crate::manager::SlotType;
 use crate::util::*;
 
 #[repr(C)]
@@ -814,7 +815,17 @@ pub enum Object {
 }
 
 impl Object {
-    pub fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+    pub fn matches(&self, slot_type: SlotType, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+        // The modern/legacy slot distinction in theory enables differentiation
+        // between keys that are from modules that can use modern cryptography
+        // (namely EC keys and RSA-PSS signatures) and those that cannot.
+        // However, the function that would enable this
+        // (SecKeyIsAlgorithmSupported) causes a password dialog to appear on
+        // our test machines, so this backend pretends that everything supports
+        // modern crypto for now.
+        if slot_type != SlotType::Modern {
+            return false;
+        }
         match self {
             Object::Cert(cert) => cert.matches(attrs),
             Object::Key(key) => key.matches(attrs),
@@ -884,6 +895,12 @@ fn get_issuers(identity: &SecIdentity) -> Result<Vec<SecCertificate>, ()> {
         return Err(());
     }
     let trust = unsafe { SecTrust::wrap_under_create_rule(trust) };
+    // Disable AIA fetching so that SecTrustEvaluateWithError doesn't result in network I/O.
+    let status = unsafe { SecTrustSetNetworkFetchAllowed(trust.as_concrete_TypeRef(), 0) };
+    if status != errSecSuccess {
+        error!("SecTrustSetNetworkFetchAllowed failed: {}", status);
+        return Err(());
+    }
     // We ignore the return value here because we don't care if the certificate is trusted or not -
     // we're only doing this to build its issuer chain as much as possible.
     let _ = SECURITY_FRAMEWORK.sec_trust_evaluate_with_error(&trust)?;

@@ -15,6 +15,7 @@
 #include "MediaFormatReader.h"
 #include "MediaResource.h"
 #include "MediaShutdownManager.h"
+#include "MediaTrackGraph.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
 #include "mozilla/AbstractThread.h"
@@ -1286,8 +1287,7 @@ MediaMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
       AbstractThread::MainThread(), __func__,
       [handleReport, data](size_t size) {
         handleReport->Callback(
-            EmptyCString(), "explicit/media/resources"_ns, KIND_HEAP,
-            UNITS_BYTES, size,
+            ""_ns, "explicit/media/resources"_ns, KIND_HEAP, UNITS_BYTES, size,
             nsLiteralCString("Memory used by media resources including "
                              "streaming buffers, caches, etc."),
             data);
@@ -1339,12 +1339,12 @@ MediaDecoderOwner::NextFrameStatus MediaDecoder::NextFrameBufferedStatus() {
 }
 
 void MediaDecoder::GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo) {
-  aInfo.mInstance = NS_ConvertUTF8toUTF16(nsPrintfCString("%p", this));
+  CopyUTF8toUTF16(nsPrintfCString("%p", this), aInfo.mInstance);
   aInfo.mChannels = mInfo ? mInfo->mAudio.mChannels : 0;
   aInfo.mRate = mInfo ? mInfo->mAudio.mRate : 0;
   aInfo.mHasAudio = mInfo ? mInfo->HasAudio() : false;
   aInfo.mHasVideo = mInfo ? mInfo->HasVideo() : false;
-  aInfo.mPlayState = NS_ConvertUTF8toUTF16(PlayStateStr());
+  CopyUTF8toUTF16(MakeStringSpan(PlayStateStr()), aInfo.mPlayState);
   aInfo.mContainerType =
       NS_ConvertUTF8toUTF16(ContainerType().Type().AsString());
   mReader->GetDebugInfo(aInfo.mReader);

@@ -7,6 +7,8 @@
 #ifndef mozilla_dom_localstorage_ReportInternalError_h
 #define mozilla_dom_localstorage_ReportInternalError_h
 
+#include <cstdint>
+#include "mozilla/Attributes.h"
 #include "nsDebug.h"
 
 #define LS_WARNING(...)                                                 \
@@ -21,7 +23,8 @@ namespace mozilla {
 namespace dom {
 namespace localstorage {
 
-void ReportInternalError(const char* aFile, uint32_t aLine, const char* aStr);
+MOZ_COLD void ReportInternalError(const char* aFile, uint32_t aLine,
+                                  const char* aStr);
 
 }  // namespace localstorage
 }  // namespace dom

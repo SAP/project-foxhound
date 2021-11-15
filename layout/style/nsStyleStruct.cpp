@@ -226,9 +226,9 @@ nsStyleFont::nsStyleFont(const nsStyleFont& aSrc)
       mFontSizeOffset(aSrc.mFontSizeOffset),
       mFontSizeKeyword(aSrc.mFontSizeKeyword),
       mGenericID(aSrc.mGenericID),
-      mScriptLevel(aSrc.mScriptLevel),
+      mMathDepth(aSrc.mMathDepth),
       mMathVariant(aSrc.mMathVariant),
-      mMathDisplay(aSrc.mMathDisplay),
+      mMathStyle(aSrc.mMathStyle),
       mMinFontSizeRatio(aSrc.mMinFontSizeRatio),
       mExplicitLanguage(aSrc.mExplicitLanguage),
       mAllowZoomAndMinSize(aSrc.mAllowZoomAndMinSize),
@@ -247,9 +247,9 @@ nsStyleFont::nsStyleFont(const Document& aDocument)
       mFontSizeOffset{0},
       mFontSizeKeyword(StyleFontSizeKeyword::Medium),
       mGenericID(StyleGenericFontFamily::None),
-      mScriptLevel(0),
+      mMathDepth(0),
       mMathVariant(NS_MATHML_MATHVARIANT_NONE),
-      mMathDisplay(NS_MATHML_DISPLAYSTYLE_INLINE),
+      mMathStyle(NS_STYLE_MATH_STYLE_NORMAL),
       mMinFontSizeRatio(100),  // 100%
       mExplicitLanguage(false),
       mAllowZoomAndMinSize(true),
@@ -276,7 +276,7 @@ nsChangeHint nsStyleFont::CalcDifference(const nsStyleFont& aNewData) const {
   if (mSize != aNewData.mSize || mLanguage != aNewData.mLanguage ||
       mExplicitLanguage != aNewData.mExplicitLanguage ||
       mMathVariant != aNewData.mMathVariant ||
-      mMathDisplay != aNewData.mMathDisplay ||
+      mMathStyle != aNewData.mMathStyle ||
       mMinFontSizeRatio != aNewData.mMinFontSizeRatio) {
     return NS_STYLE_HINT_REFLOW;
   }
@@ -293,8 +293,7 @@ nsChangeHint nsStyleFont::CalcDifference(const nsStyleFont& aNewData) const {
   }
 
   // XXX Should any of these cause a non-nsChangeHint_NeutralChange change?
-  if (mGenericID != aNewData.mGenericID ||
-      mScriptLevel != aNewData.mScriptLevel ||
+  if (mGenericID != aNewData.mGenericID || mMathDepth != aNewData.mMathDepth ||
       mScriptUnconstrainedSize != aNewData.mScriptUnconstrainedSize ||
       mScriptMinSize != aNewData.mScriptMinSize ||
       mScriptSizeMultiplier != aNewData.mScriptSizeMultiplier) {
@@ -1593,6 +1592,9 @@ bool StyleImage::IsComplete() const {
              (status & imgIRequest::STATUS_SIZE_AVAILABLE) &&
              (status & imgIRequest::STATUS_FRAME_COMPLETE);
     }
+    // Bug 546052 cross-fade not yet implemented.
+    case Tag::CrossFade:
+      return true;
     default:
       MOZ_ASSERT_UNREACHABLE("unexpected image type");
       return false;
@@ -1701,25 +1703,8 @@ nsStyleImageLayers::nsStyleImageLayers(const nsStyleImageLayers& aSource)
       mMaskModeCount(aSource.mMaskModeCount),
       mBlendModeCount(aSource.mBlendModeCount),
       mCompositeCount(aSource.mCompositeCount),
-      mLayers(aSource.mLayers)  // deep copy
-{
+      mLayers(aSource.mLayers.Clone()) {
   MOZ_COUNT_CTOR(nsStyleImageLayers);
-  // If the deep copy of mLayers failed, truncate the counts.
-  uint32_t count = mLayers.Length();
-  if (count != aSource.mLayers.Length()) {
-    NS_WARNING("truncating counts due to out-of-memory");
-    mAttachmentCount = std::max(mAttachmentCount, count);
-    mClipCount = std::max(mClipCount, count);
-    mOriginCount = std::max(mOriginCount, count);
-    mRepeatCount = std::max(mRepeatCount, count);
-    mPositionXCount = std::max(mPositionXCount, count);
-    mPositionYCount = std::max(mPositionYCount, count);
-    mImageCount = std::max(mImageCount, count);
-    mSizeCount = std::max(mSizeCount, count);
-    mMaskModeCount = std::max(mMaskModeCount, count);
-    mBlendModeCount = std::max(mBlendModeCount, count);
-    mCompositeCount = std::max(mCompositeCount, count);
-  }
 }
 
 static bool AnyLayerIsElementImage(const nsStyleImageLayers& aLayers) {
@@ -1820,56 +1805,7 @@ nsStyleImageLayers& nsStyleImageLayers::operator=(
   mMaskModeCount = aOther.mMaskModeCount;
   mBlendModeCount = aOther.mBlendModeCount;
   mCompositeCount = aOther.mCompositeCount;
-  mLayers = aOther.mLayers;
-
-  uint32_t count = mLayers.Length();
-  if (count != aOther.mLayers.Length()) {
-    NS_WARNING("truncating counts due to out-of-memory");
-    mAttachmentCount = std::max(mAttachmentCount, count);
-    mClipCount = std::max(mClipCount, count);
-    mOriginCount = std::max(mOriginCount, count);
-    mRepeatCount = std::max(mRepeatCount, count);
-    mPositionXCount = std::max(mPositionXCount, count);
-    mPositionYCount = std::max(mPositionYCount, count);
-    mImageCount = std::max(mImageCount, count);
-    mSizeCount = std::max(mSizeCount, count);
-    mMaskModeCount = std::max(mMaskModeCount, count);
-    mBlendModeCount = std::max(mBlendModeCount, count);
-    mCompositeCount = std::max(mCompositeCount, count);
-  }
-
-  return *this;
-}
-
-nsStyleImageLayers& nsStyleImageLayers::operator=(nsStyleImageLayers&& aOther) {
-  mAttachmentCount = aOther.mAttachmentCount;
-  mClipCount = aOther.mClipCount;
-  mOriginCount = aOther.mOriginCount;
-  mRepeatCount = aOther.mRepeatCount;
-  mPositionXCount = aOther.mPositionXCount;
-  mPositionYCount = aOther.mPositionYCount;
-  mImageCount = aOther.mImageCount;
-  mSizeCount = aOther.mSizeCount;
-  mMaskModeCount = aOther.mMaskModeCount;
-  mBlendModeCount = aOther.mBlendModeCount;
-  mCompositeCount = aOther.mCompositeCount;
-  mLayers = std::move(aOther.mLayers);
-
-  uint32_t count = mLayers.Length();
-  if (count != aOther.mLayers.Length()) {
-    NS_WARNING("truncating counts due to out-of-memory");
-    mAttachmentCount = std::max(mAttachmentCount, count);
-    mClipCount = std::max(mClipCount, count);
-    mOriginCount = std::max(mOriginCount, count);
-    mRepeatCount = std::max(mRepeatCount, count);
-    mPositionXCount = std::max(mPositionXCount, count);
-    mPositionYCount = std::max(mPositionYCount, count);
-    mImageCount = std::max(mImageCount, count);
-    mSizeCount = std::max(mSizeCount, count);
-    mMaskModeCount = std::max(mMaskModeCount, count);
-    mBlendModeCount = std::max(mBlendModeCount, count);
-    mCompositeCount = std::max(mCompositeCount, count);
-  }
+  mLayers = aOther.mLayers.Clone();
 
   return *this;
 }
@@ -2228,7 +2164,6 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mContain(StyleContain::NONE),
       mAppearance(StyleAppearance::None),
       mDefaultAppearance(StyleAppearance::None),
-      mButtonAppearance(StyleButtonAppearance::Allow),
       mPosition(StylePositionProperty::Static),
       mFloat(StyleFloat::None),
       mBreakType(StyleClear::None),
@@ -2279,12 +2214,12 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
 }
 
 nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
-    : mTransitions(aSource.mTransitions),
+    : mTransitions(aSource.mTransitions.Clone()),
       mTransitionTimingFunctionCount(aSource.mTransitionTimingFunctionCount),
       mTransitionDurationCount(aSource.mTransitionDurationCount),
       mTransitionDelayCount(aSource.mTransitionDelayCount),
       mTransitionPropertyCount(aSource.mTransitionPropertyCount),
-      mAnimations(aSource.mAnimations),
+      mAnimations(aSource.mAnimations.Clone()),
       mAnimationTimingFunctionCount(aSource.mAnimationTimingFunctionCount),
       mAnimationDurationCount(aSource.mAnimationDurationCount),
       mAnimationDelayCount(aSource.mAnimationDelayCount),
@@ -2299,7 +2234,6 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mContain(aSource.mContain),
       mAppearance(aSource.mAppearance),
       mDefaultAppearance(aSource.mDefaultAppearance),
-      mButtonAppearance(aSource.mButtonAppearance),
       mPosition(aSource.mPosition),
       mFloat(aSource.mFloat),
       mBreakType(aSource.mBreakType),
@@ -2503,9 +2437,9 @@ nsChangeHint nsStyleDisplay::CalcDifference(
         hint |= nsChangeHint_ReflowHintsForScrollbarChange;
       }
     } else {
-      // Otherwise this is a change between visible and
-      // -moz-hidden-unscrollable. Here only whether we have a clip changes, so
-      // just repaint and update our overflow areas in that case.
+      // Otherwise this is a change between 'visible' and 'clip'.
+      // Here only whether we have a 'clip' changes, so just repaint and
+      // update our overflow areas in that case.
       hint |= nsChangeHint_UpdateOverflow | nsChangeHint_RepaintFrame;
     }
   }
@@ -2567,7 +2501,6 @@ nsChangeHint nsStyleDisplay::CalcDifference(
       mBreakAfter != aNewData.mBreakAfter ||
       mAppearance != aNewData.mAppearance ||
       mDefaultAppearance != aNewData.mDefaultAppearance ||
-      mButtonAppearance != aNewData.mButtonAppearance ||
       mOrient != aNewData.mOrient ||
       mOverflowClipBoxBlock != aNewData.mOverflowClipBoxBlock ||
       mOverflowClipBoxInline != aNewData.mOverflowClipBoxInline) {

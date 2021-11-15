@@ -22,7 +22,6 @@
 #include "nsChangeHint.h"
 #include "nsContentUtils.h"
 #include "nsDOMAttributeMap.h"
-#include "nsIScrollableFrame.h"
 #include "nsRect.h"
 #include "Units.h"
 #include "mozilla/Attributes.h"
@@ -41,6 +40,7 @@
 class mozAutoDocUpdate;
 class nsIFrame;
 class nsIMozBrowserFrame;
+class nsIScrollableFrame;
 class nsIURI;
 class nsAttrValueOrString;
 class nsContentList;
@@ -78,6 +78,7 @@ struct ScrollIntoViewOptions;
 struct ScrollToOptions;
 struct FocusOptions;
 struct ShadowRootInit;
+struct ScrollOptions;
 class BooleanOrScrollIntoViewOptions;
 class DOMIntersectionObserver;
 class DOMMatrixReadOnly;
@@ -213,6 +214,11 @@ class Element : public FragmentOrElement {
    * Method to update mState with link state information.  This does not notify.
    */
   void UpdateLinkState(EventStates aState);
+
+  /**
+   * Returns the current disabled state of the element.
+   */
+  bool IsDisabled() const { return State().HasState(NS_EVENT_STATE_DISABLED); }
 
   virtual int32_t TabIndexDefault() { return -1; }
 
@@ -621,14 +627,16 @@ class Element : public FragmentOrElement {
   already_AddRefed<ShadowRoot> AttachShadowInternal(ShadowRootMode,
                                                     ErrorResult& aError);
 
+ public:
   MOZ_CAN_RUN_SCRIPT
   nsIScrollableFrame* GetScrollFrame(nsIFrame** aStyledFrame = nullptr,
                                      FlushType aFlushType = FlushType::Layout);
 
  private:
-  // Need to allow the ESM, nsGlobalWindow, and the focus manager to
-  // set our state
+  // Need to allow the ESM, nsGlobalWindow, and the focus manager
+  // and Document to set our state
   friend class mozilla::EventStateManager;
+  friend class mozilla::dom::Document;
   friend class ::nsGlobalWindowInner;
   friend class ::nsGlobalWindowOuter;
   friend class ::nsFocusManager;
@@ -647,7 +655,8 @@ class Element : public FragmentOrElement {
   EventStates StyleStateFromLocks() const;
 
  protected:
-  // Methods for the ESM, nsGlobalWindow and focus manager to manage state bits.
+  // Methods for the ESM, nsGlobalWindow, focus manager and Document to
+  // manage state bits.
   // These will handle setting up script blockers when they notify, so no need
   // to do it in the callers unless desired.  States passed here must only be
   // those in EXTERNALLY_MANAGED_STATES.
@@ -986,7 +995,7 @@ class Element : public FragmentOrElement {
 
 #ifdef DEBUG
   virtual void List(FILE* out = stdout, int32_t aIndent = 0) const override {
-    List(out, aIndent, EmptyCString());
+    List(out, aIndent, ""_ns);
   }
   virtual void DumpContent(FILE* out, int32_t aIndent,
                            bool aDumpAll) const override;
@@ -1117,6 +1126,14 @@ class Element : public FragmentOrElement {
                     ErrorResult& aError) {
     SetAttribute(aName, aValue, nullptr, aError);
   }
+  /**
+   * This method creates a principal that subsumes this element's NodePrincipal
+   * and which has flags set for elevated permissions that devtools needs to
+   * operate on this element. The principal returned by this method is used by
+   * various devtools methods to permit otherwise blocked operations, without
+   * changing any other restrictions the NodePrincipal might have.
+   */
+  already_AddRefed<nsIPrincipal> CreateDevtoolsPrincipal();
   void SetAttributeDevtools(const nsAString& aName, const nsAString& aValue,
                             ErrorResult& aError);
   void SetAttributeDevtoolsNS(const nsAString& aNamespaceURI,
@@ -1165,6 +1182,12 @@ class Element : public FragmentOrElement {
    */
   void GetElementsWithGrid(nsTArray<RefPtr<Element>>& aElements);
 
+  /**
+   * Provide a direct way to determine if this Element has visible
+   * scrollbars. Flushes layout.
+   */
+  MOZ_CAN_RUN_SCRIPT bool HasVisibleScrollbars();
+
  private:
   /**
    * Implement the algorithm specified at
@@ -1182,14 +1205,15 @@ class Element : public FragmentOrElement {
                           ErrorResult& aError);
 
   void SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
-    bool activeState = false;
     if (nsContentUtils::ShouldResistFingerprinting(GetComposedDoc()) &&
         aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
+      aError.ThrowNotFoundError("Invalid pointer id");
       return;
     }
-    if (!PointerEventHandler::GetPointerInfo(aPointerId, activeState)) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
+    const PointerInfo* pointerInfo =
+        PointerEventHandler::GetPointerInfo(aPointerId);
+    if (!pointerInfo) {
+      aError.ThrowNotFoundError("Invalid pointer id");
       return;
     }
     if (!IsInComposedDoc()) {
@@ -1202,20 +1226,20 @@ class Element : public FragmentOrElement {
       aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
       return;
     }
-    if (!activeState) {
+    if (!pointerInfo->mActiveState ||
+        pointerInfo->mActiveDocument != OwnerDoc()) {
       return;
     }
-    PointerEventHandler::SetPointerCaptureById(aPointerId, this);
+    PointerEventHandler::RequestPointerCaptureById(aPointerId, this);
   }
   void ReleasePointerCapture(int32_t aPointerId, ErrorResult& aError) {
-    bool activeState = false;
     if (nsContentUtils::ShouldResistFingerprinting(GetComposedDoc()) &&
         aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
+      aError.ThrowNotFoundError("Invalid pointer id");
       return;
     }
-    if (!PointerEventHandler::GetPointerInfo(aPointerId, activeState)) {
-      aError.Throw(NS_ERROR_DOM_INVALID_POINTER_ERR);
+    if (!PointerEventHandler::GetPointerInfo(aPointerId)) {
+      aError.ThrowNotFoundError("Invalid pointer id");
       return;
     }
     if (HasPointerCapture(aPointerId)) {
@@ -1225,7 +1249,7 @@ class Element : public FragmentOrElement {
   bool HasPointerCapture(long aPointerId) {
     PointerCaptureInfo* pointerCaptureInfo =
         PointerEventHandler::GetPointerCaptureInfo(aPointerId);
-    if (pointerCaptureInfo && pointerCaptureInfo->mPendingContent == this) {
+    if (pointerCaptureInfo && pointerCaptureInfo->mPendingElement == this) {
       return true;
     }
     return false;
@@ -1317,34 +1341,10 @@ class Element : public FragmentOrElement {
   MOZ_CAN_RUN_SCRIPT int32_t ClientHeight() {
     return CSSPixel::FromAppUnits(GetClientAreaRect().Height()).Rounded();
   }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMin() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().y).Rounded();
-  }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMax() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().YMost()).Rounded();
-  }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMin() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().x).Rounded();
-  }
-  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMax() {
-    nsIScrollableFrame* sf = GetScrollFrame();
-    if (!sf) {
-      return 0;
-    }
-    return CSSPixel::FromAppUnits(sf->GetScrollRange().XMost()).Rounded();
-  }
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMin();
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollTopMax();
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMin();
+  MOZ_CAN_RUN_SCRIPT int32_t ScrollLeftMax();
 
   MOZ_CAN_RUN_SCRIPT double ClientHeightDouble() {
     return CSSPixel::FromAppUnits(GetClientAreaRect().Height());

@@ -14,6 +14,7 @@
 #include "jsmath.h"
 #include "jsnum.h"
 
+#include "jit/CompileInfo.h"
 #include "jit/Ion.h"
 #include "jit/IonAnalysis.h"
 #include "jit/JitSpewer.h"
@@ -21,9 +22,11 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "util/CheckedArithmetic.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/TypedArrayObject.h"
+#include "vm/Uint8Clamped.h"
 
 #include "vm/BytecodeUtil-inl.h"
 
@@ -2860,6 +2863,9 @@ static bool CloneForDeadBranches(TempAllocator& alloc,
   }
 
   MInstruction* clone = candidate->clone(alloc, operands);
+  if (!clone) {
+    return false;
+  }
   clone->setRange(nullptr);
 
   // Set UseRemoved flag on the cloned instruction in order to chain recover

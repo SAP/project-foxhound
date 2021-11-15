@@ -31,11 +31,19 @@ const ALLOW_SILENCING_NOTIFICATIONS = Services.prefs.getBoolPref(
   false
 );
 
+const SHOW_GLOBAL_MUTE_TOGGLES = Services.prefs.getBoolPref(
+  "privacy.webrtc.globalMuteToggles",
+  false
+);
+
 const INDICATOR_PATH = USING_LEGACY_INDICATOR
   ? "chrome://browser/content/webrtcLegacyIndicator.xhtml"
   : "chrome://browser/content/webrtcIndicator.xhtml";
 
 const IS_MAC = AppConstants.platform == "macosx";
+
+const SHARE_SCREEN = 1;
+const SHARE_WINDOW = 2;
 
 let observerTopics = [
   "getUserMedia:response:allow",
@@ -46,7 +54,13 @@ let observerTopics = [
   "recording-window-ended",
 ];
 
-let gObserveSubFrameIds = [];
+// Structured hierarchy of subframes. Keys are frame id:s, The children member
+// contains nested sub frames if any. The noTest member make a frame be ignored
+// for testing if true.
+let gObserveSubFrames = {};
+// Object of subframes to test. Each element contains the members bc and id, for
+// the frames BrowsingContext and id, respectively.
+let gSubFramesToTest = [];
 let gBrowserContextsToObserve = [];
 
 function whenDelayedStartupFinished(aWindow) {
@@ -97,7 +111,7 @@ async function assertWebRTCIndicatorStatus(expected) {
 
   let expectVideo = false,
     expectAudio = false,
-    expectScreen = false;
+    expectScreen = "";
   if (expected) {
     if (expected.video) {
       expectVideo = true;
@@ -110,12 +124,12 @@ async function assertWebRTCIndicatorStatus(expected) {
     }
   }
   is(
-    ui.showCameraIndicator,
+    Boolean(ui.showCameraIndicator),
     expectVideo,
     "camera global indicator as expected"
   );
   is(
-    ui.showMicrophoneIndicator,
+    Boolean(ui.showMicrophoneIndicator),
     expectAudio,
     "microphone global indicator as expected"
   );
@@ -194,6 +208,19 @@ async function assertWebRTCIndicatorStatus(expected) {
       // are able to remove the tests for the legacy indicator.
       expected.screen = null;
       expected.window = true;
+    }
+
+    if (!USING_LEGACY_INDICATOR && !SHOW_GLOBAL_MUTE_TOGGLES) {
+      expected.video = false;
+      expected.audio = false;
+
+      let visible = docElt.getAttribute("visible") == "true";
+
+      if (!expected.screen && !expected.window && !expected.browserwindow) {
+        ok(!visible, "Indicator should not be visible in this configuation.");
+      } else {
+        ok(visible, "Indicator should be visible.");
+      }
     }
 
     for (let item of ["video", "audio", "screen", "window", "browserwindow"]) {
@@ -570,15 +597,42 @@ async function stopSharing(
   }
 }
 
-function getBrowsingContextForFrame(aBrowser, aFrameId) {
-  let bc = aBrowser.browsingContext;
+function getBrowsingContextForFrame(aBrowsingContext, aFrameId) {
   if (!aFrameId) {
-    return bc;
+    return aBrowsingContext;
   }
 
-  return SpecialPowers.spawn(bc, [aFrameId], frameId => {
+  return SpecialPowers.spawn(aBrowsingContext, [aFrameId], frameId => {
     return content.document.getElementById(frameId).browsingContext;
   });
+}
+
+async function getBrowsingContextsAndFrameIdsForSubFrames(
+  aBrowsingContext,
+  aSubFrames
+) {
+  let pendingBrowserSubFrames = [
+    { bc: aBrowsingContext, subFrames: aSubFrames },
+  ];
+  let browsingContextsAndFrames = [];
+  while (pendingBrowserSubFrames.length) {
+    let { bc, subFrames } = pendingBrowserSubFrames.shift();
+    for (let id of Object.keys(subFrames)) {
+      let subBc = await getBrowsingContextForFrame(bc, id);
+      if (subFrames[id].children) {
+        pendingBrowserSubFrames.push({
+          bc: subBc,
+          subFrames: subFrames[id].children,
+        });
+      }
+      if (subFrames[id].noTest) {
+        continue;
+      }
+      let observeBC = subFrames[id].observe ? subBc : undefined;
+      browsingContextsAndFrames.push({ bc: subBc, id, observeBC });
+    }
+  }
+  return browsingContextsAndFrames;
 }
 
 async function promiseRequestDevice(
@@ -586,11 +640,13 @@ async function promiseRequestDevice(
   aRequestVideo,
   aFrameId,
   aType,
-  aBrowser = gBrowser.selectedBrowser,
+  aBrowsingContext,
   aBadDevice = false
 ) {
   info("requesting devices");
-  let bc = await getBrowsingContextForFrame(aBrowser, aFrameId);
+  let bc =
+    aBrowsingContext ??
+    (await getBrowsingContextForFrame(gBrowser.selectedBrowser, aFrameId));
   return SpecialPowers.spawn(
     bc,
     [{ aRequestAudio, aRequestVideo, aType, aBadDevice }],
@@ -609,7 +665,9 @@ async function promiseRequestDevice(
 async function closeStream(
   aAlreadyClosed,
   aFrameId,
-  aDontFlushObserverVerification
+  aDontFlushObserverVerification,
+  aBrowsingContext,
+  aBrowsingContextToObserve
 ) {
   // Check that spurious notifications that occur while closing the
   // stream are handled separately. Tests that use skipObserverVerification
@@ -621,22 +679,28 @@ async function closeStream(
 
   // If the observers are listening to other frames, listen for a notification
   // on the right subframe.
-  let frameBC = await getBrowsingContextForFrame(
-    gBrowser.selectedBrowser,
-    aFrameId
-  );
-  let frameBCToObserve;
-  if (gBrowserContextsToObserve.length > 1) {
-    frameBCToObserve = frameBC;
-  }
+  let frameBC =
+    aBrowsingContext ??
+    (await getBrowsingContextForFrame(
+      gBrowser.selectedBrowser.browsingContext,
+      aFrameId
+    ));
 
   let observerPromises = [];
   if (!aAlreadyClosed) {
     observerPromises.push(
-      expectObserverCalled("recording-device-events", 1, frameBCToObserve)
+      expectObserverCalled(
+        "recording-device-events",
+        1,
+        aBrowsingContextToObserve
+      )
     );
     observerPromises.push(
-      expectObserverCalled("recording-window-ended", 1, frameBCToObserve)
+      expectObserverCalled(
+        "recording-window-ended",
+        1,
+        aBrowsingContextToObserve
+      )
     );
   }
 
@@ -804,7 +868,7 @@ async function checkNotSharing() {
   await assertWebRTCIndicatorStatus(null);
 }
 
-async function promiseReloadFrame(aFrameId) {
+async function promiseReloadFrame(aFrameId, aBrowsingContext) {
   let loadedPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     true,
@@ -812,7 +876,12 @@ async function promiseReloadFrame(aFrameId) {
       return true;
     }
   );
-  let bc = await getBrowsingContextForFrame(gBrowser.selectedBrowser, aFrameId);
+  let bc =
+    aBrowsingContext ??
+    (await getBrowsingContextForFrame(
+      gBrowser.selectedBrowser.browsingContext,
+      aFrameId
+    ));
   await SpecialPowers.spawn(bc, [], async function() {
     content.location.reload();
   });
@@ -867,11 +936,15 @@ async function enableObserverVerification(browser = gBrowser.selectedBrowser) {
 
   // A list of subframe indicies to also add observers to. This only
   // supports one nested level.
-  if (gObserveSubFrameIds) {
-    for (let id of gObserveSubFrameIds) {
-      gBrowserContextsToObserve.push(
-        await getBrowsingContextForFrame(browser, id)
-      );
+  if (gObserveSubFrames) {
+    let bcsAndFrameIds = await getBrowsingContextsAndFrameIdsForSubFrames(
+      browser,
+      gObserveSubFrames
+    );
+    for (let { observeBC } of bcsAndFrameIds) {
+      if (observeBC) {
+        gBrowserContextsToObserve.push(observeBC);
+      }
     }
   }
 
@@ -925,7 +998,9 @@ async function runTests(tests, options = {}) {
   ];
   await SpecialPowers.pushPrefEnv({ set: prefs });
 
-  gObserveSubFrameIds = options.observeSubFrameIds;
+  // When the frames are in different processes, add observers to each frame,
+  // to ensure that the notifications don't get sent in the wrong process.
+  gObserveSubFrames = SpecialPowers.useRemoteSubframes ? options.subFrames : {};
 
   for (let testCase of tests) {
     info(testCase.desc);
@@ -935,7 +1010,7 @@ async function runTests(tests, options = {}) {
     ) {
       await enableObserverVerification();
     }
-    await testCase.run(browser);
+    await testCase.run(browser, options.subFrames);
     if (
       !testCase.skipObserverVerification &&
       !options.skipObserverVerification
@@ -949,4 +1024,108 @@ async function runTests(tests, options = {}) {
 
   // Some tests destroy the original tab and leave a new one in its place.
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+}
+
+/**
+ * Given a browser from a tab in this window, chooses to share
+ * some combination of camera, mic or screen.
+ *
+ * @param {<xul:browser} browser - The browser to share devices with.
+ * @param {boolean} camera - True to share a camera device.
+ * @param {boolean} mic - True to share a microphone device.
+ * @param {Number} [screenOrWin] - One of either SHARE_WINDOW or SHARE_SCREEN
+ *   to share a window or screen. Defaults to neither.
+ * @param {boolean} remember - True to persist the permission to the
+ *   SitePermissions database as SitePermissions.SCOPE_PERSISTENT. Note that
+ *   callers are responsible for clearing this persistent permission.
+ * @return {Promise}
+ * @resolves {undefined} - Once the sharing is complete.
+ */
+async function shareDevices(
+  browser,
+  camera,
+  mic,
+  screenOrWin = 0,
+  remember = false
+) {
+  if (camera || mic) {
+    let promise = promisePopupNotificationShown(
+      "webRTC-shareDevices",
+      null,
+      window
+    );
+
+    await promiseRequestDevice(mic, camera, null, null, browser);
+    await promise;
+
+    checkDeviceSelectors(mic, camera);
+    let observerPromise1 = expectObserverCalled("getUserMedia:response:allow");
+    let observerPromise2 = expectObserverCalled("recording-device-events");
+
+    let rememberCheck = PopupNotifications.panel.querySelector(
+      ".popup-notification-checkbox"
+    );
+    rememberCheck.checked = remember;
+
+    promise = promiseMessage("ok", () => {
+      PopupNotifications.panel.firstElementChild.button.click();
+    });
+
+    await observerPromise1;
+    await observerPromise2;
+    await promise;
+  }
+
+  if (screenOrWin) {
+    let promise = promisePopupNotificationShown(
+      "webRTC-shareDevices",
+      null,
+      window
+    );
+
+    await promiseRequestDevice(false, true, null, "screen", browser);
+    await promise;
+
+    checkDeviceSelectors(false, false, true, window);
+
+    let document = window.document;
+
+    let menulist = document.getElementById("webRTC-selectWindow-menulist");
+    let displayMediaSource;
+
+    if (screenOrWin == SHARE_SCREEN) {
+      displayMediaSource = "screen";
+    } else if (screenOrWin == SHARE_WINDOW) {
+      displayMediaSource = "window";
+    } else {
+      throw new Error("Got an invalid argument to shareDevices.");
+    }
+
+    let menuitem = null;
+    for (let i = 0; i < menulist.itemCount; ++i) {
+      let current = menulist.getItemAtIndex(i);
+      if (current.mediaSource == displayMediaSource) {
+        menuitem = current;
+        break;
+      }
+    }
+
+    Assert.ok(menuitem, "Should have found an appropriate display menuitem");
+    menuitem.doCommand();
+
+    let notification = window.PopupNotifications.panel.firstElementChild;
+
+    let observerPromise1 = expectObserverCalled("getUserMedia:response:allow");
+    let observerPromise2 = expectObserverCalled("recording-device-events");
+    await promiseMessage(
+      "ok",
+      () => {
+        notification.button.click();
+      },
+      1,
+      browser
+    );
+    await observerPromise1;
+    await observerPromise2;
+  }
 }

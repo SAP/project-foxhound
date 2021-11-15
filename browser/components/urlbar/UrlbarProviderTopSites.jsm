@@ -64,7 +64,11 @@ class ProviderTopSites extends UrlbarProvider {
    * @returns {boolean} Whether this provider should be invoked for the search.
    */
   isActive(queryContext) {
-    return !queryContext.searchString;
+    return (
+      !queryContext.restrictSource &&
+      !queryContext.searchString &&
+      !queryContext.searchMode
+    );
   }
 
   /**
@@ -134,14 +138,15 @@ class ProviderTopSites extends UrlbarProvider {
 
     sites = sites.map(link => ({
       type: link.searchTopSite ? "search" : "url",
-      url: link.url,
-      isPinned: link.isPinned,
+      url: link.url_urlbar || link.url,
+      isPinned: !!link.isPinned,
+      isSponsored: !!link.sponsored_position,
       // The newtab page allows the user to set custom site titles, which
       // are stored in `label`, so prefer it.  Search top sites currently
       // don't have titles but `hostname` instead.
       title: link.label || link.title || link.hostname || "",
-      favicon: link.smallFavicon || link.favicon || null,
-      overriddenSearchTopSite: link.overriddenSearchTopSite,
+      favicon: link.smallFavicon || link.favicon || undefined,
+      sendAttributionRequest: !!link.sendAttributionRequest,
     }));
 
     for (let site of sites) {
@@ -155,7 +160,8 @@ class ProviderTopSites extends UrlbarProvider {
               url: site.url,
               icon: site.favicon,
               isPinned: site.isPinned,
-              overriddenSearchTopSite: site.overriddenSearchTopSite,
+              isSponsored: site.isSponsored,
+              sendAttributionRequest: site.sendAttributionRequest,
             })
           );
 
@@ -196,7 +202,9 @@ class ProviderTopSites extends UrlbarProvider {
               host = new URL(site.url).hostname;
             } catch (err) {}
             if (host) {
-              engine = await UrlbarSearchUtils.engineForDomainPrefix(host);
+              engine = (
+                await UrlbarSearchUtils.enginesForDomainPrefix(host)
+              )[0];
             }
           }
 
@@ -215,7 +223,7 @@ class ProviderTopSites extends UrlbarProvider {
             ...UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
               title: site.title,
               keyword: site.title,
-              keywordOffer: UrlbarUtils.KEYWORD_OFFER.HIDE,
+              keywordOffer: UrlbarUtils.KEYWORD_OFFER.SHOW,
               engine: engine.name,
               query: "",
               icon: site.favicon,

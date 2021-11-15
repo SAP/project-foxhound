@@ -9,6 +9,7 @@
 
 #include "vm/JSObject.h"
 
+#include "js/Object.h"  // JS::GetBuiltinClass
 #include "vm/ArrayObject.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/JSFunction.h"
@@ -39,32 +40,44 @@ static inline gc::AllocKind NewObjectGCKind(const JSClass* clasp) {
 }  // namespace js
 
 MOZ_ALWAYS_INLINE uint32_t js::NativeObject::numDynamicSlots() const {
-  return dynamicSlotsCount(numFixedSlots(), slotSpan(), getClass());
+  uint32_t slots = getSlotsHeader()->capacity();
+  MOZ_ASSERT(slots == calculateDynamicSlots());
+  MOZ_ASSERT_IF(hasDynamicSlots(), slots != 0);
+
+  return slots;
 }
 
-/* static */ MOZ_ALWAYS_INLINE uint32_t js::NativeObject::dynamicSlotsCount(
+MOZ_ALWAYS_INLINE uint32_t js::NativeObject::calculateDynamicSlots() const {
+  return calculateDynamicSlots(numFixedSlots(), slotSpan(), getClass());
+}
+
+/* static */ MOZ_ALWAYS_INLINE uint32_t js::NativeObject::calculateDynamicSlots(
     uint32_t nfixed, uint32_t span, const JSClass* clasp) {
   if (span <= nfixed) {
     return 0;
   }
-  span -= nfixed;
+
+  uint32_t ndynamic = span - nfixed;
 
   // Increase the slots to SLOT_CAPACITY_MIN to decrease the likelihood
   // the dynamic slots need to get increased again. ArrayObjects ignore
   // this because slots are uncommon in that case.
-  if (clasp != &ArrayObject::class_ && span <= SLOT_CAPACITY_MIN) {
+  if (clasp != &ArrayObject::class_ && ndynamic <= SLOT_CAPACITY_MIN) {
     return SLOT_CAPACITY_MIN;
   }
 
-  uint32_t slots = mozilla::RoundUpPow2(span);
-  MOZ_ASSERT(slots >= span);
+  uint32_t count =
+      mozilla::RoundUpPow2(ndynamic + ObjectSlots::VALUES_PER_HEADER);
+
+  uint32_t slots = count - ObjectSlots::VALUES_PER_HEADER;
+  MOZ_ASSERT(slots >= ndynamic);
   return slots;
 }
 
 /* static */ MOZ_ALWAYS_INLINE uint32_t
-js::NativeObject::dynamicSlotsCount(Shape* shape) {
-  return dynamicSlotsCount(shape->numFixedSlots(), shape->slotSpan(),
-                           shape->getObjectClass());
+js::NativeObject::calculateDynamicSlots(Shape* shape) {
+  return calculateDynamicSlots(shape->numFixedSlots(), shape->slotSpan(),
+                               shape->getObjectClass());
 }
 
 inline void JSObject::finalize(JSFreeOp* fop) {
@@ -92,8 +105,9 @@ inline void JSObject::finalize(JSFreeOp* fop) {
   }
 
   if (nobj->hasDynamicSlots()) {
-    size_t size = nobj->numDynamicSlots() * sizeof(js::HeapSlot);
-    fop->free_(this, nobj->slots_, size, js::MemoryUse::ObjectSlots);
+    js::ObjectSlots* slotsHeader = nobj->getSlotsHeader();
+    size_t size = js::ObjectSlots::allocSize(slotsHeader->capacity());
+    fop->free_(this, slotsHeader, size, js::MemoryUse::ObjectSlots);
   }
 
   if (nobj->hasDynamicElements()) {
@@ -331,7 +345,7 @@ static MOZ_ALWAYS_INLINE bool HasNativeMethodPure(JSObject* obj,
 // Return whether 'obj' definitely has no @@toPrimitive method.
 static MOZ_ALWAYS_INLINE bool HasNoToPrimitiveMethodPure(JSObject* obj,
                                                          JSContext* cx) {
-  Symbol* toPrimitive = cx->wellKnownSymbols().toPrimitive;
+  JS::Symbol* toPrimitive = cx->wellKnownSymbols().toPrimitive;
   JSObject* holder;
   if (!MaybeHasInterestingSymbolProperty(cx, obj, toPrimitive, &holder)) {
 #ifdef DEBUG
@@ -625,7 +639,7 @@ inline bool GetClassOfValue(JSContext* cx, HandleValue v, ESClass* cls) {
   }
 
   RootedObject obj(cx, &v.toObject());
-  return GetBuiltinClass(cx, obj, cls);
+  return JS::GetBuiltinClass(cx, obj, cls);
 }
 
 extern NativeObject* InitClass(JSContext* cx, HandleObject obj,

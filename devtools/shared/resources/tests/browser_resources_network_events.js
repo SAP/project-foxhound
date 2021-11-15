@@ -10,7 +10,7 @@ const {
 } = require("devtools/shared/resources/resource-watcher");
 
 const EXAMPLE_DOMAIN = "https://example.com/";
-const TEST_URI = `${URL_ROOT_SSL}/network_document.html`;
+const TEST_URI = `${URL_ROOT_SSL}network_document.html`;
 
 add_task(async function() {
   info("Test network events legacy listener");
@@ -18,23 +18,11 @@ add_task(async function() {
   await testNetworkEventResourcesWithExistingResources();
   await testNetworkEventResourcesWithoutExistingResources();
 
-  // These tests would be enabled when the server-side work is done. See Bug 1644191
   // info("Test network events server listener");
   // await pushPref("devtools.testing.enableServerWatcherSupport", true);
-  // await testNetworkEventResources();
-  // await testNetworkEventResourcesWithIgnoreExistingResources();
+  // await testNetworkEventResourcesWithExistingResources();
+  // await testNetworkEventResourcesWithoutExistingResources();
 });
-
-const UPDATES = [
-  "requestHeaders",
-  "requestCookies",
-  "responseStart",
-  "securityInfo",
-  "responseHeaders",
-  "responseCookies",
-  "eventTimings",
-  "responseContent",
-];
 
 async function testNetworkEventResourcesWithExistingResources() {
   info(`Tests for network event resources with the existing resources`);
@@ -42,36 +30,23 @@ async function testNetworkEventResourcesWithExistingResources() {
     ignoreExistingResources: false,
     // 1 available event fired, for the existing resource in the cache.
     // 1 available event fired, when live request is created.
-    expectedOnAvailableCounts: 2,
-    // 8 update events fired, when live request is updated.
-    expectedOnUpdatedCounts: 8,
+    totalExpectedOnAvailableCounts: 2,
+    // 1 update events fired, when live request is updated.
+    totalExpectedOnUpdatedCounts: 1,
     expectedResourcesOnAvailable: {
-      [`${EXAMPLE_DOMAIN}existing_post.html`]: {
+      [`${EXAMPLE_DOMAIN}cached_post.html`]: {
         resourceType: ResourceWatcher.TYPES.NETWORK_EVENT,
-        request: {
-          url: `${EXAMPLE_DOMAIN}existing_post.html`,
-          method: ["POST"],
-        },
-        // gets reset based on the type of request
-        updates: [],
+        method: "POST",
       },
       [`${EXAMPLE_DOMAIN}live_get.html`]: {
         resourceType: ResourceWatcher.TYPES.NETWORK_EVENT,
-        request: {
-          url: `${EXAMPLE_DOMAIN}live_get.html`,
-          method: "GET",
-        },
-        updates: [],
+        method: "GET",
       },
     },
     expectedResourcesOnUpdated: {
       [`${EXAMPLE_DOMAIN}live_get.html`]: {
         resourceType: ResourceWatcher.TYPES.NETWORK_EVENT,
-        request: {
-          url: `${EXAMPLE_DOMAIN}live_get.html`,
-          method: "GET",
-        },
-        updates: UPDATES,
+        method: "GET",
       },
     },
   });
@@ -82,27 +57,19 @@ async function testNetworkEventResourcesWithoutExistingResources() {
   await testNetworkEventResources({
     ignoreExistingResources: true,
     // 1 available event fired, when live request is created.
-    expectedOnAvailableCounts: 1,
-    // 8 update events fired, when live request is updated.
-    expectedOnUpdatedCounts: 8,
+    totalExpectedOnAvailableCounts: 1,
+    // 1 update events fired, when live request is updated.
+    totalExpectedOnUpdatedCounts: 1,
     expectedResourcesOnAvailable: {
       [`${EXAMPLE_DOMAIN}live_get.html`]: {
         resourceType: ResourceWatcher.TYPES.NETWORK_EVENT,
-        request: {
-          url: `${EXAMPLE_DOMAIN}live_get.html`,
-          method: "GET",
-        },
-        updates: [],
+        method: "GET",
       },
     },
     expectedResourcesOnUpdated: {
       [`${EXAMPLE_DOMAIN}live_get.html`]: {
         resourceType: ResourceWatcher.TYPES.NETWORK_EVENT,
-        request: {
-          url: `${EXAMPLE_DOMAIN}live_get.html`,
-          method: "GET",
-        },
-        updates: UPDATES,
+        method: "GET",
       },
     },
   });
@@ -110,106 +77,104 @@ async function testNetworkEventResourcesWithoutExistingResources() {
 
 async function testNetworkEventResources(options) {
   const tab = await addTab(TEST_URI);
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
-
-  const actualResourcesOnAvailable = {};
-  const actualResourcesOnUpdated = {};
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info(
     `Trigger some network requests *before* calling ResourceWatcher.watchResources
      in order to assert the behavior of already existing network events.`
   );
+
   let onResourceAvailable = () => {};
   let onResourceUpdated = () => {};
-  const waitOnAllExpectedUpdatesForExistingRequests = new Promise(resolve => {
-    const existingRequestUrl = `${EXAMPLE_DOMAIN}existing_post.html`;
 
-    onResourceAvailable = ({ resource }) => {
-      // A blocked request would only have two updates so lets also resolve here
-      if (
-        resource.request.url == existingRequestUrl &&
-        resource.blockedReason &&
-        resource.updates.length == 2
-      ) {
-        // Reset the updates expectation as the request is blocked
-        if (options.expectedResourcesOnAvailable[resource.request.url]) {
-          options.expectedResourcesOnAvailable[resource.request.url].updates = [
-            ...resource.updates,
-          ];
-        }
+  // Lets make sure there is already a network event resource in the cache.
+  const waitOnRequestForResourceWatcherCache = new Promise(resolve => {
+    onResourceAvailable = resources => {
+      for (const resource of resources) {
+        is(
+          resource.resourceType,
+          ResourceWatcher.TYPES.NETWORK_EVENT,
+          "Received a network event resource"
+        );
+      }
+    };
+
+    onResourceUpdated = updates => {
+      for (const { resource } of updates) {
+        is(
+          resource.resourceType,
+          ResourceWatcher.TYPES.NETWORK_EVENT,
+          "Received a network update event resource"
+        );
         resolve();
       }
     };
 
-    onResourceUpdated = ({ resource }) => {
-      // Wait until all the update events have fired for the existing request.
-      // Handle both blocked and unblocked requests
-      if (
-        resource.request.url == existingRequestUrl &&
-        (resource.updates.length == 8 ||
-          (resource.blockedReason && resource.updates.length == 2))
-      ) {
-        // Makes sure the expectation always correct (for either blocked or unblocked requests)
-        if (options.expectedResourcesOnAvailable[resource.request.url]) {
-          options.expectedResourcesOnAvailable[resource.request.url].updates = [
-            ...resource.updates,
-          ];
-        }
-        resolve();
-      }
-    };
-
-    resourceWatcher.watchResources([ResourceWatcher.TYPES.NETWORK_EVENT], {
-      onAvailable: onResourceAvailable,
-      onUpdated: onResourceUpdated,
-    });
+    resourceWatcher
+      .watchResources([ResourceWatcher.TYPES.NETWORK_EVENT], {
+        onAvailable: onResourceAvailable,
+        onUpdated: onResourceUpdated,
+      })
+      .then(() => {
+        // We can only trigger the requests once `watchResources` settles, otherwise the
+        // thread might be paused.
+        triggerNetworkRequests(tab.linkedBrowser, [cachedRequest]);
+      });
   });
-  await triggerNetworkRequests(tab.linkedBrowser, EXISTING_REQUESTS_COMMANDS);
-  await waitOnAllExpectedUpdatesForExistingRequests;
+
+  await waitOnRequestForResourceWatcherCache;
+
+  const actualResourcesOnAvailable = {};
+  const actualResourcesOnUpdated = {};
 
   let {
-    expectedOnAvailableCounts,
-    expectedOnUpdatedCounts,
+    totalExpectedOnAvailableCounts,
+    totalExpectedOnUpdatedCounts,
+    expectedResourcesOnAvailable,
+    expectedResourcesOnUpdated,
+
     ignoreExistingResources,
   } = options;
 
-  const waitForAllOnAvailableEvents = waitUntil(
-    () => expectedOnAvailableCounts == 0
+  const waitForAllExpectedOnAvailableEvents = waitUntil(
+    () => totalExpectedOnAvailableCounts == 0
   );
-  const waitForAllOnUpdatedEvents = waitUntil(
-    () => expectedOnUpdatedCounts == 0
+  const waitForAllExpectedOnUpdatedEvents = waitUntil(
+    () => totalExpectedOnUpdatedCounts == 0
   );
 
-  const onAvailable = ({ resourceType, targetFront, resource }) => {
-    is(
-      resourceType,
-      ResourceWatcher.TYPES.NETWORK_EVENT,
-      "Received a network event resource"
-    );
-    actualResourcesOnAvailable[resource.request.url] = {
-      resourceType: resource.resourceType,
-      request: resource.request,
-      updates: [...resource.updates],
-    };
-    expectedOnAvailableCounts--;
+  const onAvailable = resources => {
+    for (const resource of resources) {
+      is(
+        resource.resourceType,
+        ResourceWatcher.TYPES.NETWORK_EVENT,
+        "Received a network event resource"
+      );
+      actualResourcesOnAvailable[resource.url] = {
+        resourceId: resource.resourceId,
+        resourceType: resource.resourceType,
+        method: resource.method,
+      };
+      totalExpectedOnAvailableCounts--;
+    }
   };
 
-  const onUpdated = ({ resourceType, targetFront, resource }) => {
-    is(
-      resourceType,
-      ResourceWatcher.TYPES.NETWORK_EVENT,
-      "Received a network update event resource"
-    );
-    actualResourcesOnUpdated[resource.request.url] = {
-      resourceType: resource.resourceType,
-      request: resource.request,
-      updates: [...resource.updates],
-    };
-    expectedOnUpdatedCounts--;
+  const onUpdated = updates => {
+    for (const { resource } of updates) {
+      is(
+        resource.resourceType,
+        ResourceWatcher.TYPES.NETWORK_EVENT,
+        "Received a network update event resource"
+      );
+      actualResourcesOnUpdated[resource.url] = {
+        resourceId: resource.resourceId,
+        resourceType: resource.resourceType,
+        method: resource.method,
+      };
+      totalExpectedOnUpdatedCounts--;
+    }
   };
 
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.NETWORK_EVENT], {
@@ -222,20 +187,30 @@ async function testNetworkEventResources(options) {
     `Trigger the rest of the requests *after* calling ResourceWatcher.watchResources
      in order to assert the behavior of live network events.`
   );
-  await triggerNetworkRequests(tab.linkedBrowser, LIVE_REQUESTS_COMMANDS);
+  await triggerNetworkRequests(tab.linkedBrowser, [liveRequest]);
 
-  await Promise.all([waitForAllOnAvailableEvents, waitForAllOnUpdatedEvents]);
+  await Promise.all([
+    waitForAllExpectedOnAvailableEvents,
+    waitForAllExpectedOnUpdatedEvents,
+  ]);
 
   info("Check the resources on available");
   is(
     Object.keys(actualResourcesOnAvailable).length,
-    Object.keys(options.expectedResourcesOnAvailable).length,
+    Object.keys(expectedResourcesOnAvailable).length,
     "Got the expected number of network events fired onAvailable"
   );
 
+  // assert that the resourceId for the the available and updated events match
+  is(
+    actualResourcesOnAvailable[`${EXAMPLE_DOMAIN}live_get.html`].resourceId,
+    actualResourcesOnUpdated[`${EXAMPLE_DOMAIN}live_get.html`].resourceId,
+    "The resource id's are the same"
+  );
+
   // assert the resources emitted when the network event is created
-  for (const key in options.expectedResourcesOnAvailable) {
-    const expected = options.expectedResourcesOnAvailable[key];
+  for (const key in expectedResourcesOnAvailable) {
+    const expected = expectedResourcesOnAvailable[key];
     const actual = actualResourcesOnAvailable[key];
     assertResources(actual, expected);
   }
@@ -244,13 +219,13 @@ async function testNetworkEventResources(options) {
 
   is(
     Object.keys(actualResourcesOnUpdated).length,
-    Object.keys(options.expectedResourcesOnUpdated).length,
+    Object.keys(expectedResourcesOnUpdated).length,
     "Got the expected number of network events fired onUpdated"
   );
 
   // assert the resources emitted when the network event is updated
-  for (const key in options.expectedResourcesOnUpdated) {
-    const expected = options.expectedResourcesOnUpdated[key];
+  for (const key in expectedResourcesOnUpdated) {
+    const expected = expectedResourcesOnUpdated[key];
     const actual = actualResourcesOnUpdated[key];
     assertResources(actual, expected);
   }
@@ -271,7 +246,7 @@ async function testNetworkEventResources(options) {
       onUpdated: onResourceUpdated,
     }
   );
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
   BrowserTestUtils.removeTab(tab);
 }
@@ -282,35 +257,8 @@ function assertResources(actual, expected) {
     expected.resourceType,
     "The resource type is correct"
   );
-  is(actual.request.url, expected.request.url, "The url is correct");
-  is(actual.request.method, expected.request.method, "The method is correct");
-  is(
-    actual.updates.length,
-    expected.updates.length,
-    "The number of updates is correct"
-  );
+  is(actual.method, expected.method, "The method is correct");
 }
 
-const EXISTING_REQUESTS_COMMANDS = [
-  `await fetch("/existing_post.html", { method: "POST" });`,
-];
-
-const LIVE_REQUESTS_COMMANDS = [
-  `await fetch("/live_get.html", { method: "GET" });`,
-];
-
-async function triggerNetworkRequests(browser, commands) {
-  for (let i = 0; i < commands.length; i++) {
-    await SpecialPowers.spawn(browser, [commands[i]], async function(code) {
-      const script = content.document.createElement("script");
-      script.append(
-        content.document.createTextNode(
-          `async function triggerRequest() {${code}}`
-        )
-      );
-      content.document.body.append(script);
-      await content.wrappedJSObject.triggerRequest();
-      script.remove();
-    });
-  }
-}
+const cachedRequest = `await fetch("/cached_post.html", { method: "POST" });`;
+const liveRequest = `await fetch("/live_get.html", { method: "GET" });`;

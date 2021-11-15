@@ -32,7 +32,6 @@
 namespace mozilla {
 class CycleCollectedJSContext;
 class EventQueue;
-template <typename>
 class ThreadEventQueue;
 class ThreadEventTarget;
 }  // namespace mozilla
@@ -44,12 +43,6 @@ class nsThreadEnumerator;
 
 // See https://www.w3.org/TR/longtasks
 #define LONGTASK_BUSY_WINDOW_MS 50
-
-static inline bool UseTaskController() {
-  static const bool kUseTaskController =
-      !PR_GetEnv("MOZ_DISABLE_TASKCONTROLLER");
-  return kUseTaskController;
-}
 
 // A class for managing performance counter state.
 namespace mozilla {
@@ -217,22 +210,6 @@ class nsThread : public nsIThreadInternal,
 
   static const uint32_t kRunnableNameBufSize = 1000;
   static mozilla::Array<char, kRunnableNameBufSize> sMainThreadRunnableName;
-
-  void EnableInputEventPrioritization() {
-    EventQueue()->EnableInputEventPrioritization();
-  }
-
-  void FlushInputEventPrioritization() {
-    EventQueue()->FlushInputEventPrioritization();
-  }
-
-  void SuspendInputEventPrioritization() {
-    EventQueue()->SuspendInputEventPrioritization();
-  }
-
-  void ResumeInputEventPrioritization() {
-    EventQueue()->ResumeInputEventPrioritization();
-  }
 
   mozilla::SynchronizedEventQueue* EventQueue() { return mEvents.get(); }
 

@@ -38,12 +38,18 @@
                   search-l10n-ids="
                     permissions-remove.label,
                     permissions-remove-all.label,
-                    permissions-button-cancel.label,
-                    permissions-button-ok.label,
                     permissions-exceptions-etp-window.title,
                     permissions-exceptions-etp-desc,
                   "/>
         </hbox>
+      </vbox>
+    </hbox>
+    <hbox id="fpiIncompatibilityWarning" align="start" hidden="true">
+      <image class="info-icon fpi-warning-icon"></image>
+      <vbox flex="1">
+        <description>
+          <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-fpi-incompatibility-warning"/>
+        </description>
       </vbox>
     </hbox>
     <vbox id="contentBlockingCategories">
@@ -69,6 +75,10 @@
                   <hbox class="extra-information-label social-media-option" hidden="true">
                     <image class="content-blocking-social-media-image"/>
                     <label data-l10n-id="content-blocking-social-media-trackers"/>
+                  </hbox>
+                  <hbox class="extra-information-label cross-site-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-cross-site-cookies"/>
                   </hbox>
                   <hbox class="extra-information-label third-party-tracking-cookies-option" hidden="true">
                     <image class="content-blocking-cookies-image"/>
@@ -144,6 +154,10 @@
                     <image class="content-blocking-cookies-image"/>
                     <label data-l10n-id="content-blocking-cross-site-tracking-cookies"/>
                   </hbox>
+                  <hbox class="extra-information-label cross-site-cookies-option" hidden="true">
+                    <image class="content-blocking-cookies-image"/>
+                    <label data-l10n-id="content-blocking-cross-site-cookies"/>
+                  </hbox>
                   <hbox class="extra-information-label pb-trackers-option" hidden="true">
                     <image class="content-blocking-trackers-image"/>
                     <label data-l10n-id="content-blocking-private-windows"/>
@@ -198,7 +212,7 @@
                       <label class="content-blocking-warning-title" data-l10n-id="content-blocking-warning-title"/>
                     </hbox>
                     <description class="indent">
-                      <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-and-isolating-etp-warning-description"></html:span>
+                      <html:span class="tail-with-learn-more content-blocking-warning-description" data-l10n-id="content-blocking-and-isolating-etp-warning-description"></html:span>
                       <label id="" class="learnMore contentBlockWarningLink" data-l10n-id="content-blocking-warning-learn-how" is="text-link"/>
                     </description>
                   </vbox>
@@ -235,7 +249,7 @@
                                 preference="network.cookie.cookieBehavior">
                         <menupopup>
                           <menuitem id="blockCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-trackers" value="trackers"/>
-                          <menuitem data-l10n-id="sitedata-option-block-cross-site-and-social-media-trackers-plus-isolate" value="trackers-plus-isolate"/>
+                          <menuitem id="isolateCookiesSocialMedia" data-l10n-id="sitedata-option-block-cross-site-and-social-media-trackers-plus-isolate" value="trackers-plus-isolate"/>
                           <menuitem data-l10n-id="sitedata-option-block-unvisited" value="unvisited"/>
                           <menuitem data-l10n-id="sitedata-option-block-all-third-party" value="all-third-parties"/>
                           <menuitem data-l10n-id="sitedata-option-block-all" value="always"/>
@@ -269,7 +283,7 @@
                   <label id="changeBlockListLink"
                          data-l10n-id="content-blocking-tracking-protection-change-block-list"
                          is="text-link"
-                         search-l10n-ids="blocklist-window.title, blocklist-description, blocklist-button-cancel.label, blocklist-button-ok.label"/>
+                         search-l10n-ids="blocklist-window.title, blocklist-description, blocklist-dialog.buttonlabelaccept"/>
 
                 <hbox class="custom-option" id="contentBlockingCryptominersOption">
                   <checkbox id="contentBlockingCryptominersCheckbox"
@@ -302,7 +316,7 @@
                     <label class="content-blocking-warning-title" data-l10n-id="content-blocking-warning-title"/>
                   </hbox>
                   <description class="indent">
-                    <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-and-isolating-etp-warning-description"></html:span>
+                    <html:span class="tail-with-learn-more content-blocking-warning-description" data-l10n-id="content-blocking-and-isolating-etp-warning-description"></html:span>
                     <label id="" class="learnMore contentBlockWarningLink" data-l10n-id="content-blocking-warning-learn-how" is="text-link"/>
                   </description>
                 </vbox>
@@ -381,8 +395,6 @@
                   permissions-allow.label,
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-exceptions-cookie-desc,
                 " />
       </hbox>
@@ -395,6 +407,17 @@
   <label><html:h2 data-l10n-id="pane-privacy-logins-and-passwords-header" data-l10n-attrs="searchkeywords"/></label>
 
   <vbox id="passwordSettings">
+    <hbox id="passwordManagerExtensionContent"
+          class="extension-controlled"
+          align="center"
+          hidden="true">
+          <description control="disablePasswordManagerExtension"
+                       flex="1"/>
+          <button id="disablePasswordManagerExtension"
+                  class="extension-controlled-button accessory-button"
+                  data-l10n-id="disable-extension"
+                  hidden="true" />
+    </hbox>
     <hbox>
       <vbox flex="1">
         <hbox>
@@ -639,8 +662,6 @@
                 search-l10n-ids="
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-site-location-window.title,
                   permissions-site-location-desc,
                   permissions-site-location-disable-label,
@@ -662,8 +683,6 @@
                 search-l10n-ids="
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-site-camera-window.title,
                   permissions-site-camera-desc,
                   permissions-site-camera-disable-label,
@@ -685,8 +704,6 @@
                 search-l10n-ids="
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-site-microphone-window.title,
                   permissions-site-microphone-desc,
                   permissions-site-microphone-disable-label,
@@ -714,8 +731,6 @@
                 search-l10n-ids="
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-site-notification-window.title,
                   permissions-site-notification-desc,
                   permissions-site-notification-disable-label,
@@ -742,8 +757,6 @@
                 search-l10n-ids="
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-site-autoplay-window.title,
                   permissions-site-autoplay-desc,
                 " />
@@ -763,8 +776,6 @@
                 search-l10n-ids="
                   permissions-remove.label,
                   permissions-remove-all.label,
-                  permissions-button-cancel.label,
-                  permissions-button-ok.label,
                   permissions-site-xr-window.title,
                   permissions-site-xr-desc,
                   permissions-site-xr-disable-label,
@@ -788,8 +799,6 @@
               data-l10n-id="permissions-block-popups-exceptions"
               search-l10n-ids="
                 permissions-address,
-                permissions-button-cancel.label,
-                permissions-button-ok.label,
                 permissions-exceptions-popup-window.title,
                 permissions-exceptions-popup-desc,
               " />
@@ -812,22 +821,11 @@
                 permissions-allow.label,
                 permissions-remove.label,
                 permissions-remove-all.label,
-                permissions-button-cancel.label,
-                permissions-button-ok.label,
                 permissions-exceptions-addons-window.title,
                 permissions-exceptions-addons-desc,
               " />
     </hbox>
   </hbox>
-
-  <vbox id="a11yPermissionsBox">
-    <hbox flex="1" align="center">
-      <checkbox id="a11yPrivacyCheckbox" class="tail-with-learn-more"
-                data-l10n-id="permissions-a11y-privacy-checkbox"/>
-      <label id="a11yLearnMoreLink" class="learnMore" is="text-link"
-             data-l10n-id="permissions-a11y-privacy-link"/>
-    </hbox>
-  </vbox>
 
 </groupbox>
 
@@ -981,7 +979,7 @@
                   certmgr-tab-ca.label,
                   certmgr-mine,
                   certmgr-people,
-                  certmgr-servers,
+                  certmgr-server,
                   certmgr-ca,
                   certmgr-cert-name.label,
                   certmgr-token-name.label,
@@ -1016,20 +1014,14 @@
 <!-- HTTPS-ONLY Mode -->
 <groupbox id="httpsOnlyBox" data-category="panePrivacy" hidden="true" hidehttpsonly="true">
   <label><html:h2 data-l10n-id="httpsonly-header"/></label>
-  <vbox data-subcategory="httpsonly">
-    <hbox align="start">
-      <image id="httpsOnlyShield"/>
-      <vbox flex="1">
-        <label id="httpsOnlyDescription" data-l10n-id="httpsonly-description"/>
-        <label id="httpsOnlyLearnMore" data-l10n-id="httpsonly-learn-more" class="learnMore" is="text-link"/>
-      </vbox>
-    </hbox>
+  <vbox data-subcategory="httpsonly" flex="1">
+    <label id="httpsOnlyDescription" data-l10n-id="httpsonly-description"/>
+    <label id="httpsOnlyLearnMore" data-l10n-id="httpsonly-learn-more" class="learnMore" is="text-link"/>
   </vbox>
   <vbox>
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <hbox>
-      <radiogroup id="httpsOnlyRadioGroup"
-                  preference="dom.security.https_only_mode">
+      <radiogroup id="httpsOnlyRadioGroup">
         <radio id="httpsOnlyRadioEnabled"
                data-l10n-id="httpsonly-radio-enabled"
                value="enabled"/>

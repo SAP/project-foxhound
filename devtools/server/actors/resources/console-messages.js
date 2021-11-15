@@ -8,9 +8,12 @@ const {
   TYPES: { CONSOLE_MESSAGE },
 } = require("devtools/server/actors/resources/index");
 const { WebConsoleUtils } = require("devtools/server/actors/webconsole/utils");
-const {
-  ConsoleAPIListener,
-} = require("devtools/server/actors/webconsole/listeners/console-api");
+
+const consoleAPIListenerModule = isWorker
+  ? "devtools/server/actors/webconsole/worker-listeners"
+  : "devtools/server/actors/webconsole/listeners/console-api";
+const { ConsoleAPIListener } = require(consoleAPIListenerModule);
+
 const { isArray } = require("devtools/server/actors/object/utils");
 
 const {
@@ -34,12 +37,14 @@ const {
  *          This will be called for each resource.
  */
 class ConsoleMessageWatcher {
-  constructor(targetActor, { onAvailable }) {
+  async watch(targetActor, { onAvailable }) {
     // The following code expects the ThreadActor to be instantiated, via:
-    // prepareConsoleMessageForRemote > TabSources.getActorIdForInternalSourceId
+    // prepareConsoleMessageForRemote > SourcesManager.getActorIdForInternalSourceId
     // The Thread Actor is instantiated via Target.attach, but we should
     // probably review this and only instantiate the actor instead of attaching the target.
-    targetActor.attach();
+    if (!targetActor.threadActor) {
+      targetActor.attach();
+    }
 
     // Bug 1642297: Maybe we could merge ConsoleAPI Listener into this module?
     const onConsoleAPICall = message => {
@@ -61,11 +66,10 @@ class ConsoleMessageWatcher {
     this.listener = listener;
     listener.init();
 
-    // See `window` definition. It isn't always a DOM Window.
+    // It can happen that the targetActor does not have a window reference (e.g. in worker
+    // thread, targetActor exposes a workerGlobal property)
     const winStartTime =
-      targetActor.window && targetActor.window.performance
-        ? targetActor.window.performance.timing.navigationStart
-        : 0;
+      targetActor.window?.performance?.timing?.navigationStart || 0;
 
     const cachedMessages = listener.getCachedMessages(!targetActor.isRootActor);
     const messages = [];

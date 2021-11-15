@@ -19,8 +19,8 @@ class RemoteWebNavigation {
     this._browser = aBrowser;
     this._cancelContentJSEpoch = 1;
     this._currentURI = null;
-    this.canGoBack = false;
-    this.canGoForward = false;
+    this._canGoBack = false;
+    this._canGoForward = false;
     this.referringURI = null;
     this.wrappedJSObject = this;
   }
@@ -36,6 +36,21 @@ class RemoteWebNavigation {
       { ...aOptions, epoch }
     );
     return epoch;
+  }
+
+  get canGoBack() {
+    if (Services.appinfo.sessionHistoryInParent) {
+      return this._browser.browsingContext.sessionHistory?.index > 0;
+    }
+    return this._canGoBack;
+  }
+
+  get canGoForward() {
+    if (Services.appinfo.sessionHistoryInParent) {
+      let sessionHistory = this._browser.browsingContext.sessionHistory;
+      return sessionHistory?.index < sessionHistory?.count - 1;
+    }
+    return this._canGoForward;
   }
 
   goBack(requireUserInteraction = false) {
@@ -76,7 +91,8 @@ class RemoteWebNavigation {
       if (isBrowserPrivate) {
         fixupFlags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
       }
-      uri = Services.uriFixup.createFixupURI(aURI, fixupFlags);
+
+      uri = Services.uriFixup.getFixupURIInfo(aURI, fixupFlags).preferredURI;
 
       // We know the url is going to be loaded, let's start requesting network
       // connection before the content process asks.

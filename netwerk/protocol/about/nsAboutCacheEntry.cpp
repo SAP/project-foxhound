@@ -109,6 +109,11 @@ nsAboutCacheEntry::GetURIFlags(nsIURI* aURI, uint32_t* result) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsAboutCacheEntry::GetChromeURI(nsIURI* aURI, nsIURI** chromeURI) {
+  return NS_ERROR_ILLEGAL_VALUE;
+}
+
 //-----------------------------------------------------------------------------
 // nsAboutCacheEntry::Channel
 
@@ -452,7 +457,7 @@ nsresult nsAboutCacheEntry::Channel::WriteCacheEntryDescription(
     return NS_OK;  // just ignore
   }
 
-  rv = pump->AsyncRead(this, nullptr);
+  rv = pump->AsyncRead(this);
   if (NS_FAILED(rv)) {
     return NS_OK;  // just ignore
   }

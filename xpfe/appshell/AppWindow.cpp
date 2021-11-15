@@ -48,6 +48,7 @@
 #include "nsXULPopupManager.h"
 #include "nsFocusManager.h"
 #include "nsContentList.h"
+#include "nsIDOMWindowUtils.h"
 
 #include "prenv.h"
 #include "mozilla/AutoRestore.h"
@@ -61,6 +62,10 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "mozilla/EventDispatcher.h"
+
+#ifdef XP_WIN
+#  include "mozilla/PreXULSkeletonUI.h"
+#endif
 
 #ifdef MOZ_NEW_XULSTORE
 #  include "mozilla/XULStore.h"
@@ -252,6 +257,8 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
 
   // Attach a WebProgress listener.during initialization...
   mDocShell->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_NETWORK);
+
+  mWindow->MaybeDispatchInitialFocusEvent();
 
   return rv;
 }
@@ -1744,18 +1751,17 @@ nsresult AppWindow::GetPersistentValue(const nsAtom* aAttr, nsAString& aValue) {
   return NS_OK;
 }
 
-nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
-                                       const nsAString& aValue) {
+nsresult AppWindow::GetDocXulStoreKeys(nsString& aUriSpec,
+                                       nsString& aWindowElementId) {
   nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
   if (!docShellElement) {
     return NS_ERROR_FAILURE;
   }
 
-  nsAutoString windowElementId;
-  docShellElement->GetId(windowElementId);
+  docShellElement->GetId(aWindowElementId);
   // Match the behavior of XULPersist and only persist values if the element
   // has an ID.
-  if (windowElementId.IsEmpty()) {
+  if (aWindowElementId.IsEmpty()) {
     return NS_OK;
   }
 
@@ -1770,7 +1776,128 @@ nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  NS_ConvertUTF8toUTF16 uri(utf8uri);
+
+  aUriSpec = NS_ConvertUTF8toUTF16(utf8uri);
+
+  return NS_OK;
+}
+
+nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
+    const LayoutDeviceIntRect& aRect) {
+#ifdef XP_WIN
+  nsAutoString uri;
+  nsAutoString windowElementId;
+  nsresult rv = GetDocXulStoreKeys(uri, windowElementId);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (!windowElementId.EqualsLiteral("main-window") ||
+      !uri.EqualsLiteral("chrome://browser/content/browser.xhtml")) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<dom::Element> windowElement = GetWindowDOMElement();
+  Document* doc = windowElement->GetComposedDoc();
+  Element* urlbarEl = doc->GetElementById(u"urlbar"_ns);
+
+  nsCOMPtr<nsPIDOMWindowOuter> window = mDocShell->GetWindow();
+  nsCOMPtr<nsIDOMWindowUtils> utils =
+      nsGlobalWindowOuter::Cast(window)->WindowUtils();
+  RefPtr<dom::DOMRect> urlbarRect;
+  rv = utils->GetBoundsWithoutFlushing(urlbarEl, getter_AddRefs(urlbarRect));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  double urlbarX = urlbarRect->X();
+  double urlbarWidth = urlbarRect->Width();
+
+  // Hard-coding the following values and this behavior in general is rather
+  // fragile, and can easily get out of sync with the actual front-end values.
+  // This is not intended as a long-term solution, but only as the relatively
+  // straightforward implementation of an experimental feature. If we want to
+  // ship the skeleton UI to all users, we should strongly consider a more
+  // robust solution than this. The vertical position of the urlbar will be
+  // fixed.
+  nsAutoString attributeValue;
+  urlbarEl->GetAttribute(u"breakout-extend"_ns, attributeValue);
+  // Scale down the urlbar if it is focused
+  if (attributeValue.EqualsLiteral("true")) {
+    // defined in browser.inc.css as 2px
+    int urlbarBreakoutExtend = 2;
+    // defined in urlbar-searchbar.inc.css as 5px
+    int urlbarMarginInline = 5;
+
+    // breakout-extend measurements are defined in urlbar-searchbar.inc.css
+    urlbarX += (double)(urlbarBreakoutExtend + urlbarMarginInline);
+    urlbarWidth -= (double)(2 * (urlbarBreakoutExtend + urlbarMarginInline));
+  }
+  CSSPixelSpan urlbar;
+  urlbar.start = urlbarX;
+  urlbar.end = urlbar.start + urlbarWidth;
+
+  Element* navbar = doc->GetElementById(u"nav-bar"_ns);
+
+  Element* searchbarEl = doc->GetElementById(u"searchbar"_ns);
+  CSSPixelSpan searchbar;
+  if (navbar->Contains(searchbarEl)) {
+    RefPtr<dom::DOMRect> searchbarRect;
+    rv = utils->GetBoundsWithoutFlushing(searchbarEl,
+                                         getter_AddRefs(searchbarRect));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    searchbar.start = searchbarRect->X();
+    searchbar.end = searchbar.start + searchbarRect->Width();
+  } else {
+    // There is no searchbar in the UI
+    searchbar.start = 0;
+    searchbar.end = 0;
+  }
+
+  ErrorResult err;
+  nsCOMPtr<nsIHTMLCollection> toolbarSprings = navbar->GetElementsByTagNameNS(
+      u"http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"_ns,
+      u"toolbarspring"_ns, err);
+  if (err.Failed()) {
+    return NS_ERROR_FAILURE;
+  }
+  mozilla::Vector<CSSPixelSpan> springs;
+  for (int i = 0; i < toolbarSprings->Length(); i++) {
+    RefPtr<Element> springEl = toolbarSprings->Item(i);
+    RefPtr<dom::DOMRect> springRect;
+    rv = utils->GetBoundsWithoutFlushing(springEl, getter_AddRefs(springRect));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    CSSPixelSpan spring;
+    spring.start = springRect->X();
+    spring.end = spring.start + springRect->Width();
+    if (!springs.append(spring)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  PersistPreXULSkeletonUIValues(
+      aRect.X(), aRect.Y(), aRect.Width(), aRect.Height(),
+      mWindow->SizeMode() == nsSizeMode_Maximized, urlbar, searchbar, springs,
+      mWindow->GetDefaultScale().scale);
+#endif
+
+  return NS_OK;
+}
+
+nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
+                                       const nsAString& aValue) {
+  nsAutoString uri;
+  nsAutoString windowElementId;
+  nsresult rv = GetDocXulStoreKeys(uri, windowElementId);
+
+  if (NS_FAILED(rv) || windowElementId.IsEmpty()) {
+    return rv;
+  }
 
   nsAutoString maybeConvertedValue(aValue);
   if (aAttr == nsGkAtoms::width || aAttr == nsGkAtoms::height) {
@@ -1877,6 +2004,8 @@ NS_IMETHODIMP AppWindow::SavePersistentAttributes() {
       }
     }
   }
+
+  Unused << MaybeSaveEarlyWindowPersistentValues(rect);
 
   if (mPersistentAttributesDirty & PAD_MISC) {
     nsSizeMode sizeMode = mWindow->SizeMode();
@@ -2801,7 +2930,9 @@ void AppWindow::WindowActivated() {
   nsCOMPtr<nsPIDOMWindowOuter> window =
       mDocShell ? mDocShell->GetWindow() : nullptr;
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm && window) fm->WindowRaised(window);
+  if (fm && window) {
+    fm->WindowRaised(window);
+  }
 
   if (mChromeLoaded) {
     PersistentAttributesDirty(PAD_POSITION | PAD_SIZE | PAD_MISC);
@@ -2815,7 +2946,9 @@ void AppWindow::WindowDeactivated() {
   nsCOMPtr<nsPIDOMWindowOuter> window =
       mDocShell ? mDocShell->GetWindow() : nullptr;
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm && window && !fm->IsTestMode()) fm->WindowLowered(window);
+  if (fm && window && !fm->IsTestMode()) {
+    fm->WindowLowered(window);
+  }
 }
 
 #ifdef USE_NATIVE_MENUS

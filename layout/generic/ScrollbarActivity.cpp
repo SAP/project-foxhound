@@ -256,7 +256,8 @@ void ScrollbarActivity::EndFade() {
 void ScrollbarActivity::RegisterWithRefreshDriver() {
   nsRefreshDriver* refreshDriver = GetRefreshDriver();
   if (refreshDriver) {
-    refreshDriver->AddRefreshObserver(this, FlushType::Style);
+    refreshDriver->AddRefreshObserver(this, FlushType::Style,
+                                      "Scrollbar fade animation");
   }
 }
 
@@ -292,12 +293,12 @@ void ScrollbarActivity::SetIsActive(bool aNewActive) {
 }
 
 static void SetOpacityOnElement(nsIContent* aContent, double aOpacity) {
-  nsCOMPtr<nsStyledElement> inlineStyleContent = do_QueryInterface(aContent);
-  if (inlineStyleContent) {
+  if (RefPtr<nsStyledElement> inlineStyleContent =
+          nsStyledElement::FromNodeOrNull(aContent)) {
     nsICSSDeclaration* decl = inlineStyleContent->Style();
     nsAutoCString str;
     str.AppendFloat(aOpacity);
-    decl->SetProperty("opacity"_ns, str, EmptyString(), IgnoreErrors());
+    decl->SetProperty("opacity"_ns, str, u""_ns, IgnoreErrors());
   }
 }
 
@@ -323,8 +324,8 @@ bool ScrollbarActivity::UpdateOpacity(TimeStamp aTime) {
 }
 
 static void UnsetOpacityOnElement(nsIContent* aContent) {
-  nsCOMPtr<nsStyledElement> inlineStyleContent = do_QueryInterface(aContent);
-  if (inlineStyleContent) {
+  if (RefPtr<nsStyledElement> inlineStyleContent =
+          nsStyledElement::FromNodeOrNull(aContent)) {
     nsICSSDeclaration* decl = inlineStyleContent->Style();
     nsAutoString dummy;
     decl->RemoveProperty("opacity"_ns, dummy, IgnoreErrors());

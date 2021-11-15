@@ -7,26 +7,39 @@
 import { hasException } from "../selectors";
 
 import type { ThunkArgs } from "./types";
+import type { Exception } from "../types";
 
-export function addException({ resource }: Object) {
-  return async function({ dispatch, getState }: ThunkArgs) {
-    const { pageError } = resource;
-    if (!pageError.error) {
-      return;
+export function addExceptionFromResources(resources: Array<Object>) {
+  return async function({ dispatch }: ThunkArgs) {
+    for (const resource of resources) {
+      const { pageError } = resource;
+      if (!pageError.error) {
+        continue;
+      }
+      const { columnNumber, lineNumber, sourceId, errorMessage } = pageError;
+      const stacktrace = pageError.stacktrace || [];
+
+      const exception = {
+        columnNumber,
+        lineNumber,
+        sourceActorId: sourceId,
+        errorMessage,
+        stacktrace,
+      };
+
+      dispatch(addException(exception));
     }
-    const { columnNumber, lineNumber, sourceId, errorMessage } = pageError;
-    const stacktrace = pageError.stacktrace || [];
+  };
+}
+
+export function addException(exception: Exception) {
+  return async function({ dispatch, getState }: ThunkArgs) {
+    const { columnNumber, lineNumber } = exception;
 
     if (!hasException(getState(), lineNumber, columnNumber)) {
       dispatch({
         type: "ADD_EXCEPTION",
-        exception: {
-          columnNumber,
-          lineNumber,
-          sourceActorId: sourceId,
-          errorMessage,
-          stacktrace,
-        },
+        exception,
       });
     }
   };

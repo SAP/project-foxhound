@@ -802,16 +802,18 @@ nsDocShellTreeOwner::AddChromeListeners() {
     }
   }
 
-  // register dragover and drop event listeners with the listener manager
   nsCOMPtr<EventTarget> target;
   GetDOMEventTarget(mWebBrowser, getter_AddRefs(target));
 
-  EventListenerManager* elmP = target->GetOrCreateListenerManager();
-  if (elmP) {
-    elmP->AddEventListenerByType(this, u"dragover"_ns,
-                                 TrustedEventsAtSystemGroupBubble());
-    elmP->AddEventListenerByType(this, u"drop"_ns,
-                                 TrustedEventsAtSystemGroupBubble());
+  // register dragover and drop event listeners with the listener manager
+  MOZ_ASSERT(target, "how does this happen? (see bug 1659758)");
+  if (target) {
+    if (EventListenerManager* elmP = target->GetOrCreateListenerManager()) {
+      elmP->AddEventListenerByType(this, u"dragover"_ns,
+                                   TrustedEventsAtSystemGroupBubble());
+      elmP->AddEventListenerByType(this, u"drop"_ns,
+                                   TrustedEventsAtSystemGroupBubble());
+    }
   }
 
   return rv;
@@ -1287,17 +1289,9 @@ void ChromeTooltipListener::sTooltipCallback(nsITimer* aTimer,
 
       if (textFound && (!self->mTooltipShownOnce ||
                         tooltipText != self->mLastShownTooltipText)) {
-        LayoutDeviceIntPoint screenDot = widget->WidgetToScreenOffset();
-        double scaleFactor = 1.0;
-        if (presShell->GetPresContext()) {
-          nsDeviceContext* dc = presShell->GetPresContext()->DeviceContext();
-          scaleFactor = double(AppUnitsPerCSSPixel()) /
-                        dc->AppUnitsPerDevPixelAtUnitFullZoom();
-        }
-        // ShowTooltip expects widget-relative position.
-        self->ShowTooltip(self->mMouseScreenX - screenDot.x / scaleFactor,
-                          self->mMouseScreenY - screenDot.y / scaleFactor,
-                          tooltipText, directionText);
+        // ShowTooltip expects screen-relative position.
+        self->ShowTooltip(self->mMouseScreenX, self->mMouseScreenY, tooltipText,
+                          directionText);
         self->mLastShownTooltipText = std::move(tooltipText);
         self->mLastDocshell = do_GetWeakReference(
             self->mPossibleTooltipNode->OwnerDoc()->GetDocShell());

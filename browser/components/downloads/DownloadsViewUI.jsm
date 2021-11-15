@@ -31,6 +31,17 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIHandlerService"
 );
 
+const { Integration } = ChromeUtils.import(
+  "resource://gre/modules/Integration.jsm"
+);
+
+/* global DownloadIntegration */
+Integration.downloads.defineModuleGetter(
+  this,
+  "DownloadIntegration",
+  "resource://gre/modules/DownloadIntegration.jsm"
+);
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
 var gDownloadElementButtons = {
@@ -342,15 +353,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
    *        Downloads View. Type is either l10n object or string literal.
    */
   showStatusWithDetails(stateLabel, hoverStatus) {
-    let referrer =
-      this.download.source.referrerInfo &&
-      this.download.source.referrerInfo.originalReferrer
-        ? this.download.source.referrerInfo.originalReferrer.spec
-        : null;
-
-    let [displayHost] = DownloadUtils.getURIHost(
-      referrer || this.download.source.url
-    );
+    let [displayHost] = DownloadUtils.getURIHost(this.download.source.url);
     let [displayDate] = DownloadUtils.getReadableDates(
       new Date(this.download.endTime)
     );
@@ -473,11 +476,12 @@ DownloadsViewUI.DownloadElementShell.prototype = {
           // This is a completed download, and the target file still exists.
           this.element.setAttribute("exists", "true");
 
-          const isPDF = DownloadsCommon.isFileOfType(
-            this.download,
-            "application/pdf"
+          this.element.toggleAttribute(
+            "viewable-internally",
+            DownloadIntegration.shouldViewDownloadInternally(
+              DownloadsCommon.getMimeInfo(this.download)?.type
+            )
           );
-          this.element.toggleAttribute("is-pdf", isPDF);
 
           let sizeWithUnits = DownloadsViewUI.getSizeWithUnits(this.download);
           if (this.isPanel) {
@@ -535,6 +539,7 @@ DownloadsViewUI.DownloadElementShell.prototype = {
               case Downloads.Error.BLOCK_VERDICT_UNCOMMON:
                 this.showButton("askOpenOrRemoveFile");
                 break;
+              case Downloads.Error.BLOCK_VERDICT_INSECURE:
               case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
                 this.showButton("askRemoveFileOrAllow");
                 break;
@@ -622,6 +627,11 @@ DownloadsViewUI.DownloadElementShell.prototype = {
     switch (this.download.error.reputationCheckVerdict) {
       case Downloads.Error.BLOCK_VERDICT_UNCOMMON:
         return [s.blockedUncommon2, [s.unblockTypeUncommon2, s.unblockTip2]];
+      case Downloads.Error.BLOCK_VERDICT_INSECURE:
+        return [
+          s.blockedPotentiallyInsecure,
+          [s.unblockInsecure, s.unblockTip2],
+        ];
       case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
         return [
           s.blockedPotentiallyUnwanted,
@@ -733,23 +743,18 @@ DownloadsViewUI.DownloadElementShell.prototype = {
         // This property is false if the download did not succeed.
         return this.download.target.exists;
       case "downloadsCmd_show":
-        // TODO: Bug 827010 - Handle part-file asynchronously.
-        if (this.download.target.partFilePath) {
-          let partFile = new FileUtils.File(this.download.target.partFilePath);
-          if (partFile.exists()) {
-            return true;
-          }
-        }
+        let { target } = this.download;
+        return target.exists || target.partFileExists;
 
-        // This property is false if the download did not succeed.
-        return this.download.target.exists;
       case "downloadsCmd_delete":
       case "cmd_delete":
         // We don't want in-progress downloads to be removed accidentally.
         return this.download.stopped;
       case "downloadsCmd_openInSystemViewer":
       case "downloadsCmd_alwaysOpenInSystemViewer":
-        return DownloadsCommon.isFileOfType(this.download, "application/pdf");
+        return DownloadIntegration.shouldViewDownloadInternally(
+          DownloadsCommon.getMimeInfo(this.download)?.type
+        );
     }
     return DownloadsViewUI.isCommandName(aCommand) && !!this[aCommand];
   },

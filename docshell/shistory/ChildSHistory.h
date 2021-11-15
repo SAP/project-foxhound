@@ -44,6 +44,8 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
 
   explicit ChildSHistory(BrowsingContext* aBrowsingContext);
 
+  void SetBrowsingContext(BrowsingContext* aBrowsingContext);
+
   // Create or destroy the session history implementation in the child process.
   // This can be removed once session history is stored exclusively in the
   // parent process.
@@ -65,7 +67,11 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
    */
   bool CanGo(int32_t aOffset);
   void Go(int32_t aOffset, bool aRequireUserInteraction, ErrorResult& aRv);
-  void AsyncGo(int32_t aOffset, bool aRequireUserInteraction);
+  void AsyncGo(int32_t aOffset, bool aRequireUserInteraction,
+               CallerType aCallerType, ErrorResult& aRv);
+
+  // aIndex is the new index, and aOffset is the offset between new and current.
+  void GotoIndex(int32_t aIndex, int32_t aOffset, ErrorResult& aRv);
 
   void RemovePendingHistoryNavigations();
 
@@ -74,6 +80,10 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
    */
   void EvictLocalContentViewers();
 
+  // GetLegacySHistory and LegacySHistory have been deprecated. Don't
+  // use these, but instead handle the interaction with nsISHistory in
+  // the parent process.
+  nsISHistory* GetLegacySHistory(ErrorResult& aError);
   nsISHistory* LegacySHistory();
 
   void SetIndexAndLength(uint32_t aIndex, uint32_t aLength,
@@ -115,6 +125,7 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
 
   RefPtr<BrowsingContext> mBrowsingContext;
   nsCOMPtr<nsISHistory> mHistory;
+  // Can be removed once history-in-parent is the only way
   mozilla::LinkedList<PendingAsyncHistoryNavigation> mPendingNavigations;
   int32_t mIndex = -1;
   int32_t mLength = 0;
@@ -127,6 +138,10 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
   AutoTArray<PendingSHistoryChange, 2> mPendingSHistoryChanges;
 
   bool mAsyncHistoryLength = false;
+
+  // Needs to start 1 above default epoch in parent
+  uint64_t mHistoryEpoch = 1;
+  bool mPendingEpoch = false;
 };
 
 }  // namespace dom

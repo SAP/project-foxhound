@@ -210,7 +210,7 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   button->SetIsNativeAnonymousRoot();
-  button->SetPseudoElementType(PseudoStyleType::fileChooserButton);
+  button->SetPseudoElementType(PseudoStyleType::fileSelectorButton);
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
@@ -536,8 +536,8 @@ nscoord nsFileControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
 void nsFileControlFrame::SyncDisabledState() {
   EventStates eventStates = mContent->AsElement()->State();
   if (eventStates.HasState(NS_EVENT_STATE_DISABLED)) {
-    mBrowseFilesOrDirs->SetAttr(kNameSpaceID_None, nsGkAtoms::disabled,
-                                EmptyString(), true);
+    mBrowseFilesOrDirs->SetAttr(kNameSpaceID_None, nsGkAtoms::disabled, u""_ns,
+                                true);
   } else {
     mBrowseFilesOrDirs->UnsetAttr(kNameSpaceID_None, nsGkAtoms::disabled, true);
   }

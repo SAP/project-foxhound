@@ -542,10 +542,12 @@ impl NonCustomPropertyId {
         false
     }
 
-    fn allowed_in(self, context: &ParserContext) -> bool {
+    /// Returns whether a given rule allows a given property.
+    #[inline]
+    pub fn allowed_in_rule(self, rule_type: CssRuleType) -> bool {
         debug_assert!(
             matches!(
-                context.rule_type(),
+                rule_type,
                 CssRuleType::Keyframe | CssRuleType::Page | CssRuleType::Style
             ),
             "Declarations are only expected inside a keyframe, page, or style rule."
@@ -559,14 +561,16 @@ impl NonCustomPropertyId {
             "DISALLOWED_IN_PAGE_RULE",
             lambda p: not p.allowed_in_page_rule
         )}
-        match context.rule_type() {
-            CssRuleType::Keyframe if DISALLOWED_IN_KEYFRAME_BLOCK.contains(self) => {
-                return false;
-            }
-            CssRuleType::Page if DISALLOWED_IN_PAGE_RULE.contains(self) => {
-                return false;
-            }
-            _ => {}
+        match rule_type {
+            CssRuleType::Keyframe => !DISALLOWED_IN_KEYFRAME_BLOCK.contains(self),
+            CssRuleType::Page => !DISALLOWED_IN_PAGE_RULE.contains(self),
+            _ => true
+        }
+    }
+
+    fn allowed_in(self, context: &ParserContext) -> bool {
+        if !self.allowed_in_rule(context.rule_type()) {
+            return false;
         }
 
         self.allowed_in_ignoring_rule_type(context)
@@ -788,13 +792,43 @@ static ${name}: LonghandIdSet = LonghandIdSet {
 /// A group for properties which may override each other
 /// via logical resolution.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[repr(u8)]
 pub enum LogicalGroup {
-    % for group in sorted(logical_groups.keys()):
+    % for i, group in enumerate(logical_groups.keys()):
     /// ${group}
-    ${to_camel_case(group)},
+    ${to_camel_case(group)} = ${i},
     % endfor
 }
 
+
+/// A set of logical groups.
+#[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq)]
+pub struct LogicalGroupSet {
+    storage: [u32; (${len(logical_groups)} - 1 + 32) / 32]
+}
+
+impl LogicalGroupSet {
+    /// Creates an empty `NonCustomPropertyIdSet`.
+    pub fn new() -> Self {
+        Self {
+            storage: Default::default(),
+        }
+    }
+
+    /// Return whether the given group is in the set
+    #[inline]
+    pub fn contains(&self, g: LogicalGroup) -> bool {
+        let bit = g as usize;
+        (self.storage[bit / 32] & (1 << (bit % 32))) != 0
+    }
+
+    /// Insert a group the set.
+    #[inline]
+    pub fn insert(&mut self, g: LogicalGroup) {
+        let bit = g as usize;
+        self.storage[bit / 32] |= 1 << (bit % 32);
+    }
+}
 
 /// A set of longhand properties
 #[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq)]
@@ -1338,8 +1372,8 @@ impl LonghandId {
             // preferences properly, see bug 1165538.
             LonghandId::MozMinFontSizeRatio |
 
-            // Needed to do font-size for MathML. :(
-            LonghandId::MozScriptLevel |
+            // font-size depends on math-depth's computed value.
+            LonghandId::MathDepth |
             % endif
 
             // Needed to compute the first available font, in order to
@@ -2962,7 +2996,7 @@ impl ComputedValues {
 
     /// Returns the visited style, if any.
     pub fn visited_style(&self) -> Option<<&ComputedValues> {
-        self.visited_style.as_ref().map(|s| &**s)
+        self.visited_style.as_deref()
     }
 
     /// Returns the visited rules, if applicable.
@@ -2973,6 +3007,27 @@ impl ComputedValues {
     /// Gets a reference to the custom properties map (if one exists).
     pub fn custom_properties(&self) -> Option<<&Arc<crate::custom_properties::CustomPropertiesMap>> {
         self.custom_properties.as_ref()
+    }
+
+    /// Returns whether we have the same custom properties as another style.
+    ///
+    /// This should effectively be just:
+    ///
+    ///   self.custom_properties() == other.custom_properties()
+    ///
+    /// But that's not really the case because IndexMap equality doesn't
+    /// consider ordering, which we have to account for. Also, for the same
+    /// reason, IndexMap equality comparisons are slower than needed.
+    ///
+    /// See https://github.com/bluss/indexmap/issues/153
+    pub fn custom_properties_equal(&self, other: &Self) -> bool {
+        match (self.custom_properties(), other.custom_properties()) {
+            (Some(l), Some(r)) => {
+                l.len() == r.len() && l.iter().zip(r.iter()).all(|((k1, v1), (k2, v2))| k1 == k2 && v1 == v2)
+            },
+            (None, None) => true,
+            _ => false,
+        }
     }
 
 % for prop in data.longhands:
@@ -3621,11 +3676,11 @@ impl<'a> StyleBuilder<'a> {
         self.add_flags(ComputedValueFlags::INHERITS_RESET_STYLE);
 
         % if property.ident == "content":
-        self.add_flags(ComputedValueFlags::INHERITS_CONTENT);
+        self.add_flags(ComputedValueFlags::CONTENT_DEPENDS_ON_INHERITED_STYLE);
         % endif
 
         % if property.ident == "display":
-        self.add_flags(ComputedValueFlags::INHERITS_DISPLAY);
+        self.add_flags(ComputedValueFlags::DISPLAY_DEPENDS_ON_INHERITED_STYLE);
         % endif
 
         if self.${property.style_struct.ident}.ptr_eq(inherited_struct) {

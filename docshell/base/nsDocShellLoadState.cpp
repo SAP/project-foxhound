@@ -18,7 +18,6 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "mozilla/StaticPrefs_fission.h"
 
@@ -52,7 +51,7 @@ nsDocShellLoadState::nsDocShellLoadState(
   mIsFormSubmission = aLoadState.IsFormSubmission();
   mLoadType = aLoadState.LoadType();
   mTarget = aLoadState.Target();
-  mTargetBrowsingContext = aLoadState.SourceBrowsingContext();
+  mTargetBrowsingContext = aLoadState.TargetBrowsingContext();
   mLoadFlags = aLoadState.LoadFlags();
   mFirstParty = aLoadState.FirstParty();
   mHasValidUserGestureActivation = aLoadState.HasValidUserGestureActivation();
@@ -68,6 +67,7 @@ nsDocShellLoadState::nsDocShellLoadState(
   mTriggeringPrincipal = aLoadState.TriggeringPrincipal();
   mPrincipalToInherit = aLoadState.PrincipalToInherit();
   mPartitionedPrincipalToInherit = aLoadState.PartitionedPrincipalToInherit();
+  mTriggeringSandboxFlags = aLoadState.TriggeringSandboxFlags();
   mCsp = aLoadState.Csp();
   mOriginalURIString = aLoadState.OriginalURIString();
   mCancelContentJSEpoch = aLoadState.CancelContentJSEpoch();
@@ -75,6 +75,10 @@ nsDocShellLoadState::nsDocShellLoadState(
   mHeadersStream = aLoadState.HeadersStream();
   mSrcdocData = aLoadState.SrcdocData();
   mChannelInitialized = aLoadState.ChannelInitialized();
+  if (aLoadState.loadingSessionHistoryInfo().isSome()) {
+    mLoadingSessionHistoryInfo = MakeUnique<LoadingSessionHistoryInfo>(
+        aLoadState.loadingSessionHistoryInfo().ref());
+  }
 }
 
 nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
@@ -84,6 +88,7 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mResultPrincipalURI(aOther.mResultPrincipalURI),
       mResultPrincipalURIIsSome(aOther.mResultPrincipalURIIsSome),
       mTriggeringPrincipal(aOther.mTriggeringPrincipal),
+      mTriggeringSandboxFlags(aOther.mTriggeringSandboxFlags),
       mCsp(aOther.mCsp),
       mKeepResultPrincipalURIIfSet(aOther.mKeepResultPrincipalURIIfSet),
       mLoadReplace(aOther.mLoadReplace),
@@ -113,11 +118,17 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mOriginalURIString(aOther.mOriginalURIString),
       mCancelContentJSEpoch(aOther.mCancelContentJSEpoch),
       mLoadIdentifier(aOther.mLoadIdentifier),
-      mChannelInitialized(aOther.mChannelInitialized) {}
+      mChannelInitialized(aOther.mChannelInitialized) {
+  if (aOther.mLoadingSessionHistoryInfo) {
+    mLoadingSessionHistoryInfo = MakeUnique<LoadingSessionHistoryInfo>(
+        *aOther.mLoadingSessionHistoryInfo);
+  }
+}
 
 nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
     : mURI(aURI),
       mResultPrincipalURIIsSome(false),
+      mTriggeringSandboxFlags(0),
       mKeepResultPrincipalURIIfSet(false),
       mLoadReplace(false),
       mInheritPrincipal(false),
@@ -245,27 +256,9 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
     }
 
     RefPtr<nsIInputStream> fixupStream;
-    if (XRE_IsContentProcess()) {
-      dom::ContentChild* contentChild = dom::ContentChild::GetSingleton();
-      if (contentChild) {
-        RefPtr<nsIURI> preferredURI;
-        // TODO (Bug 1375244): This synchronous IPC messaging should be changed.
-        if (contentChild->SendGetFixupURIInfo(
-                PromiseFlatString(aURI), fixupFlags,
-                loadFlags &
-                    nsIWebNavigation::LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP,
-                &searchProvider, &fixupStream, &preferredURI)) {
-          if (preferredURI) {
-            didFixup = true;
-            rv = NS_OK;
-            uri = preferredURI;
-          }
-        }
-      }
-    } else {
+    if (!XRE_IsContentProcess()) {
       nsCOMPtr<nsIURIFixupInfo> fixupInfo;
       sURIFixup->GetFixupURIInfo(uriString, fixupFlags,
-                                 getter_AddRefs(fixupStream),
                                  getter_AddRefs(fixupInfo));
       if (fixupInfo) {
         // We could fix the uri, clear NS_ERROR_MALFORMED_URI.
@@ -274,6 +267,7 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
         fixupInfo->SetConsumer(aBrowsingContext);
         fixupInfo->GetKeywordProviderName(searchProvider);
         fixupInfo->GetKeywordAsSent(keyword);
+        fixupInfo->GetPostData(getter_AddRefs(fixupStream));
         didFixup = true;
 
         if (fixupInfo &&
@@ -348,6 +342,7 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
   loadState->SetFirstParty(true);
   loadState->SetHasValidUserGestureActivation(
       aLoadURIOptions.mHasValidUserGestureActivation);
+  loadState->SetTriggeringSandboxFlags(aLoadURIOptions.mTriggeringSandboxFlags);
   loadState->SetPostDataStream(postData);
   loadState->SetHeadersStream(aLoadURIOptions.mHeaders);
   loadState->SetBaseURI(aLoadURIOptions.mBaseURI);
@@ -448,6 +443,14 @@ void nsDocShellLoadState::SetCsp(nsIContentSecurityPolicy* aCsp) {
 
 nsIContentSecurityPolicy* nsDocShellLoadState::Csp() const { return mCsp; }
 
+void nsDocShellLoadState::SetTriggeringSandboxFlags(uint32_t flags) {
+  mTriggeringSandboxFlags = flags;
+}
+
+uint32_t nsDocShellLoadState::TriggeringSandboxFlags() const {
+  return mTriggeringSandboxFlags;
+}
+
 bool nsDocShellLoadState::InheritPrincipal() const { return mInheritPrincipal; }
 
 void nsDocShellLoadState::SetInheritPrincipal(bool aInheritPrincipal) {
@@ -492,16 +495,53 @@ nsISHEntry* nsDocShellLoadState::SHEntry() const { return mSHEntry; }
 
 void nsDocShellLoadState::SetSHEntry(nsISHEntry* aSHEntry) {
   mSHEntry = aSHEntry;
+  nsCOMPtr<SessionHistoryEntry> she = do_QueryInterface(aSHEntry);
+  if (she) {
+    mLoadingSessionHistoryInfo = MakeUnique<LoadingSessionHistoryInfo>(she);
+  } else {
+    mLoadingSessionHistoryInfo = nullptr;
+  }
 }
 
-void nsDocShellLoadState::SetSessionHistoryInfo(
-    const mozilla::dom::SessionHistoryInfo& aInfo) {
-  mSessionHistoryInfo = MakeUnique<SessionHistoryInfo>(aInfo);
+void nsDocShellLoadState::SetLoadingSessionHistoryInfo(
+    const mozilla::dom::LoadingSessionHistoryInfo& aLoadingInfo) {
+  SetLoadingSessionHistoryInfo(
+      MakeUnique<mozilla::dom::LoadingSessionHistoryInfo>(aLoadingInfo));
 }
 
-const mozilla::dom::SessionHistoryInfo*
-nsDocShellLoadState::GetSessionHistoryInfo() const {
-  return mSessionHistoryInfo.get();
+void nsDocShellLoadState::SetLoadingSessionHistoryInfo(
+    mozilla::UniquePtr<mozilla::dom::LoadingSessionHistoryInfo> aLoadingInfo) {
+  mLoadingSessionHistoryInfo = std::move(aLoadingInfo);
+}
+
+const mozilla::dom::LoadingSessionHistoryInfo*
+nsDocShellLoadState::GetLoadingSessionHistoryInfo() const {
+  return mLoadingSessionHistoryInfo.get();
+}
+
+void nsDocShellLoadState::SetLoadIsFromSessionHistory(
+    int32_t aRequestedIndex, int32_t aSessionHistoryLength,
+    bool aLoadingFromActiveEntry) {
+  if (mLoadingSessionHistoryInfo) {
+    mLoadingSessionHistoryInfo->mLoadIsFromSessionHistory = true;
+    mLoadingSessionHistoryInfo->mRequestedIndex = aRequestedIndex;
+    mLoadingSessionHistoryInfo->mSessionHistoryLength = aSessionHistoryLength;
+    mLoadingSessionHistoryInfo->mLoadingCurrentActiveEntry =
+        aLoadingFromActiveEntry;
+  }
+}
+
+void nsDocShellLoadState::ClearLoadIsFromSessionHistory() {
+  if (mLoadingSessionHistoryInfo) {
+    mLoadingSessionHistoryInfo->mLoadIsFromSessionHistory = false;
+  }
+  mSHEntry = nullptr;
+}
+
+bool nsDocShellLoadState::LoadIsFromSessionHistory() const {
+  return mLoadingSessionHistoryInfo
+             ? mLoadingSessionHistoryInfo->mLoadIsFromSessionHistory
+             : !!mSHEntry;
 }
 
 const nsString& nsDocShellLoadState::Target() const { return mTarget; }
@@ -882,6 +922,7 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize() {
   loadState.TriggeringPrincipal() = mTriggeringPrincipal;
   loadState.PrincipalToInherit() = mPrincipalToInherit;
   loadState.PartitionedPrincipalToInherit() = mPartitionedPrincipalToInherit;
+  loadState.TriggeringSandboxFlags() = mTriggeringSandboxFlags;
   loadState.Csp() = mCsp;
   loadState.OriginalURIString() = mOriginalURIString;
   loadState.CancelContentJSEpoch() = mCancelContentJSEpoch;
@@ -892,5 +933,8 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize() {
   loadState.ResultPrincipalURI() = mResultPrincipalURI;
   loadState.LoadIdentifier() = mLoadIdentifier;
   loadState.ChannelInitialized() = mChannelInitialized;
+  if (mLoadingSessionHistoryInfo) {
+    loadState.loadingSessionHistoryInfo().emplace(*mLoadingSessionHistoryInfo);
+  }
   return loadState;
 }

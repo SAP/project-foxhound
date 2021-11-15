@@ -23,6 +23,13 @@ loader.lazyRequireGetter(
   true
 );
 
+loader.lazyRequireGetter(
+  this,
+  "ObjectUtils",
+  "resource://gre/modules/ObjectUtils.jsm",
+  true
+);
+
 // Using this name lets the eslint plugin know about lazy defines in
 // this file.
 var DevToolsUtils = exports;
@@ -949,3 +956,25 @@ function getTopWindow(win) {
 }
 
 exports.getTopWindow = getTopWindow;
+
+/**
+ * Check whether two objects are identical by performing
+ * a deep equality check on their properties and values.
+ * See toolkit/modules/ObjectUtils.jsm for implementation.
+ *
+ * @param {Object} a
+ * @param {Object} b
+ * @return {Boolean}
+ */
+exports.deepEqual = (a, b) => {
+  return ObjectUtils.deepEqual(a, b);
+};
+
+function isWorkerDebuggerAlive(dbg) {
+  // Some workers are zombies. `isClosed` is false, but nothing works.
+  // `postMessage` is a noop, `addListener`'s `onClosed` doesn't work.
+  // (Ignore dbg without `window` as they aren't related to docShell
+  //  and probably do not suffer form this issue)
+  return !dbg.isClosed && (!dbg.window || dbg.window.docShell);
+}
+exports.isWorkerDebuggerAlive = isWorkerDebuggerAlive;

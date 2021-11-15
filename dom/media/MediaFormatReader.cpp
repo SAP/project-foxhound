@@ -6,10 +6,15 @@
 
 #include "MediaFormatReader.h"
 
+#include <algorithm>
+#include <map>
+#include <queue>
+
 #include "AllocationPolicy.h"
 #include "DecoderBenchmark.h"
 #include "GeckoProfiler.h"
 #include "MediaData.h"
+#include "MediaDataDecoderProxy.h"
 #include "MediaInfo.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
@@ -25,10 +30,6 @@
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
 
-#include <algorithm>
-#include <map>
-#include <queue>
-
 using namespace mozilla::media;
 
 static mozilla::LazyLogModule sFormatDecoderLog("MediaFormatReader");
@@ -40,6 +41,15 @@ mozilla::LazyLogModule gMediaDemuxerLog("MediaDemuxer");
 #define LOGV(arg, ...)                                                   \
   DDMOZ_LOG(sFormatDecoderLog, mozilla::LogLevel::Verbose, "::%s: " arg, \
             __func__, ##__VA_ARGS__)
+
+#ifdef MOZ_GECKO_PROFILER
+#  include "ProfilerMarkerPayload.h"
+#  define MEDIA_FORMAT_READER_STATUS_MARKER(tag, text, markerTime)           \
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(tag, MEDIA_PLAYBACK, TextMarkerPayload, \
+                                     (text, markerTime))
+#else
+#  define MEDIA_FORMAT_READER_STATUS_MARKER(tag, text, markerTime)
+#endif
 
 #define NS_DispatchToMainThread(...) CompileError_UseAbstractMainThreadInstead
 
@@ -199,6 +209,7 @@ class MediaFormatReader::DecoderFactory {
   using InitPromise = MediaDataDecoder::InitPromise;
   using TokenPromise = AllocPolicy::Promise;
   using Token = AllocPolicy::Token;
+  using CreateDecoderPromise = PlatformDecoderModule::CreateDecoderPromise;
 
  public:
   explicit DecoderFactory(MediaFormatReader* aOwner)
@@ -226,6 +237,23 @@ class MediaFormatReader::DecoderFactory {
     auto& data = aTrack == TrackInfo::kAudioTrack ? mAudio : mVideo;
     data.mPolicy->Cancel();
     data.mTokenRequest.DisconnectIfExists();
+    if (data.mLiveToken) {
+      // We haven't completed creation of the decoder, and it hasn't been
+      // initialised yet.
+      data.mLiveToken = nullptr;
+      // The decoder will be shutdown as soon as it's available and tracked by
+      // the ShutdownPromisePool.
+      mOwner->mShutdownPromisePool->Track(data.mCreateDecoderPromise->Then(
+          mOwner->mTaskQueue, __func__,
+          [](CreateDecoderPromise::ResolveOrRejectValue&& aResult) {
+            if (aResult.IsReject()) {
+              return ShutdownPromise::CreateAndResolve(true, __func__);
+            }
+            return aResult.ResolveValue()->Shutdown();
+          }));
+      // Free the token to leave room for a new decoder.
+      data.mToken = nullptr;
+    }
     data.mInitRequest.DisconnectIfExists();
     if (data.mDecoder) {
       mOwner->mShutdownPromisePool->ShutdownDecoder(data.mDecoder.forget());
@@ -249,11 +277,21 @@ class MediaFormatReader::DecoderFactory {
     RefPtr<Token> mToken;
     RefPtr<MediaDataDecoder> mDecoder;
     MozPromiseRequestHolder<TokenPromise> mTokenRequest;
+    struct DecoderCancelled : public SupportsWeakPtr {
+      NS_INLINE_DECL_REFCOUNTING_ONEVENTTARGET(DecoderCancelled)
+     private:
+      ~DecoderCancelled() = default;
+    };
+    // Set when decoder is about to be created. If cleared before the decoder
+    // creation promise is resolved; it indicates that Shutdown() was called and
+    // further processing such as initialization should stop.
+    RefPtr<DecoderCancelled> mLiveToken;
+    RefPtr<CreateDecoderPromise> mCreateDecoderPromise;
     MozPromiseRequestHolder<InitPromise> mInitRequest;
   } mAudio, mVideo;
 
   void RunStage(Data& aData);
-  MediaResult DoCreateDecoder(Data& aData);
+  void DoCreateDecoder(Data& aData);
   void DoInitDecoder(Data& aData);
 
   // guaranteed to be valid by the owner.
@@ -299,38 +337,20 @@ void MediaFormatReader::DecoderFactory::RunStage(Data& aData) {
       MOZ_ASSERT(!aData.mDecoder);
       MOZ_ASSERT(!aData.mInitRequest.Exists());
 
-      MediaResult rv = DoCreateDecoder(aData);
-      if (NS_FAILED(rv)) {
-        NS_WARNING("Error constructing decoders");
-        aData.mToken = nullptr;
-        aData.mStage = Stage::None;
-        aData.mOwnerData.mDescription = rv.Description();
-        DDLOGEX2("MediaFormatReader::DecoderFactory", this, DDLogCategory::Log,
-                 "create_decoder_error", rv);
-        mOwner->NotifyError(aData.mTrack, rv);
-        return;
-      }
-
-      aData.mDecoder =
-          new AllocationWrapper(aData.mDecoder.forget(), aData.mToken.forget());
-      DecoderDoctorLogger::LinkParentAndChild(
-          aData.mDecoder.get(), "decoder", "MediaFormatReader::DecoderFactory",
-          this);
-
-      DoInitDecoder(aData);
+      DoCreateDecoder(aData);
       aData.mStage = Stage::WaitForInit;
       break;
     }
 
     case Stage::WaitForInit: {
-      MOZ_ASSERT(aData.mDecoder);
-      MOZ_ASSERT(aData.mInitRequest.Exists());
+      MOZ_ASSERT((aData.mDecoder && aData.mInitRequest.Exists()) ||
+                 aData.mLiveToken);
       break;
     }
   }
 }
 
-MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
+void MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
   AUTO_PROFILER_LABEL("DecoderFactory::DoCreateDecoder", MEDIA_PLAYBACK);
   auto& ownerData = aData.mOwnerData;
   auto& decoder = mOwner->GetDecoderData(aData.mTrack);
@@ -345,21 +365,21 @@ MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
     }
   }
 
-  // result may not be updated by PDMFactory::CreateDecoder, as such it must be
-  // initialized to a fatal error by default.
-  MediaResult result =
-      MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                  nsPrintfCString("error creating %s decoder",
-                                  TrackTypeToStr(aData.mTrack)));
+  RefPtr<PlatformDecoderModule::CreateDecoderPromise> p;
+  MediaFormatReader* owner = mOwner;
+  auto onWaitingForKeyEvent =
+      [owner = ThreadSafeWeakPtr<MediaFormatReader>(owner)]() {
+        RefPtr<MediaFormatReader> mfr(owner);
+        MOZ_DIAGNOSTIC_ASSERT(mfr, "The MediaFormatReader didn't wait for us");
+        return mfr ? &mfr->OnTrackWaitingForKeyProducer() : nullptr;
+      };
 
   switch (aData.mTrack) {
     case TrackInfo::kAudioTrack: {
-      aData.mDecoder = platform->CreateDecoder(
-          {*ownerData.GetCurrentInfo()->GetAsAudioInfo(), ownerData.mTaskQueue,
-           mOwner->mCrashHelper,
+      p = platform->CreateDecoder(
+          {*ownerData.GetCurrentInfo()->GetAsAudioInfo(), mOwner->mCrashHelper,
            CreateDecoderParams::UseNullDecoder(ownerData.mIsNullDecode),
-           &result, TrackInfo::kAudioTrack,
-           &mOwner->OnTrackWaitingForKeyProducer()});
+           TrackInfo::kAudioTrack, std::move(onWaitingForKeyEvent)});
       break;
     }
 
@@ -369,13 +389,12 @@ MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
       using Option = CreateDecoderParams::Option;
       using OptionSet = CreateDecoderParams::OptionSet;
 
-      aData.mDecoder = platform->CreateDecoder(
-          {*ownerData.GetCurrentInfo()->GetAsVideoInfo(), ownerData.mTaskQueue,
+      p = platform->CreateDecoder(
+          {*ownerData.GetCurrentInfo()->GetAsVideoInfo(),
            mOwner->mKnowsCompositor, mOwner->GetImageContainer(),
            mOwner->mCrashHelper,
            CreateDecoderParams::UseNullDecoder(ownerData.mIsNullDecode),
-           &result, TrackType::kVideoTrack,
-           &mOwner->OnTrackWaitingForKeyProducer(),
+           TrackType::kVideoTrack, std::move(onWaitingForKeyEvent),
            CreateDecoderParams::VideoFrameRate(ownerData.mMeanRate.Mean()),
            OptionSet(ownerData.mHardwareDecodingDisabled
                          ? Option::HardwareDecoderNotAllowed
@@ -384,16 +403,50 @@ MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
     }
 
     default:
-      break;
+      p = PlatformDecoderModule::CreateDecoderPromise::CreateAndReject(
+          NS_ERROR_DOM_MEDIA_FATAL_ERR, __func__);
   }
 
-  if (aData.mDecoder) {
-    return NS_OK;
-  }
+  aData.mLiveToken = MakeRefPtr<Data::DecoderCancelled>();
 
-  MOZ_RELEASE_ASSERT(NS_FAILED(result), "PDM returned an invalid error code");
+  aData.mCreateDecoderPromise = p->Then(
+      mOwner->OwnerThread(), __func__,
+      [this, &aData, &ownerData, live = WeakPtr{aData.mLiveToken},
+       owner = ThreadSafeWeakPtr<MediaFormatReader>(owner)](
+          RefPtr<MediaDataDecoder>&& aDecoder) {
+        if (!live) {
+          return CreateDecoderPromise::CreateAndResolve(std::move(aDecoder),
+                                                        __func__);
+        }
+        aData.mLiveToken = nullptr;
+        aData.mDecoder = new MediaDataDecoderProxy(
+            aDecoder.forget(), do_AddRef(ownerData.mTaskQueue.get()));
+        aData.mDecoder = new AllocationWrapper(aData.mDecoder.forget(),
+                                               aData.mToken.forget());
+        DecoderDoctorLogger::LinkParentAndChild(
+            aData.mDecoder.get(), "decoder",
+            "MediaFormatReader::DecoderFactory", this);
 
-  return result;
+        DoInitDecoder(aData);
+
+        return CreateDecoderPromise::CreateAndResolve(aData.mDecoder, __func__);
+      },
+      [this, &aData,
+       live = WeakPtr{aData.mLiveToken}](const MediaResult& aError) {
+        NS_WARNING("Error constructing decoders");
+        if (!live) {
+          return CreateDecoderPromise::CreateAndReject(aError, __func__);
+        }
+        aData.mLiveToken = nullptr;
+        aData.mToken = nullptr;
+        aData.mStage = Stage::None;
+        aData.mOwnerData.mDescription = aError.Description();
+        DDLOGEX2("MediaFormatReader::DecoderFactory", this, DDLogCategory::Log,
+                 "create_decoder_error", aError);
+        mOwner->NotifyError(aData.mTrack, aError);
+
+        return CreateDecoderPromise::CreateAndReject(aError, __func__);
+      });
 }
 
 void MediaFormatReader::DecoderFactory::DoInitDecoder(Data& aData) {
@@ -803,7 +856,7 @@ MediaFormatReader::DemuxerProxy::NotifyDataArrived() {
 
 MediaFormatReader::MediaFormatReader(MediaFormatReaderInit& aInit,
                                      MediaDataDemuxer* aDemuxer)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
+    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::SUPERVISOR),
                                "MediaFormatReader::mTaskQueue",
                                /* aSupportsTailDispatch = */ true)),
       mAudio(this, MediaData::Type::AUDIO_DATA,
@@ -1877,8 +1930,12 @@ void MediaFormatReader::HandleDemuxedSamples(
       }
     }
 
-    LOG("%s stream id has changed from:%d to:%d.", TrackTypeToStr(aTrack),
-        decoder.mLastStreamSourceID, info->GetID());
+    nsPrintfCString markerString(
+        "%s stream id changed from:%" PRIu32 " to:%" PRIu32,
+        TrackTypeToStr(aTrack), decoder.mLastStreamSourceID, info->GetID());
+    MEDIA_FORMAT_READER_STATUS_MARKER("StreamID Change", markerString,
+                                      TimeStamp::NowUnfuzzed());
+    LOG("%s", markerString.get());
 
     if (aTrack == TrackInfo::kVideoTrack) {
       // We are about to create a new decoder thus the benchmark,
@@ -2491,7 +2548,7 @@ void MediaFormatReader::SkipVideoDemuxToNextKeyFrame(TimeUnit aTimeThreshold) {
 }
 
 void MediaFormatReader::VideoSkipReset(uint32_t aSkipped) {
-  PROFILER_ADD_MARKER("SkippedVideoDecode", MEDIA_PLAYBACK);
+  PROFILER_MARKER_UNTYPED("SkippedVideoDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(OnTaskQueue());
 
   // Some frames may have been output by the decoder since we initiated the
@@ -2963,8 +3020,8 @@ void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
     }
   }
 
-  aInfo.mAudioDecoderName = NS_ConvertUTF8toUTF16(audioDecoderName);
-  aInfo.mAudioType = NS_ConvertUTF8toUTF16(audioType);
+  CopyUTF8toUTF16(audioDecoderName, aInfo.mAudioDecoderName);
+  CopyUTF8toUTF16(audioType, aInfo.mAudioType);
   aInfo.mAudioChannels = audioInfo.mChannels;
   aInfo.mAudioRate = audioInfo.mRate / 1000.0f;
   aInfo.mAudioFramesDecoded = mAudio.mNumSamplesOutputTotal;
@@ -2993,8 +3050,8 @@ void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
     aInfo.mAudioState.mLastStreamSourceID = mAudio.mLastStreamSourceID;
   }
 
-  aInfo.mVideoDecoderName = NS_ConvertUTF8toUTF16(videoDecoderName);
-  aInfo.mVideoType = NS_ConvertUTF8toUTF16(videoType);
+  CopyUTF8toUTF16(videoDecoderName, aInfo.mVideoDecoderName);
+  CopyUTF8toUTF16(videoType, aInfo.mVideoType);
   aInfo.mVideoWidth =
       videoInfo.mDisplay.width < 0 ? 0 : videoInfo.mDisplay.width;
   aInfo.mVideoHeight =
@@ -3095,5 +3152,6 @@ void MediaFormatReader::OnFirstDemuxFailed(TrackInfo::TrackType aType,
 }  // namespace mozilla
 
 #undef NS_DispatchToMainThread
+#undef MEDIA_FORMAT_READER_STATUS_MARKER
 #undef LOGV
 #undef LOG

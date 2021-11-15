@@ -5,14 +5,12 @@
 "use strict";
 
 const Services = require("Services");
-const { gDevTools } = require("devtools/client/framework/devtools");
 const Telemetry = require("devtools/client/shared/telemetry");
 const {
   FrontClassWithSpec,
   registerFront,
 } = require("devtools/shared/protocol.js");
 const { inspectorSpec } = require("devtools/shared/specs/inspector");
-loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
 
 const TELEMETRY_EYEDROPPER_OPENED = "DEVTOOLS_EYEDROPPER_OPENED_COUNT";
 const TELEMETRY_EYEDROPPER_OPENED_MENU =
@@ -35,16 +33,23 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
 
     // Attribute name from which to retrieve the actorID out of the target actor's form
     this.formAttributeName = "inspectorActor";
+
+    // Map of highlighter types to unsettled promises to create a highlighter of that type
+    this._pendingGetHighlighterMap = new Map();
   }
 
   // async initialization
   async initialize() {
-    await Promise.all([
+    if (this.initialized) {
+      return this.initialized;
+    }
+
+    this.initialized = await Promise.all([
       this._getWalker(),
-      this._getHighlighter(),
       this._getPageStyle(),
-      this._startChangesFront(),
     ]);
+
+    return this.initialized;
   }
 
   async _getWalker() {
@@ -66,11 +71,6 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
     await this.walker.reparentRemoteFrame();
   }
 
-  async _getHighlighter() {
-    const autohide = !flags.testing;
-    this.highlighter = await this.getHighlighter(autohide);
-  }
-
   hasHighlighter(type) {
     return this._highlighters.has(type);
   }
@@ -80,27 +80,16 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
   }
 
   async getCompatibilityFront() {
-    // DevTools supports a Compatibility actor from version FF79 and above.
-    // This check exists to maintain backwards compatibility with older
-    // backend. This check can be removed once FF79 hits the release channel.
-    if (this._compatibility === undefined) {
-      try {
-        this._compatibility = await super.getCompatibility();
-      } catch (error) {
-        this._compatibility = null;
-      }
+    if (!this._compatibility) {
+      this._compatibility = await super.getCompatibility();
     }
 
     return this._compatibility;
   }
 
-  async _startChangesFront() {
-    await this.targetFront.getFront("changes");
-  }
-
   destroy() {
     this._compatibility = null;
-    // Highlighter fronts are managed by InspectorFront and so will be
+    // CustomHighlighter fronts are managed by InspectorFront and so will be
     // automatically destroyed. But we have to clear the `_highlighters`
     // Map as well as explicitly call `finalize` request on all of them.
     this.destroyHighlighters();
@@ -110,7 +99,10 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
   destroyHighlighters() {
     for (const type of this._highlighters.keys()) {
       if (this._highlighters.has(type)) {
-        this._highlighters.get(type).finalize();
+        const highlighter = this._highlighters.get(type);
+        if (!highlighter.isDestroyed()) {
+          highlighter.finalize();
+        }
         this._highlighters.delete(type);
       }
     }
@@ -133,12 +125,38 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
     return this._highlighters.get(type);
   }
 
+  /**
+   * Return a highlighter instance of the given type.
+   * If an instance was previously created, return it. Else, create and return a new one.
+   *
+   * Store a promise for the request to create a new highlighter. If another request
+   * comes in before that promise is resolved, wait for it to resolve and return the
+   * highlighter instance it resolved with instead of creating a new request.
+   *
+   * @param  {String} type
+   *         Highlighter type
+   * @return {Promise}
+   *         Promise which resolves with a highlighter instance of the given type
+   */
   async getOrCreateHighlighterByType(type) {
     let front = this._highlighters.get(type);
-    if (!front) {
-      front = await this.getHighlighterByType(type);
-      this._highlighters.set(type, front);
+    let pendingGetHighlighter = this._pendingGetHighlighterMap.get(type);
+
+    if (!front && !pendingGetHighlighter) {
+      pendingGetHighlighter = (async () => {
+        const highlighter = await this.getHighlighterByType(type);
+        this._highlighters.set(type, highlighter);
+        this._pendingGetHighlighterMap.delete(type);
+        return highlighter;
+      })();
+
+      this._pendingGetHighlighterMap.set(type, pendingGetHighlighter);
     }
+
+    if (pendingGetHighlighter) {
+      front = await pendingGetHighlighter;
+    }
+
     return front;
   }
 
@@ -161,10 +179,7 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
   async getNodeFrontFromNodeGrip(grip) {
     const gripHasContentDomReference = "contentDomReference" in grip;
 
-    if (
-      !gDevTools.isFissionContentToolboxEnabled() ||
-      !gripHasContentDomReference
-    ) {
+    if (!gripHasContentDomReference) {
       // Backward compatibility ( < Firefox 71):
       // If the grip does not have a contentDomReference, we can't know in which browsing
       // context id the node lives. We fall back on gripToNodeFront that might retrieve
@@ -179,10 +194,7 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
     const { browsingContextId } = contentDomReference;
     // If the contentDomReference lives in the same browsing context id than the
     // current one, we can directly use the current walker.
-    if (
-      this.targetFront.browsingContextID === browsingContextId ||
-      !gDevTools.isFissionContentToolboxEnabled()
-    ) {
+    if (this.targetFront.browsingContextID === browsingContextId) {
       return this.walker.getNodeActorFromContentDomReference(
         contentDomReference
       );

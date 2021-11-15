@@ -150,6 +150,7 @@ class WebExtensionPolicy final : public nsISupports,
   }
 
   uint64_t GetBrowsingContextGroupId() const;
+  uint64_t GetBrowsingContextGroupId(ErrorResult& aRv);
 
   static void GetActiveExtensions(
       dom::GlobalObject& aGlobal,
@@ -210,7 +211,7 @@ class WebExtensionPolicy final : public nsISupports,
   MatchGlobSet mWebAccessiblePaths;
 
   dom::Nullable<nsTArray<nsString>> mBackgroundScripts;
-  nsString mBackgroundWorkerScript = EmptyString();
+  nsString mBackgroundWorkerScript;
 
   nsTArray<RefPtr<WebExtensionContentScript>> mContentScripts;
 

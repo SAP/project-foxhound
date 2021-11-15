@@ -134,9 +134,8 @@ BrowserElementChild.prototype = {
   },
 
   _tryGetInnerWindowID(win) {
-    let utils = win.windowUtils;
     try {
-      return utils.currentInnerWindowID;
+      return win.windowGlobalChild.innerWindowId;
     } catch (e) {
       return null;
     }
@@ -146,10 +145,8 @@ BrowserElementChild.prototype = {
    * Show a modal prompt.  Called by BrowserElementPromptService.
    */
   showModalPrompt(win, args) {
-    let utils = win.windowUtils;
-
     args.windowID = {
-      outer: utils.outerWindowID,
+      outer: win.docShell.outerWindowID,
       inner: this._tryGetInnerWindowID(win),
     };
     sendAsyncMsg("showmodalprompt", args);
@@ -174,7 +171,7 @@ BrowserElementChild.prototype = {
     debug("_waitForResult(" + win + ")");
     let utils = win.windowUtils;
 
-    let outerWindowID = utils.outerWindowID;
+    let outerWindowID = win.docShell.outerWindowID;
     let innerWindowID = this._tryGetInnerWindowID(win);
     if (innerWindowID === null) {
       // I have no idea what waiting for a result means when there's no inner

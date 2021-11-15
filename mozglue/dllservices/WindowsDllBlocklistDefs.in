@@ -222,9 +222,10 @@ ALL_PROCESSES += [
     # 360 Safeguard/360 Total Security causes a11y crashes, bug 1536227.
     DllBlocklistEntry("safemon64.dll", ALL_VERSIONS),
 
-    # Old versions of Digital Guardian, bug 1318858 and bug 1603974
-    RedirectToNoOpEntryPoint("dgapi.dll", (7, 5, 0, 0xffff)),
-    RedirectToNoOpEntryPoint("dgapi64.dll", (7, 5, 0, 0xffff)),
+    # Old versions of Digital Guardian, bug 1318858, bug 1603974,
+    # and bug 1672367
+    RedirectToNoOpEntryPoint("dgapi.dll", (7, 5, 0xffff, 0xffff)),
+    RedirectToNoOpEntryPoint("dgapi64.dll", (7, 5, 0xffff, 0xffff)),
 
     # Old versions of COMODO Internet Security, bug 1608048
     DllBlocklistEntry("IseGuard32.dll", (1, 6, 13835, 184)),
@@ -253,7 +254,8 @@ BROWSER_PROCESS += [
     A11yBlocklistEntry("dtvhooks64.dll", (18, 1, 10, 0xffff)),
 
     # SolidWorks Windows Explorer integration causes crashes, bug 1566109
-    DllBlocklistEntry("Database.dll", (27, 3, 0, 59)),
+    # and bug 1468250
+    DllBlocklistEntry("Database.dll", ALL_VERSIONS),
 
     # Hancom Office shell extension causes crashes when the file picker is
     # opened. See bug 1581092.

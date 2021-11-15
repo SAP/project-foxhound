@@ -21,41 +21,11 @@ var EXPORTED_SYMBOLS = ["LoadURIDelegateChild"];
 
 // Implements nsILoadURIDelegate.
 class LoadURIDelegateChild extends GeckoViewActorChild {
-  /** Returns true if this docShell is of type Content, false otherwise. */
-  get isContentWindow() {
-    if (!this.docShell) {
-      return false;
-    }
-
-    // Some WebExtension windows are tagged as content but really they are not
-    // for us (e.g. the remote debugging window or the background extension
-    // page).
-    const browser = this.browsingContext.top.embedderElement;
-    if (browser) {
-      const viewType = browser.getAttribute("webextension-view-type");
-      if (viewType) {
-        debug`webextension-view-type: ${viewType}`;
-        return false;
-      }
-      const debugTarget = browser.getAttribute(
-        "webextension-addon-debug-target"
-      );
-      if (debugTarget) {
-        debug`webextension-addon-debug-target: ${debugTarget}`;
-        return false;
-      }
-    }
-
-    return this.docShell.itemType == this.docShell.typeContent;
-  }
-
   // nsILoadURIDelegate.
   loadURI(aUri, aWhere, aFlags, aTriggeringPrincipal) {
     debug`loadURI: uri=${aUri && aUri.spec}
                     where=${aWhere} flags=0x${aFlags.toString(16)}
-                    tp=${aTriggeringPrincipal &&
-                      aTriggeringPrincipal.URI &&
-                      aTriggeringPrincipal.URI.spec}`;
+                    tp=${aTriggeringPrincipal && aTriggeringPrincipal.spec}`;
     if (!this.isContentWindow) {
       debug`loadURI: not a content window`;
       // This is an internal Gecko window, nothing to do
@@ -122,4 +92,4 @@ LoadURIDelegateChild.prototype.QueryInterface = ChromeUtils.generateQI([
   "nsILoadURIDelegate",
 ]);
 
-const { debug, warn } = LoadURIDelegateChild.initLogging("LoadURIDelegate"); // eslint-disable-line no-unused-vars
+const { debug, warn } = LoadURIDelegateChild.initLogging("LoadURIDelegate");

@@ -35,6 +35,7 @@
 #include "nsDOMMutationObserver.h"  // For nsAutoAnimationMutationBatch
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
+#include "nsIScrollableFrame.h"
 #include "nsPresContextInlines.h"
 #include "nsRefreshDriver.h"
 
@@ -834,8 +835,7 @@ already_AddRefed<KeyframeEffect> KeyframeEffect::ConstructKeyframeEffect(
     return nullptr;
   }
 
-  TimingParams timingParams =
-      TimingParams::FromOptionsUnion(aOptions, doc, aRv);
+  TimingParams timingParams = TimingParams::FromOptionsUnion(aOptions, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -881,7 +881,7 @@ nsTArray<AnimationProperty> KeyframeEffect::BuildProperties(
              " should not be modified");
 #endif
 
-  mKeyframes.SwapElements(keyframesCopy);
+  mKeyframes = std::move(keyframesCopy);
   return result;
 }
 
@@ -904,8 +904,12 @@ void KeyframeEffect::UpdateTarget(Element* aElement,
   }
 
   if (mTarget) {
-    UnregisterTarget();
+    // Call ResetIsRunningOnCompositor() prior to UnregisterTarget() since
+    // ResetIsRunningOnCompositor() might try to get the EffectSet associated
+    // with this keyframe effect to remove partial pre-render animation from
+    // the layer manager.
     ResetIsRunningOnCompositor();
+    UnregisterTarget();
 
     RequestRestyle(EffectCompositor::RestyleType::Layer);
 

@@ -12,6 +12,7 @@
 
 #include "gc/GC.h"
 #include "gc/GCParallelTask.h"
+#include "gc/GCRuntime.h"
 #include "js/SliceBudget.h"
 #include "vm/HelperThreads.h"
 
@@ -47,7 +48,9 @@ class ParallelWorker : public GCParallelTask {
     work.next();
   }
 
-  void run() {
+  void run(AutoLockHelperThreadState& lock) {
+    AutoUnlockHelperThreadState unlock(lock);
+
     // These checks assert when run in parallel.
     AutoDisableProxyCheck noProxyCheck;
 
@@ -101,7 +104,7 @@ class MOZ_RAII AutoRunParallelWork {
                       const SliceBudget& budget,
                       AutoLockHelperThreadState& lock)
       : gc(gc), phaseKind(phaseKind), lock(lock), tasksStarted(0) {
-    size_t workerCount = ParallelWorkerCount();
+    size_t workerCount = gc->parallelWorkerCount();
     MOZ_ASSERT(workerCount <= MaxParallelWorkers);
     MOZ_ASSERT_IF(workerCount == 0, work.done());
 
@@ -113,7 +116,7 @@ class MOZ_RAII AutoRunParallelWork {
   }
 
   ~AutoRunParallelWork() {
-    MOZ_ASSERT(HelperThreadState().isLockedByCurrentThread());
+    MOZ_ASSERT(gHelperThreadLock.ownedByCurrentThread());
 
     for (size_t i = 0; i < tasksStarted; i++) {
       gc->joinTask(*tasks[i], phaseKind, lock);

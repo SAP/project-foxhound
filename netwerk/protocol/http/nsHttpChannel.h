@@ -15,7 +15,6 @@
 #include "nsICacheEntryOpenCallback.h"
 #include "nsIDNSListener.h"
 #include "nsIApplicationCacheChannel.h"
-#include "nsIChannelWithDivertableParentListener.h"
 #include "nsIProtocolProxyCallback.h"
 #include "nsIHttpAuthenticableChannel.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
@@ -23,7 +22,6 @@
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsWeakReference.h"
 #include "TimingStruct.h"
-#include "ADivertableParentChannel.h"
 #include "AutoClose.h"
 #include "nsIStreamListener.h"
 #include "nsICorsPreflightCallback.h"
@@ -31,11 +29,13 @@
 #include "nsIRaceCacheWithNetwork.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/extensions/PStreamFilterParent.h"
+#include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/Mutex.h"
 
 class nsDNSPrefetch;
 class nsICancelable;
 class nsIDNSRecord;
+class nsIDNSHTTPSSVCRecord;
 class nsIHttpChannelAuthProvider;
 class nsInputStreamPump;
 class nsITransportSecurityInfo;
@@ -75,7 +75,6 @@ class nsHttpChannel final : public HttpBaseChannel,
                             public nsIDNSListener,
                             public nsSupportsWeakReference,
                             public nsICorsPreflightCallback,
-                            public nsIChannelWithDivertableParentListener,
                             public nsIRaceCacheWithNetwork,
                             public nsIRequestTailUnblockCallback,
                             public nsITimerCallback {
@@ -95,7 +94,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
   NS_DECL_NSITHREADRETARGETABLEREQUEST
   NS_DECL_NSIDNSLISTENER
-  NS_DECL_NSICHANNELWITHDIVERTABLEPARENTLISTENER
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_HTTPCHANNEL_IID)
   NS_DECL_NSIRACECACHEWITHNETWORK
   NS_DECL_NSITIMERCALLBACK
@@ -154,6 +152,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_IMETHOD GetEncodedBodySize(uint64_t* aEncodedBodySize) override;
   // nsIHttpChannelInternal
   NS_IMETHOD SetupFallbackChannel(const char* aFallbackKey) override;
+  NS_IMETHOD GetIsAuthChannel(bool* aIsAuthChannel) override;
   NS_IMETHOD SetChannelIsForDownload(bool aChannelIsForDownload) override;
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp* aTimeStamp) override;
   NS_IMETHOD SetNavigationStartTimeStamp(TimeStamp aTimeStamp) override;
@@ -198,7 +197,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   void SetWarningReporter(HttpChannelSecurityWarningReporter* aReporter);
   HttpChannelSecurityWarningReporter* GetWarningReporter();
 
-  bool OnDataAlreadySent() { return mDataAlreadySent; }
+  bool DataSentToChildProcess() { return mDataSentToChildProcess; }
 
  public: /* internal necko use only */
   uint32_t GetRequestTime() const { return mRequestTime; }
@@ -441,8 +440,8 @@ class nsHttpChannel final : public HttpBaseChannel,
       HttpTransactionShell* aTransWithStickyConn,
       const std::function<nsresult(nsHttpChannel*, nsresult)>&
           aContinueOnStopRequestFunc);
-  [[nodiscard]] nsresult DoConnect(
-      HttpTransactionShell* aTransWithStickyConn = nullptr);
+  [[nodiscard]] MOZ_NEVER_INLINE nsresult
+  DoConnect(HttpTransactionShell* aTransWithStickyConn = nullptr);
   [[nodiscard]] nsresult DoConnectActual(
       HttpTransactionShell* aTransWithStickyConn);
   [[nodiscard]] nsresult ContinueOnStopRequestAfterAuthRetry(
@@ -559,11 +558,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   // writing a new entry. The content type is used in cache internally only.
   void SetCachedContentType();
 
-  // This function updates all the fields used by anti-tracking when a channel
-  // is opened. We have to do this in the parent to access cross-origin info
-  // that is not exposed to child processes.
-  void UpdateAntiTrackingInfo();
-
  private:
   // this section is for main-thread-only object
   // all the references need to be proxy released on main thread.
@@ -628,6 +622,8 @@ class nsHttpChannel final : public HttpBaseChannel,
   nsCOMPtr<nsICacheEntry> mOfflineCacheEntry;
   uint32_t mOfflineCacheLastModifiedTime;
 
+  nsTArray<StreamFilterRequest> mStreamFilterRequests;
+
   mozilla::TimeStamp mOnStartRequestTimestamp;
   // Timestamp of the time the channel was suspended.
   mozilla::TimeStamp mSuspendTimestamp;
@@ -657,6 +653,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   uint32_t mCacheQueueSizeWhenOpen;
 
   Atomic<bool, Relaxed> mCachedContentIsValid;
+  Atomic<bool> mIsAuthChannel;
   Atomic<bool> mAuthRetryPending;
 
   // state flags
@@ -732,9 +729,15 @@ class nsHttpChannel final : public HttpBaseChannel,
   // True only when we have computed the value of the top window origin.
   uint32_t mTopWindowOriginComputed : 1;
 
-  // True if the data has already been sent from the socket process to the
-  // content process.
-  uint32_t mDataAlreadySent : 1;
+  // True if the data will be sent from the socket process to the
+  // content process directly.
+  uint32_t mDataSentToChildProcess : 1;
+
+  uint32_t mUseHTTPSSVC : 1;
+  uint32_t mWaitHTTPSSVCRecord : 1;
+  // Only set to true when we receive an HTTPSSVC record before the transaction
+  // is created.
+  uint32_t mHTTPSSVCTelemetryReported : 1;
 
   // The origin of the top window, only valid when mTopWindowOriginComputed is
   // true.
@@ -781,8 +784,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   // If non-null, warnings should be reported to this object.
   RefPtr<HttpChannelSecurityWarningReporter> mWarningReporter;
 
-  RefPtr<ADivertableParentChannel> mParentChannel;
-
   // True if the channel is reading from cache.
   Atomic<bool> mIsReadingFromCache;
 
@@ -812,6 +813,9 @@ class nsHttpChannel final : public HttpBaseChannel,
   nsresult TriggerNetworkWithDelay(uint32_t aDelay);
   nsresult TriggerNetwork();
   void CancelNetworkRequest(nsresult aStatus);
+
+  void SetHTTPSSVCRecord(nsIDNSHTTPSSVCRecord* aRecord);
+
   // Timer used to delay the network request, or to trigger the network
   // request if retrieving the cache entry takes too long.
   nsCOMPtr<nsITimer> mNetworkTriggerTimer;
@@ -844,6 +848,10 @@ class nsHttpChannel final : public HttpBaseChannel,
   // We update the value of mProxyConnectResponseCode when OnStartRequest is
   // called and reset the value when we switch to another failover proxy.
   int32_t mProxyConnectResponseCode;
+
+  // If this is not null, this will be used to update the connection info in
+  // nsHttpChannel::BeginConnect().
+  nsCOMPtr<nsIDNSHTTPSSVCRecord> mHTTPSSVCRecord;
 
  protected:
   virtual void DoNotifyListenerCleanup() override;

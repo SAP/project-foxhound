@@ -4,7 +4,6 @@
 {
   'sources': [
     'aeskeywrap.c',
-    'alg2268.c',
     'cmac.c',
     'alghmac.c',
     'arcfive.c',
@@ -69,7 +68,7 @@
           'sources': [
             'arcfour-amd64-gas.s',
             'mpi/mpi_amd64.c',
-            'mpi/mpi_amd64_gas.s',
+            'mpi/mpi_amd64_common.S',
             'mpi/mp_comba.c',
           ],
           'conditions': [
@@ -167,6 +166,11 @@
         'deprecated/seed.c',
       ],
     }],
+    [ 'disable_deprecated_rc2==0', {
+      'sources': [
+        'deprecated/alg2268.c',
+      ],
+    }],
     [ 'fuzz==1', {
       'sources!': [ 'drbg.c' ],
       'sources': [ 'det_rng.c' ],
@@ -197,6 +201,18 @@
             'MP_ASSEMBLY_MULTIPLY',
             'MP_ASSEMBLY_SQUARE',
             'MP_ASSEMBLY_DIV_2DX1D',
+          ],
+        }, 'target_arch=="x64"', {
+          'sources': [
+            'mpi/mpi_amd64.c',
+            'mpi/mpi_amd64_common.S',
+            'mpi/mp_comba.c',
+          ],
+          'defines': [
+            'MP_IS_LITTLE_ENDIAN',
+            'MPI_AMD64',
+            'MP_ASSEMBLY_MULTIPLY',
+            'NSS_USE_COMBA',
           ],
         }],
       ],

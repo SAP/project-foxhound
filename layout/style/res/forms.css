@@ -86,14 +86,13 @@ input {
   display: inline-block;
   appearance: auto;
   -moz-default-appearance: textfield;
-  -moz-button-appearance: disallow;
   /* The sum of border and padding on block-start and block-end
      must be the same here, for buttons, and for <select> (including its
      internal padding magic) */
   padding: 1px;
   border: 2px inset ThreeDLightShadow;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  background-color: Field;
+  color: FieldText;
   font: -moz-field;
   text-rendering: optimizeLegibility;
   cursor: text;
@@ -110,13 +109,12 @@ input::placeholder {
 textarea {
   appearance: auto;
   -moz-default-appearance: textarea;
-  -moz-button-appearance: disallow;
   margin-block: 1px;
   border: 2px inset ThreeDLightShadow;
   /* The 1px inline padding is for parity with Win/IE */
   padding-inline: 1px;
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  background-color: Field;
+  color: FieldText;
   font: medium -moz-fixed;
   text-rendering: optimizeLegibility;
   vertical-align: text-bottom;
@@ -128,7 +126,7 @@ textarea {
 }
 
 /* A few properties that we don't want to inherit by default: */
-input, textarea, select, button, ::file-chooser-button {
+input, textarea, select, button, ::file-selector-button {
   text-align: initial;
   text-indent: initial;
   text-shadow: initial;
@@ -228,7 +226,7 @@ select {
   user-select: none;
   border-width: 2px;
   border-style: inset;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   /* No text-decoration reaching inside, by default */
   display: inline-block;
   page-break-inside: avoid;
@@ -242,17 +240,16 @@ select {
   padding-block: 0;
   appearance: auto;
   -moz-default-appearance: menulist;
-  -moz-button-appearance: allow;
 }
 
 select:-moz-select-list-box {
-  background-color: -moz-Field;
-  color: -moz-FieldText;
+  overflow: auto;
+  background-color: Field;
+  color: FieldText;
   vertical-align: text-bottom;
   padding-block: 1px;
   appearance: auto;
   -moz-default-appearance: listbox;
-  -moz-button-appearance: disallow;
 }
 
 select > button {
@@ -298,7 +295,7 @@ select > button[orientation="right"]:active {
 }
 
 *|*::-moz-display-comboboxcontrol-frame {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
   /* This block-start/end padding plus the combobox block-start/end border need to
      add up to the block-start/end borderpadding of text inputs and buttons */
   padding-block: 1px;
@@ -324,6 +321,7 @@ option {
   float: none !important;
   position: static !important;
   min-block-size: 1em;
+  padding-block: 2px;
   /*
    * Note that the "UA !important" tests in
    * layout/style/test/test_animations.html depend on this rule, because
@@ -339,8 +337,7 @@ option {
 }
 
 select > option {
-  padding-block: 0;
-  padding-inline: 3px 5px;
+  padding-inline: 4px;
 }
 
 option:checked {
@@ -520,7 +517,7 @@ input[type="search"] {
 /* Non text-related properties for buttons: these ones are shared with
    input[type="color"] */
 button,
-::file-chooser-button,
+::file-selector-button,
 input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
   appearance: auto;
   -moz-default-appearance: button;
@@ -539,7 +536,7 @@ input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
 /* Text-related properties for buttons: these ones are not shared with
    input[type="color"] */
 button,
-::file-chooser-button,
+::file-selector-button,
 input:is([type="reset"], [type="button"], [type="submit"]) {
   color: ButtonText;
   font: -moz-button;
@@ -554,7 +551,7 @@ input[type="color"] {
 }
 
 button,
-::file-chooser-button {
+::file-selector-button {
   /* Buttons should lay out like "normal" html, mostly */
   white-space: unset;
   text-indent: 0;
@@ -596,19 +593,19 @@ button,
   justify-items: inherit;
 }
 
-::file-chooser-button:hover,
+::file-selector-button:hover,
 button:hover,
 input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):hover {
   background-color: -moz-buttonhoverface;
 }
 
-::file-chooser-button:hover,
+::file-selector-button:hover,
 button:hover,
 input:is([type="reset"], [type="button"], [type="submit"]):hover {
   color: -moz-buttonhovertext;
 }
 
-::file-chooser-button:active:hover,
+::file-selector-button:active:hover,
 button:active:hover,
 input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):active:hover {
 %ifndef XP_MACOSX
@@ -619,7 +616,7 @@ input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):activ
   background-color: ButtonFace;
 }
 
-::file-chooser-button:active:hover,
+::file-selector-button:active:hover,
 button:active:hover,
 input:is([type="reset"], [type="button"], [type="submit"]):active:hover {
 %ifdef MOZ_WIDGET_GTK
@@ -640,7 +637,7 @@ input:is([type="reset"], [type="button"], [type="submit"]):active:hover {
   border-color: currentColor;
 }
 
-:is(:disabled, :disabled:active)::file-chooser-button,
+:is(:disabled, :disabled:active)::file-selector-button,
 button:is(:disabled, :disabled:active),
 input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):is(:disabled, :disabled:active),
 select:is(:disabled, :disabled:active) > button {
@@ -652,7 +649,7 @@ select:is(:disabled, :disabled:active) > button {
   cursor: unset;
 }
 
-:is(:disabled, :disabled:active)::file-chooser-button,
+:is(:disabled, :disabled:active)::file-selector-button,
 button:is(:disabled, :disabled:active),
 input:is([type="reset"], [type="button"], [type="submit"]):is(:disabled, :disabled:active),
 select:is(:disabled, :disabled:active) > button {
@@ -679,7 +676,6 @@ input[type="file"] {
 input[type="file"] > label {
   display: inline-block;
   min-inline-size: 12em;
-  padding-inline-start: 5px;
   text-align: match-parent;
 
   color: unset;
@@ -691,10 +687,11 @@ input[type="file"] > label {
 }
 
 /* button part of file selector */
-::file-chooser-button {
+::file-selector-button {
   font-size: unset;
   letter-spacing: unset;
   cursor: unset;
+  margin-inline-end: 5px;
 }
 
  /*
@@ -753,7 +750,6 @@ output:-moz-ui-invalid {
 progress {
   appearance: auto;
   -moz-default-appearance: progress-bar;
-  -moz-button-appearance: disallow;
   display: inline-block;
   vertical-align: -0.2em;
 
@@ -785,7 +781,6 @@ progress {
 meter {
   appearance: auto;
   -moz-default-appearance: meter;
-  -moz-button-appearance: disallow;
   display: inline-block;
   vertical-align: -0.2em;
   background: linear-gradient(#e6e6e6, #e6e6e6, #eeeeee 20%, #cccccc 45%, #cccccc 55%);
@@ -912,7 +907,7 @@ input[type="number"] {
   -moz-default-appearance: number-input;
 }
 
-input[type=number]::-moz-number-wrapper {
+input:is([type=number], [type=search])::-moz-complex-control-wrapper {
   /* Prevent styling that would change the type of frame we construct. */
   display: flex;
   float: none !important;
@@ -920,10 +915,10 @@ input[type=number]::-moz-number-wrapper {
   block-size: 100%;
   /* The align-self: center bit below allows the editor to be potentially
    * bigger than us. Clip it to match other text fields. */
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
-input[type=number]::-moz-text-control-editing-root {
+input:is([type=number], [type=search])::-moz-text-control-editing-root {
   display: block; /* Flex items must be block-level. Normally we do fixup in
                      the style system to ensure this, but that fixup is disabled
                      inside of form controls. So, we hardcode display here. */
@@ -1002,6 +997,20 @@ input[type="number"] > div > div > div:hover {
   background-color: lightblue;
 }
 
+input[type=search]::-moz-search-clear-button {
+  display: block;
+  cursor: default;
+  width: 1em;
+  height: 1em;
+  max-height: 1em;
+  margin-inline-start: 1px;
+  align-self: center;
+  background-image: url(chrome://global/skin/icons/searchfield-cancel.svg);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
 input[type="date"],
 input[type="time"] {
   overflow: hidden !important;
@@ -1013,9 +1022,10 @@ input:is([type="date"], [type="time"]):is(:disabled, :read-only) {
   color: GrayText;
 }
 
-:-moz-autofill, :-moz-autofill-preview {
+input:-moz-autofill, input:-moz-autofill-preview {
   filter: grayscale(21%) brightness(88%) contrast(161%) invert(10%) sepia(40%) saturate(206%);
 }
-:-moz-autofill-preview {
+
+input:-moz-autofill-preview {
   color: GrayText;
 }

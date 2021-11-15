@@ -766,7 +766,7 @@ void StyleSheet::ReplaceSync(const nsACString& aText, ErrorResult& aRv) {
   DropRuleList();
   Inner().mContents = std::move(rawContent);
   FinishParse();
-  RuleChanged(nullptr);
+  RuleChanged(nullptr, StyleRuleChangeKind::Generic);
 }
 
 nsresult StyleSheet::DeleteRuleFromGroup(css::GroupRule* aGroup,
@@ -806,9 +806,9 @@ void StyleSheet::RuleRemoved(css::Rule& aRule) {
   NOTIFY(RuleRemoved, (*this, aRule));
 }
 
-void StyleSheet::RuleChanged(css::Rule* aRule) {
+void StyleSheet::RuleChanged(css::Rule* aRule, StyleRuleChangeKind aKind) {
   SetModifiedRules();
-  NOTIFY(RuleChanged, (*this, aRule));
+  NOTIFY(RuleChanged, (*this, aRule, aKind));
 }
 
 // nsICSSLoaderObserver implementation
@@ -934,7 +934,7 @@ bool StyleSheet::AreRulesAvailable(nsIPrincipal& aSubjectPrincipal,
   // Rules are not available on incomplete sheets.
   if (!IsComplete()) {
     aRv.ThrowInvalidAccessError(
-        "Can't access rules of still-loading stylsheet");
+        "Can't access rules of still-loading style sheet");
     return false;
   }
   //-- Security check: Only scripts whose principal subsumes that of the

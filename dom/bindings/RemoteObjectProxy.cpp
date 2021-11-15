@@ -7,10 +7,10 @@
 #include "RemoteObjectProxy.h"
 #include "AccessCheck.h"
 #include "jsfriendapi.h"
+#include "js/Object.h"  // JS::GetClass
 #include "xpcprivate.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 bool RemoteObjectProxyBase::getOwnPropertyDescriptor(
     JSContext* aCx, JS::Handle<JSObject*> aProxy, JS::Handle<jsid> aId,
@@ -142,7 +142,7 @@ void RemoteObjectProxyBase::GetOrCreateProxyObject(
     // During a transplant, we put an object that is temporarily not a
     // proxy object into the map. Make sure that we don't return one of
     // these objects in the middle of a transplant.
-    MOZ_RELEASE_ASSERT(js::GetObjectClass(aProxy) == aClasp);
+    MOZ_RELEASE_ASSERT(JS::GetClass(aProxy) == aClasp);
 
     return;
   }
@@ -168,7 +168,7 @@ void RemoteObjectProxyBase::GetOrCreateProxyObject(
   // not have the same class as aClasp to ensure that the release assert earlier
   // in this function will actually fire if we try to return a proxy object in
   // the middle of a transplant.
-  MOZ_ASSERT_IF(aTransplantTo, js::GetObjectClass(aTransplantTo) != aClasp);
+  MOZ_ASSERT_IF(aTransplantTo, JS::GetClass(aTransplantTo) != aClasp);
 
   if (!map.add(result, aNative, aTransplantTo ? aTransplantTo : obj)) {
     return;
@@ -179,5 +179,4 @@ void RemoteObjectProxyBase::GetOrCreateProxyObject(
 
 const char RemoteObjectProxyBase::sCrossOriginProxyFamily = 0;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -21,6 +21,7 @@
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsAtom.h"
+#include "nsDocShell.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
@@ -242,7 +243,7 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
     return false;
   }
 
-  PresShell* presShell = aPresContext->GetPresShell();
+  RefPtr<PresShell> presShell = aPresContext->GetPresShell();
 
   // get selection and root content
   nsCOMPtr<nsISelectionController> selCon;
@@ -272,10 +273,11 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
       return false;
     }
 
-    mRootContent =
-        selRange->GetStartContainer()->GetSelectionRootContent(presShell);
+    nsCOMPtr<nsINode> startContainer = selRange->GetStartContainer();
+    mRootContent = startContainer->GetSelectionRootContent(presShell);
   } else {
-    mRootContent = mEditableNode->GetSelectionRootContent(presShell);
+    nsCOMPtr<nsINode> editableNode = mEditableNode;
+    mRootContent = editableNode->GetSelectionRootContent(presShell);
   }
   if (!mRootContent && mEditableNode->IsDocument()) {
     // The document node is editable, but there are no contents, this document
@@ -385,7 +387,7 @@ void IMEContentObserver::ObserveEditableNode() {
     mRootContent->AddMutationObserver(this);
     // If it's in a document (should be so), we can use document observer to
     // reduce redundant computation of text change offsets.
-    Document* doc = mRootContent->GetComposedDoc();
+    dom::Document* doc = mRootContent->GetComposedDoc();
     if (doc) {
       RefPtr<DocumentObserver> documentObserver = mDocumentObserver;
       documentObserver->Observe(doc);
@@ -475,6 +477,9 @@ nsPresContext* IMEContentObserver::GetPresContext() const {
 void IMEContentObserver::Destroy() {
   // WARNING: When you change this method, you have to check Unlink() too.
 
+  // Note that don't send any notifications later from here.  I.e., notify
+  // IMEStateManager of the blur synchronously because IMEStateManager needs to
+  // stop notifying the main process if this is requested by the main process.
   NotifyIMEOfBlur();
   UnregisterObservers();
   Clear();
@@ -583,7 +588,7 @@ nsresult IMEContentObserver::GetSelectionAndRoot(
   return NS_OK;
 }
 
-void IMEContentObserver::OnSelectionChange(Selection& aSelection) {
+void IMEContentObserver::OnSelectionChange(dom::Selection& aSelection) {
   if (!mIsObserving) {
     return;
   }
@@ -2008,12 +2013,12 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(IMEContentObserver::DocumentObserver)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(IMEContentObserver::DocumentObserver)
 
-void IMEContentObserver::DocumentObserver::Observe(Document* aDocument) {
+void IMEContentObserver::DocumentObserver::Observe(dom::Document* aDocument) {
   MOZ_ASSERT(aDocument);
 
   // Guarantee that aDocument won't be destroyed during a call of
   // StopObserving().
-  RefPtr<Document> newDocument = aDocument;
+  RefPtr<dom::Document> newDocument = aDocument;
 
   StopObserving();
 
@@ -2030,7 +2035,7 @@ void IMEContentObserver::DocumentObserver::StopObserving() {
   RefPtr<IMEContentObserver> observer = std::move(mIMEContentObserver);
 
   // Stop observing the document first.
-  RefPtr<Document> document = std::move(mDocument);
+  RefPtr<dom::Document> document = std::move(mDocument);
   document->RemoveObserver(this);
 
   // Notify IMEContentObserver of ending of document updates if this already
@@ -2049,7 +2054,8 @@ void IMEContentObserver::DocumentObserver::Destroy() {
   mIMEContentObserver = nullptr;
 }
 
-void IMEContentObserver::DocumentObserver::BeginUpdate(Document* aDocument) {
+void IMEContentObserver::DocumentObserver::BeginUpdate(
+    dom::Document* aDocument) {
   if (NS_WARN_IF(Destroyed()) || NS_WARN_IF(!IsObserving())) {
     return;
   }
@@ -2057,7 +2063,7 @@ void IMEContentObserver::DocumentObserver::BeginUpdate(Document* aDocument) {
   mIMEContentObserver->BeginDocumentUpdate();
 }
 
-void IMEContentObserver::DocumentObserver::EndUpdate(Document* aDocument) {
+void IMEContentObserver::DocumentObserver::EndUpdate(dom::Document* aDocument) {
   if (NS_WARN_IF(Destroyed()) || NS_WARN_IF(!IsObserving()) ||
       NS_WARN_IF(!IsUpdating())) {
     return;

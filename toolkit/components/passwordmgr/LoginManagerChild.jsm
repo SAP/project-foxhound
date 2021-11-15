@@ -400,9 +400,17 @@ const observer = {
           (aEvent.keyCode == aEvent.DOM_VK_TAB ||
             aEvent.keyCode == aEvent.DOM_VK_RETURN)
         ) {
-          LoginManagerChild.forWindow(window).onUsernameAutocompleted(
-            aEvent.composedTarget
-          );
+          const autofillForm =
+            LoginHelper.autofillForms &&
+            !PrivateBrowsingUtils.isContentWindowPrivate(
+              ownerDocument.defaultView
+            );
+
+          if (autofillForm) {
+            LoginManagerChild.forWindow(window).onUsernameAutocompleted(
+              aEvent.composedTarget
+            );
+          }
         }
         break;
       }
@@ -599,11 +607,12 @@ this.LoginManagerChild = class LoginManagerChild extends JSWindowActorChild {
         }
 
         this._fieldsWithPasswordGenerationForcedOn.add(inputElement);
-        // Clear the cache of previous autocomplete results so that the
-        // generation option appears.
-        gFormFillService.QueryInterface(Ci.nsIAutoCompleteInput);
-        gFormFillService.controller.resetInternalState();
-        gFormFillService.showPopup();
+        this.repopulateAutocompletePopup();
+        break;
+      }
+
+      case "PasswordManager:repopulateAutocompletePopup": {
+        this.repopulateAutocompletePopup();
         break;
       }
 
@@ -618,6 +627,13 @@ this.LoginManagerChild = class LoginManagerChild extends JSWindowActorChild {
     }
 
     return undefined;
+  }
+
+  repopulateAutocompletePopup() {
+    // Clear the cache of previous autocomplete results to show new options.
+    gFormFillService.QueryInterface(Ci.nsIAutoCompleteInput);
+    gFormFillService.controller.resetInternalState();
+    gFormFillService.showPopup();
   }
 
   shouldIgnoreLoginManagerEvent(event) {
@@ -2046,7 +2062,6 @@ this.LoginManagerChild = class LoginManagerChild extends JSWindowActorChild {
       form.ownerDocument.documentURI
     );
     let formActionOrigin = LoginHelper.getFormActionOrigin(form);
-
     logins = logins.filter(l => {
       let formActionMatches = LoginHelper.isOriginMatching(
         l.formActionOrigin,
@@ -2054,7 +2069,7 @@ this.LoginManagerChild = class LoginManagerChild extends JSWindowActorChild {
         {
           schemeUpgrades: LoginHelper.schemeUpgrades,
           acceptWildcardMatch: true,
-          acceptDifferentSubdomains: false,
+          acceptDifferentSubdomains: true,
         }
       );
       let formOriginMatches = LoginHelper.isOriginMatching(
@@ -2143,6 +2158,7 @@ this.LoginManagerChild = class LoginManagerChild extends JSWindowActorChild {
       INSECURE: 10,
       PASSWORD_AUTOCOMPLETE_NEW_PASSWORD: 11,
       TYPE_NO_LONGER_PASSWORD: 12,
+      FORM_IN_CROSSORIGIN_SUBFRAME: 13,
     };
 
     // Heuristically determine what the user/pass fields are
@@ -2207,6 +2223,15 @@ this.LoginManagerChild = class LoginManagerChild extends JSWindowActorChild {
       if (usernameField) {
         gFormFillService.markAsLoginManagerField(usernameField);
         usernameField.addEventListener("keydown", observer);
+      }
+
+      if (
+        !userTriggered &&
+        !passwordField.ownerGlobal.windowGlobalChild.sameOriginWithTop
+      ) {
+        log("not filling form; it is in a cross-origin subframe");
+        autofillResult = AUTOFILL_RESULT.FORM_IN_CROSSORIGIN_SUBFRAME;
+        return;
       }
 
       if (!userTriggered) {

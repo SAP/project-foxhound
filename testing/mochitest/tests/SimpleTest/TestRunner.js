@@ -85,6 +85,11 @@ function testInXOriginFrame() {
   }
 }
 
+function testInDifferentProcess() {
+  // Check if the test running in an iframe that is loaded in a different process.
+  return SpecialPowers.Cu.isRemoteProxy($("testframe").contentWindow);
+}
+
 /**
  * TestRunner: A test runner for SimpleTest
  * TODO:
@@ -285,7 +290,7 @@ TestRunner._dumpMessage = function(message) {
   }
 };
 
-// From https://dxr.mozilla.org/mozilla-central/source/testing/modules/StructuredLog.jsm
+// From https://searchfox.org/mozilla-central/source/testing/modules/StructuredLog.jsm
 TestRunner.structuredLogger = new StructuredLogger(
   "mochitest",
   TestRunner._dumpMessage
@@ -533,7 +538,7 @@ TestRunner.runNextTest = function() {
       // No |$('testframe').contentWindow|, so manually update: ...
       // ... the log,
       TestRunner.structuredLogger.error(
-        "SimpleTest/TestRunner.js | No checks actually run"
+        "TEST-UNEXPECTED-FAIL | SimpleTest/TestRunner.js | No checks actually run"
       );
       // ... the count,
       $("fail-count").innerHTML = 1;
@@ -764,7 +769,8 @@ TestRunner.testFinished = function(tests) {
                 testwin.SimpleTest._tests[testwin.SimpleTest.testsLength + i]
                   .name;
               TestRunner.structuredLogger.error(
-                TestRunner.currentTestURL +
+                "TEST-UNEXPECTED-FAIL | " +
+                  TestRunner.currentTestURL +
                   " logged result after SimpleTest.finish(): " +
                   wrongtestname
               );
@@ -786,12 +792,30 @@ TestRunner.testFinished = function(tests) {
   });
 };
 
+/**
+ * This stub is called by XOrigin Tests to report assertion count.
+ **/
+TestRunner._xoriginAssertionCount = 0;
+TestRunner.addAssertionCount = function(count) {
+  if (!testInXOriginFrame()) {
+    TestRunner.error(
+      `addAssertionCount should only be called by a cross origin test`
+    );
+    return;
+  }
+
+  if (testInDifferentProcess()) {
+    TestRunner._xoriginAssertionCount += count;
+  }
+};
+
 TestRunner.testUnloaded = function() {
   // If we're in a debug build, check assertion counts.  This code is
   // similar to the code in Tester_nextTest in browser-test.js used
   // for browser-chrome mochitests.
   if (SpecialPowers.isDebugBuild) {
-    var newAssertionCount = SpecialPowers.assertionCount();
+    var newAssertionCount =
+      SpecialPowers.assertionCount() + TestRunner._xoriginAssertionCount;
     var numAsserts = newAssertionCount - TestRunner._lastAssertionCount;
     TestRunner._lastAssertionCount = newAssertionCount;
 
@@ -945,7 +969,6 @@ var xOriginDispatchMap = {
   expectAssertions: TestRunner.expectAssertions,
   expectChildProcessCrash: TestRunner.expectChildProcessCrash,
   requestLongerTimeout: TestRunner.requestLongerTimeout,
-  testUnloaded: TestRunner.testUnloaded,
   "structuredLogger.deactivateBuffering":
     TestRunner.structuredLogger.deactivateBuffering,
   "structuredLogger.activateBuffering":
@@ -953,6 +976,7 @@ var xOriginDispatchMap = {
   "structuredLogger.testStatus": TestRunner.structuredLogger.testStatus,
   "structuredLogger.info": TestRunner.structuredLogger.info,
   testFinished: TestRunner.testFinished,
+  addAssertionCount: TestRunner.addAssertionCount,
 };
 
 function xOriginTestRunnerHandler(event) {

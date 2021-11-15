@@ -20,8 +20,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Menu)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 enum MenuType : uint8_t { MENU_TYPE_CONTEXT = 1, MENU_TYPE_TOOLBAR };
 
@@ -78,7 +77,7 @@ void HTMLMenuElement::Build(nsIMenuBuilder* aBuilder) {
     return;
   }
 
-  BuildSubmenu(EmptyString(), this, aBuilder);
+  BuildSubmenu(u""_ns, this, aBuilder);
 }
 
 nsresult HTMLMenuElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -213,5 +212,4 @@ JSObject* HTMLMenuElement::WrapNode(JSContext* aCx,
   return HTMLMenuElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

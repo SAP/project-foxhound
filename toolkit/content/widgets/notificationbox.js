@@ -191,6 +191,10 @@
           }
 
           buttonElem.classList.add("notification-button");
+          if (button.primary) {
+            buttonElem.classList.add("primary");
+          }
+
           newitem.messageDetails.appendChild(buttonElem);
           buttonElem.buttonInfo = button;
         }
@@ -283,7 +287,7 @@
         if (notification.persistence) {
           notification.persistence--;
         } else if (Date.now() > notification.timeout) {
-          this.removeNotification(notification);
+          this.removeNotification(notification, true);
         }
       }
     }

@@ -31,6 +31,7 @@ class nsPrintSettingsGTK : public nsPrintSettings {
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_PRINTSETTINGSGTK_IID)
 
   nsPrintSettingsGTK();
+  explicit nsPrintSettingsGTK(const PrintSettingsInitializer& aSettings);
 
   // We're overriding these methods because we want to read/write with GTK
   // objects, not local variables. This allows a simpler settings implementation
@@ -44,23 +45,6 @@ class nsPrintSettingsGTK : public nsPrintSettings {
 
   GtkPrinter* GetGtkPrinter() { return mGTKPrinter; };
   void SetGtkPrinter(GtkPrinter* aPrinter);
-
-  bool GetForcePrintSelectionOnly() { return mPrintSelectionOnly; };
-  void SetForcePrintSelectionOnly(bool aPrintSelectionOnly) {
-    mPrintSelectionOnly = aPrintSelectionOnly;
-  };
-
-  // If not printing the selection, this is stored in the GtkPrintSettings.
-  // Printing the selection is stored as a protected boolean
-  // (mPrintSelectionOnly).
-  NS_IMETHOD GetPrintRange(int16_t* aPrintRange) override;
-  NS_IMETHOD SetPrintRange(int16_t aPrintRange) override;
-
-  // The page range is stored as as single range in the GtkPrintSettings object.
-  NS_IMETHOD GetStartPageRange(int32_t* aStartPageRange) override;
-  NS_IMETHOD SetStartPageRange(int32_t aStartPageRange) override;
-  NS_IMETHOD GetEndPageRange(int32_t* aEndPageRange) override;
-  NS_IMETHOD SetEndPageRange(int32_t aEndPageRange) override;
 
   // Reversed, color, orientation and file name are all stored in the
   // GtkPrintSettings. Orientation is also stored in the GtkPageSetup and its
@@ -92,8 +76,8 @@ class nsPrintSettingsGTK : public nsPrintSettings {
 
   // A name recognised by GTK is strongly advised here, as this is used to
   // create a GtkPaperSize.
-  NS_IMETHOD GetPaperName(nsAString& aPaperName) override;
-  NS_IMETHOD SetPaperName(const nsAString& aPaperName) override;
+  NS_IMETHOD GetPaperId(nsAString& aPaperId) override;
+  NS_IMETHOD SetPaperId(const nsAString& aPaperId) override;
 
   NS_IMETHOD SetUnwriteableMarginInTwips(
       nsIntMargin& aUnwriteableMargin) override;
@@ -115,7 +99,8 @@ class nsPrintSettingsGTK : public nsPrintSettings {
 
   NS_IMETHOD SetupSilentPrinting() override;
 
-  NS_IMETHOD GetPageRanges(nsTArray<int32_t>& aPages) override;
+  NS_IMETHOD SetPageRanges(const nsTArray<int32_t>&) override;
+  NS_IMETHOD GetPageRanges(nsTArray<int32_t>&) override;
 
   NS_IMETHOD GetResolution(int32_t* aResolution) override;
   NS_IMETHOD SetResolution(int32_t aResolution) override;
@@ -153,8 +138,6 @@ class nsPrintSettingsGTK : public nsPrintSettings {
   GtkPageSetup* mPageSetup;
   GtkPrintSettings* mPrintSettings;
   GtkPrinter* mGTKPrinter;
-
-  bool mPrintSelectionOnly;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsPrintSettingsGTK, NS_PRINTSETTINGSGTK_IID)

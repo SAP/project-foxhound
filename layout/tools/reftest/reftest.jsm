@@ -162,11 +162,11 @@ function OnRefTestLoad(win)
     var env = Cc["@mozilla.org/process/environment;1"].
               getService(Ci.nsIEnvironment);
 
+    g.browserIsRemote = Services.appinfo.browserTabsRemoteAutostart;
+    g.browserIsFission = Services.appinfo.fissionAutostart;
+
     var prefs = Cc["@mozilla.org/preferences-service;1"].
                 getService(Ci.nsIPrefBranch);
-    g.browserIsRemote = prefs.getBoolPref("browser.tabs.remote.autostart", false);
-    g.browserIsFission = prefs.getBoolPref("fission.autostart", false);
-
     g.browserIsIframe = prefs.getBoolPref("reftest.browser.iframe.enabled", false);
 
     g.logLevel = prefs.getStringPref("reftest.logLevel", "info");
@@ -732,35 +732,48 @@ async function StartCurrentURI(aURLTargetType)
         var badPref = undefined;
         try {
             prefSettings.forEach(function(ps) {
-                var oldVal;
-                if (ps.type == PREF_BOOLEAN) {
-                    try {
-                        oldVal = prefs.getBoolPref(ps.name);
-                    } catch (e) {
-                        badPref = "boolean preference '" + ps.name + "'";
-                        throw "bad pref";
-                    }
-                } else if (ps.type == PREF_STRING) {
-                    try {
-                        oldVal = prefs.getStringPref(ps.name);
-                    } catch (e) {
-                        badPref = "string preference '" + ps.name + "'";
-                        throw "bad pref";
-                    }
-                } else if (ps.type == PREF_INTEGER) {
-                    try {
-                        oldVal = prefs.getIntPref(ps.name);
-                    } catch (e) {
-                        badPref = "integer preference '" + ps.name + "'";
-                        throw "bad pref";
-                    }
-                } else {
-                    throw "internal error - unknown preference type";
+                let prefExists = false;
+                try {
+                    let prefType = prefs.getPrefType(ps.name);
+                    prefExists = (prefType != prefs.PREF_INVALID);
+                } catch (e) {
                 }
-                if (oldVal != ps.value) {
+                if (!prefExists) {
+                    logger.info("Pref " + ps.name + " not found, will be added");
+                }
+
+                let oldVal = undefined;
+                if (prefExists) {
+                    if (ps.type == PREF_BOOLEAN) {
+                        try {
+                            oldVal = prefs.getBoolPref(ps.name);
+                        } catch (e) {
+                            badPref = "boolean preference '" + ps.name + "'";
+                            throw "bad pref";
+                        }
+                    } else if (ps.type == PREF_STRING) {
+                        try {
+                            oldVal = prefs.getStringPref(ps.name);
+                        } catch (e) {
+                            badPref = "string preference '" + ps.name + "'";
+                            throw "bad pref";
+                        }
+                    } else if (ps.type == PREF_INTEGER) {
+                        try {
+                            oldVal = prefs.getIntPref(ps.name);
+                        } catch (e) {
+                            badPref = "integer preference '" + ps.name + "'";
+                            throw "bad pref";
+                        }
+                    } else {
+                        throw "internal error - unknown preference type";
+                    }
+                }
+                if (!prefExists || oldVal != ps.value) {
                     g.prefsToRestore.push( { name: ps.name,
                                             type: ps.type,
-                                            value: oldVal } );
+                                            value: oldVal,
+                                            prefExisted: prefExists } );
                     var value = ps.value;
                     if (ps.type == PREF_BOOLEAN) {
                         prefs.setBoolPref(ps.name, value);
@@ -1470,16 +1483,21 @@ function RestoreChangedPreferences()
                     getService(Ci.nsIPrefBranch);
         g.prefsToRestore.reverse();
         g.prefsToRestore.forEach(function(ps) {
-            var value = ps.value;
-            if (ps.type == PREF_BOOLEAN) {
-                prefs.setBoolPref(ps.name, value);
-            } else if (ps.type == PREF_STRING) {
-                prefs.setStringPref(ps.name, value);
-                value = '"' + value + '"';
-            } else if (ps.type == PREF_INTEGER) {
-                prefs.setIntPref(ps.name, value);
+            if (ps.prefExisted) {
+                var value = ps.value;
+                if (ps.type == PREF_BOOLEAN) {
+                    prefs.setBoolPref(ps.name, value);
+                } else if (ps.type == PREF_STRING) {
+                    prefs.setStringPref(ps.name, value);
+                    value = '"' + value + '"';
+                } else if (ps.type == PREF_INTEGER) {
+                    prefs.setIntPref(ps.name, value);
+                }
+                logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
+            } else {
+                prefs.clearUserPref(ps.name);
+                logger.info("RESTORE PREFERENCE pref(" + ps.name + ", <no value set>) (clearing user pref)");
             }
-            logger.info("RESTORE PREFERENCE pref(" + ps.name + "," + value + ")");
         });
         g.prefsToRestore = [];
     }
@@ -1675,16 +1693,19 @@ function RecvStartPrint(isPrintSelection, printRange)
     ps.showPrintProgress = false;
     ps.printBGImages = true;
     ps.printBGColors = true;
+    ps.unwriteableMarginTop = 0;
+    ps.unwriteableMarginRight = 0;
+    ps.unwriteableMarginLeft = 0;
+    ps.unwriteableMarginBottom = 0;
     ps.printToFile = true;
     ps.toFileName = file.path;
     ps.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
-    if (isPrintSelection) {
-        ps.printRange = Ci.nsIPrintSettings.kRangeSelection;
-    } else if (printRange) {
-        ps.printRange = Ci.nsIPrintSettings.kRangeSpecifiedPageRange;
-        let range = printRange.split('-');
-        ps.startPageRange = +range[0] || 1;
-        ps.endPageRange = +range[1] || 1;
+    ps.printSelectionOnly = isPrintSelection;
+    if (printRange) {
+        ps.pageRanges = printRange.split(',').map(function(r) {
+            let range = r.split('-');
+            return [+range[0] || 1, +range[1] || 1]
+        }).flat();
     }
 
     var prefs = Cc["@mozilla.org/preferences-service;1"].

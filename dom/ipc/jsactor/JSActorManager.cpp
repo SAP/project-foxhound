@@ -6,13 +6,16 @@
 
 #include "mozilla/dom/JSActorManager.h"
 #include "mozilla/dom/JSActorService.h"
+#include "mozilla/dom/PWindowGlobal.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 #include "mozJSComponentLoader.h"
 #include "jsapi.h"
+#include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
-already_AddRefed<JSActor> JSActorManager::GetActor(const nsACString& aName,
+already_AddRefed<JSActor> JSActorManager::GetActor(JSContext* aCx,
+                                                   const nsACString& aName,
                                                    ErrorResult& aRv) {
   MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
 
@@ -47,32 +50,31 @@ already_AddRefed<JSActor> JSActorManager::GetActor(const nsACString& aName,
   bool isParent = nativeActor->GetSide() == mozilla::ipc::ParentSide;
   auto& side = isParent ? protocol->Parent() : protocol->Child();
 
-  // Constructing an actor requires a running script, so push an AutoEntryScript
-  // onto the stack.
-  AutoEntryScript aes(xpc::PrivilegedJunkScope(), "JSActor construction");
-  JSContext* cx = aes.cx();
+  // We're about to construct the actor, so make sure we're in the JSM realm
+  // while importing etc.
+  JSAutoRealm ar(aCx, xpc::PrivilegedJunkScope());
 
   // Load the module using mozJSComponentLoader.
   RefPtr<mozJSComponentLoader> loader = mozJSComponentLoader::Get();
   MOZ_ASSERT(loader);
 
   // If a module URI was provided, use it to construct an instance of the actor.
-  JS::RootedObject actorObj(cx);
+  JS::RootedObject actorObj(aCx);
   if (side.mModuleURI) {
-    JS::RootedObject global(cx);
-    JS::RootedObject exports(cx);
-    aRv = loader->Import(cx, side.mModuleURI.ref(), &global, &exports);
+    JS::RootedObject global(aCx);
+    JS::RootedObject exports(aCx);
+    aRv = loader->Import(aCx, side.mModuleURI.ref(), &global, &exports);
     if (aRv.Failed()) {
       return nullptr;
     }
     MOZ_ASSERT(exports, "null exports!");
 
     // Load the specific property from our module.
-    JS::RootedValue ctor(cx);
+    JS::RootedValue ctor(aCx);
     nsAutoCString ctorName(aName);
     ctorName.Append(isParent ? "Parent"_ns : "Child"_ns);
-    if (!JS_GetProperty(cx, exports, ctorName.get(), &ctor)) {
-      aRv.NoteJSContextException(cx);
+    if (!JS_GetProperty(aCx, exports, ctorName.get(), &ctor)) {
+      aRv.NoteJSContextException(aCx);
       return nullptr;
     }
 
@@ -83,8 +85,8 @@ already_AddRefed<JSActor> JSActorManager::GetActor(const nsACString& aName,
     }
 
     // Invoke the constructor loaded from the module.
-    if (!JS::Construct(cx, ctor, JS::HandleValueArray::empty(), &actorObj)) {
-      aRv.NoteJSContextException(cx);
+    if (!JS::Construct(aCx, ctor, JS::HandleValueArray::empty(), &actorObj)) {
+      aRv.NoteJSContextException(aCx);
       return nullptr;
     }
   }
@@ -107,9 +109,10 @@ already_AddRefed<JSActor> JSActorManager::GetActor(const nsACString& aName,
     }                                      \
   } while (0)
 
-void JSActorManager::ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
-                                       ipc::StructuredCloneData&& aData,
-                                       ipc::StructuredCloneData&& aStack) {
+void JSActorManager::ReceiveRawMessage(
+    const JSActorMessageMeta& aMetadata,
+    Maybe<ipc::StructuredCloneData>&& aData,
+    Maybe<ipc::StructuredCloneData>&& aStack) {
   MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
 
   CrashReporter::AutoAnnotateCrashReport autoActorName(
@@ -134,9 +137,13 @@ void JSActorManager::ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
   Maybe<JS::AutoSetAsyncStackForNewCalls> stackSetter;
   {
     JS::Rooted<JS::Value> stackVal(cx);
-    aStack.Read(cx, &stackVal, error);
-    if (error.Failed()) {
-      return;
+    if (aStack) {
+      aStack->Read(cx, &stackVal, error);
+      if (error.Failed()) {
+        error.SuppressException();
+        JS_ClearPendingException(cx);
+        stackVal.setUndefined();
+      }
     }
 
     if (stackVal.isObject()) {
@@ -150,16 +157,18 @@ void JSActorManager::ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
     }
   }
 
-  RefPtr<JSActor> actor = GetActor(aMetadata.actorName(), error);
+  RefPtr<JSActor> actor = GetActor(cx, aMetadata.actorName(), error);
   if (error.Failed()) {
     return;
   }
 
   JS::Rooted<JS::Value> data(cx);
-  aData.Read(cx, &data, error);
-  if (error.Failed()) {
-    CHILD_DIAGNOSTIC_ASSERT(false, "Should not receive non-decodable data");
-    return;
+  if (aData) {
+    aData->Read(cx, &data, error);
+    if (error.Failed()) {
+      CHILD_DIAGNOSTIC_ASSERT(false, "Should not receive non-decodable data");
+      return;
+    }
   }
 
   switch (aMetadata.kind()) {
@@ -169,8 +178,11 @@ void JSActorManager::ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
       break;
 
     case JSActorMessageKind::Message:
+      actor->ReceiveMessage(cx, aMetadata, data, error);
+      break;
+
     case JSActorMessageKind::Query:
-      actor->ReceiveMessageOrQuery(cx, aMetadata, data, error);
+      actor->ReceiveQuery(cx, aMetadata, data, error);
       break;
 
     default:
@@ -179,20 +191,8 @@ void JSActorManager::ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
 }
 
 void JSActorManager::JSActorWillDestroy() {
-  MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
-  CrashReporter::AutoAnnotateCrashReport autoMessageName(
-      CrashReporter::Annotation::JSActorMessage, "<WillDestroy>"_ns);
-
-  // Make a copy so that we can avoid potential iterator invalidation when
-  // calling the user-provided Destroy() methods.
-  nsTArray<RefPtr<JSActor>> actors(mJSActors.Count());
   for (auto& entry : mJSActors) {
-    actors.AppendElement(entry.GetData());
-  }
-  for (auto& actor : actors) {
-    CrashReporter::AutoAnnotateCrashReport autoActorName(
-        CrashReporter::Annotation::JSActorName, actor->Name());
-    actor->StartDestroy();
+    entry.GetData()->StartDestroy();
   }
 }
 
@@ -221,5 +221,4 @@ void JSActorManager::JSActorUnregister(const nsACString& aName) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

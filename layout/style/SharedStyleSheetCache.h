@@ -98,7 +98,7 @@ class SharedStyleSheetCache final : public nsIMemoryReporter {
   // be called when the document goes away, or when its principal changes.
   void UnregisterLoader(css::Loader&);
 
-  static void ClearForTest();
+  static void Clear(nsIPrincipal* aForPrincipal = nullptr);
 
  private:
   static already_AddRefed<SharedStyleSheetCache> Create();
@@ -129,7 +129,8 @@ class SharedStyleSheetCache final : public nsIMemoryReporter {
   //
   // Note that we hold on to all sheet loads, even if in the end they happen not
   // to be cacheable.
-  nsDataHashtable<SheetLoadDataHashKey, WeakPtr<css::SheetLoadData>> mLoadingDatas;
+  nsDataHashtable<SheetLoadDataHashKey, WeakPtr<css::SheetLoadData>>
+      mLoadingDatas;
 
   // An origin-to-number-of-registered-documents count, in order to manage cache
   // eviction as described in RegisterLoader / UnregisterLoader.

@@ -27,9 +27,10 @@
 #include "harfbuzz/hb.h"
 #include "nsUnicodeScriptCodes.h"
 #include "nsColor.h"
+#include "nsFrameList.h"
 #include "X11UndefineNone.h"
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 #  include <stdio.h>
 #endif
 
@@ -756,8 +757,8 @@ class gfxTextRun : public gfxShapedText {
     return advance;
   }
 
-#ifdef DEBUG
-  void Dump(FILE* aOutput);
+#ifdef DEBUG_FRAME_DUMP
+  void Dump(FILE* aOutput = stderr);
 #endif
 
  protected:
@@ -931,7 +932,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
   Shutdown();  // platform must call this to release the languageAtomService
 
   gfxFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
-               const gfxFontStyle* aStyle, gfxTextPerfMetrics* aTextPerf,
+               const gfxFontStyle* aStyle, nsAtom* aLanguage,
+               bool aExplicitLanguage, gfxTextPerfMetrics* aTextPerf,
                FontMatchingStats* aFontMatchingStats,
                gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize);
 
@@ -1091,6 +1093,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
     }
   }
 
+  nsAtom* Language() const { return mLanguage.get(); }
+
  protected:
   friend class mozilla::PostTraversalTask;
 
@@ -1112,10 +1116,12 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // search through pref fonts for a character, return nullptr if no matching
   // pref font
-  gfxFont* WhichPrefFontSupportsChar(uint32_t aCh, uint32_t aNextCh);
+  gfxFont* WhichPrefFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
+                                     eFontPresentation aPresentation);
 
   gfxFont* WhichSystemFontSupportsChar(uint32_t aCh, uint32_t aNextCh,
-                                       Script aRunScript);
+                                       Script aRunScript,
+                                       eFontPresentation aPresentation);
 
   template <typename T>
   void ComputeRanges(nsTArray<TextRange>& aRanges, const T* aString,
@@ -1302,7 +1308,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
     bool IsSharedFamily() const { return mIsSharedFamily; }
     bool IsUserFontContainer() const {
-      return FontEntry()->mIsUserFontContainer;
+      gfxFontEntry* fe = FontEntry();
+      return fe && fe->mIsUserFontContainer;
     }
     bool IsLoading() const { return mLoading; }
     bool IsInvalid() const { return mInvalid; }
@@ -1319,8 +1326,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
         return false;
       }
       MOZ_ASSERT(IsUserFontContainer());
-      return static_cast<gfxUserFontEntry*>(FontEntry())
-          ->CharacterInUnicodeRange(aCh);
+      auto* ufe = static_cast<gfxUserFontEntry*>(FontEntry());
+      return ufe && ufe->CharacterInUnicodeRange(aCh);
     }
 
     void SetFont(gfxFont* aFont) {
@@ -1373,6 +1380,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
   RefPtr<gfxFont> mDefaultFont;
   gfxFontStyle mStyle;
 
+  RefPtr<nsAtom> mLanguage;
+
   gfxFloat mUnderlineOffset;
   gfxFloat mHyphenWidth;
   gfxFloat mDevToCssSize;
@@ -1400,6 +1409,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
   bool mSkipDrawing;  // hide text while waiting for a font
                       // download to complete (or fallback
                       // timer to fire)
+
+  bool mExplicitLanguage;  // Does mLanguage come from an explicit attribute?
 
   uint32_t mFontListGeneration = 0;  // platform font list generation for this
                                      // fontgroup
@@ -1466,12 +1477,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // Helper for font-matching:
   // search all faces in a family for a fallback in cases where it's unclear
   // whether the family might have a font for a given character
-  gfxFont* FindFallbackFaceForChar(const FamilyFace& aFamily, uint32_t aCh);
+  gfxFont* FindFallbackFaceForChar(const FamilyFace& aFamily, uint32_t aCh,
+                                   uint32_t aNextCh,
+                                   eFontPresentation aPresentation);
 
   gfxFont* FindFallbackFaceForChar(mozilla::fontlist::Family* aFamily,
-                                   uint32_t aCh);
+                                   uint32_t aCh, uint32_t aNextCh,
+                                   eFontPresentation aPresentation);
 
-  gfxFont* FindFallbackFaceForChar(gfxFontFamily* aFamily, uint32_t aCh);
+  gfxFont* FindFallbackFaceForChar(gfxFontFamily* aFamily, uint32_t aCh,
+                                   uint32_t aNextCh,
+                                   eFontPresentation aPresentation);
 
   // helper methods for looking up fonts
 

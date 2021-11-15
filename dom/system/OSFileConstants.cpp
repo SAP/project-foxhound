@@ -57,6 +57,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "BindingUtils.h"
 
 // Used to provide information on the OS
@@ -626,11 +627,11 @@ static const dom::ConstantSpec gLibcProperties[] = {
 // Under MacOSX, to avoid using deprecated functions that do not
 // match the constants we define in this object (including
 // |sizeof|/|offsetof| stuff, but not only), for a number of
-// functions, we need to adapt the name of the symbols we are using,
-// whenever macro _DARWIN_FEATURE_64_BIT_INODE is set. We export
-// this value to be able to do so from JavaScript.
-#if defined(_DARWIN_FEATURE_64_BIT_INODE)
-    {"_DARWIN_FEATURE_64_BIT_INODE", JS::Int32Value(1)},
+// functions, we need to use functions with a $INODE64 suffix.
+// That is true on Intel-based mac when the _DARWIN_FEATURE_64_BIT_INODE
+// macro is set. But not on Apple Silicon.
+#if defined(_DARWIN_FEATURE_64_BIT_INODE) && !defined(__aarch64__)
+    {"_DARWIN_INODE64_SYMBOLS", JS::Int32Value(1)},
 #endif  // defined(_DARWIN_FEATURE_64_BIT_INODE)
 
 // Similar feature for Linux

@@ -13,7 +13,7 @@ from taskgraph.util.bugbug import (
 
 
 def test_group_translation(responses):
-    branch = "integration/autoland",
+    branch = ("integration/autoland",)
     rev = "abcdef"
     query = "/push/{}/{}/schedules".format(branch, rev)
     url = BUGBUG_BASE_URL + query
@@ -26,7 +26,12 @@ def test_group_translation(responses):
                 "dom/indexedDB": 1,
                 "testing/web-platform/tests/IndexedDB": 1,
                 "testing/web-platform/mozilla/tests/IndexedDB": 1,
-            }
+            },
+            "config_groups": {
+                "dom/indexedDB": ["label1", "label2"],
+                "testing/web-platform/tests/IndexedDB": ["label3"],
+                "testing/web-platform/mozilla/tests/IndexedDB": ["label4"],
+            },
         },
         status=200,
     )
@@ -39,6 +44,11 @@ def test_group_translation(responses):
         "/_mozilla/IndexedDB",
         "dom/indexedDB",
     ]
+    assert data["config_groups"] == {
+        "dom/indexedDB": ["label1", "label2"],
+        "/IndexedDB": ["label3"],
+        "/_mozilla/IndexedDB": ["label4"],
+    }
     assert len(push_schedules) == 1
 
     # Value is memoized.
@@ -47,5 +57,5 @@ def test_group_translation(responses):
     assert len(push_schedules) == 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     mozunit.main()

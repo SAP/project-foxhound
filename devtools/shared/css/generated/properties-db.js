@@ -268,9 +268,7 @@ exports.CSS_PROPERTIES = {
       "resizer",
       "resizerpanel",
       "revert",
-      "scrollbar",
       "scrollbar-horizontal",
-      "scrollbar-small",
       "scrollbar-vertical",
       "scrollbarbutton-down",
       "scrollbarbutton-left",
@@ -454,6 +452,7 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
       "auto",
+      "conic-gradient",
       "fill",
       "inherit",
       "initial",
@@ -461,6 +460,7 @@ exports.CSS_PROPERTIES = {
       "none",
       "radial-gradient",
       "repeat",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -1577,9 +1577,7 @@ exports.CSS_PROPERTIES = {
       "resizer",
       "resizerpanel",
       "revert",
-      "scrollbar",
       "scrollbar-horizontal",
-      "scrollbar-small",
       "scrollbar-vertical",
       "scrollbarbutton-down",
       "scrollbarbutton-left",
@@ -1740,6 +1738,7 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
       "auto",
+      "conic-gradient",
       "fill",
       "inherit",
       "initial",
@@ -1747,6 +1746,7 @@ exports.CSS_PROPERTIES = {
       "none",
       "radial-gradient",
       "repeat",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -2155,6 +2155,7 @@ exports.CSS_PROPERTIES = {
       "border-box",
       "bottom",
       "center",
+      "conic-gradient",
       "contain",
       "content-box",
       "cover",
@@ -2175,6 +2176,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "repeat-x",
       "repeat-y",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -2246,11 +2248,13 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -2774,6 +2778,34 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "align-tracks": {
+    "isInherited": false,
+    "subproperties": [
+      "align-tracks"
+    ],
+    "supports": [],
+    "values": [
+      "baseline",
+      "center",
+      "end",
+      "first baseline",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "last baseline",
+      "normal",
+      "revert",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
   "all": {
     "isInherited": false,
     "subproperties": [
@@ -2946,6 +2978,8 @@ exports.CSS_PROPERTIES = {
       "font-variation-settings",
       "font-language-override",
       "font-optical-sizing",
+      "math-depth",
+      "math-style",
       "-moz-osx-font-smoothing",
       "visibility",
       "writing-mode",
@@ -3391,9 +3425,7 @@ exports.CSS_PROPERTIES = {
       "resizer",
       "resizerpanel",
       "revert",
-      "scrollbar",
       "scrollbar-horizontal",
-      "scrollbar-small",
       "scrollbar-vertical",
       "scrollbarbutton-down",
       "scrollbarbutton-left",
@@ -3437,6 +3469,20 @@ exports.CSS_PROPERTIES = {
       "treeview",
       "unset",
       "window"
+    ]
+  },
+  "aspect-ratio": {
+    "isInherited": false,
+    "subproperties": [
+      "aspect-ratio"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "inherit",
+      "initial",
+      "revert",
+      "unset"
     ]
   },
   "backface-visibility": {
@@ -3488,6 +3534,7 @@ exports.CSS_PROPERTIES = {
       "border-box",
       "bottom",
       "center",
+      "conic-gradient",
       "contain",
       "content-box",
       "cover",
@@ -3507,6 +3554,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "repeat-x",
       "repeat-y",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -3627,11 +3675,13 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -4327,6 +4377,7 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
       "auto",
+      "conic-gradient",
       "fill",
       "inherit",
       "initial",
@@ -4334,6 +4385,7 @@ exports.CSS_PROPERTIES = {
       "none",
       "radial-gradient",
       "repeat",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -4408,11 +4460,13 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -7247,6 +7301,33 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "justify-tracks": {
+    "isInherited": false,
+    "subproperties": [
+      "justify-tracks"
+    ],
+    "supports": [],
+    "values": [
+      "center",
+      "end",
+      "flex-end",
+      "flex-start",
+      "inherit",
+      "initial",
+      "left",
+      "normal",
+      "revert",
+      "right",
+      "safe",
+      "space-around",
+      "space-between",
+      "space-evenly",
+      "start",
+      "stretch",
+      "unsafe",
+      "unset"
+    ]
+  },
   "left": {
     "isInherited": false,
     "subproperties": [
@@ -7760,6 +7841,7 @@ exports.CSS_PROPERTIES = {
       "border-box",
       "bottom",
       "center",
+      "conic-gradient",
       "contain",
       "content-box",
       "cover",
@@ -7780,6 +7862,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "repeat-x",
       "repeat-y",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -7851,11 +7934,13 @@ exports.CSS_PROPERTIES = {
       "-webkit-radial-gradient",
       "-webkit-repeating-linear-gradient",
       "-webkit-repeating-radial-gradient",
+      "conic-gradient",
       "inherit",
       "initial",
       "linear-gradient",
       "none",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -7995,6 +8080,38 @@ exports.CSS_PROPERTIES = {
       "inherit",
       "initial",
       "luminance",
+      "revert",
+      "unset"
+    ]
+  },
+  "masonry-auto-flow": {
+    "isInherited": false,
+    "subproperties": [
+      "masonry-auto-flow"
+    ],
+    "supports": [],
+    "values": [
+      "definite-first",
+      "inherit",
+      "initial",
+      "next",
+      "ordered",
+      "pack",
+      "revert",
+      "unset"
+    ]
+  },
+  "math-style": {
+    "isInherited": true,
+    "subproperties": [
+      "math-style"
+    ],
+    "supports": [],
+    "values": [
+      "compact",
+      "inherit",
+      "initial",
+      "normal",
       "revert",
       "unset"
     ]
@@ -8462,6 +8579,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8495,6 +8613,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8513,6 +8632,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8547,6 +8667,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -8565,6 +8686,7 @@ exports.CSS_PROPERTIES = {
     "values": [
       "-moz-hidden-unscrollable",
       "auto",
+      "clip",
       "hidden",
       "inherit",
       "initial",
@@ -9644,6 +9766,7 @@ exports.CSS_PROPERTIES = {
       "-webkit-repeating-radial-gradient",
       "border-box",
       "circle",
+      "conic-gradient",
       "content-box",
       "ellipse",
       "inherit",
@@ -9655,6 +9778,7 @@ exports.CSS_PROPERTIES = {
       "padding-box",
       "polygon",
       "radial-gradient",
+      "repeating-conic-gradient",
       "repeating-linear-gradient",
       "repeating-radial-gradient",
       "revert",
@@ -10808,7 +10932,7 @@ exports.PSEUDO_ELEMENTS = [
   ":-moz-meter-bar",
   ":placeholder",
   ":-moz-color-swatch",
-  ":file-chooser-button"
+  ":file-selector-button"
 ];
 
 /**
@@ -10831,6 +10955,14 @@ exports.PREFERENCES = [
   [
     "masonry-auto-flow",
     "layout.css.grid-template-masonry-value.enabled"
+  ],
+  [
+    "math-depth",
+    "layout.css.math-depth.enabled"
+  ],
+  [
+    "math-style",
+    "layout.css.math-style.enabled"
   ],
   [
     "-moz-osx-font-smoothing",
@@ -11071,22 +11203,6 @@ exports.PREFERENCES = [
   [
     "-moz-font-language-override",
     "layout.css.prefixes.font-features"
-  ],
-  [
-    "offset-block-start",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
-    "offset-block-end",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
-    "offset-inline-start",
-    "layout.css.offset-logical-properties.enabled"
-  ],
-  [
-    "offset-inline-end",
-    "layout.css.offset-logical-properties.enabled"
   ],
   [
     "-moz-box-sizing",

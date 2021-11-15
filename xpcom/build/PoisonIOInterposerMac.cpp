@@ -5,7 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PoisonIOInterposer.h"
-#include "mach_override.h"
+// Disabled until bug 1658385 is fixed.
+#ifndef __aarch64__
+#  include "mach_override.h"
+#endif
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
@@ -97,7 +100,7 @@ void MacIOAutoObservation::Filename(nsAString& aFilename) {
 
   char filename[MAXPATHLEN];
   if (fcntl(mFd, F_GETPATH, filename) != -1) {
-    mFilename = NS_ConvertUTF8toUTF16(filename);
+    CopyUTF8toUTF16(filename, mFilename);
   } else {
     mFilename.Truncate();
   }
@@ -326,9 +329,11 @@ void InitPoisonIOInterposer() {
     if (!d->Function) {
       continue;
     }
+#ifndef __aarch64__
     DebugOnly<mach_error_t> t =
         mach_override_ptr(d->Function, d->Wrapper, &d->Buffer);
     MOZ_ASSERT(t == err_none);
+#endif
   }
 }
 

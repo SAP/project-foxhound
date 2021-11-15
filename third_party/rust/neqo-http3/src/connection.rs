@@ -12,7 +12,7 @@ use crate::hframe::HFrame;
 use crate::send_message::SendMessage;
 use crate::settings::{HSetting, HSettingType, HSettings, HttpZeroRttChecker};
 use crate::stream_type_reader::NewStreamTypeReader;
-use crate::RecvStream;
+use crate::{RecvStream, ResetType};
 use neqo_common::{qdebug, qerror, qinfo, qtrace, qwarn};
 use neqo_qpack::decoder::{QPackDecoder, QPACK_UNI_STREAM_TYPE_DECODER};
 use neqo_qpack::encoder::{QPackEncoder, QPACK_UNI_STREAM_TYPE_ENCODER};
@@ -125,6 +125,7 @@ impl Http3Connection {
                 },
             ]),
         });
+        self.control_stream_local.queue_frame(&HFrame::Grease);
     }
 
     /// Save settings for adding to the session ticket.
@@ -353,7 +354,7 @@ impl Http3Connection {
         );
 
         if let Some(s) = self.recv_streams.remove(&stream_id) {
-            s.stream_reset(app_error);
+            s.stream_reset(app_error, &mut self.qpack_decoder, ResetType::Remote);
             Ok(())
         } else if self.is_critical_stream(stream_id) {
             Err(Error::HttpClosedCriticalStream)
@@ -527,9 +528,11 @@ impl Http3Connection {
     ) -> Res<()> {
         qinfo!([self], "Reset stream {} error={}.", stream_id, error);
 
-        // We want to execute both statements, therefore we use | instead of ||.
-        let found = self.send_streams.remove(&stream_id).is_some()
-            | self.recv_streams.remove(&stream_id).is_some();
+        let mut found = self.send_streams.remove(&stream_id).is_some();
+        if let Some(s) = self.recv_streams.remove(&stream_id) {
+            s.stream_reset(error, &mut self.qpack_decoder, ResetType::App);
+            found = true;
+        }
 
         // Stream maybe already be closed and we may get an error here, but we do not care.
         let _ = conn.stream_reset_send(stream_id, error);
@@ -588,7 +591,7 @@ impl Http3Connection {
                 HSettingType::BlockedStreams => {
                     self.qpack_encoder.set_max_blocked_streams(s.value)?
                 }
-                _ => {}
+                HSettingType::MaxHeaderListSize => (),
             }
         }
         Ok(())

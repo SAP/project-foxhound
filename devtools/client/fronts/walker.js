@@ -10,6 +10,7 @@ const {
   registerFront,
 } = require("devtools/shared/protocol.js");
 const { walkerSpec } = require("devtools/shared/specs/walker");
+const { safeAsyncMethod } = require("devtools/shared/async-utils");
 
 loader.lazyRequireGetter(
   this,
@@ -30,14 +31,27 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
     // Set to true if cleanup should be requested after every mutation list.
     this.autoCleanup = true;
 
-    this._rootNodeWatchers = 0;
+    this._rootNodePromise = new Promise(
+      r => (this._rootNodePromiseResolve = r)
+    );
+
     this._onRootNodeAvailable = this._onRootNodeAvailable.bind(this);
     this._onRootNodeDestroyed = this._onRootNodeDestroyed.bind(this);
 
+    // pick/cancelPick requests can be triggered while the Walker is being destroyed.
+    this.pick = safeAsyncMethod(this.pick.bind(this), () => this.isDestroyed());
+    this.cancelPick = safeAsyncMethod(this.cancelPick.bind(this), () =>
+      this.isDestroyed()
+    );
+
     this.before("new-mutations", this.onMutations.bind(this));
 
-    // Those events will only be emitted if we are watching root nodes on the
-    // actor. See `watchRootNode`.
+    // Those events will be emitted if watchRootNode was called on the
+    // corresponding WalkerActor, which should be handled by the ResourceWatcher
+    // as long as a consumer is watching for root-node resources.
+    // This should be fixed by using watchResources directly from the walker
+    // front, either with the ROOT_NODE resource, or with the DOCUMENT_EVENT
+    // resource. See Bug 1663973.
     this.on("root-available", this._onRootNodeAvailable);
     this.on("root-destroyed", this._onRootNodeDestroyed);
   }
@@ -62,23 +76,9 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
    * set.
    */
   async getRootNode() {
-    // We automatically start and stop watching when getRootNode is called so
-    // that consumers using getRootNode without watchRootNode can still get a
-    // correct rootNode. Otherwise they might receive an outdated node.
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1633348.
-    this._rootNodeWatchers++;
-    if (this._rootNodeWatchers === 1) {
-      await super.watchRootNode();
-    }
-
     let rootNode = this.rootNode;
     if (!rootNode) {
-      rootNode = await this.once("root-available");
-    }
-
-    this._rootNodeWatchers--;
-    if (this._rootNodeWatchers === 0) {
-      super.unwatchRootNode();
+      rootNode = await this._rootNodePromise;
     }
 
     return rootNode;
@@ -263,15 +263,6 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
     const mutations = await super.getMutations(options);
     const emitMutations = [];
     for (const change of mutations) {
-      // Backward compatibility. FF77 or older will send "new root" information
-      // via mutations. Newer servers use the new-root-available event.
-      if (change.type === "newRoot") {
-        const rootNode = types.getType("domnode").read(change.target, this);
-        this.emit("root-available", rootNode);
-        // Don't process this as a regular mutation.
-        continue;
-      }
-
       // The target is only an actorID, get the associated front.
       const targetID = change.target;
       const targetFront = this.getActorByID(targetID);
@@ -339,6 +330,10 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
           targetFront._form.numChildren = change.numChildren;
         }
       } else if (change.type === "frameLoad") {
+        // Backward compatibility for FF80 or older.
+        // The frameLoad mutation was removed in FF81 in favor of the root-node
+        // resource.
+
         // Nothing we need to do here, except verify that we don't have any
         // document children, because we should have gotten a documentUnload
         // first.
@@ -352,6 +347,10 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
           }
         }
       } else if (change.type === "documentUnload") {
+        // Backward compatibility for FF80 or older.
+        // The documentUnload mutation was removed in FF81 in favor of the
+        // root-node resource.
+
         // We try to give fronts instead of actorIDs, but these fronts need
         // to be destroyed now.
         emittedMutation.target = targetFront.actorID;
@@ -513,12 +512,7 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
       }
 
       if (nodeSelectors.length > 0) {
-        if (nodeFront.traits.supportsWaitForFrameLoad) {
-          // Backward compatibility: only FF72 or newer are able to wait for
-          // iframes to load. After FF72 reaches release we can unconditionally
-          // call waitForFrameLoad.
-          await nodeFront.waitForFrameLoad();
-        }
+        await nodeFront.waitForFrameLoad();
 
         const { nodes } = await this.children(nodeFront);
 
@@ -558,28 +552,29 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
   }
 
   _onRootNodeAvailable(rootNode) {
-    this.rootNode = rootNode;
-  }
-
-  _onRootNodeDestroyed() {
-    this._releaseFront(this.rootNode, true);
-    this.rootNode = null;
-  }
-
-  async watchRootNode(onRootNodeAvailable) {
-    this.on("root-available", onRootNodeAvailable);
-
-    this._rootNodeWatchers++;
-    if (this._rootNodeWatchers === 1) {
-      await super.watchRootNode();
-    } else if (this.rootNode) {
-      // This else branch is here for subsequent calls to `watchRootNode`:
-      //   If we skip `super.watchRootNode`, we should call
-      //   `onRootNodeAvailable` immediately, because the actor will not emit
-      //   "root-available". And we should not emit it from the Front, because
-      //   it would notify other consumers unnecessarily.
-      await onRootNodeAvailable(this.rootNode);
+    if (this._isTopLevelRootNode(rootNode)) {
+      this.rootNode = rootNode;
+      this._rootNodePromiseResolve(this.rootNode);
     }
+  }
+
+  _onRootNodeDestroyed(rootNode) {
+    if (this._isTopLevelRootNode(rootNode)) {
+      this._rootNodePromise = new Promise(
+        r => (this._rootNodePromiseResolve = r)
+      );
+      this.rootNode = null;
+    }
+  }
+
+  _isTopLevelRootNode(rootNode) {
+    if (!rootNode.traits.supportsIsTopLevelDocument) {
+      // When `supportsIsTopLevelDocument` is false, a root-node resource is
+      // necessarily top level, so we can fallback to true.
+      return true;
+    }
+
+    return rootNode.isTopLevelDocument;
   }
 
   /**
@@ -620,15 +615,6 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
     }
 
     return super.cancelPick();
-  }
-
-  unwatchRootNode(onRootNodeAvailable) {
-    this.off("root-available", onRootNodeAvailable);
-
-    this._rootNodeWatchers--;
-    if (this._rootNodeWatchers === 0) {
-      super.unwatchRootNode();
-    }
   }
 }
 

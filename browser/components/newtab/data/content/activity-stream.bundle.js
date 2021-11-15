@@ -92,20 +92,20 @@ var NewtabRenderUtils =
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "NewTab", function() { return NewTab; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "NewTab", function() { return NewTab; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "renderWithoutState", function() { return renderWithoutState; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "renderCache", function() { return renderCache; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_Base_Base__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
-/* harmony import */ var content_src_lib_detect_user_session_start__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(73);
-/* harmony import */ var content_src_lib_init_store__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(6);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_Base_Base__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(2);
+/* harmony import */ var content_src_lib_detect_user_session_start__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(68);
+/* harmony import */ var content_src_lib_init_store__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(69);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_4__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_5__);
-/* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(12);
+/* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(15);
 /* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(react_dom__WEBPACK_IMPORTED_MODULE_6__);
-/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(77);
+/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(74);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -118,13 +118,10 @@ __webpack_require__.r(__webpack_exports__);
 
 
 const NewTab = ({
-  store,
-  isFirstrun
+  store
 }) => react__WEBPACK_IMPORTED_MODULE_5___default.a.createElement(react_redux__WEBPACK_IMPORTED_MODULE_4__["Provider"], {
   store: store
-}, react__WEBPACK_IMPORTED_MODULE_5___default.a.createElement(content_src_components_Base_Base__WEBPACK_IMPORTED_MODULE_1__["Base"], {
-  isFirstrun: isFirstrun
-}));
+}, react__WEBPACK_IMPORTED_MODULE_5___default.a.createElement(content_src_components_Base_Base__WEBPACK_IMPORTED_MODULE_1__["Base"], null));
 function renderWithoutState() {
   const store = Object(content_src_lib_init_store__WEBPACK_IMPORTED_MODULE_3__["initStore"])(common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_7__["reducers"]);
   new content_src_lib_detect_user_session_start__WEBPACK_IMPORTED_MODULE_2__["DetectUserSessionStart"](store).sendEventOrAddListener(); // If this document has already gone into the background by the time we've reached
@@ -157,48 +154,19 @@ function renderWithoutState() {
   }
 
   react_dom__WEBPACK_IMPORTED_MODULE_6___default.a.hydrate(react__WEBPACK_IMPORTED_MODULE_5___default.a.createElement(NewTab, {
-    store: store,
-    isFirstrun: global.document.location.href === "about:welcome"
+    store: store
   }), document.getElementById("root"));
 }
 function renderCache(initialState) {
   const store = Object(content_src_lib_init_store__WEBPACK_IMPORTED_MODULE_3__["initStore"])(common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_7__["reducers"], initialState);
   new content_src_lib_detect_user_session_start__WEBPACK_IMPORTED_MODULE_2__["DetectUserSessionStart"](store).sendEventOrAddListener();
   react_dom__WEBPACK_IMPORTED_MODULE_6___default.a.hydrate(react__WEBPACK_IMPORTED_MODULE_5___default.a.createElement(NewTab, {
-    store: store,
-    isFirstrun: global.document.location.href === "about:welcome"
+    store: store
   }), document.getElementById("root"));
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
 
 /***/ }),
 /* 1 */
-/***/ (function(module, exports) {
-
-var g;
-
-// This works in non-strict mode
-g = (function() {
-	return this;
-})();
-
-try {
-	// This works if eval is allowed (see CSP)
-	g = g || new Function("return this")();
-} catch (e) {
-	// This works if the window reference is available
-	if (typeof window === "object") g = window;
-}
-
-// g can still be undefined, but nothing to do about it...
-// We return undefined, instead of nothing here, so it's
-// easier to handle this case. if(!global) { ...}
-
-module.exports = g;
-
-
-/***/ }),
-/* 2 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -237,7 +205,7 @@ const globalImportContext = typeof Window === "undefined" ? BACKGROUND_PROCESS :
 // }
 const actionTypes = {};
 
-for (const type of ["ADDONS_INFO_REQUEST", "ADDONS_INFO_RESPONSE", "ARCHIVE_FROM_POCKET", "AS_ROUTER_INITIALIZED", "AS_ROUTER_PREF_CHANGED", "AS_ROUTER_TARGETING_UPDATE", "AS_ROUTER_TELEMETRY_USER_EVENT", "BLOCK_URL", "BOOKMARK_URL", "CLEAR_PREF", "COPY_DOWNLOAD_LINK", "DELETE_BOOKMARK_BY_ID", "DELETE_FROM_POCKET", "DELETE_HISTORY_URL", "DIALOG_CANCEL", "DIALOG_OPEN", "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE", "DISCOVERY_STREAM_CONFIG_CHANGE", "DISCOVERY_STREAM_CONFIG_RESET", "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS", "DISCOVERY_STREAM_CONFIG_SETUP", "DISCOVERY_STREAM_CONFIG_SET_VALUE", "DISCOVERY_STREAM_DEV_EXPIRE_CACHE", "DISCOVERY_STREAM_DEV_IDLE_DAILY", "DISCOVERY_STREAM_DEV_SYNC_RS", "DISCOVERY_STREAM_DEV_SYSTEM_TICK", "DISCOVERY_STREAM_FEEDS_UPDATE", "DISCOVERY_STREAM_FEED_UPDATE", "DISCOVERY_STREAM_IMPRESSION_STATS", "DISCOVERY_STREAM_LAYOUT_RESET", "DISCOVERY_STREAM_LAYOUT_UPDATE", "DISCOVERY_STREAM_LINK_BLOCKED", "DISCOVERY_STREAM_LOADED_CONTENT", "DISCOVERY_STREAM_PERSONALIZATION_INIT", "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED", "DISCOVERY_STREAM_PERSONALIZATION_VERSION", "DISCOVERY_STREAM_PERSONALIZATION_VERSION_TOGGLE", "DISCOVERY_STREAM_RETRY_FEED", "DISCOVERY_STREAM_SPOCS_CAPS", "DISCOVERY_STREAM_SPOCS_ENDPOINT", "DISCOVERY_STREAM_SPOCS_FILL", "DISCOVERY_STREAM_SPOCS_PLACEMENTS", "DISCOVERY_STREAM_SPOCS_UPDATE", "DISCOVERY_STREAM_SPOC_BLOCKED", "DISCOVERY_STREAM_SPOC_IMPRESSION", "DOWNLOAD_CHANGED", "FAKE_FOCUS_SEARCH", "FILL_SEARCH_TERM", "HANDOFF_SEARCH_TO_AWESOMEBAR", "HIDE_PRIVACY_INFO", "HIDE_SEARCH", "INIT", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_REHYDRATED", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_DOWNLOAD_FILE", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "OPEN_WEBEXT_SETTINGS", "PLACES_BOOKMARK_ADDED", "PLACES_BOOKMARK_REMOVED", "PLACES_HISTORY_CLEARED", "PLACES_LINKS_CHANGED", "PLACES_LINK_BLOCKED", "PLACES_LINK_DELETED", "PLACES_SAVED_TO_POCKET", "POCKET_CTA", "POCKET_LINK_DELETED_OR_ARCHIVED", "POCKET_LOGGED_IN", "POCKET_WAITING_FOR_SPOC", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "PREVIEW_REQUEST", "PREVIEW_REQUEST_CANCEL", "PREVIEW_RESPONSE", "REMOVE_DOWNLOAD_FILE", "RICH_ICON_MISSING", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_MOVE", "SECTION_OPTIONS_CHANGED", "SECTION_REGISTER", "SECTION_UPDATE", "SECTION_UPDATE_CARD", "SETTINGS_CLOSE", "SETTINGS_OPEN", "SET_PREF", "SHOW_DOWNLOAD_FILE", "SHOW_FIREFOX_ACCOUNTS", "SHOW_PRIVACY_INFO", "SHOW_SEARCH", "SKIPPED_SIGNIN", "SNIPPETS_BLOCKLIST_CLEARED", "SNIPPETS_BLOCKLIST_UPDATED", "SNIPPETS_DATA", "SNIPPETS_PREVIEW_MODE", "SNIPPETS_RESET", "SNIPPET_BLOCKED", "SUBMIT_EMAIL", "SUBMIT_SIGNIN", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_PERFORMANCE_EVENT", "TELEMETRY_UNDESIRED_EVENT", "TELEMETRY_USER_EVENT", "TOP_SITES_ATTRIBUTION", "TOP_SITES_CANCEL_EDIT", "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_EDIT", "TOP_SITES_INSERT", "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_PIN", "TOP_SITES_PREFS_UPDATED", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "TOTAL_BOOKMARKS_REQUEST", "TOTAL_BOOKMARKS_RESPONSE", "TRAILHEAD_ENROLL_EVENT", "UNINIT", "UPDATE_PINNED_SEARCH_SHORTCUTS", "UPDATE_SEARCH_SHORTCUTS", "UPDATE_SECTION_PREFS", "WEBEXT_CLICK", "WEBEXT_DISMISS"]) {
+for (const type of ["ABOUT_SPONSORED_TOP_SITES", "ADDONS_INFO_REQUEST", "ADDONS_INFO_RESPONSE", "ARCHIVE_FROM_POCKET", "AS_ROUTER_INITIALIZED", "AS_ROUTER_PREF_CHANGED", "AS_ROUTER_TARGETING_UPDATE", "AS_ROUTER_TELEMETRY_USER_EVENT", "BLOCK_URL", "BOOKMARK_URL", "CLEAR_PREF", "COPY_DOWNLOAD_LINK", "DELETE_BOOKMARK_BY_ID", "DELETE_FROM_POCKET", "DELETE_HISTORY_URL", "DIALOG_CANCEL", "DIALOG_OPEN", "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE", "DISCOVERY_STREAM_CONFIG_CHANGE", "DISCOVERY_STREAM_CONFIG_RESET", "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS", "DISCOVERY_STREAM_CONFIG_SETUP", "DISCOVERY_STREAM_CONFIG_SET_VALUE", "DISCOVERY_STREAM_DEV_EXPIRE_CACHE", "DISCOVERY_STREAM_DEV_IDLE_DAILY", "DISCOVERY_STREAM_DEV_SYNC_RS", "DISCOVERY_STREAM_DEV_SYSTEM_TICK", "DISCOVERY_STREAM_FEEDS_UPDATE", "DISCOVERY_STREAM_FEED_UPDATE", "DISCOVERY_STREAM_IMPRESSION_STATS", "DISCOVERY_STREAM_LAYOUT_RESET", "DISCOVERY_STREAM_LAYOUT_UPDATE", "DISCOVERY_STREAM_LINK_BLOCKED", "DISCOVERY_STREAM_LOADED_CONTENT", "DISCOVERY_STREAM_PERSONALIZATION_INIT", "DISCOVERY_STREAM_PERSONALIZATION_LAST_UPDATED", "DISCOVERY_STREAM_PERSONALIZATION_VERSION", "DISCOVERY_STREAM_PERSONALIZATION_VERSION_TOGGLE", "DISCOVERY_STREAM_RETRY_FEED", "DISCOVERY_STREAM_SPOCS_CAPS", "DISCOVERY_STREAM_SPOCS_ENDPOINT", "DISCOVERY_STREAM_SPOCS_FILL", "DISCOVERY_STREAM_SPOCS_PLACEMENTS", "DISCOVERY_STREAM_SPOCS_UPDATE", "DISCOVERY_STREAM_SPOC_BLOCKED", "DISCOVERY_STREAM_SPOC_IMPRESSION", "DOWNLOAD_CHANGED", "FAKE_FOCUS_SEARCH", "FILL_SEARCH_TERM", "HANDOFF_SEARCH_TO_AWESOMEBAR", "HIDE_PRIVACY_INFO", "HIDE_SEARCH", "INIT", "NEW_TAB_INIT", "NEW_TAB_INITIAL_STATE", "NEW_TAB_LOAD", "NEW_TAB_REHYDRATED", "NEW_TAB_STATE_REQUEST", "NEW_TAB_UNLOAD", "OPEN_DOWNLOAD_FILE", "OPEN_LINK", "OPEN_NEW_WINDOW", "OPEN_PRIVATE_WINDOW", "OPEN_WEBEXT_SETTINGS", "PARTNER_LINK_ATTRIBUTION", "PLACES_BOOKMARK_ADDED", "PLACES_BOOKMARK_REMOVED", "PLACES_HISTORY_CLEARED", "PLACES_LINKS_CHANGED", "PLACES_LINK_BLOCKED", "PLACES_LINK_DELETED", "PLACES_SAVED_TO_POCKET", "POCKET_CTA", "POCKET_LINK_DELETED_OR_ARCHIVED", "POCKET_LOGGED_IN", "POCKET_WAITING_FOR_SPOC", "PREFS_INITIAL_VALUES", "PREF_CHANGED", "PREVIEW_REQUEST", "PREVIEW_REQUEST_CANCEL", "PREVIEW_RESPONSE", "REMOVE_DOWNLOAD_FILE", "RICH_ICON_MISSING", "SAVE_SESSION_PERF_DATA", "SAVE_TO_POCKET", "SCREENSHOT_UPDATED", "SECTION_DEREGISTER", "SECTION_DISABLE", "SECTION_ENABLE", "SECTION_MOVE", "SECTION_OPTIONS_CHANGED", "SECTION_REGISTER", "SECTION_UPDATE", "SECTION_UPDATE_CARD", "SETTINGS_CLOSE", "SETTINGS_OPEN", "SET_PREF", "SHOW_DOWNLOAD_FILE", "SHOW_FIREFOX_ACCOUNTS", "SHOW_PRIVACY_INFO", "SHOW_SEARCH", "SKIPPED_SIGNIN", "SNIPPETS_BLOCKLIST_CLEARED", "SNIPPETS_BLOCKLIST_UPDATED", "SNIPPETS_DATA", "SNIPPETS_PREVIEW_MODE", "SNIPPETS_RESET", "SNIPPET_BLOCKED", "SUBMIT_EMAIL", "SUBMIT_SIGNIN", "SYSTEM_TICK", "TELEMETRY_IMPRESSION_STATS", "TELEMETRY_PERFORMANCE_EVENT", "TELEMETRY_UNDESIRED_EVENT", "TELEMETRY_USER_EVENT", "TOP_SITES_CANCEL_EDIT", "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_EDIT", "TOP_SITES_INSERT", "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL", "TOP_SITES_PIN", "TOP_SITES_PREFS_UPDATED", "TOP_SITES_UNPIN", "TOP_SITES_UPDATED", "TOTAL_BOOKMARKS_REQUEST", "TOTAL_BOOKMARKS_RESPONSE", "UNINIT", "UPDATE_PINNED_SEARCH_SHORTCUTS", "UPDATE_SEARCH_SHORTCUTS", "UPDATE_SECTION_PREFS", "WEBEXT_CLICK", "WEBEXT_DISMISS"]) {
   actionTypes[type] = type;
 } // Helper function for creating routed actions between content and main
 // Not intended to be used by consumers
@@ -586,7 +554,7 @@ var actionUtils = {
 };
 
 /***/ }),
-/* 3 */
+/* 2 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -594,18 +562,18 @@ __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_Base", function() { return _Base; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "BaseContent", function() { return BaseContent; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Base", function() { return Base; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var content_src_components_ASRouterAdmin_ASRouterAdmin__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
-/* harmony import */ var _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(5);
-/* harmony import */ var content_src_components_ConfirmDialog_ConfirmDialog__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(24);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(22);
+/* harmony import */ var _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(11);
+/* harmony import */ var content_src_components_ConfirmDialog_ConfirmDialog__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(19);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var content_src_components_DiscoveryStreamBase_DiscoveryStreamBase__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(25);
-/* harmony import */ var content_src_components_ErrorBoundary_ErrorBoundary__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(44);
+/* harmony import */ var content_src_components_DiscoveryStreamBase_DiscoveryStreamBase__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(20);
+/* harmony import */ var content_src_components_ErrorBoundary_ErrorBoundary__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(39);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_7___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_7__);
-/* harmony import */ var content_src_components_Search_Search__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(72);
-/* harmony import */ var content_src_components_Sections_Sections__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(55);
+/* harmony import */ var content_src_components_Search_Search__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(67);
+/* harmony import */ var content_src_components_Sections_Sections__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(50);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -649,10 +617,16 @@ function debounce(func, wait) {
 }
 
 class _Base extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureComponent {
-  componentWillMount() {
-    if (this.props.isFirstrun) {
-      global.document.body.classList.add("welcome", "hide-main");
-    }
+  constructor(props) {
+    super(props);
+    this.state = {
+      message: {}
+    };
+    this.notifyContent = this.notifyContent.bind(this);
+  }
+
+  notifyContent(state) {
+    this.setState(state);
   }
 
   componentWillUnmount() {
@@ -666,7 +640,7 @@ class _Base extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureComponent {
   updateTheme() {
     const bodyClassName = ["activity-stream", // If we skipped the about:welcome overlay and removed the CSS classes
     // we don't want to add them back to the Activity Stream view
-    document.body.classList.contains("welcome") ? "welcome" : "", document.body.classList.contains("hide-main") ? "hide-main" : "", document.body.classList.contains("inline-onboarding") ? "inline-onboarding" : ""].filter(v => v).join(" ");
+    document.body.classList.contains("inline-onboarding") ? "inline-onboarding" : ""].filter(v => v).join(" ");
     global.document.body.className = bodyClassName;
   }
 
@@ -685,7 +659,11 @@ class _Base extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureComponent {
 
     return react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(content_src_components_ErrorBoundary_ErrorBoundary__WEBPACK_IMPORTED_MODULE_6__["ErrorBoundary"], {
       className: "base-content-fallback"
-    }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_7___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(BaseContent, this.props), isDevtoolsEnabled ? react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(content_src_components_ASRouterAdmin_ASRouterAdmin__WEBPACK_IMPORTED_MODULE_1__["ASRouterAdmin"], null) : null));
+    }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_7___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(BaseContent, _extends({}, this.props, {
+      adminContent: this.state
+    })), isDevtoolsEnabled ? react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(content_src_components_ASRouterAdmin_ASRouterAdmin__WEBPACK_IMPORTED_MODULE_1__["ASRouterAdmin"], {
+      notifyContent: this.notifyContent
+    }) : null));
   }
 
 }
@@ -708,7 +686,10 @@ class BaseContent extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureCompo
   }
 
   onWindowScroll() {
-    const SCROLL_THRESHOLD = 34;
+    const prefs = this.props.Prefs.values; // Show logo only if the logo is enabled and pocket is not enabled.
+
+    const showLogo = prefs["logowordmark.alwaysVisible"] && !(prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"]);
+    const SCROLL_THRESHOLD = showLogo ? 179 : 34;
 
     if (global.scrollY > SCROLL_THRESHOLD && !this.state.fixedSearch) {
       this.setState({
@@ -746,15 +727,17 @@ class BaseContent extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureCompo
     const pocketEnabled = prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
     const noSectionsEnabled = !prefs["feeds.topsites"] && !pocketEnabled && filteredSections.filter(section => section.enabled).length === 0;
     const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
-    const outerClassName = ["outer-wrapper", isDiscoveryStream && pocketEnabled && "ds-outer-wrapper-search-alignment", isDiscoveryStream && "ds-outer-wrapper-breakpoint-override", prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search", prefs.showSearch && noSectionsEnabled && "only-search"].filter(v => v).join(" ");
+    const showLogo = prefs["logowordmark.alwaysVisible"] && (!prefs["feeds.section.topstories"] || !prefs["feeds.system.topstories"] && prefs.region);
+    const outerClassName = ["outer-wrapper", isDiscoveryStream && pocketEnabled && "ds-outer-wrapper-search-alignment", isDiscoveryStream && "ds-outer-wrapper-breakpoint-override", prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search", prefs.showSearch && noSectionsEnabled && "only-search", showLogo && "visible-logo"].filter(v => v).join(" ");
     return react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("div", null, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("div", {
       className: outerClassName
     }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("main", null, prefs.showSearch && react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("div", {
       className: "non-collapsible-section"
     }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(content_src_components_ErrorBoundary_ErrorBoundary__WEBPACK_IMPORTED_MODULE_6__["ErrorBoundary"], null, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(content_src_components_Search_Search__WEBPACK_IMPORTED_MODULE_8__["Search"], _extends({
-      showLogo: noSectionsEnabled,
+      showLogo: noSectionsEnabled || showLogo,
       handoffEnabled: searchHandoffEnabled
     }, props.Search)))), react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(_asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_2__["ASRouterUISurface"], {
+      adminContent: this.props.adminContent,
       appUpdateChannel: this.props.Prefs.values.appUpdateChannel,
       fxaEndpoint: this.props.Prefs.values.fxa_endpoint,
       dispatch: this.props.dispatch
@@ -777,7 +760,33 @@ const Base = Object(react_redux__WEBPACK_IMPORTED_MODULE_4__["connect"])(state =
   DiscoveryStream: state.DiscoveryStream,
   Search: state.Search
 }))(_Base);
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
+
+/***/ }),
+/* 3 */
+/***/ (function(module, exports) {
+
+var g;
+
+// This works in non-strict mode
+g = (function() {
+	return this;
+})();
+
+try {
+	// This works if eval is allowed (see CSP)
+	g = g || new Function("return this")();
+} catch (e) {
+	// This works if the window reference is available
+	if (typeof window === "object") g = window;
+}
+
+// g can still be undefined, but nothing to do about it...
+// We return undefined, instead of nothing here, so it's
+// easier to handle this case. if(!global) { ...}
+
+module.exports = g;
+
 
 /***/ }),
 /* 4 */
@@ -793,14 +802,14 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ASRouterAdminInner", function() { return ASRouterAdminInner; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "CollapseToggle", function() { return CollapseToggle; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ASRouterAdmin", function() { return ASRouterAdmin; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _asrouter_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(16);
+/* harmony import */ var _asrouter_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(8);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _SimpleHashRouter__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(23);
+/* harmony import */ var _SimpleHashRouter__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(10);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -896,7 +905,8 @@ class TogglePrefCheckbox extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_4___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("input", {
       type: "checkbox",
       checked: this.props.checked,
-      onChange: this.onChange
+      onChange: this.onChange,
+      disabled: this.props.disabled
     }), " ", this.props.pref, " ");
   }
 
@@ -1167,10 +1177,11 @@ class DiscoveryStreamAdmin extends react__WEBPACK_IMPORTED_MODULE_4___default.a.
 class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureComponent {
   constructor(props) {
     super(props);
-    this.onMessage = this.onMessage.bind(this);
     this.handleEnabledToggle = this.handleEnabledToggle.bind(this);
     this.handleUserPrefToggle = this.handleUserPrefToggle.bind(this);
     this.onChangeMessageFilter = this.onChangeMessageFilter.bind(this);
+    this.onChangeMessageGroupsFilter = this.onChangeMessageGroupsFilter.bind(this);
+    this.unblockAll = this.unblockAll.bind(this);
     this.handleClearAllImpressionsByProvider = this.handleClearAllImpressionsByProvider.bind(this);
     this.findOtherBundledMessagesOfSameTemplate = this.findOtherBundledMessagesOfSameTemplate.bind(this);
     this.handleExpressionEval = this.handleExpressionEval.bind(this);
@@ -1182,16 +1193,23 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     this.onNewTargetingParams = this.onNewTargetingParams.bind(this);
     this.handleUpdateWNMessages = this.handleUpdateWNMessages.bind(this);
     this.handleForceWNP = this.handleForceWNP.bind(this);
+    this.handleCloseWNP = this.handleCloseWNP.bind(this);
+    this.resetPanel = this.resetPanel.bind(this);
     this.restoreWNMessageState = this.restoreWNMessageState.bind(this);
     this.toggleJSON = this.toggleJSON.bind(this);
     this.toggleAllMessages = this.toggleAllMessages.bind(this);
+    this.resetGroups = this.resetGroups.bind(this);
+    this.onMessageFromParent = this.onMessageFromParent.bind(this);
+    this.setStateFromParent = this.setStateFromParent.bind(this);
+    this.setState = this.setState.bind(this);
     this.state = {
       messageFilter: "all",
+      messageGroupsFilter: "all",
       WNMessages: [],
       collapsedMessages: [],
       modifiedMessages: [],
       evaluationStatus: {},
-      trailhead: {},
+      trailheadTriplet: "",
       stringTargetingParameters: null,
       newStringTargetingParameters: null,
       copiedToClipboard: false,
@@ -1208,39 +1226,45 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     };
   }
 
-  onMessage({
-    data: action
+  onMessageFromParent({
+    type,
+    data
   }) {
-    if (action.type === "ADMIN_SET_STATE") {
-      this.setState(action.data);
-
-      if (!this.state.stringTargetingParameters) {
-        const stringTargetingParameters = {};
-
-        for (const param of Object.keys(action.data.targetingParameters)) {
-          stringTargetingParameters[param] = JSON.stringify(action.data.targetingParameters[param], null, 2);
+    // These only exists due to onPrefChange events in ASRouter
+    switch (type) {
+      case "UpdateAdminState":
+        {
+          this.setStateFromParent(data);
+          break;
         }
+    }
+  }
 
-        this.setState({
-          stringTargetingParameters
-        });
+  setStateFromParent(data) {
+    this.setState(data);
+
+    if (!this.state.stringTargetingParameters) {
+      const stringTargetingParameters = {};
+
+      for (const param of Object.keys(data.targetingParameters)) {
+        stringTargetingParameters[param] = JSON.stringify(data.targetingParameters[param], null, 2);
       }
+
+      this.setState({
+        stringTargetingParameters
+      });
     }
   }
 
   componentWillMount() {
-    const endpoint = _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].getPreviewEndpoint();
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].addListener(this.onMessageFromParent);
+    const endpoint = _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].getPreviewEndpoint();
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "ADMIN_CONNECT_STATE",
       data: {
         endpoint
       }
-    });
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].addListener(this.onMessage);
-  }
-
-  componentWillUnmount() {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].removeListener(this.onMessage);
+    }).then(this.setStateFromParent);
   }
 
   findOtherBundledMessagesOfSameTemplate(template) {
@@ -1251,20 +1275,20 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     if (msg.bundled && msg.template !== "onboarding") {
       // If we are blocking a message that belongs to a bundle, block all other messages that are bundled of that same template
       let bundle = this.findOtherBundledMessagesOfSameTemplate(msg.template);
-      return () => _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].blockBundle(bundle);
+      return () => _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].blockBundle(bundle);
     }
 
-    return () => _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].blockById(msg.id);
+    return () => _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].blockById(msg.id);
   }
 
   handleUnblock(msg) {
     if (msg.bundled && msg.template !== "onboarding") {
       // If we are unblocking a message that belongs to a bundle, unblock all other messages that are bundled of that same template
       let bundle = this.findOtherBundledMessagesOfSameTemplate(msg.template);
-      return () => _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].unblockBundle(bundle);
+      return () => _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].unblockBundle(bundle);
     }
 
-    return () => _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].unblockById(msg.id);
+    return () => _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].unblockById(msg.id);
   }
 
   resetJSON(msg) {
@@ -1277,8 +1301,33 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     }));
   }
 
+  resetAllJSON() {
+    let messageCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+
+    for (const checkbox of messageCheckboxes) {
+      let trimmedId = checkbox.id.replace(" checkbox", "");
+      let message = this.state.messages.filter(msg => msg.id === trimmedId);
+      let msgId = message[0].id;
+      document.getElementById(`${msgId}-textarea`).value = JSON.stringify(message[0], null, 2);
+    }
+
+    this.setState({
+      WNMessages: []
+    });
+  }
+
+  resetPanel() {
+    this.resetAllJSON();
+    this.handleCloseWNP();
+  }
+
   handleOverride(id) {
-    return () => _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].overrideMessage(id);
+    return () => _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].overrideMessage(id).then(state => {
+      this.setStateFromParent(state);
+      this.props.notifyContent({
+        message: state.message
+      });
+    });
   }
 
   async handleUpdateWNMessages() {
@@ -1286,36 +1335,38 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     let messages = this.state.WNMessages;
 
     for (const msg of messages) {
-      _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].modifyMessageJson(JSON.parse(msg));
+      _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].modifyMessageJson(JSON.parse(msg));
     }
   }
 
   handleForceWNP() {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "FORCE_WHATSNEW_PANEL"
     });
   }
 
+  handleCloseWNP() {
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+      type: "CLOSE_WHATSNEW_PANEL"
+    });
+  }
+
   expireCache() {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "EXPIRE_QUERY_CACHE"
     });
   }
 
   resetPref() {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "RESET_PROVIDER_PREF"
     });
   }
 
-  toggleGroups(id, value) {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
-      type: "SET_GROUP_STATE",
-      data: {
-        id,
-        value
-      }
-    });
+  resetGroups(id, value) {
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+      type: "RESET_GROUPS_STATE"
+    }).then(this.setStateFromParent);
   }
 
   handleExpressionEval() {
@@ -1326,13 +1377,13 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
       context[param] = value ? JSON.parse(value) : null;
     }
 
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "EVALUATE_JEXL_EXPRESSION",
       data: {
         expression: this.refs.expressionInput.value,
         context
       }
-    });
+    }).then(this.setStateFromParent);
   }
 
   onChangeTargetingParameters(event) {
@@ -1369,6 +1420,12 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     });
   }
 
+  unblockAll() {
+    return _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+      type: "UNBLOCK_ALL"
+    }).then(this.setStateFromParent);
+  }
+
   handleClearAllImpressionsByProvider() {
     const providerId = this.state.messageFilter;
 
@@ -1378,13 +1435,13 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
 
     const userPrefInfo = this.state.userPrefs;
     const isUserEnabled = providerId in userPrefInfo ? userPrefInfo[providerId] : true;
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "DISABLE_PROVIDER",
       data: providerId
     });
 
     if (!isUserEnabled) {
-      _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+      _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
         type: "SET_PROVIDER_USER_PREF",
         data: {
           id: providerId,
@@ -1393,7 +1450,7 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
       });
     }
 
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "ENABLE_PROVIDER",
       data: providerId
     });
@@ -1408,7 +1465,7 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
 
     if (isEnabling) {
       if (!isUserEnabled) {
-        _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+        _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
           type: "SET_PROVIDER_USER_PREF",
           data: {
             id: provider.id,
@@ -1418,13 +1475,13 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
       }
 
       if (!isSystemEnabled) {
-        _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+        _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
           type: "ENABLE_PROVIDER",
           data: provider.id
         });
       }
     } else {
-      _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+      _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
         type: "DISABLE_PROVIDER",
         data: provider.id
       });
@@ -1443,7 +1500,7 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
         value: event.target.checked
       }
     };
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage(action);
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage(action);
     this.setState({
       messageFilter: "all"
     });
@@ -1452,6 +1509,12 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
   onChangeMessageFilter(event) {
     this.setState({
       messageFilter: event.target.value
+    });
+  }
+
+  onChangeMessageGroupsFilter(event) {
+    this.setState({
+      messageGroupsFilter: event.target.value
     });
   } // Simulate a copy event that sets to clipboard all targeting paramters and values
 
@@ -1519,10 +1582,6 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
         collapsedMessages: prevState.collapsedMessages.concat(msgId)
       }));
     }
-  }
-
-  modifyJson(msg) {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].modifyMessageJson(JSON.parse(document.getElementById(`${msg.id}-textarea`).value));
   }
 
   handleChange(msgId) {
@@ -1607,6 +1666,16 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     });
   }
 
+  modifyJson(content) {
+    const message = JSON.parse(document.getElementById(`${content.id}-textarea`).value);
+    return _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].modifyMessageJson(message).then(state => {
+      this.setStateFromParent(state);
+      this.props.notifyContent({
+        message: state.message
+      });
+    });
+  }
+
   renderWNMessageItem(msg) {
     const isBlocked = this.state.messageBlockList.includes(msg.id) || this.state.messageBlockList.includes(msg.campaign);
     const impressions = this.state.messageImpressions[msg.id] ? this.state.messageImpressions[msg.id].length : 0;
@@ -1672,6 +1741,15 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
     }), " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", null, "To modify a message, change the JSON and click 'Modify' to see your changes. Click 'Reset' to restore the JSON to the original.")), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tbody", null, messagesToShow.map(msg => this.renderMessageItem(msg)))));
   }
 
+  renderMessagesByGroup() {
+    if (!this.state.messages) {
+      return null;
+    }
+
+    const messagesToShow = this.state.messageGroupsFilter === "all" ? this.state.messages.filter(m => m.groups.length) : this.state.messages.filter(message => message.groups.includes(this.state.messageGroupsFilter));
+    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tbody", null, messagesToShow.map(msg => this.renderMessageItem(msg))));
+  }
+
   renderWNMessages() {
     if (!this.state.messages) {
       return null;
@@ -1686,7 +1764,10 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
       return null;
     }
 
-    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", null, "Show messages from ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("select", {
+    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
+      className: "unblock-all ASRouterButton test-only",
+      onClick: this.unblockAll
+    }, "Unblock All Snippets"), "Show messages from ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("select", {
       value: this.state.messageFilter,
       onChange: this.onChangeMessageFilter
     }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("option", {
@@ -1698,6 +1779,22 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
       className: "button messages-reset",
       onClick: this.handleClearAllImpressionsByProvider
     }, "Reset All") : null);
+  }
+
+  renderMessageGroupsFilter() {
+    if (!this.state.groups) {
+      return null;
+    }
+
+    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", null, "Show messages from ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("select", {
+      value: this.state.messageGroupsFilter,
+      onChange: this.onChangeMessageGroupsFilter
+    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("option", {
+      value: "all"
+    }, "all groups"), this.state.groups.map(group => react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("option", {
+      key: group.id,
+      value: group.id
+    }, group.id))));
   }
 
   renderTableHead() {
@@ -1738,9 +1835,9 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
         label = react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", null, "remote settings (", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("a", {
           className: "providerUrl",
           target: "_blank",
-          href: "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/messaging-experiments/records",
+          href: "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/nimbus-desktop-experiments/records",
           rel: "noopener noreferrer"
-        }, "messaging-experiments"), ")");
+        }, "nimbus-desktop-experiments"), ")");
       }
 
       let reasonsDisabled = [];
@@ -1866,10 +1963,10 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
   }
 
   setAttribution(e) {
-    _asrouter_asrouter_content__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].sendMessage({
       type: "FORCE_ATTRIBUTION",
       data: this.state.attributionParameters
-    });
+    }).then(this.setStateFromParent);
   }
 
   _getGroupImpressionsCount(id, frequency) {
@@ -1896,7 +1993,7 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
   }
 
   renderAttributionParamers() {
-    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, " Attribution Parameters "), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", null, " ", "This forces the browser to set some attribution parameters, useful for testing the Return To AMO feature. Clicking on 'Force Attribution', with the default values in each field, will demo the Return To AMO flow with the addon called 'Iridium for Youtube'. If you wish to try different attribution parameters, enter them in the text boxes. If you wish to try a different addon with the Return To AMO flow, make sure the 'content' text box has the addon GUID, then click 'Force Attribution'."), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("b", null, " Source ")), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("input", {
+    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, " Attribution Parameters "), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", null, " ", "This forces the browser to set some attribution parameters, useful for testing the Return To AMO feature. Clicking on 'Force Attribution', with the default values in each field, will demo the Return To AMO flow with the addon called 'Iridium for Youtube'. If you wish to try different attribution parameters, enter them in the text boxes. If you wish to try a different addon with the Return To AMO flow, make sure the 'content' text box has the addon GUID, then click 'Force Attribution'. Clicking on 'Force Attribution' with blank text boxes reset attribution data."), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("b", null, " Source ")), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("input", {
       type: "text",
       name: "source",
       placeholder: "addons.mozilla.org",
@@ -1973,13 +2070,9 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
   }
 
   renderTrailheadInfo() {
-    const {
-      trailheadInterrupt,
-      trailheadTriplet
-    } = this.state.trailhead;
     return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", {
       className: "minimal-table"
-    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tbody", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Interrupt branch"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, trailheadInterrupt)), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Triplet branch"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, trailheadTriplet))));
+    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tbody", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Triplet branch"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, this.state.trailheadTriplet))));
   }
 
   renderWNPTests() {
@@ -1992,13 +2085,16 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
       className: "helpLink"
     }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", {
       className: "icon icon-small-spacer icon-info"
-    }), " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", null, "To correctly render selected messages, please check \"Disable Popup Auto-Hide\" in the browser toolbox, or set", " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("i", null, "ui.popup.disable_autohide"), " to ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("b", null, "true"), " in", " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("i", null, "about:config"), ". Then, click 'Open What's New Panel', select the messages you want to see, and click 'Render Selected Messages'.", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("br", null), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("br", null), "To modify a message, select it, modify the JSON and click 'Render Selected Messages' again to see your changes.")), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
+    }), " ", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", null, "To correctly render selected messages, click 'Open What's New Panel', select the messages you want to see, and click 'Render Selected Messages'.", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("br", null), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("br", null), "To modify a message, select it, modify the JSON and click 'Render Selected Messages' again to see your changes.", react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("br", null), "Click 'Reset Panel' to close the panel and reset all JSON to its original state.")), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
       className: "ASRouterButton primary button",
       onClick: this.handleForceWNP
     }, "Open What's New Panel"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
       className: "ASRouterButton secondary button",
       onClick: this.handleUpdateWNMessages
-    }, "Render Selected Messages"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, "Messages"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
+    }, "Render Selected Messages"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
+      className: "ASRouterButton secondary button",
+      onClick: this.resetPanel
+    }, "Reset Panel"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, "Messages"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
       className: "ASRouterButton slim button" // eslint-disable-next-line react/jsx-no-bind
       ,
       onClick: e => this.toggleAllMessages(messagesToShow)
@@ -2019,9 +2115,12 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
         }, "Expire Cache"), " ", "(This expires the cache in ASR Targeting for bookmarks and top sites)", this.renderTargetingParameters(), this.renderAttributionParamers());
 
       case "groups":
-        return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_4___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, "Message Groups"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("thead", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", {
+        return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_4___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, "Message Groups"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
+          className: "button",
+          onClick: this.resetGroups
+        }, "Reset group impressions"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("table", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("thead", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tr", {
           className: "message-item"
-        }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Enabled"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Impressions count"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Custom frequency"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "User preferences"))), this.state.groups && this.state.groups.map(({
+        }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Enabled"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Impressions count"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "Custom frequency"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, "User preferences"))), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("tbody", null, this.state.groups && this.state.groups.map(({
           id,
           enabled,
           frequency,
@@ -2031,8 +2130,8 @@ class ASRouterAdminInner extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
         }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(TogglePrefCheckbox, {
           checked: enabled,
           pref: id,
-          onChange: this.toggleGroups
-        })), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, this._getGroupImpressionsCount(id, frequency)), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, JSON.stringify(frequency, null, 2)), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, userPreferences.join(", "))))));
+          disabled: true
+        })), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, this._getGroupImpressionsCount(id, frequency)), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, JSON.stringify(frequency, null, 2)), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("td", null, userPreferences.join(", ")))))), this.renderMessageGroupsFilter(), this.renderMessagesByGroup());
 
       case "ds":
         return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_4___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", null, "Discovery Stream"), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(DiscoveryStreamAdmin, {
@@ -2127,6 +2226,7 @@ class CollapseToggle extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureCo
 
   componentWillUnmount() {
     global.document.body.classList.remove("no-scroll");
+    _asrouter_asrouter_utils__WEBPACK_IMPORTED_MODULE_1__["ASRouterUtils"].removeListener(this.onMessageFromParent);
   }
 
   render() {
@@ -2161,7 +2261,7 @@ const ASRouterAdmin = Object(react_redux__WEBPACK_IMPORTED_MODULE_2__["connect"]
   Personalization: state.Personalization,
   Prefs: state.Prefs
 }))(_ASRouterAdmin);
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
 /* 5 */
@@ -2170,61 +2270,37 @@ const ASRouterAdmin = Object(react_redux__WEBPACK_IMPORTED_MODULE_2__["connect"]
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ASRouterUtils", function() { return ASRouterUtils; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ASRouterUISurface", function() { return ASRouterUISurface; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_lib_init_store__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(6);
-/* harmony import */ var _rich_text_strings__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(76);
-/* harmony import */ var _components_ImpressionsWrapper_ImpressionsWrapper__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(8);
-/* harmony import */ var fluent_react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(74);
-/* harmony import */ var content_src_lib_constants__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(11);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_6__);
-/* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(12);
-/* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_7___default = /*#__PURE__*/__webpack_require__.n(react_dom__WEBPACK_IMPORTED_MODULE_7__);
-/* harmony import */ var _templates_template_manifest__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(75);
-/* harmony import */ var _templates_FirstRun_FirstRun__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(78);
-function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
-
+/* harmony import */ var common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(6);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(1);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-
-
-
-
-
-
-
-
-const INCOMING_MESSAGE_NAME = "ASRouter:parent-to-child";
-const OUTGOING_MESSAGE_NAME = "ASRouter:child-to-parent";
-const TEMPLATES_ABOVE_PAGE = ["trailhead", "full_page_interrupt", "return_to_amo_overlay", "extended_triplets"];
-const FIRST_RUN_TEMPLATES = TEMPLATES_ABOVE_PAGE;
-const TEMPLATES_BELOW_SEARCH = ["simple_below_search_snippet"];
 const ASRouterUtils = {
   addListener(listener) {
-    if (global.RPMAddMessageListener) {
-      global.RPMAddMessageListener(INCOMING_MESSAGE_NAME, listener);
+    if (global.ASRouterAddParentListener) {
+      global.ASRouterAddParentListener(listener);
     }
   },
 
   removeListener(listener) {
-    if (global.RPMRemoveMessageListener) {
-      global.RPMRemoveMessageListener(INCOMING_MESSAGE_NAME, listener);
+    if (global.ASRouterRemoveParentListener) {
+      global.ASRouterRemoveParentListener(listener);
     }
   },
 
   sendMessage(action) {
-    if (global.RPMSendAsyncMessage) {
-      global.RPMSendAsyncMessage(OUTGOING_MESSAGE_NAME, action);
+    if (global.ASRouterMessage) {
+      return global.ASRouterMessage(action);
     }
+
+    throw new Error(`Unexpected call:\n${JSON.stringify(action, null, 3)}`);
   },
 
   blockById(id, options) {
-    ASRouterUtils.sendMessage({
-      type: "BLOCK_MESSAGE_BY_ID",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].BLOCK_MESSAGE_BY_ID,
       data: {
         id,
         ...options
@@ -2233,33 +2309,24 @@ const ASRouterUtils = {
   },
 
   modifyMessageJson(content) {
-    ASRouterUtils.sendMessage({
-      type: "MODIFY_MESSAGE_JSON",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].MODIFY_MESSAGE_JSON,
       data: {
         content
       }
     });
   },
 
-  dismissById(id) {
-    ASRouterUtils.sendMessage({
-      type: "DISMISS_MESSAGE_BY_ID",
-      data: {
-        id
-      }
-    });
-  },
-
   executeAction(button_action) {
-    ASRouterUtils.sendMessage({
-      type: "USER_ACTION",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].USER_ACTION,
       data: button_action
     });
   },
 
   unblockById(id) {
-    ASRouterUtils.sendMessage({
-      type: "UNBLOCK_MESSAGE_BY_ID",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].UNBLOCK_MESSAGE_BY_ID,
       data: {
         id
       }
@@ -2267,8 +2334,8 @@ const ASRouterUtils = {
   },
 
   blockBundle(bundle) {
-    ASRouterUtils.sendMessage({
-      type: "BLOCK_BUNDLE",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].BLOCK_BUNDLE,
       data: {
         bundle
       }
@@ -2276,8 +2343,8 @@ const ASRouterUtils = {
   },
 
   unblockBundle(bundle) {
-    ASRouterUtils.sendMessage({
-      type: "UNBLOCK_BUNDLE",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].UNBLOCK_BUNDLE,
       data: {
         bundle
       }
@@ -2285,8 +2352,8 @@ const ASRouterUtils = {
   },
 
   overrideMessage(id) {
-    ASRouterUtils.sendMessage({
-      type: "OVERRIDE_MESSAGE",
+    return ASRouterUtils.sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].OVERRIDE_MESSAGE,
       data: {
         id
       }
@@ -2294,15 +2361,12 @@ const ASRouterUtils = {
   },
 
   sendTelemetry(ping) {
-    if (global.RPMSendAsyncMessage) {
-      const payload = common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].ASRouterUserEvent(ping);
-      global.RPMSendAsyncMessage(content_src_lib_init_store__WEBPACK_IMPORTED_MODULE_1__["OUTGOING_MESSAGE_NAME"], payload);
-    }
+    return ASRouterUtils.sendMessage(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__["actionCreators"].ASRouterUserEvent(ping));
   },
 
   getPreviewEndpoint() {
-    if (global.location && global.location.href.includes("endpoint")) {
-      const params = new URLSearchParams(global.location.href.slice(global.location.href.indexOf("endpoint")));
+    if (global.document && global.document.location && global.document.location.href.includes("endpoint")) {
+      const params = new URLSearchParams(global.document.location.href.slice(global.document.location.href.indexOf("endpoint")));
 
       try {
         const endpoint = new URL(params.get("endpoint"));
@@ -2319,412 +2383,15 @@ const ASRouterUtils = {
   },
 
   getPreviewTheme() {
-    return new URLSearchParams(global.location.href.slice(global.location.href.indexOf("theme"))).get("theme");
+    return new URLSearchParams(global.document.location.href.slice(global.document.location.href.indexOf("theme"))).get("theme");
   },
 
   getPreviewDir() {
-    return new URLSearchParams(global.location.href.slice(global.location.href.indexOf("dir"))).get("dir");
+    return new URLSearchParams(global.document.location.href.slice(global.document.location.href.indexOf("dir"))).get("dir");
   }
 
-}; // Note: nextProps/prevProps refer to props passed to <ImpressionsWrapper />, not <ASRouterUISurface />
-
-function shouldSendImpressionOnUpdate(nextProps, prevProps) {
-  return nextProps.message.id && (!prevProps.message || prevProps.message.id !== nextProps.message.id);
-}
-
-class ASRouterUISurface extends react__WEBPACK_IMPORTED_MODULE_6___default.a.PureComponent {
-  constructor(props) {
-    super(props);
-    this.onMessageFromParent = this.onMessageFromParent.bind(this);
-    this.sendClick = this.sendClick.bind(this);
-    this.sendImpression = this.sendImpression.bind(this);
-    this.sendUserActionTelemetry = this.sendUserActionTelemetry.bind(this);
-    this.onUserAction = this.onUserAction.bind(this);
-    this.fetchFlowParams = this.fetchFlowParams.bind(this);
-    this.state = {
-      message: {},
-      interruptCleared: false
-    };
-
-    if (props.document) {
-      this.headerPortal = props.document.getElementById("header-asrouter-container");
-      this.footerPortal = props.document.getElementById("footer-asrouter-container");
-    }
-  }
-
-  async fetchFlowParams(params = {}) {
-    let result = {};
-    const {
-      fxaEndpoint,
-      dispatch
-    } = this.props;
-
-    if (!fxaEndpoint) {
-      const err = "Tried to fetch flow params before fxaEndpoint pref was ready";
-      console.error(err); // eslint-disable-line no-console
-    }
-
-    try {
-      const urlObj = new URL(fxaEndpoint);
-      urlObj.pathname = "metrics-flow";
-      Object.keys(params).forEach(key => {
-        urlObj.searchParams.append(key, params[key]);
-      });
-      const response = await fetch(urlObj.toString(), {
-        credentials: "omit"
-      });
-
-      if (response.status === 200) {
-        const {
-          deviceId,
-          flowId,
-          flowBeginTime
-        } = await response.json();
-        result = {
-          deviceId,
-          flowId,
-          flowBeginTime
-        };
-      } else {
-        console.error("Non-200 response", response); // eslint-disable-line no-console
-
-        dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].OnlyToMain({
-          type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].TELEMETRY_UNDESIRED_EVENT,
-          data: {
-            event: "FXA_METRICS_FETCH_ERROR",
-            value: response.status
-          }
-        }));
-      }
-    } catch (error) {
-      console.error(error); // eslint-disable-line no-console
-
-      dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].OnlyToMain({
-        type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].TELEMETRY_UNDESIRED_EVENT,
-        data: {
-          event: "FXA_METRICS_ERROR"
-        }
-      }));
-    }
-
-    return result;
-  }
-
-  sendUserActionTelemetry(extraProps = {}) {
-    const {
-      message
-    } = this.state;
-    const eventType = `${message.provider}_user_event`;
-    ASRouterUtils.sendTelemetry({
-      message_id: message.id,
-      source: extraProps.id,
-      action: eventType,
-      ...extraProps
-    });
-  }
-
-  sendImpression(extraProps) {
-    if (this.state.message.provider === "preview") {
-      return;
-    }
-
-    ASRouterUtils.sendMessage({
-      type: "IMPRESSION",
-      data: this.state.message
-    });
-    this.sendUserActionTelemetry({
-      event: "IMPRESSION",
-      ...extraProps
-    });
-  } // If link has a `metric` data attribute send it as part of the `event_context`
-  // telemetry field which can have arbitrary values.
-  // Used for router messages with links as part of the content.
-
-
-  sendClick(event) {
-    const {
-      dataset
-    } = event.target;
-    const metric = {
-      event_context: dataset.metric,
-      // Used for the `source` of the event. Needed to differentiate
-      // from other snippet or onboarding events that may occur.
-      id: "NEWTAB_FOOTER_BAR_CONTENT"
-    };
-    const {
-      entrypoint_name,
-      entrypoint_value
-    } = dataset; // Assign the snippet referral for the action
-
-    const entrypoint = entrypoint_name ? new URLSearchParams([[entrypoint_name, entrypoint_value]]).toString() : entrypoint_value;
-    const action = {
-      type: dataset.action,
-      data: {
-        args: dataset.args,
-        ...(entrypoint && {
-          entrypoint
-        })
-      }
-    };
-
-    if (action.type) {
-      ASRouterUtils.executeAction(action);
-    }
-
-    if (!this.state.message.content.do_not_autoblock && !dataset.do_not_autoblock) {
-      ASRouterUtils.blockById(this.state.message.id);
-    }
-
-    if (this.state.message.provider !== "preview") {
-      this.sendUserActionTelemetry({
-        event: "CLICK_BUTTON",
-        ...metric
-      });
-    }
-  }
-
-  onBlockById(id) {
-    return options => ASRouterUtils.blockById(id, options);
-  }
-
-  onDismissById(id) {
-    return () => ASRouterUtils.dismissById(id);
-  }
-
-  clearMessage(id) {
-    // Request new set of dynamic triplet cards when click on a card CTA clear
-    // message and 'id' matches one of the cards in message bundle
-    if (this.state.message && this.state.message.bundle && this.state.message.bundle.find(card => card.id === id)) {
-      this.requestMessage();
-    }
-
-    if (id === this.state.message.id) {
-      this.setState({
-        message: {}
-      }); // Remove any styles related to the RTAMO message
-
-      document.body.classList.remove("welcome", "hide-main", "amo");
-    }
-  }
-
-  onMessageFromParent({
-    data: action
-  }) {
-    switch (action.type) {
-      case "SET_MESSAGE":
-        this.setState({
-          message: action.data
-        });
-        break;
-
-      case "CLEAR_INTERRUPT":
-        this.setState({
-          interruptCleared: true
-        });
-        break;
-
-      case "CLEAR_MESSAGE":
-        this.clearMessage(action.data.id);
-        break;
-
-      case "CLEAR_PROVIDER":
-        if (action.data.id === this.state.message.provider) {
-          this.setState({
-            message: {}
-          });
-        }
-
-        break;
-
-      case "CLEAR_ALL":
-        this.setState({
-          message: {}
-        });
-        break;
-
-      case "AS_ROUTER_TARGETING_UPDATE":
-        action.data.forEach(id => this.clearMessage(id));
-        break;
-    }
-  }
-
-  requestMessage(endpoint) {
-    // If we are loading about:welcome we want to trigger the onboarding messages
-    if (this.props.document && this.props.document.location.href === "about:welcome") {
-      ASRouterUtils.sendMessage({
-        type: "TRIGGER",
-        data: {
-          trigger: {
-            id: "firstRun"
-          }
-        }
-      });
-    } else {
-      ASRouterUtils.sendMessage({
-        type: "NEWTAB_MESSAGE_REQUEST",
-        data: {
-          endpoint
-        }
-      });
-    }
-  }
-
-  componentWillMount() {
-    const endpoint = ASRouterUtils.getPreviewEndpoint();
-
-    if (endpoint && endpoint.theme === "dark") {
-      global.window.dispatchEvent(new CustomEvent("LightweightTheme:Set", {
-        detail: {
-          data: content_src_lib_constants__WEBPACK_IMPORTED_MODULE_5__["NEWTAB_DARK_THEME"]
-        }
-      }));
-    }
-
-    if (endpoint && endpoint.dir === "rtl") {
-      //Set `dir = rtl` on the HTML
-      this.props.document.dir = "rtl";
-    }
-
-    ASRouterUtils.addListener(this.onMessageFromParent);
-    this.requestMessage(endpoint);
-  }
-
-  componentWillUnmount() {
-    ASRouterUtils.removeListener(this.onMessageFromParent);
-  }
-
-  async getMonitorUrl({
-    url,
-    flowRequestParams = {}
-  }) {
-    const flowValues = await this.fetchFlowParams(flowRequestParams); // Note that flowParams are actually added dynamically on the page
-
-    const urlObj = new URL(url);
-    ["deviceId", "flowId", "flowBeginTime"].forEach(key => {
-      if (key in flowValues) {
-        urlObj.searchParams.append(key, flowValues[key]);
-      }
-    });
-    return urlObj.toString();
-  }
-
-  async onUserAction(action) {
-    switch (action.type) {
-      // This needs to be handled locally because its
-      case "ENABLE_FIREFOX_MONITOR":
-        const url = await this.getMonitorUrl(action.data.args);
-        ASRouterUtils.executeAction({
-          type: "OPEN_URL",
-          data: {
-            args: url
-          }
-        });
-        break;
-
-      default:
-        ASRouterUtils.executeAction(action);
-    }
-  }
-
-  renderSnippets() {
-    const {
-      message
-    } = this.state;
-
-    if (!_templates_template_manifest__WEBPACK_IMPORTED_MODULE_8__["SnippetsTemplates"][message.template]) {
-      return null;
-    }
-
-    const SnippetComponent = _templates_template_manifest__WEBPACK_IMPORTED_MODULE_8__["SnippetsTemplates"][message.template];
-    const {
-      content
-    } = this.state.message;
-    return react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement(_components_ImpressionsWrapper_ImpressionsWrapper__WEBPACK_IMPORTED_MODULE_3__["ImpressionsWrapper"], {
-      id: "NEWTAB_FOOTER_BAR",
-      message: this.state.message,
-      sendImpression: this.sendImpression,
-      shouldSendImpressionOnUpdate: shouldSendImpressionOnUpdate // This helps with testing
-      ,
-      document: this.props.document
-    }, react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement(fluent_react__WEBPACK_IMPORTED_MODULE_4__["LocalizationProvider"], {
-      bundles: Object(_rich_text_strings__WEBPACK_IMPORTED_MODULE_2__["generateBundles"])(content)
-    }, react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement(SnippetComponent, _extends({}, this.state.message, {
-      UISurface: "NEWTAB_FOOTER_BAR",
-      onBlock: this.onBlockById(this.state.message.id),
-      onDismiss: this.onDismissById(this.state.message.id),
-      onAction: this.onUserAction,
-      sendClick: this.sendClick,
-      sendUserActionTelemetry: this.sendUserActionTelemetry
-    }))));
-  }
-
-  renderPreviewBanner() {
-    if (this.state.message.provider !== "preview") {
-      return null;
-    }
-
-    return react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement("div", {
-      className: "snippets-preview-banner"
-    }, react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement("span", {
-      className: "icon icon-small-spacer icon-info"
-    }), react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement("span", null, "Preview Purposes Only"));
-  }
-
-  renderFirstRun() {
-    const {
-      message
-    } = this.state;
-
-    if (FIRST_RUN_TEMPLATES.includes(message.template)) {
-      return react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement(_components_ImpressionsWrapper_ImpressionsWrapper__WEBPACK_IMPORTED_MODULE_3__["ImpressionsWrapper"], {
-        id: "FIRST_RUN",
-        message: this.state.message,
-        sendImpression: this.sendImpression,
-        shouldSendImpressionOnUpdate: shouldSendImpressionOnUpdate // This helps with testing
-        ,
-        document: this.props.document
-      }, react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement(_templates_FirstRun_FirstRun__WEBPACK_IMPORTED_MODULE_9__["FirstRun"], {
-        document: this.props.document,
-        interruptCleared: this.state.interruptCleared,
-        message: message,
-        sendUserActionTelemetry: this.sendUserActionTelemetry,
-        executeAction: ASRouterUtils.executeAction,
-        dispatch: this.props.dispatch,
-        onBlockById: ASRouterUtils.blockById,
-        onDismiss: this.onDismissById(this.state.message.id),
-        fxaEndpoint: this.props.fxaEndpoint,
-        appUpdateChannel: this.props.appUpdateChannel,
-        fetchFlowParams: this.fetchFlowParams
-      }));
-    }
-
-    return null;
-  }
-
-  render() {
-    const {
-      message
-    } = this.state;
-
-    if (!message.id) {
-      return null;
-    }
-
-    const shouldRenderBelowSearch = TEMPLATES_BELOW_SEARCH.includes(message.template);
-    const shouldRenderInHeader = TEMPLATES_ABOVE_PAGE.includes(message.template);
-    return shouldRenderBelowSearch ? // Render special below search snippets in place;
-    react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement("div", {
-      className: "below-search-snippet-wrapper"
-    }, this.renderSnippets()) : // For onboarding, regular snippets etc. we should render
-    // everything in our footer container.
-    react_dom__WEBPACK_IMPORTED_MODULE_7___default.a.createPortal(react__WEBPACK_IMPORTED_MODULE_6___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_6___default.a.Fragment, null, this.renderPreviewBanner(), this.renderFirstRun(), this.renderSnippets()), shouldRenderInHeader ? this.headerPortal : this.footerPortal);
-  }
-
-}
-ASRouterUISurface.defaultProps = {
-  document: global.document
 };
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
 /* 6 */
@@ -2732,583 +2399,30 @@ ASRouterUISurface.defaultProps = {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MERGE_STORE_ACTION", function() { return MERGE_STORE_ACTION; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "OUTGOING_MESSAGE_NAME", function() { return OUTGOING_MESSAGE_NAME; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "INCOMING_MESSAGE_NAME", function() { return INCOMING_MESSAGE_NAME; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "EARLY_QUEUED_ACTIONS", function() { return EARLY_QUEUED_ACTIONS; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "rehydrationMiddleware", function() { return rehydrationMiddleware; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "queueEarlyMessageMiddleware", function() { return queueEarlyMessageMiddleware; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "initStore", function() { return initStore; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(7);
-/* harmony import */ var redux__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(redux__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MESSAGE_TYPE_LIST", function() { return MESSAGE_TYPE_LIST; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MESSAGE_TYPE_HASH", function() { return MESSAGE_TYPE_HASH; });
+/* vim: set ts=2 sw=2 sts=2 et tw=80: */
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* eslint-env mozilla/frame-script */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-const MERGE_STORE_ACTION = "NEW_TAB_INITIAL_STATE";
-const OUTGOING_MESSAGE_NAME = "ActivityStream:ContentToMain";
-const INCOMING_MESSAGE_NAME = "ActivityStream:MainToContent";
-const EARLY_QUEUED_ACTIONS = [common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].SAVE_SESSION_PERF_DATA];
-/**
- * A higher-order function which returns a reducer that, on MERGE_STORE action,
- * will return the action.data object merged into the previous state.
- *
- * For all other actions, it merely calls mainReducer.
- *
- * Because we want this to merge the entire state object, it's written as a
- * higher order function which takes the main reducer (itself often a call to
- * combineReducers) as a parameter.
- *
- * @param  {function} mainReducer reducer to call if action != MERGE_STORE_ACTION
- * @return {function}             a reducer that, on MERGE_STORE_ACTION action,
- *                                will return the action.data object merged
- *                                into the previous state, and the result
- *                                of calling mainReducer otherwise.
- */
-
-function mergeStateReducer(mainReducer) {
-  return (prevState, action) => {
-    if (action.type === MERGE_STORE_ACTION) {
-      return { ...prevState,
-        ...action.data
-      };
-    }
-
-    return mainReducer(prevState, action);
-  };
-}
-/**
- * messageMiddleware - Middleware that looks for SentToMain type actions, and sends them if necessary
- */
-
-
-const messageMiddleware = store => next => action => {
-  const skipLocal = action.meta && action.meta.skipLocal;
-
-  if (common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isSendToMain(action)) {
-    RPMSendAsyncMessage(OUTGOING_MESSAGE_NAME, action);
-  }
-
-  if (!skipLocal) {
-    next(action);
-  }
-};
-
-const rehydrationMiddleware = ({
-  getState
-}) => {
-  // NB: The parameter here is MiddlewareAPI which looks like a Store and shares
-  // the same getState, so attached properties are accessible from the store.
-  getState.didRehydrate = false;
-  getState.didRequestInitialState = false;
-  return next => action => {
-    if (getState.didRehydrate || window.__FROM_STARTUP_CACHE__) {
-      // Startup messages can be safely ignored by the about:home document
-      // stored in the startup cache.
-      if (window.__FROM_STARTUP_CACHE__ && action.meta && action.meta.isStartup) {
-        return null;
-      }
-
-      return next(action);
-    }
-
-    const isMergeStoreAction = action.type === MERGE_STORE_ACTION;
-    const isRehydrationRequest = action.type === common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].NEW_TAB_STATE_REQUEST;
-
-    if (isRehydrationRequest) {
-      getState.didRequestInitialState = true;
-      return next(action);
-    }
-
-    if (isMergeStoreAction) {
-      getState.didRehydrate = true;
-      return next(action);
-    } // If init happened after our request was made, we need to re-request
-
-
-    if (getState.didRequestInitialState && action.type === common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].INIT) {
-      return next(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].AlsoToMain({
-        type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].NEW_TAB_STATE_REQUEST
-      }));
-    }
-
-    if (common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isBroadcastToContent(action) || common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isSendToOneContent(action) || common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isSendToPreloaded(action)) {
-      // Note that actions received before didRehydrate will not be dispatched
-      // because this could negatively affect preloading and the the state
-      // will be replaced by rehydration anyway.
-      return null;
-    }
-
-    return next(action);
-  };
-};
-/**
- * This middleware queues up all the EARLY_QUEUED_ACTIONS until it receives
- * the first action from main. This is useful for those actions for main which
- * require higher reliability, i.e. the action will not be lost in the case
- * that it gets sent before the main is ready to receive it. Conversely, any
- * actions allowed early are accepted to be ignorable or re-sendable.
- */
-
-const queueEarlyMessageMiddleware = ({
-  getState
-}) => {
-  // NB: The parameter here is MiddlewareAPI which looks like a Store and shares
-  // the same getState, so attached properties are accessible from the store.
-  getState.earlyActionQueue = [];
-  getState.receivedFromMain = false;
-  return next => action => {
-    if (getState.receivedFromMain) {
-      next(action);
-    } else if (common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isFromMain(action)) {
-      next(action);
-      getState.receivedFromMain = true; // Sending out all the early actions as main is ready now
-
-      getState.earlyActionQueue.forEach(next);
-      getState.earlyActionQueue.length = 0;
-    } else if (EARLY_QUEUED_ACTIONS.includes(action.type)) {
-      getState.earlyActionQueue.push(action);
-    } else {
-      // Let any other type of action go through
-      next(action);
-    }
-  };
-};
-/**
- * initStore - Create a store and listen for incoming actions
- *
- * @param  {object} reducers An object containing Redux reducers
- * @param  {object} intialState (optional) The initial state of the store, if desired
- * @return {object}          A redux store
- */
-
-function initStore(reducers, initialState) {
-  const store = Object(redux__WEBPACK_IMPORTED_MODULE_1__["createStore"])(mergeStateReducer(Object(redux__WEBPACK_IMPORTED_MODULE_1__["combineReducers"])(reducers)), initialState, global.RPMAddMessageListener && Object(redux__WEBPACK_IMPORTED_MODULE_1__["applyMiddleware"])(queueEarlyMessageMiddleware, rehydrationMiddleware, messageMiddleware));
-
-  if (global.RPMAddMessageListener) {
-    global.RPMAddMessageListener(INCOMING_MESSAGE_NAME, msg => {
-      try {
-        store.dispatch(msg.data);
-      } catch (ex) {
-        console.error("Content msg:", msg, "Dispatch error: ", ex); // eslint-disable-line no-console
-
-        dump(`Content msg: ${JSON.stringify(msg)}\nDispatch error: ${ex}\n${ex.stack}`);
-      }
-    });
-  }
-
-  return store;
-}
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+const MESSAGE_TYPE_LIST = ["BLOCK_MESSAGE_BY_ID", "USER_ACTION", "IMPRESSION", "TRIGGER", "NEWTAB_MESSAGE_REQUEST", "DOORHANGER_TELEMETRY", "TOOLBAR_BADGE_TELEMETRY", "TOOLBAR_PANEL_TELEMETRY", "MOMENTS_PAGE_TELEMETRY", "AS_ROUTER_TELEMETRY_USER_EVENT", // Admin types
+"ADMIN_CONNECT_STATE", "UNBLOCK_MESSAGE_BY_ID", "UNBLOCK_ALL", "BLOCK_BUNDLE", "UNBLOCK_BUNDLE", "DISABLE_PROVIDER", "ENABLE_PROVIDER", "EVALUATE_JEXL_EXPRESSION", "EXPIRE_QUERY_CACHE", "FORCE_ATTRIBUTION", "FORCE_WHATSNEW_PANEL", "CLOSE_WHATSNEW_PANEL", "OVERRIDE_MESSAGE", "MODIFY_MESSAGE_JSON", "RESET_PROVIDER_PREF", "SET_PROVIDER_USER_PREF", "RESET_GROUPS_STATE"];
+const MESSAGE_TYPE_HASH = MESSAGE_TYPE_LIST.reduce((hash, value) => {
+  hash[value] = value;
+  return hash;
+}, {});
 
 /***/ }),
 /* 7 */
 /***/ (function(module, exports) {
 
-module.exports = Redux;
+module.exports = ReactRedux;
 
 /***/ }),
 /* 8 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "VISIBLE", function() { return VISIBLE; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "VISIBILITY_CHANGE_EVENT", function() { return VISIBILITY_CHANGE_EVENT; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ImpressionsWrapper", function() { return ImpressionsWrapper; });
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-const VISIBLE = "visible";
-const VISIBILITY_CHANGE_EVENT = "visibilitychange";
-/**
- * Component wrapper used to send telemetry pings on every impression.
- */
-
-class ImpressionsWrapper extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent {
-  // This sends an event when a user sees a set of new content. If content
-  // changes while the page is hidden (i.e. preloaded or on a hidden tab),
-  // only send the event if the page becomes visible again.
-  sendImpressionOrAddListener() {
-    if (this.props.document.visibilityState === VISIBLE) {
-      this.props.sendImpression({
-        id: this.props.id
-      });
-    } else {
-      // We should only ever send the latest impression stats ping, so remove any
-      // older listeners.
-      if (this._onVisibilityChange) {
-        this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
-      } // When the page becomes visible, send the impression stats ping if the section isn't collapsed.
-
-
-      this._onVisibilityChange = () => {
-        if (this.props.document.visibilityState === VISIBLE) {
-          this.props.sendImpression({
-            id: this.props.id
-          });
-          this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
-        }
-      };
-
-      this.props.document.addEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
-    }
-  }
-
-  componentWillUnmount() {
-    if (this._onVisibilityChange) {
-      this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
-    }
-  }
-
-  componentDidMount() {
-    if (this.props.sendOnMount) {
-      this.sendImpressionOrAddListener();
-    }
-  }
-
-  componentDidUpdate(prevProps) {
-    if (this.props.shouldSendImpressionOnUpdate(this.props, prevProps)) {
-      this.sendImpressionOrAddListener();
-    }
-  }
-
-  render() {
-    return this.props.children;
-  }
-
-}
-ImpressionsWrapper.defaultProps = {
-  document: global.document,
-  sendOnMount: true
-};
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
-
-/***/ }),
-/* 9 */
-/***/ (function(module, exports) {
-
-module.exports = React;
-
-/***/ }),
-/* 10 */
-/***/ (function(module, exports) {
-
-module.exports = PropTypes;
-
-/***/ }),
-/* 11 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "IS_NEWTAB", function() { return IS_NEWTAB; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "NEWTAB_DARK_THEME", function() { return NEWTAB_DARK_THEME; });
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-const IS_NEWTAB = global.document && global.document.documentURI === "about:newtab";
-const NEWTAB_DARK_THEME = {
-  ntp_background: {
-    r: 42,
-    g: 42,
-    b: 46,
-    a: 1
-  },
-  ntp_text: {
-    r: 249,
-    g: 249,
-    b: 250,
-    a: 1
-  },
-  sidebar: {
-    r: 56,
-    g: 56,
-    b: 61,
-    a: 1
-  },
-  sidebar_text: {
-    r: 249,
-    g: 249,
-    b: 250,
-    a: 1
-  }
-};
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
-
-/***/ }),
-/* 12 */
-/***/ (function(module, exports) {
-
-module.exports = ReactDOM;
-
-/***/ }),
-/* 13 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "convertLinks", function() { return convertLinks; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "RichText", function() { return RichText; });
-/* harmony import */ var fluent_react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(74);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _rich_text_strings__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(76);
-/* harmony import */ var _template_utils__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(14);
-function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
- // Elements allowed in snippet content
-
-const ALLOWED_TAGS = {
-  b: react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("b", null),
-  i: react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("i", null),
-  u: react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("u", null),
-  strong: react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("strong", null),
-  em: react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("em", null),
-  br: react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("br", null)
-};
-/**
- * Transform an object (tag name: {url}) into (tag name: anchor) where the url
- * is used as href, in order to render links inside a Fluent.Localized component.
- */
-
-function convertLinks(links, sendClick, doNotAutoBlock, openNewWindow = false) {
-  if (links) {
-    return Object.keys(links).reduce((acc, linkTag) => {
-      const {
-        action
-      } = links[linkTag]; // Setting the value to false will not include the attribute in the anchor
-
-      const url = action ? false : Object(_template_utils__WEBPACK_IMPORTED_MODULE_3__["safeURI"])(links[linkTag].url);
-      acc[linkTag] = // eslint was getting a false positive caused by the dynamic injection
-      // of content.
-      // eslint-disable-next-line jsx-a11y/anchor-has-content
-      react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("a", {
-        href: url,
-        target: openNewWindow ? "_blank" : "",
-        "data-metric": links[linkTag].metric,
-        "data-action": action,
-        "data-args": links[linkTag].args,
-        "data-do_not_autoblock": doNotAutoBlock,
-        "data-entrypoint_name": links[linkTag].entrypoint_name,
-        "data-entrypoint_value": links[linkTag].entrypoint_value,
-        onClick: sendClick
-      });
-      return acc;
-    }, {});
-  }
-
-  return null;
-}
-/**
- * Message wrapper used to sanitize markup and render HTML.
- */
-
-function RichText(props) {
-  if (!_rich_text_strings__WEBPACK_IMPORTED_MODULE_2__["RICH_TEXT_KEYS"].includes(props.localization_id)) {
-    throw new Error(`ASRouter: ${props.localization_id} is not a valid rich text property. If you want it to be processed, you need to add it to asrouter/rich-text-strings.js`);
-  }
-
-  return react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement(fluent_react__WEBPACK_IMPORTED_MODULE_0__["Localized"], _extends({
-    id: props.localization_id
-  }, ALLOWED_TAGS, props.customElements, convertLinks(props.links, props.sendClick, props.doNotAutoBlock, props.openNewWindow)), react__WEBPACK_IMPORTED_MODULE_1___default.a.createElement("span", null, props.text));
-}
-
-/***/ }),
-/* 14 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "safeURI", function() { return safeURI; });
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-function safeURI(url) {
-  if (!url) {
-    return "";
-  }
-
-  const {
-    protocol
-  } = new URL(url);
-  const isAllowed = ["http:", "https:", "data:", "resource:", "chrome:"].includes(protocol);
-
-  if (!isAllowed) {
-    console.warn(`The protocol ${protocol} is not allowed for template URLs.`); // eslint-disable-line no-console
-  }
-
-  return isAllowed ? url : "";
-}
-
-/***/ }),
-/* 15 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Trailhead", function() { return Trailhead; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(16);
-/* harmony import */ var _components_FxASignupForm_FxASignupForm__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(17);
-/* harmony import */ var _FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(18);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
- // From resource://devtools/client/shared/focus.js
-
-const FOCUSABLE_SELECTOR = ["a[href]:not([tabindex='-1'])", "button:not([disabled]):not([tabindex='-1'])", "iframe:not([tabindex='-1'])", "input:not([disabled]):not([tabindex='-1'])", "select:not([disabled]):not([tabindex='-1'])", "textarea:not([disabled]):not([tabindex='-1'])", "[tabindex]:not([tabindex='-1'])"].join(", ");
-class Trailhead extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureComponent {
-  constructor(props) {
-    super(props);
-    this.closeModal = this.closeModal.bind(this);
-    this.onStartBlur = this.onStartBlur.bind(this);
-  }
-
-  get dialog() {
-    return this.props.document.getElementById("trailheadDialog");
-  }
-
-  componentDidMount() {
-    // We need to remove hide-main since we should show it underneath everything that has rendered
-    this.props.document.body.classList.remove("hide-main"); // The rest of the page is "hidden" to screen readers when the modal is open
-
-    this.props.document.getElementById("root").setAttribute("aria-hidden", "true");
-  }
-
-  onStartBlur(event) {
-    // Make sure focus stays within the dialog when tabbing from the button
-    const {
-      dialog
-    } = this;
-
-    if (event.relatedTarget && !(dialog.compareDocumentPosition(event.relatedTarget) & dialog.DOCUMENT_POSITION_CONTAINED_BY)) {
-      dialog.querySelector(FOCUSABLE_SELECTOR).focus();
-    }
-  }
-
-  closeModal(ev) {
-    global.removeEventListener("visibilitychange", this.closeModal);
-    this.props.document.body.classList.remove("welcome");
-    this.props.document.getElementById("root").removeAttribute("aria-hidden");
-    this.props.onNextScene(); // If closeModal() was triggered by a visibilitychange event, the user actually
-    // submitted the email form so we don't send a SKIPPED_SIGNIN ping.
-
-    if (!ev || ev.type !== "visibilitychange") {
-      this.props.dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].UserEvent({
-        event: "SKIPPED_SIGNIN",
-        ...this._getFormInfo()
-      }));
-    } // Bug 1190882 - Focus in a disappearing dialog confuses screen readers
-
-
-    this.props.document.activeElement.blur();
-  }
-  /**
-   * Report to telemetry additional information about the form submission.
-   */
-
-
-  _getFormInfo() {
-    const value = {
-      has_flow_params: !!this.props.flowParams.flowId.length
-    };
-    return {
-      value
-    };
-  }
-
-  render() {
-    const {
-      props
-    } = this;
-    const {
-      UTMTerm
-    } = props;
-    const {
-      content
-    } = props.message;
-    const innerClassName = ["trailhead", content && content.className].filter(v => v).join(" ");
-    return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_1__["ModalOverlayWrapper"], {
-      innerClassName: innerClassName,
-      onClose: this.closeModal,
-      id: "trailheadDialog",
-      headerId: "trailheadHeader",
-      hasDismissIcon: true
-    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", {
-      className: "trailheadInner"
-    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", {
-      className: "trailheadContent"
-    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h1", {
-      "data-l10n-id": content.title.string_id,
-      id: "trailheadHeader"
-    }), content.subtitle && react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", {
-      "data-l10n-id": content.subtitle.string_id
-    }), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("ul", {
-      className: "trailheadBenefits"
-    }, content.benefits.map(item => react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("li", {
-      key: item.id,
-      className: item.id
-    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("h2", {
-      "data-l10n-id": item.title.string_id
-    }), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("p", {
-      "data-l10n-id": item.text.string_id
-    })))), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("a", {
-      className: "trailheadLearn",
-      "data-l10n-id": content.learn.text.string_id,
-      href: Object(_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_3__["addUtmParams"])(content.learn.url, UTMTerm),
-      target: "_blank",
-      rel: "noopener noreferrer"
-    })), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", {
-      className: "trailhead-join-form"
-    }, react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(_components_FxASignupForm_FxASignupForm__WEBPACK_IMPORTED_MODULE_2__["FxASignupForm"], {
-      document: this.props.document,
-      content: content,
-      dispatch: this.props.dispatch,
-      fxaEndpoint: this.props.fxaEndpoint,
-      UTMTerm: UTMTerm,
-      flowParams: this.props.flowParams,
-      onClose: this.closeModal,
-      showSignInLink: true
-    }))), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("button", {
-      className: "trailheadStart",
-      "data-l10n-id": content.skipButton.string_id,
-      onBlur: this.onStartBlur,
-      onClick: this.closeModal
-    }));
-  }
-
-}
-Trailhead.defaultProps = {
-  flowParams: {
-    deviceId: "",
-    flowId: "",
-    flowBeginTime: ""
-  }
-};
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
-
-/***/ }),
-/* 16 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3401,356 +2515,83 @@ class ModalOverlay extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComp
   }
 
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 17 */
+/* 9 */
+/***/ (function(module, exports) {
+
+module.exports = React;
+
+/***/ }),
+/* 10 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FxASignupForm", function() { return FxASignupForm; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(18);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_2__);
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-class FxASignupForm extends react__WEBPACK_IMPORTED_MODULE_2___default.a.PureComponent {
-  constructor(props) {
-    super(props);
-    this.onSubmit = this.onSubmit.bind(this);
-    this.onInputChange = this.onInputChange.bind(this);
-    this.onInputInvalid = this.onInputInvalid.bind(this);
-    this.handleSignIn = this.handleSignIn.bind(this);
-    this.state = {
-      emailInput: ""
-    };
-  }
-
-  get email() {
-    return this.props.document.getElementById("fxaSignupForm").querySelector("input[name=email]");
-  }
-
-  onSubmit(event) {
-    let userEvent = "SUBMIT_EMAIL";
-    const {
-      email
-    } = event.target.elements;
-
-    if (email.disabled) {
-      userEvent = "SUBMIT_SIGNIN";
-    } else if (!email.value.length) {
-      email.required = true;
-      email.checkValidity();
-      event.preventDefault();
-      return;
-    } // Report to telemetry additional information about the form submission.
-
-
-    const value = {
-      has_flow_params: !!this.props.flowParams.flowId.length
-    };
-    this.props.dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].UserEvent({
-      event: userEvent,
-      value
-    }));
-    global.addEventListener("visibilitychange", this.props.onClose);
-  }
-
-  handleSignIn(event) {
-    // Set disabled to prevent email from appearing in url resulting in the wrong page
-    this.email.disabled = true;
-  }
-
-  componentDidMount() {
-    // Start with focus in the email input box
-    if (this.email) {
-      this.email.focus();
-    }
-  }
-
-  onInputChange(e) {
-    let error = e.target.previousSibling;
-    this.setState({
-      emailInput: e.target.value
-    });
-    error.classList.remove("active");
-    e.target.classList.remove("invalid");
-  }
-
-  onInputInvalid(e) {
-    let error = e.target.previousSibling;
-    error.classList.add("active");
-    e.target.classList.add("invalid");
-    e.preventDefault(); // Override built-in form validation popup
-
-    e.target.focus();
-  }
-
-  render() {
-    const {
-      content,
-      UTMTerm
-    } = this.props;
-    return react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("div", {
-      id: "fxaSignupForm",
-      role: "group",
-      "aria-labelledby": "joinFormHeader",
-      "aria-describedby": "joinFormBody",
-      className: "fxaSignupForm"
-    }, react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("h3", {
-      id: "joinFormHeader",
-      "data-l10n-id": content.form.title.string_id
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("p", {
-      id: "joinFormBody",
-      "data-l10n-id": content.form.text.string_id
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("form", {
-      method: "get",
-      action: this.props.fxaEndpoint,
-      target: "_blank",
-      rel: "noopener noreferrer",
-      onSubmit: this.onSubmit
-    }, react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "action",
-      type: "hidden",
-      value: "email"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "context",
-      type: "hidden",
-      value: "fx_desktop_v3"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "entrypoint",
-      type: "hidden",
-      value: "activity-stream-firstrun"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "utm_source",
-      type: "hidden",
-      value: "activity-stream"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "utm_campaign",
-      type: "hidden",
-      value: _templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_1__["BASE_PARAMS"].utm_campaign
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "utm_term",
-      type: "hidden",
-      value: UTMTerm
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "device_id",
-      type: "hidden",
-      value: this.props.flowParams.deviceId
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "flow_id",
-      type: "hidden",
-      value: this.props.flowParams.flowId
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "flow_begin_time",
-      type: "hidden",
-      value: this.props.flowParams.flowBeginTime
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      name: "style",
-      type: "hidden",
-      value: "trailhead"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("p", {
-      "data-l10n-id": "onboarding-join-form-email-error",
-      className: "error"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("input", {
-      "data-l10n-id": content.form.email.string_id,
-      name: "email",
-      type: "email",
-      onInvalid: this.onInputInvalid,
-      onChange: this.onInputChange
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("p", {
-      className: "fxa-terms",
-      "data-l10n-id": "onboarding-join-form-legal"
-    }, react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("a", {
-      "data-l10n-name": "terms",
-      target: "_blank",
-      rel: "noopener noreferrer",
-      href: Object(_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_1__["addUtmParams"])("https://accounts.firefox.com/legal/terms", UTMTerm)
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("a", {
-      "data-l10n-name": "privacy",
-      target: "_blank",
-      rel: "noopener noreferrer",
-      href: Object(_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_1__["addUtmParams"])("https://accounts.firefox.com/legal/privacy", UTMTerm)
-    })), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("button", {
-      "data-l10n-id": content.form.button.string_id,
-      type: "submit"
-    }), this.props.showSignInLink && react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("div", {
-      className: "fxa-signin"
-    }, react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("span", {
-      "data-l10n-id": "onboarding-join-form-signin-label"
-    }), react__WEBPACK_IMPORTED_MODULE_2___default.a.createElement("button", {
-      "data-l10n-id": "onboarding-join-form-signin",
-      onClick: this.handleSignIn
-    }))));
-  }
-
-}
-FxASignupForm.defaultProps = {
-  document: global.document
-};
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
-
-/***/ }),
-/* 18 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "BASE_PARAMS", function() { return BASE_PARAMS; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "addUtmParams", function() { return addUtmParams; });
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/**
- * BASE_PARAMS keys/values can be modified from outside this file
- */
-const BASE_PARAMS = {
-  utm_source: "activity-stream",
-  utm_campaign: "firstrun",
-  utm_medium: "referral"
-};
-/**
- * Takes in a url as a string or URL object and returns a URL object with the
- * utm_* parameters added to it. If a URL object is passed in, the paraemeters
- * are added to it (the return value can be ignored in that case as it's the
- * same object).
- */
-
-function addUtmParams(url, utmTerm) {
-  let returnUrl = url;
-
-  if (typeof returnUrl === "string") {
-    returnUrl = new URL(url);
-  }
-
-  Object.keys(BASE_PARAMS).forEach(key => {
-    returnUrl.searchParams.append(key, BASE_PARAMS[key]);
-  });
-  returnUrl.searchParams.append("utm_term", utmTerm);
-  return returnUrl;
-}
-
-/***/ }),
-/* 19 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ReturnToAMO", function() { return ReturnToAMO; });
+/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SimpleHashRouter", function() { return SimpleHashRouter; });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _components_RichText_RichText__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(13);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
- // Alt text if available; in the future this should come from the server. See bug 1551711
-
-const ICON_ALT_TEXT = "";
-class ReturnToAMO extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent {
+class SimpleHashRouter extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent {
   constructor(props) {
     super(props);
-    this.onClickAddExtension = this.onClickAddExtension.bind(this);
-    this.onBlockButton = this.onBlockButton.bind(this);
+    this.onHashChange = this.onHashChange.bind(this);
+    this.state = {
+      hash: global.location.hash
+    };
+  }
+
+  onHashChange() {
+    this.setState({
+      hash: global.location.hash
+    });
   }
 
   componentWillMount() {
-    global.document.body.classList.add("amo");
+    global.addEventListener("hashchange", this.onHashChange);
   }
 
-  componentDidMount() {
-    this.props.sendUserActionTelemetry({
-      event: "IMPRESSION",
-      id: this.props.UISurface
-    }); // Hide the page content from screen readers while the modal is open
-
-    this.props.document.getElementById("root").setAttribute("aria-hidden", "true");
-  }
-
-  onClickAddExtension() {
-    this.props.onAction(this.props.content.primary_button.action);
-    this.props.sendUserActionTelemetry({
-      event: "INSTALL",
-      id: this.props.UISurface
-    });
-  }
-
-  onBlockButton() {
-    this.props.onBlock();
-    document.body.classList.remove("welcome", "hide-main", "amo");
-    this.props.sendUserActionTelemetry({
-      event: "BLOCK",
-      id: this.props.UISurface
-    }); // Re-enable the document for screen readers
-
-    this.props.document.getElementById("root").setAttribute("aria-hidden", "false");
-  }
-
-  renderText() {
-    const customElement = react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("img", {
-      src: this.props.content.addon_icon,
-      width: "20px",
-      height: "20px",
-      alt: ICON_ALT_TEXT
-    });
-    return react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement(_components_RichText_RichText__WEBPACK_IMPORTED_MODULE_1__["RichText"], {
-      customElements: {
-        icon: customElement
-      },
-      amo_html: this.props.content.text,
-      localization_id: "amo_html"
-    });
+  componentWillUnmount() {
+    global.removeEventListener("hashchange", this.onHashChange);
   }
 
   render() {
-    const {
-      content
-    } = this.props;
-    return react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
-      className: "ReturnToAMOOverlay"
-    }, react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", null, react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("h2", null, " ", content.header, " "), react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
-      className: "ReturnToAMOContainer"
-    }, react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
-      className: "ReturnToAMOAddonContents"
-    }, react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("p", null, " ", content.title, " "), react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
-      className: "ReturnToAMOText"
-    }, react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("span", null, " ", this.renderText(), " ")), react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("button", {
-      onClick: this.onClickAddExtension,
-      className: "puffy blue ReturnToAMOAddExtension"
-    }, " ", react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("span", {
-      className: "icon icon-add"
-    }), " ", content.primary_button.label, " ")), react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
-      className: "ReturnToAMOIcon"
-    })), react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("button", {
-      onClick: this.onBlockButton,
-      className: "default grey ReturnToAMOGetStarted"
-    }, " ", content.secondary_button.label, " ")));
+    const [, ...routes] = this.state.hash.split("-");
+    return react__WEBPACK_IMPORTED_MODULE_0___default.a.cloneElement(this.props.children, {
+      location: {
+        hash: this.state.hash,
+        routes
+      }
+    });
   }
 
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 20 */
+/* 11 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FxAccounts", function() { return FxAccounts; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FxCards", function() { return FxCards; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FullPageInterrupt", function() { return FullPageInterrupt; });
-/* harmony import */ var _FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(18);
-/* harmony import */ var _components_FxASignupForm_FxASignupForm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(17);
-/* harmony import */ var _templates_OnboardingMessage_OnboardingMessage__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(80);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_3__);
+/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ASRouterUISurface", function() { return ASRouterUISurface; });
+/* harmony import */ var common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(6);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(1);
+/* harmony import */ var _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(5);
+/* harmony import */ var _rich_text_strings__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(73);
+/* harmony import */ var _components_ImpressionsWrapper_ImpressionsWrapper__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(12);
+/* harmony import */ var fluent_react__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(71);
+/* harmony import */ var content_src_lib_constants__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(14);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(9);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_7___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_7__);
+/* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(15);
+/* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_8___default = /*#__PURE__*/__webpack_require__.n(react_dom__WEBPACK_IMPORTED_MODULE_8__);
+/* harmony import */ var _templates_template_manifest__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(72);
+/* harmony import */ var _templates_FirstRun_FirstRun__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(16);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -3760,181 +2601,682 @@ function _extends() { _extends = Object.assign || function (target) { for (var i
 
 
 
-const FxAccounts = ({
-  document,
-  content,
-  dispatch,
-  fxaEndpoint,
-  flowParams,
-  removeOverlay,
-  url,
-  UTMTerm
-}) => react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_3___default.a.Fragment, null, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-  className: "fullpage-left-section",
-  "aria-labelledby": "fullpage-left-title",
-  "aria-describedby": "fullpage-left-content"
-}, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("h1", {
-  id: "fullpage-left-title",
-  className: "fullpage-left-title",
-  "data-l10n-id": "onboarding-welcome-body"
-}), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("p", {
-  id: "fullpage-left-content",
-  className: "fullpage-left-content",
-  "data-l10n-id": "onboarding-benefit-products-text"
-}), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("p", {
-  className: "fullpage-left-content",
-  "data-l10n-id": "onboarding-benefit-privacy-text"
-}), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("a", {
-  className: "fullpage-left-link",
-  href: Object(_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_0__["addUtmParams"])(url, UTMTerm),
-  target: "_blank",
-  rel: "noopener noreferrer",
-  "data-l10n-id": "onboarding-welcome-learn-more"
-}), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-  className: "fullpage-icon fx-systems-icons"
-})), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-  className: "fullpage-form"
-}, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(_components_FxASignupForm_FxASignupForm__WEBPACK_IMPORTED_MODULE_1__["FxASignupForm"], {
-  document: document,
-  content: content,
-  dispatch: dispatch,
-  fxaEndpoint: fxaEndpoint,
-  UTMTerm: UTMTerm,
-  flowParams: flowParams,
-  onClose: removeOverlay,
-  showSignInLink: true
-})));
-const FxCards = ({
-  cards,
-  onCardAction,
-  sendUserActionTelemetry
-}) => react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_3___default.a.Fragment, null, cards.map(card => react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(_templates_OnboardingMessage_OnboardingMessage__WEBPACK_IMPORTED_MODULE_2__["OnboardingCard"], _extends({
-  key: card.id,
-  message: card,
-  className: "trailheadCard",
-  sendUserActionTelemetry: sendUserActionTelemetry,
-  onAction: onCardAction,
-  UISurface: "TRAILHEAD"
-}, card))));
-class FullPageInterrupt extends react__WEBPACK_IMPORTED_MODULE_3___default.a.PureComponent {
+
+
+
+
+
+
+
+const TEMPLATES_ABOVE_PAGE = ["extended_triplets"];
+const TEMPLATES_BELOW_SEARCH = ["simple_below_search_snippet"]; // Note: nextProps/prevProps refer to props passed to <ImpressionsWrapper />, not <ASRouterUISurface />
+
+function shouldSendImpressionOnUpdate(nextProps, prevProps) {
+  return nextProps.message.id && (!prevProps.message || prevProps.message.id !== nextProps.message.id);
+}
+
+class ASRouterUISurface extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureComponent {
   constructor(props) {
     super(props);
-    this.removeOverlay = this.removeOverlay.bind(this);
-    this.onCardAction = this.onCardAction.bind(this);
+    this.sendClick = this.sendClick.bind(this);
+    this.sendImpression = this.sendImpression.bind(this);
+    this.sendUserActionTelemetry = this.sendUserActionTelemetry.bind(this);
+    this.onUserAction = this.onUserAction.bind(this);
+    this.fetchFlowParams = this.fetchFlowParams.bind(this);
+    this.onBlockSelected = this.onBlockSelected.bind(this);
+    this.onBlockById = this.onBlockById.bind(this);
+    this.onDismiss = this.onDismiss.bind(this);
+    this.onMessageFromParent = this.onMessageFromParent.bind(this);
+    this.state = {
+      message: {}
+    };
+
+    if (props.document) {
+      this.headerPortal = props.document.getElementById("header-asrouter-container");
+      this.footerPortal = props.document.getElementById("footer-asrouter-container");
+    }
+  }
+
+  async fetchFlowParams(params = {}) {
+    let result = {};
+    const {
+      fxaEndpoint,
+      dispatch
+    } = this.props;
+
+    if (!fxaEndpoint) {
+      const err = "Tried to fetch flow params before fxaEndpoint pref was ready";
+      console.error(err); // eslint-disable-line no-console
+    }
+
+    try {
+      const urlObj = new URL(fxaEndpoint);
+      urlObj.pathname = "metrics-flow";
+      Object.keys(params).forEach(key => {
+        urlObj.searchParams.append(key, params[key]);
+      });
+      const response = await fetch(urlObj.toString(), {
+        credentials: "omit"
+      });
+
+      if (response.status === 200) {
+        const {
+          deviceId,
+          flowId,
+          flowBeginTime
+        } = await response.json();
+        result = {
+          deviceId,
+          flowId,
+          flowBeginTime
+        };
+      } else {
+        console.error("Non-200 response", response); // eslint-disable-line no-console
+
+        dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__["actionCreators"].OnlyToMain({
+          type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__["actionTypes"].TELEMETRY_UNDESIRED_EVENT,
+          data: {
+            event: "FXA_METRICS_FETCH_ERROR",
+            value: response.status
+          }
+        }));
+      }
+    } catch (error) {
+      console.error(error); // eslint-disable-line no-console
+
+      dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__["actionCreators"].OnlyToMain({
+        type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__["actionTypes"].TELEMETRY_UNDESIRED_EVENT,
+        data: {
+          event: "FXA_METRICS_ERROR"
+        }
+      }));
+    }
+
+    return result;
+  }
+
+  sendUserActionTelemetry(extraProps = {}) {
+    const {
+      message
+    } = this.state;
+    const eventType = `${message.provider}_user_event`;
+    _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].sendTelemetry({
+      message_id: message.id,
+      source: extraProps.id,
+      action: eventType,
+      ...extraProps
+    });
+  }
+
+  sendImpression(extraProps) {
+    if (this.state.message.provider === "preview") {
+      return Promise.resolve();
+    }
+
+    this.sendUserActionTelemetry({
+      event: "IMPRESSION",
+      ...extraProps
+    });
+    return _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].sendMessage({
+      type: common_ActorConstants_jsm__WEBPACK_IMPORTED_MODULE_0__["MESSAGE_TYPE_HASH"].IMPRESSION,
+      data: this.state.message
+    });
+  } // If link has a `metric` data attribute send it as part of the `event_context`
+  // telemetry field which can have arbitrary values.
+  // Used for router messages with links as part of the content.
+
+
+  sendClick(event) {
+    const {
+      dataset
+    } = event.target;
+    const metric = {
+      event_context: dataset.metric,
+      // Used for the `source` of the event. Needed to differentiate
+      // from other snippet or onboarding events that may occur.
+      id: "NEWTAB_FOOTER_BAR_CONTENT"
+    };
+    const {
+      entrypoint_name,
+      entrypoint_value
+    } = dataset; // Assign the snippet referral for the action
+
+    const entrypoint = entrypoint_name ? new URLSearchParams([[entrypoint_name, entrypoint_value]]).toString() : entrypoint_value;
+    const action = {
+      type: dataset.action,
+      data: {
+        args: dataset.args,
+        ...(entrypoint && {
+          entrypoint
+        })
+      }
+    };
+
+    if (action.type) {
+      _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].executeAction(action);
+    }
+
+    if (!this.state.message.content.do_not_autoblock && !dataset.do_not_autoblock) {
+      this.onBlockById(this.state.message.id);
+    }
+
+    if (this.state.message.provider !== "preview") {
+      this.sendUserActionTelemetry({
+        event: "CLICK_BUTTON",
+        ...metric
+      });
+    }
+  }
+
+  onBlockSelected(options) {
+    return this.onBlockById(this.state.message.id, options);
+  }
+
+  onBlockById(id, options) {
+    return _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].blockById(id, options).then(clearAll => {
+      if (clearAll) {
+        this.setState({
+          message: {}
+        });
+      }
+    });
+  }
+
+  onDismiss() {
+    this.clearMessage(this.state.message.id);
+  }
+
+  clearMessage(id) {
+    // Request new set of dynamic triplet cards when click on a card CTA clear
+    // message and 'id' matches one of the cards in message bundle
+    if (this.state.message && this.state.message.bundle && this.state.message.bundle.find(card => card.id === id)) {
+      this.requestMessage();
+    }
+
+    if (id === this.state.message.id) {
+      this.setState({
+        message: {}
+      });
+    }
+  }
+
+  clearProvider(id) {
+    if (this.state.message.provider === id) {
+      this.setState({
+        message: {}
+      });
+    }
+  }
+
+  onMessageFromParent({
+    type,
+    data
+  }) {
+    // These only exists due to onPrefChange events in ASRouter
+    switch (type) {
+      case "ClearMessages":
+        {
+          data.forEach(id => this.clearMessage(id));
+          break;
+        }
+
+      case "ClearProviders":
+        {
+          data.forEach(id => this.clearProvider(id));
+          break;
+        }
+
+      case "EnterSnippetsPreviewMode":
+        {
+          this.props.dispatch({
+            type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__["actionTypes"].SNIPPETS_PREVIEW_MODE
+          });
+          break;
+        }
+    }
+  }
+
+  requestMessage(endpoint) {
+    _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].sendMessage({
+      type: "NEWTAB_MESSAGE_REQUEST",
+      data: {
+        endpoint
+      }
+    }).then(state => this.setState(state));
   }
 
   componentWillMount() {
-    global.document.body.classList.add("trailhead-fullpage");
-  }
+    const endpoint = _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].getPreviewEndpoint();
 
-  componentDidMount() {
-    // Hide the page content from screen readers while the full page interrupt is open
-    this.props.document.getElementById("root").setAttribute("aria-hidden", "true");
-  }
-
-  removeOverlay() {
-    window.removeEventListener("visibilitychange", this.removeOverlay);
-    document.body.classList.remove("hide-main", "trailhead-fullpage"); // Re-enable the document for screen readers
-
-    this.props.document.getElementById("root").setAttribute("aria-hidden", "false");
-    this.props.onBlock();
-    document.body.classList.remove("welcome");
-  }
-
-  onCardAction(action, message) {
-    let actionUpdates = {};
-    const {
-      flowParams,
-      UTMTerm
-    } = this.props;
-
-    if (action.type === "OPEN_URL") {
-      let url = new URL(action.data.args);
-      Object(_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_0__["addUtmParams"])(url, UTMTerm);
-
-      if (action.addFlowParams) {
-        url.searchParams.append("device_id", flowParams.deviceId);
-        url.searchParams.append("flow_id", flowParams.flowId);
-        url.searchParams.append("flow_begin_time", flowParams.flowBeginTime);
-      }
-
-      actionUpdates = {
-        data: { ...action.data,
-          args: url.toString()
+    if (endpoint && endpoint.theme === "dark") {
+      global.window.dispatchEvent(new CustomEvent("LightweightTheme:Set", {
+        detail: {
+          data: content_src_lib_constants__WEBPACK_IMPORTED_MODULE_6__["NEWTAB_DARK_THEME"]
         }
-      };
+      }));
     }
 
-    this.props.onAction({ ...action,
-      ...actionUpdates
-    }); // Only block if message is in dynamic triplets experiment
-
-    if (message.blockOnClick) {
-      this.props.onBlockById(message.id, {
-        preloadedOnly: true
-      });
+    if (endpoint && endpoint.dir === "rtl") {
+      //Set `dir = rtl` on the HTML
+      this.props.document.dir = "rtl";
     }
 
-    this.removeOverlay();
+    _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].addListener(this.onMessageFromParent);
+    this.requestMessage(endpoint);
+  }
+
+  componentWillUnmount() {
+    _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].removeListener(this.onMessageFromParent);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.adminContent && JSON.stringify(prevProps.adminContent) !== JSON.stringify(this.props.adminContent)) {
+      this.updateContent();
+    }
+  }
+
+  updateContent() {
+    this.setState({ ...this.props.adminContent
+    });
+  }
+
+  async getMonitorUrl({
+    url,
+    flowRequestParams = {}
+  }) {
+    const flowValues = await this.fetchFlowParams(flowRequestParams); // Note that flowParams are actually added dynamically on the page
+
+    const urlObj = new URL(url);
+    ["deviceId", "flowId", "flowBeginTime"].forEach(key => {
+      if (key in flowValues) {
+        urlObj.searchParams.append(key, flowValues[key]);
+      }
+    });
+    return urlObj.toString();
+  }
+
+  async onUserAction(action) {
+    switch (action.type) {
+      // This needs to be handled locally because its
+      case "ENABLE_FIREFOX_MONITOR":
+        const url = await this.getMonitorUrl(action.data.args);
+        _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].executeAction({
+          type: "OPEN_URL",
+          data: {
+            args: url
+          }
+        });
+        break;
+
+      default:
+        _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].executeAction(action);
+    }
+  }
+
+  renderSnippets() {
+    const {
+      message
+    } = this.state;
+
+    if (!_templates_template_manifest__WEBPACK_IMPORTED_MODULE_9__["SnippetsTemplates"][message.template]) {
+      return null;
+    }
+
+    const SnippetComponent = _templates_template_manifest__WEBPACK_IMPORTED_MODULE_9__["SnippetsTemplates"][message.template];
+    const {
+      content
+    } = this.state.message;
+    return react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(_components_ImpressionsWrapper_ImpressionsWrapper__WEBPACK_IMPORTED_MODULE_4__["ImpressionsWrapper"], {
+      id: "NEWTAB_FOOTER_BAR",
+      message: this.state.message,
+      sendImpression: this.sendImpression,
+      shouldSendImpressionOnUpdate: shouldSendImpressionOnUpdate // This helps with testing
+      ,
+      document: this.props.document
+    }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(fluent_react__WEBPACK_IMPORTED_MODULE_5__["LocalizationProvider"], {
+      bundles: Object(_rich_text_strings__WEBPACK_IMPORTED_MODULE_3__["generateBundles"])(content)
+    }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(SnippetComponent, _extends({}, this.state.message, {
+      UISurface: "NEWTAB_FOOTER_BAR",
+      onBlock: this.onBlockSelected,
+      onDismiss: this.onDismiss,
+      onAction: this.onUserAction,
+      sendClick: this.sendClick,
+      sendUserActionTelemetry: this.sendUserActionTelemetry
+    }))));
+  }
+
+  renderPreviewBanner() {
+    if (this.state.message.provider !== "preview") {
+      return null;
+    }
+
+    return react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("div", {
+      className: "snippets-preview-banner"
+    }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("span", {
+      className: "icon icon-small-spacer icon-info"
+    }), react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("span", null, "Preview Purposes Only"));
+  }
+
+  renderFirstRun() {
+    const {
+      message
+    } = this.state;
+
+    if (TEMPLATES_ABOVE_PAGE.includes(message.template)) {
+      return react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(_components_ImpressionsWrapper_ImpressionsWrapper__WEBPACK_IMPORTED_MODULE_4__["ImpressionsWrapper"], {
+        id: "FIRST_RUN",
+        message: this.state.message,
+        sendImpression: this.sendImpression,
+        shouldSendImpressionOnUpdate: shouldSendImpressionOnUpdate // This helps with testing
+        ,
+        document: this.props.document
+      }, react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(_templates_FirstRun_FirstRun__WEBPACK_IMPORTED_MODULE_10__["FirstRun"], {
+        document: this.props.document,
+        message: message,
+        sendUserActionTelemetry: this.sendUserActionTelemetry,
+        executeAction: _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].executeAction,
+        onBlockById: _asrouter_utils__WEBPACK_IMPORTED_MODULE_2__["ASRouterUtils"].blockById,
+        onDismiss: this.onDismiss,
+        fxaEndpoint: this.props.fxaEndpoint,
+        appUpdateChannel: this.props.appUpdateChannel,
+        fetchFlowParams: this.fetchFlowParams
+      }));
+    }
+
+    return null;
   }
 
   render() {
     const {
-      props
-    } = this;
-    const {
-      content
-    } = props.message;
-    const cards = react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(FxCards, {
-      cards: props.cards,
-      onCardAction: this.onCardAction,
-      sendUserActionTelemetry: props.sendUserActionTelemetry
-    });
-    const accounts = react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(FxAccounts, {
-      document: props.document,
-      content: content,
-      dispatch: props.dispatch,
-      fxaEndpoint: props.fxaEndpoint,
-      flowParams: props.flowParams,
-      removeOverlay: this.removeOverlay,
-      url: content.learn.url,
-      UTMTerm: props.UTMTerm
-    }); // By default we show accounts section on top and
-    // cards section in bottom half of the full page interrupt
+      message
+    } = this.state;
 
-    const cardsFirst = content && content.className === "fullPageCardsAtTop";
-    const firstContainerClassName = ["container", content && content.className].join(" ");
-    return react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-      className: "fullpage-wrapper"
-    }, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-      className: "fullpage-icon brand-logo"
-    }), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("h1", {
-      className: "welcome-title",
-      "data-l10n-id": "onboarding-welcome-header"
-    }), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("h2", {
-      className: "welcome-subtitle",
-      "data-l10n-id": "onboarding-fullpage-welcome-subheader"
-    }), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-      className: firstContainerClassName
-    }, cardsFirst ? cards : accounts), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-      className: "section-divider"
-    }), react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
-      className: "container"
-    }, cardsFirst ? accounts : cards));
+    if (!message.id) {
+      return null;
+    }
+
+    const shouldRenderBelowSearch = TEMPLATES_BELOW_SEARCH.includes(message.template);
+    const shouldRenderInHeader = TEMPLATES_ABOVE_PAGE.includes(message.template);
+    return shouldRenderBelowSearch ? // Render special below search snippets in place;
+    react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement("div", {
+      className: "below-search-snippet-wrapper"
+    }, this.renderSnippets()) : // For onboarding, regular snippets etc. we should render
+    // everything in our footer container.
+    react_dom__WEBPACK_IMPORTED_MODULE_8___default.a.createPortal(react__WEBPACK_IMPORTED_MODULE_7___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_7___default.a.Fragment, null, this.renderPreviewBanner(), this.renderFirstRun(), this.renderSnippets()), shouldRenderInHeader ? this.headerPortal : this.footerPortal);
   }
 
 }
-FullPageInterrupt.defaultProps = {
-  flowParams: {
-    deviceId: "",
-    flowId: "",
-    flowBeginTime: ""
-  }
+ASRouterUISurface.defaultProps = {
+  document: global.document
 };
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 21 */
+/* 12 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "VISIBLE", function() { return VISIBLE; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "VISIBILITY_CHANGE_EVENT", function() { return VISIBILITY_CHANGE_EVENT; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ImpressionsWrapper", function() { return ImpressionsWrapper; });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+const VISIBLE = "visible";
+const VISIBILITY_CHANGE_EVENT = "visibilitychange";
+/**
+ * Component wrapper used to send telemetry pings on every impression.
+ */
+
+class ImpressionsWrapper extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent {
+  // This sends an event when a user sees a set of new content. If content
+  // changes while the page is hidden (i.e. preloaded or on a hidden tab),
+  // only send the event if the page becomes visible again.
+  sendImpressionOrAddListener() {
+    if (this.props.document.visibilityState === VISIBLE) {
+      this.props.sendImpression({
+        id: this.props.id
+      });
+    } else {
+      // We should only ever send the latest impression stats ping, so remove any
+      // older listeners.
+      if (this._onVisibilityChange) {
+        this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+      } // When the page becomes visible, send the impression stats ping if the section isn't collapsed.
+
+
+      this._onVisibilityChange = () => {
+        if (this.props.document.visibilityState === VISIBLE) {
+          this.props.sendImpression({
+            id: this.props.id
+          });
+          this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+        }
+      };
+
+      this.props.document.addEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+    }
+  }
+
+  componentWillUnmount() {
+    if (this._onVisibilityChange) {
+      this.props.document.removeEventListener(VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+    }
+  }
+
+  componentDidMount() {
+    if (this.props.sendOnMount) {
+      this.sendImpressionOrAddListener();
+    }
+  }
+
+  componentDidUpdate(prevProps) {
+    if (this.props.shouldSendImpressionOnUpdate(this.props, prevProps)) {
+      this.sendImpressionOrAddListener();
+    }
+  }
+
+  render() {
+    return this.props.children;
+  }
+
+}
+ImpressionsWrapper.defaultProps = {
+  document: global.document,
+  sendOnMount: true
+};
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
+
+/***/ }),
+/* 13 */
+/***/ (function(module, exports) {
+
+module.exports = PropTypes;
+
+/***/ }),
+/* 14 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "IS_NEWTAB", function() { return IS_NEWTAB; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "NEWTAB_DARK_THEME", function() { return NEWTAB_DARK_THEME; });
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+const IS_NEWTAB = global.document && global.document.documentURI === "about:newtab";
+const NEWTAB_DARK_THEME = {
+  ntp_background: {
+    r: 42,
+    g: 42,
+    b: 46,
+    a: 1
+  },
+  ntp_text: {
+    r: 249,
+    g: 249,
+    b: 250,
+    a: 1
+  },
+  sidebar: {
+    r: 56,
+    g: 56,
+    b: 61,
+    a: 1
+  },
+  sidebar_text: {
+    r: 249,
+    g: 249,
+    b: 250,
+    a: 1
+  }
+};
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
+
+/***/ }),
+/* 15 */
+/***/ (function(module, exports) {
+
+module.exports = ReactDOM;
+
+/***/ }),
+/* 16 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FLUENT_FILES", function() { return FLUENT_FILES; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "helpers", function() { return helpers; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FirstRun", function() { return FirstRun; });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _Triplets__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(17);
+/* harmony import */ var _addUtmParams__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(18);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+ // Note: should match the transition time on .trailheadCards in _Trailhead.scss
+
+const TRANSITION_LENGTH = 500;
+const FLUENT_FILES = ["branding/brand.ftl", "browser/branding/brandings.ftl", "browser/branding/sync-brand.ftl", "browser/newtab/onboarding.ftl"];
+const helpers = {
+  addFluent(document) {
+    FLUENT_FILES.forEach(file => {
+      const link = document.head.appendChild(document.createElement("link"));
+      link.href = file;
+      link.rel = "localization";
+    });
+  }
+
+};
+class FirstRun extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent {
+  constructor(props) {
+    super(props);
+    this.didLoadFlowParams = false;
+    this.state = {
+      didUserClearTriplets: false,
+      flowParams: undefined
+    };
+    this.closeTriplets = this.closeTriplets.bind(this);
+    helpers.addFluent(this.props.document); // Update utm campaign parameters by appending channel for
+    // differentiating campaign in amplitude
+
+    if (this.props.appUpdateChannel) {
+      _addUtmParams__WEBPACK_IMPORTED_MODULE_2__["BASE_PARAMS"].utm_campaign += `-${this.props.appUpdateChannel}`;
+    }
+  }
+
+  get UTMTerm() {
+    const {
+      message
+    } = this.props;
+    let UTMTerm = message.utm_term || "";
+    UTMTerm = message.utm_term && message.trailheadTriplet ? `${message.utm_term}-${message.trailheadTriplet}` : UTMTerm;
+    return UTMTerm;
+  }
+
+  async fetchFlowParams() {
+    const {
+      fxaEndpoint,
+      fetchFlowParams
+    } = this.props;
+
+    if (fxaEndpoint && this.UTMTerm && !this.didLoadFlowParams) {
+      this.didLoadFlowParams = true;
+      const flowParams = await fetchFlowParams({ ..._addUtmParams__WEBPACK_IMPORTED_MODULE_2__["BASE_PARAMS"],
+        entrypoint: "activity-stream-firstrun",
+        form_type: "email",
+        utm_term: this.UTMTerm
+      });
+      this.setState({
+        flowParams
+      });
+    }
+  }
+
+  componentDidMount() {
+    this.fetchFlowParams();
+  }
+
+  componentDidUpdate() {
+    // In case we didn't have FXA info immediately, try again when we receive it.
+    this.fetchFlowParams();
+  }
+
+  closeTriplets() {
+    this.setState({
+      didUserClearTriplets: true
+    }); // Closing triplets should prevent any future extended triplets from showing up
+
+    setTimeout(() => {
+      this.props.onBlockById("EXTENDED_TRIPLETS_1");
+    }, TRANSITION_LENGTH);
+  }
+
+  render() {
+    const {
+      props,
+      state,
+      UTMTerm
+    } = this;
+    const {
+      sendUserActionTelemetry,
+      executeAction,
+      message
+    } = props;
+    const {
+      didUserClearTriplets,
+      flowParams
+    } = state;
+    const hasTriplets = Boolean(message.bundle && message.bundle.length);
+    const triplets = hasTriplets ? message.bundle : null;
+    const isTripletsContainerVisible = hasTriplets && !didUserClearTriplets; // Allow 1) falsy to not render a header 2) default welcome header 3) custom header
+
+    const tripletsHeaderId = message.tripletsHeaderId === undefined ? "onboarding-welcome-header" : message.tripletsHeaderId;
+    return react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement(react__WEBPACK_IMPORTED_MODULE_0___default.a.Fragment, null, hasTriplets ? react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement(_Triplets__WEBPACK_IMPORTED_MODULE_1__["Triplets"], {
+      document: props.document,
+      cards: triplets,
+      headerId: tripletsHeaderId,
+      showCardPanel: isTripletsContainerVisible,
+      hideContainer: this.closeTriplets,
+      sendUserActionTelemetry: sendUserActionTelemetry,
+      UTMTerm: `${UTMTerm}-card`,
+      flowParams: flowParams,
+      onAction: executeAction,
+      onBlockById: props.onBlockById
+    }) : null);
+  }
+
+}
+
+/***/ }),
+/* 17 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3942,7 +3284,7 @@ __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Triplets", function() { return Triplets; });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _templates_OnboardingMessage_OnboardingMessage__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(80);
+/* harmony import */ var _templates_OnboardingMessage_OnboardingMessage__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(76);
 /* harmony import */ var _addUtmParams__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(18);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
@@ -4022,18 +3364,17 @@ class Triplets extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponen
       cards,
       headerId,
       showCardPanel,
-      showContent,
       sendUserActionTelemetry
     } = this.props;
     return react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
       className: `trailheadCards ${showCardPanel ? "expanded" : "collapsed"}`
     }, react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
       className: "trailheadCardsInner",
-      "aria-hidden": !showContent
+      "aria-hidden": !showCardPanel
     }, headerId && react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("h1", {
       "data-l10n-id": headerId
     }), react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement("div", {
-      className: `trailheadCardGrid${showContent ? " show" : ""}`
+      className: `trailheadCardGrid${showCardPanel ? " show" : ""}`
     }, cards.map(card => react__WEBPACK_IMPORTED_MODULE_0___default.a.createElement(_templates_OnboardingMessage_OnboardingMessage__WEBPACK_IMPORTED_MODULE_1__["OnboardingCard"], _extends({
       key: card.id,
       message: card,
@@ -4049,73 +3390,59 @@ class Triplets extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponen
   }
 
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 22 */
-/***/ (function(module, exports) {
-
-module.exports = ReactRedux;
-
-/***/ }),
-/* 23 */
+/* 18 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SimpleHashRouter", function() { return SimpleHashRouter; });
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
-/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "BASE_PARAMS", function() { return BASE_PARAMS; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "addUtmParams", function() { return addUtmParams; });
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-class SimpleHashRouter extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent {
-  constructor(props) {
-    super(props);
-    this.onHashChange = this.onHashChange.bind(this);
-    this.state = {
-      hash: global.location.hash
-    };
+/**
+ * BASE_PARAMS keys/values can be modified from outside this file
+ */
+const BASE_PARAMS = {
+  utm_source: "activity-stream",
+  utm_campaign: "firstrun",
+  utm_medium: "referral"
+};
+/**
+ * Takes in a url as a string or URL object and returns a URL object with the
+ * utm_* parameters added to it. If a URL object is passed in, the paraemeters
+ * are added to it (the return value can be ignored in that case as it's the
+ * same object).
+ */
+
+function addUtmParams(url, utmTerm) {
+  let returnUrl = url;
+
+  if (typeof returnUrl === "string") {
+    returnUrl = new URL(url);
   }
 
-  onHashChange() {
-    this.setState({
-      hash: global.location.hash
-    });
-  }
-
-  componentWillMount() {
-    global.addEventListener("hashchange", this.onHashChange);
-  }
-
-  componentWillUnmount() {
-    global.removeEventListener("hashchange", this.onHashChange);
-  }
-
-  render() {
-    const [, ...routes] = this.state.hash.split("-");
-    return react__WEBPACK_IMPORTED_MODULE_0___default.a.cloneElement(this.props.children, {
-      location: {
-        hash: this.state.hash,
-        routes
-      }
-    });
-  }
-
+  Object.keys(BASE_PARAMS).forEach(key => {
+    returnUrl.searchParams.append(key, BASE_PARAMS[key]);
+  });
+  returnUrl.searchParams.append("utm_term", utmTerm);
+  return returnUrl;
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
 
 /***/ }),
-/* 24 */
+/* 19 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_ConfirmDialog", function() { return _ConfirmDialog; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ConfirmDialog", function() { return ConfirmDialog; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_2__);
@@ -4212,7 +3539,7 @@ class _ConfirmDialog extends react__WEBPACK_IMPORTED_MODULE_2___default.a.PureCo
 const ConfirmDialog = Object(react_redux__WEBPACK_IMPORTED_MODULE_1__["connect"])(state => state.Dialog)(_ConfirmDialog);
 
 /***/ }),
-/* 25 */
+/* 20 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4220,26 +3547,26 @@ __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isAllowedCSS", function() { return isAllowedCSS; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_DiscoveryStreamBase", function() { return _DiscoveryStreamBase; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DiscoveryStreamBase", function() { return DiscoveryStreamBase; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_CardGrid_CardGrid__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(26);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_CollectionCardGrid_CollectionCardGrid__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(41);
-/* harmony import */ var content_src_components_CollapsibleSection_CollapsibleSection__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(43);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_CardGrid_CardGrid__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(21);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_CollectionCardGrid_CollectionCardGrid__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(36);
+/* harmony import */ var content_src_components_CollapsibleSection_CollapsibleSection__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(38);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSMessage_DSMessage__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(48);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSPrivacyModal_DSPrivacyModal__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(49);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSSignup_DSSignup__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(50);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSTextPromo_DSTextPromo__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(51);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_Hero_Hero__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(52);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_Highlights_Highlights__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(54);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_HorizontalRule_HorizontalRule__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(67);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_List_List__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(53);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_Navigation_Navigation__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(68);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSMessage_DSMessage__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(43);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSPrivacyModal_DSPrivacyModal__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(44);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSSignup_DSSignup__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(45);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSTextPromo_DSTextPromo__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(46);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_Hero_Hero__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(47);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_Highlights_Highlights__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(49);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_HorizontalRule_HorizontalRule__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(62);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_List_List__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(48);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_Navigation_Navigation__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(63);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_14___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_14__);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_SectionTitle_SectionTitle__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(69);
-/* harmony import */ var content_src_lib_selectLayoutRender__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(70);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_TopSites_TopSites__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(71);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_SectionTitle_SectionTitle__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(64);
+/* harmony import */ var content_src_lib_selectLayoutRender__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(65);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_TopSites_TopSites__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(66);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -4604,18 +3931,18 @@ const DiscoveryStreamBase = Object(react_redux__WEBPACK_IMPORTED_MODULE_4__["con
   Sections: state.Sections,
   document: global.document
 }))(_DiscoveryStreamBase);
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 26 */
+/* 21 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "CardGrid", function() { return CardGrid; });
-/* harmony import */ var _DSCard_DSCard_jsx__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(27);
-/* harmony import */ var _DSEmptyState_DSEmptyState_jsx__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(40);
-/* harmony import */ var _FluentOrText_FluentOrText_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(39);
+/* harmony import */ var _DSCard_DSCard_jsx__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
+/* harmony import */ var _DSEmptyState_DSEmptyState_jsx__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(35);
+/* harmony import */ var _FluentOrText_FluentOrText_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(34);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_3__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -4707,7 +4034,7 @@ CardGrid.defaultProps = {
 };
 
 /***/ }),
-/* 27 */
+/* 22 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4717,16 +4044,16 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_DSCard", function() { return _DSCard; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSCard", function() { return DSCard; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "PlaceholderDSCard", function() { return PlaceholderDSCard; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(28);
-/* harmony import */ var _DSLinkMenu_DSLinkMenu__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(29);
-/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(34);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(23);
+/* harmony import */ var _DSLinkMenu_DSLinkMenu__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(24);
+/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(29);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(35);
-/* harmony import */ var _DSContextFooter_DSContextFooter_jsx__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(36);
-/* harmony import */ var _FluentOrText_FluentOrText_jsx__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(39);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(22);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(30);
+/* harmony import */ var _DSContextFooter_DSContextFooter_jsx__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(31);
+/* harmony import */ var _FluentOrText_FluentOrText_jsx__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(34);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_8___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_8__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -5016,7 +4343,7 @@ const PlaceholderDSCard = props => react__WEBPACK_IMPORTED_MODULE_4___default.a.
 });
 
 /***/ }),
-/* 28 */
+/* 23 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5168,14 +4495,14 @@ DSImage.defaultProps = {
 };
 
 /***/ }),
-/* 29 */
+/* 24 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSLinkMenu", function() { return DSLinkMenu; });
-/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(30);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
+/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(25);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(28);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_2__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -5258,18 +4585,18 @@ DSLinkMenu.defaultProps = {
 };
 
 /***/ }),
-/* 30 */
+/* 25 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_LinkMenu", function() { return _LinkMenu; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "LinkMenu", function() { return LinkMenu; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenu__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(31);
-/* harmony import */ var content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(32);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenu__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(26);
+/* harmony import */ var content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(27);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -5295,7 +4622,7 @@ class _LinkMenu extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureCompone
       platform
     } = props; // Handle special case of default site
 
-    const propOptions = !site.isDefault || site.searchTopSite ? props.options : DEFAULT_SITE_MENU_OPTIONS;
+    const propOptions = site.isDefault && !site.searchTopSite && !site.sponsored_position ? DEFAULT_SITE_MENU_OPTIONS : props.options;
     const options = propOptions.map(o => content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_3__["LinkMenuOptions"][o](site, index, source, isPrivateBrowsingEnabled, siteInfo, platform)).map(option => {
       const {
         action,
@@ -5371,7 +4698,7 @@ const getState = state => ({
 const LinkMenu = Object(react_redux__WEBPACK_IMPORTED_MODULE_1__["connect"])(getState)(_LinkMenu);
 
 /***/ }),
-/* 31 */
+/* 26 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5546,16 +4873,16 @@ class ContextMenuItem extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureC
   }
 
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 32 */
+/* 27 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "LinkMenuOptions", function() { return LinkMenuOptions; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5594,6 +4921,14 @@ const LinkMenuOptions = {
       type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].SHOW_PRIVACY_INFO
     },
     userEvent: "SHOW_PRIVACY_INFO"
+  }),
+  AboutSponsored: site => ({
+    id: "newtab-menu-show-privacy-info",
+    icon: "info",
+    action: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].AlsoToMain({
+      type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].ABOUT_SPONSORED_TOP_SITES
+    }),
+    userEvent: "TOPSITE_SPONSOR_INFO"
   }),
   RemoveBookmark: site => ({
     id: "newtab-menu-remove-bookmark",
@@ -5644,7 +4979,7 @@ const LinkMenuOptions = {
     action: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].AlsoToMain({
       type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].BLOCK_URL,
       data: tiles.map(site => ({
-        url: site.open_url || site.url,
+        url: site.original_url || site.open_url || site.url,
         // pocket_id is only for pocket stories being in highlights, and then dismissed.
         pocket_id: site.pocket_id,
         ...(site.flight_id ? {
@@ -5755,35 +5090,13 @@ const LinkMenuOptions = {
       }
     })
   }),
-  PinSpocTopSite: (site, index) => ({
+  PinTopSite: (site, index) => ({
     id: "newtab-menu-pin",
     icon: "pin",
     action: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].AlsoToMain({
       type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].TOP_SITES_PIN,
       data: {
         site,
-        index
-      }
-    }),
-    userEvent: "PIN"
-  }),
-  PinTopSite: ({
-    url,
-    searchTopSite,
-    label
-  }, index) => ({
-    id: "newtab-menu-pin",
-    icon: "pin",
-    action: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].AlsoToMain({
-      type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].TOP_SITES_PIN,
-      data: {
-        site: {
-          url,
-          ...(searchTopSite && {
-            searchTopSite,
-            label
-          })
-        },
         index
       }
     }),
@@ -5867,7 +5180,7 @@ const LinkMenuOptions = {
 };
 
 /***/ }),
-/* 33 */
+/* 28 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5952,14 +5265,14 @@ class ContextMenuButton extends react__WEBPACK_IMPORTED_MODULE_0___default.a.Pur
 }
 
 /***/ }),
-/* 34 */
+/* 29 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "INTERSECTION_RATIO", function() { return INTERSECTION_RATIO; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ImpressionStats", function() { return ImpressionStats; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -6171,16 +5484,16 @@ ImpressionStats.defaultProps = {
   rows: [],
   source: ""
 };
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 35 */
+/* 30 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SafeAnchor", function() { return SafeAnchor; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -6263,7 +5576,7 @@ class SafeAnchor extends react__WEBPACK_IMPORTED_MODULE_1___default.a.PureCompon
 }
 
 /***/ }),
-/* 36 */
+/* 31 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6271,10 +5584,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "StatusMessage", function() { return StatusMessage; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SponsorLabel", function() { return SponsorLabel; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSContextFooter", function() { return DSContextFooter; });
-/* harmony import */ var _Card_types_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(37);
-/* harmony import */ var react_transition_group__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(38);
+/* harmony import */ var _Card_types_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(32);
+/* harmony import */ var react_transition_group__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(33);
 /* harmony import */ var react_transition_group__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_transition_group__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _FluentOrText_FluentOrText_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(39);
+/* harmony import */ var _FluentOrText_FluentOrText_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(34);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_3__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -6371,7 +5684,7 @@ class DSContextFooter extends react__WEBPACK_IMPORTED_MODULE_3___default.a.PureC
 }
 
 /***/ }),
-/* 37 */
+/* 32 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6408,13 +5721,13 @@ const cardContextTypes = {
 };
 
 /***/ }),
-/* 38 */
+/* 33 */
 /***/ (function(module, exports) {
 
 module.exports = ReactTransitionGroup;
 
 /***/ }),
-/* 39 */
+/* 34 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6460,13 +5773,13 @@ class FluentOrText extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComp
 }
 
 /***/ }),
-/* 40 */
+/* 35 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSEmptyState", function() { return DSEmptyState; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -6564,16 +5877,16 @@ class DSEmptyState extends react__WEBPACK_IMPORTED_MODULE_1___default.a.PureComp
 }
 
 /***/ }),
-/* 41 */
+/* 36 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "CollectionCardGrid", function() { return CollectionCardGrid; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_CardGrid_CardGrid__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(26);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSDismiss_DSDismiss__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(42);
-/* harmony import */ var content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(32);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_CardGrid_CardGrid__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(21);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSDismiss_DSDismiss__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(37);
+/* harmony import */ var content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(27);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -6721,7 +6034,7 @@ class CollectionCardGrid extends react__WEBPACK_IMPORTED_MODULE_4___default.a.Pu
 }
 
 /***/ }),
-/* 42 */
+/* 37 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6783,20 +6096,20 @@ class DSDismiss extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureCompone
 }
 
 /***/ }),
-/* 43 */
+/* 38 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "CollapsibleSection", function() { return CollapsibleSection; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_ErrorBoundary_ErrorBoundary__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(44);
-/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(39);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_ErrorBoundary_ErrorBoundary__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(39);
+/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(34);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_3__);
-/* harmony import */ var content_src_components_SectionMenu_SectionMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(46);
-/* harmony import */ var content_src_lib_section_menu_options__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(47);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(33);
+/* harmony import */ var content_src_components_SectionMenu_SectionMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(41);
+/* harmony import */ var content_src_lib_section_menu_options__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(42);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(28);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6895,7 +6208,7 @@ class CollapsibleSection extends react__WEBPACK_IMPORTED_MODULE_3___default.a.Pu
     this.props.dispatch(action);
     this.props.dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].UserEvent({
       event: userEvent,
-      source: this.props.source
+      source: this.props.eventSource
     }));
   }
 
@@ -7002,6 +6315,14 @@ class CollapsibleSection extends react__WEBPACK_IMPORTED_MODULE_3___default.a.Pu
       };
     }
 
+    let titleStyle;
+
+    if (this.props.hideTitle) {
+      titleStyle = {
+        visibility: "hidden"
+      };
+    }
+
     return react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("section", {
       className: `collapsible-section ${this.props.className}${enableAnimation ? " animation-enabled" : ""}${collapsed ? " collapsed" : ""}${active ? " active" : ""}`,
       "aria-expanded": !collapsed // Note: data-section-id is used for web extension api tests in mozilla central
@@ -7010,7 +6331,8 @@ class CollapsibleSection extends react__WEBPACK_IMPORTED_MODULE_3___default.a.Pu
     }, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("div", {
       className: "section-top-bar"
     }, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("h3", {
-      className: "section-title"
+      className: "section-title",
+      style: titleStyle
     }, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("span", {
       className: "click-target-container"
     }, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement("span", {
@@ -7039,7 +6361,7 @@ class CollapsibleSection extends react__WEBPACK_IMPORTED_MODULE_3___default.a.Pu
     }, react__WEBPACK_IMPORTED_MODULE_3___default.a.createElement(content_src_components_SectionMenu_SectionMenu__WEBPACK_IMPORTED_MODULE_4__["SectionMenu"], {
       id: id,
       extraOptions: extraMenuOptions,
-      eventSource: eventSource,
+      source: eventSource,
       showPrefName: showPrefName,
       privacyNoticeURL: privacyNoticeURL,
       collapsed: collapsed,
@@ -7069,17 +6391,17 @@ CollapsibleSection.defaultProps = {
     values: {}
   }
 };
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 44 */
+/* 39 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ErrorBoundaryFallback", function() { return ErrorBoundaryFallback; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ErrorBoundary", function() { return ErrorBoundary; });
-/* harmony import */ var content_src_components_A11yLinkButton_A11yLinkButton__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(45);
+/* harmony import */ var content_src_components_A11yLinkButton_A11yLinkButton__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(40);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -7159,7 +6481,7 @@ ErrorBoundary.defaultProps = {
 };
 
 /***/ }),
-/* 45 */
+/* 40 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -7189,18 +6511,18 @@ function A11yLinkButton(props) {
 }
 
 /***/ }),
-/* 46 */
+/* 41 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_SectionMenu", function() { return _SectionMenu; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SectionMenu", function() { return SectionMenu; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenu__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(31);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenu__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(26);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var content_src_lib_section_menu_options__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(47);
+/* harmony import */ var content_src_lib_section_menu_options__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(42);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7295,13 +6617,13 @@ class _SectionMenu extends react__WEBPACK_IMPORTED_MODULE_2___default.a.PureComp
 const SectionMenu = _SectionMenu;
 
 /***/ }),
-/* 47 */
+/* 42 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SectionMenuOptions", function() { return SectionMenuOptions; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7425,7 +6747,7 @@ const SectionMenuOptions = {
 };
 
 /***/ }),
-/* 48 */
+/* 43 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -7433,8 +6755,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSMessage", function() { return DSMessage; });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(35);
-/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(39);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(30);
+/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(34);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7467,7 +6789,7 @@ class DSMessage extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureCompone
 }
 
 /***/ }),
-/* 49 */
+/* 44 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -7475,8 +6797,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSPrivacyModal", function() { return DSPrivacyModal; });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(2);
-/* harmony import */ var content_src_asrouter_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(16);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(1);
+/* harmony import */ var content_src_asrouter_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(8);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7543,19 +6865,19 @@ class DSPrivacyModal extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureCo
 }
 
 /***/ }),
-/* 50 */
+/* 45 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSSignup", function() { return DSSignup; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(30);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(33);
-/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(34);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(25);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(28);
+/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(29);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(35);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(30);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7710,20 +7032,20 @@ DSSignup.defaultProps = {
 };
 
 /***/ }),
-/* 51 */
+/* 46 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DSTextPromo", function() { return DSTextPromo; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSDismiss_DSDismiss__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(42);
-/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(28);
-/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(34);
-/* harmony import */ var content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(32);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_DiscoveryStreamComponents_DSDismiss_DSDismiss__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(37);
+/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(23);
+/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(29);
+/* harmony import */ var content_src_lib_link_menu_options__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(27);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_5__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(35);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(30);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7859,23 +7181,23 @@ class DSTextPromo extends react__WEBPACK_IMPORTED_MODULE_5___default.a.PureCompo
 }
 
 /***/ }),
-/* 52 */
+/* 47 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Hero", function() { return Hero; });
-/* harmony import */ var _DSCard_DSCard_jsx__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(27);
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(2);
-/* harmony import */ var _DSEmptyState_DSEmptyState_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(40);
-/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(28);
-/* harmony import */ var _DSLinkMenu_DSLinkMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(29);
-/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(34);
-/* harmony import */ var _List_List_jsx__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(53);
+/* harmony import */ var _DSCard_DSCard_jsx__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(1);
+/* harmony import */ var _DSEmptyState_DSEmptyState_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(35);
+/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(23);
+/* harmony import */ var _DSLinkMenu_DSLinkMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(24);
+/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(29);
+/* harmony import */ var _List_List_jsx__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(48);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_7___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_7__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(35);
-/* harmony import */ var _DSContextFooter_DSContextFooter_jsx__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(36);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(30);
+/* harmony import */ var _DSContextFooter_DSContextFooter_jsx__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(31);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8052,7 +7374,7 @@ Hero.defaultProps = {
 };
 
 /***/ }),
-/* 53 */
+/* 48 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8061,17 +7383,17 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "PlaceholderListItem", function() { return PlaceholderListItem; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_List", function() { return _List; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "List", function() { return List; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _DSEmptyState_DSEmptyState_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(40);
-/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(28);
-/* harmony import */ var _DSLinkMenu_DSLinkMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(29);
-/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(34);
+/* harmony import */ var _DSEmptyState_DSEmptyState_jsx__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(35);
+/* harmony import */ var _DSImage_DSImage_jsx__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(23);
+/* harmony import */ var _DSLinkMenu_DSLinkMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(24);
+/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(29);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_6__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(35);
-/* harmony import */ var _DSContextFooter_DSContextFooter_jsx__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(36);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(30);
+/* harmony import */ var _DSContextFooter_DSContextFooter_jsx__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(31);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8256,18 +7578,18 @@ const List = Object(react_redux__WEBPACK_IMPORTED_MODULE_1__["connect"])(state =
 }))(_List);
 
 /***/ }),
-/* 54 */
+/* 49 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_Highlights", function() { return _Highlights; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Highlights", function() { return Highlights; });
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var content_src_components_Sections_Sections__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(55);
+/* harmony import */ var content_src_components_Sections_Sections__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(50);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -8297,7 +7619,7 @@ const Highlights = Object(react_redux__WEBPACK_IMPORTED_MODULE_0__["connect"])(s
 }))(_Highlights);
 
 /***/ }),
-/* 55 */
+/* 50 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8306,19 +7628,19 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SectionIntl", function() { return SectionIntl; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_Sections", function() { return _Sections; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Sections", function() { return Sections; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_components_Card_Card__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(56);
-/* harmony import */ var content_src_components_CollapsibleSection_CollapsibleSection__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(43);
-/* harmony import */ var content_src_components_ComponentPerfTimer_ComponentPerfTimer__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(58);
-/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(39);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_components_Card_Card__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(51);
+/* harmony import */ var content_src_components_CollapsibleSection_CollapsibleSection__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(38);
+/* harmony import */ var content_src_components_ComponentPerfTimer_ComponentPerfTimer__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(53);
+/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(34);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_5__);
-/* harmony import */ var content_src_components_MoreRecommendations_MoreRecommendations__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(60);
-/* harmony import */ var content_src_components_PocketLoggedInCta_PocketLoggedInCta__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(61);
+/* harmony import */ var content_src_components_MoreRecommendations_MoreRecommendations__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(55);
+/* harmony import */ var content_src_components_PocketLoggedInCta_PocketLoggedInCta__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(56);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_8___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_8__);
-/* harmony import */ var content_src_components_Topics_Topics__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(62);
-/* harmony import */ var content_src_components_TopSites_TopSites__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(63);
+/* harmony import */ var content_src_components_Topics_Topics__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(57);
+/* harmony import */ var content_src_components_TopSites_TopSites__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(58);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -8665,10 +7987,10 @@ const Sections = Object(react_redux__WEBPACK_IMPORTED_MODULE_5__["connect"])(sta
   Sections: state.Sections,
   Prefs: state.Prefs
 }))(_Sections);
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 56 */
+/* 51 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8676,15 +7998,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_Card", function() { return _Card; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Card", function() { return Card; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "PlaceholderCard", function() { return PlaceholderCard; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(37);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var _types__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(32);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(33);
-/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(30);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(28);
+/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(25);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_5___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_5__);
-/* harmony import */ var content_src_lib_screenshot_utils__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(57);
+/* harmony import */ var content_src_lib_screenshot_utils__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(52);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9020,7 +8342,7 @@ const PlaceholderCard = props => react__WEBPACK_IMPORTED_MODULE_5___default.a.cr
 });
 
 /***/ }),
-/* 57 */
+/* 52 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9086,17 +8408,17 @@ const ScreenshotUtils = {
   }
 
 };
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 58 */
+/* 53 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ComponentPerfTimer", function() { return ComponentPerfTimer; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_lib_perf_service__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(59);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_lib_perf_service__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(54);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_2__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -9269,7 +8591,7 @@ class ComponentPerfTimer extends react__WEBPACK_IMPORTED_MODULE_2___default.a.Co
 }
 
 /***/ }),
-/* 59 */
+/* 54 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9379,7 +8701,7 @@ _PerfService.prototype = {
 const perfService = new _PerfService();
 
 /***/ }),
-/* 60 */
+/* 55 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9411,14 +8733,14 @@ class MoreRecommendations extends react__WEBPACK_IMPORTED_MODULE_0___default.a.P
 }
 
 /***/ }),
-/* 61 */
+/* 56 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_PocketLoggedInCta", function() { return _PocketLoggedInCta; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "PocketLoggedInCta", function() { return PocketLoggedInCta; });
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
@@ -9454,7 +8776,7 @@ const PocketLoggedInCta = Object(react_redux__WEBPACK_IMPORTED_MODULE_0__["conne
 }))(_PocketLoggedInCta);
 
 /***/ }),
-/* 62 */
+/* 57 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9499,26 +8821,26 @@ class Topics extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComponent 
 }
 
 /***/ }),
-/* 63 */
+/* 58 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_TopSites", function() { return _TopSites; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TopSites", function() { return TopSites; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(64);
-/* harmony import */ var content_src_components_CollapsibleSection_CollapsibleSection__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(43);
-/* harmony import */ var content_src_components_ComponentPerfTimer_ComponentPerfTimer__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(58);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(59);
+/* harmony import */ var content_src_components_CollapsibleSection_CollapsibleSection__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(38);
+/* harmony import */ var content_src_components_ComponentPerfTimer_ComponentPerfTimer__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(53);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _asrouter_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(16);
+/* harmony import */ var _asrouter_components_ModalOverlay_ModalOverlay__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(8);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_6___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_6__);
-/* harmony import */ var _SearchShortcutsForm__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(65);
-/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(77);
-/* harmony import */ var _TopSiteForm__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(79);
-/* harmony import */ var _TopSite__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(66);
+/* harmony import */ var _SearchShortcutsForm__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(60);
+/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(74);
+/* harmony import */ var _TopSiteForm__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(75);
+/* harmony import */ var _TopSite__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(61);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -9675,9 +8997,10 @@ class _TopSites extends react__WEBPACK_IMPORTED_MODULE_6___default.a.PureCompone
       className: "top-sites",
       icon: "topsites",
       id: "topsites",
-      title: this.props.title || {
+      title: props.title || {
         id: "newtab-section-header-topsites"
       },
+      hideTitle: props.Prefs.values.hideTopSitesTitle,
       extraMenuOptions: extraMenuOptions,
       showPrefName: "feeds.topsites",
       eventSource: _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_SOURCE"],
@@ -9723,10 +9046,10 @@ const TopSites = Object(react_redux__WEBPACK_IMPORTED_MODULE_4__["connect"])((st
   Prefs: state.Prefs,
   TopSitesRows: state.Prefs.values.topSitesRows
 }))(_TopSites);
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 64 */
+/* 59 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9734,6 +9057,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TOP_SITES_SOURCE", function() { return TOP_SITES_SOURCE; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TOP_SITES_CONTEXT_MENU_OPTIONS", function() { return TOP_SITES_CONTEXT_MENU_OPTIONS; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS", function() { return TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TOP_SITES_SPONSORED_POSITION_CONTEXT_MENU_OPTIONS", function() { return TOP_SITES_SPONSORED_POSITION_CONTEXT_MENU_OPTIONS; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS", function() { return TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MIN_RICH_FAVICON_SIZE", function() { return MIN_RICH_FAVICON_SIZE; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MIN_CORNER_FAVICON_SIZE", function() { return MIN_CORNER_FAVICON_SIZE; });
@@ -9742,7 +9066,8 @@ __webpack_require__.r(__webpack_exports__);
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 const TOP_SITES_SOURCE = "TOP_SITES";
 const TOP_SITES_CONTEXT_MENU_OPTIONS = ["CheckPinTopSite", "EditTopSite", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", "DeleteUrl"];
-const TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS = ["PinSpocTopSite", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", "ShowPrivacyInfo"]; // the special top site for search shortcut experiment can only have the option to unpin (which removes) the topsite
+const TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS = ["PinTopSite", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", "ShowPrivacyInfo"];
+const TOP_SITES_SPONSORED_POSITION_CONTEXT_MENU_OPTIONS = ["PinTopSite", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", "AboutSponsored"]; // the special top site for search shortcut experiment can only have the option to unpin (which removes) the topsite
 
 const TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS = ["CheckPinTopSite", "Separator", "BlockUrl"]; // minimum size necessary to show a rich icon instead of a screenshot
 
@@ -9751,17 +9076,17 @@ const MIN_RICH_FAVICON_SIZE = 96; // minimum size necessary to show any icon in 
 const MIN_CORNER_FAVICON_SIZE = 16;
 
 /***/ }),
-/* 65 */
+/* 60 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SelectableSearchShortcut", function() { return SelectableSearchShortcut; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SearchShortcutsForm", function() { return SearchShortcutsForm; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _TopSitesConstants__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(64);
+/* harmony import */ var _TopSitesConstants__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(59);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9942,7 +9267,7 @@ class SearchShortcutsForm extends react__WEBPACK_IMPORTED_MODULE_1___default.a.P
 }
 
 /***/ }),
-/* 66 */
+/* 61 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9951,15 +9276,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TopSite", function() { return TopSite; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TopSitePlaceholder", function() { return TopSitePlaceholder; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TopSiteList", function() { return TopSiteList; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(64);
-/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(30);
-/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(34);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(59);
+/* harmony import */ var content_src_components_LinkMenu_LinkMenu__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(25);
+/* harmony import */ var _DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(29);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var content_src_lib_screenshot_utils__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(57);
-/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(77);
-/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(33);
+/* harmony import */ var content_src_lib_screenshot_utils__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(52);
+/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(74);
+/* harmony import */ var content_src_components_ContextMenu_ContextMenuButton__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(28);
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -9985,12 +9310,13 @@ class TopSiteLink extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureCompo
   }
   /*
    * Helper to determine whether the drop zone should allow a drop. We only allow
-   * dropping top sites for now.
+   * dropping top sites for now. We don't allow dropping on sponsored top sites
+   * as their position is fixed.
    */
 
 
   _allowDrop(e) {
-    return e.dataTransfer.types.includes("text/topsite-index");
+    return (this.dragged || !this.props.link.sponsored_position) && e.dataTransfer.types.includes("text/topsite-index");
   }
 
   onDragEvent(event) {
@@ -10212,14 +9538,15 @@ class TopSiteLink extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureCompo
       "data-fallback": smallFaviconFallback && letterFallback,
       style: smallFaviconStyle
     })), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", {
-      className: `title ${link.isPinned ? "pinned" : ""}`
+      className: `title${link.isPinned ? " has-icon pinned" : ""}${link.type === SPOC_TYPE || link.sponsored_position ? " sponsored" : ""}`
     }, link.isPinned && react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("div", {
       className: "icon icon-pin-small"
     }), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", {
       dir: "auto"
-    }, title)), link.type === SPOC_TYPE ? react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", {
-      className: "top-site-spoc-label"
-    }, "Sponsored") : null), children, link.type === SPOC_TYPE ? react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(_DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__["ImpressionStats"], {
+    }, title || react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("br", null)), react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement("span", {
+      className: "sponsored-label",
+      "data-l10n-id": "newtab-topsite-sponsored"
+    }))), children, link.type === SPOC_TYPE ? react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(_DiscoveryStreamImpressionStats_ImpressionStats__WEBPACK_IMPORTED_MODULE_3__["ImpressionStats"], {
       flightId: link.flightId,
       rows: [{
         id: link.id,
@@ -10266,7 +9593,7 @@ class TopSite extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureComponent
       value.search_vendor = this.props.link.hostname;
     }
 
-    if (this.props.link.type === SPOC_TYPE) {
+    if (this.props.link.type === SPOC_TYPE || this.props.link.sponsored_position) {
       value.card_type = "spoc";
     }
 
@@ -10322,9 +9649,9 @@ class TopSite extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureComponent
         }));
       }
 
-      if (this.props.link.overriddenSearchTopSite) {
+      if (this.props.link.sendAttributionRequest) {
         this.props.dispatch(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].OnlyToMain({
-          type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].TOP_SITES_ATTRIBUTION,
+          type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].PARTNER_LINK_ATTRIBUTION,
           data: {
             targetURL: this.props.link.url,
             source: "newtab"
@@ -10358,7 +9685,18 @@ class TopSite extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureComponent
     } = props;
     const isContextMenuOpen = props.activeIndex === props.index;
     const title = link.label || link.hostname;
-    const menuOptions = link.type !== SPOC_TYPE ? _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_CONTEXT_MENU_OPTIONS"] : _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS"];
+    let menuOptions;
+
+    if (link.sponsored_position) {
+      menuOptions = _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_SPONSORED_POSITION_CONTEXT_MENU_OPTIONS"];
+    } else if (link.searchTopSite) {
+      menuOptions = _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS"];
+    } else if (link.type === SPOC_TYPE) {
+      menuOptions = _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS"];
+    } else {
+      menuOptions = _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_CONTEXT_MENU_OPTIONS"];
+    }
+
     return react__WEBPACK_IMPORTED_MODULE_4___default.a.createElement(TopSiteLink, _extends({}, props, {
       onClick: this.onLinkClick,
       onDragEvent: this.props.onDragEvent,
@@ -10374,7 +9712,7 @@ class TopSite extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureComponent
       dispatch: props.dispatch,
       index: props.index,
       onUpdate: this.onMenuUpdate,
-      options: link.searchTopSite ? _TopSitesConstants__WEBPACK_IMPORTED_MODULE_1__["TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS"] : menuOptions,
+      options: menuOptions,
       site: link,
       shouldSendImpressionStats: link.type === SPOC_TYPE,
       siteInfo: this._getTelemetryInfo(),
@@ -10531,39 +9869,42 @@ class TopSiteList extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureCompo
     const topSites = this._getTopSites();
 
     topSites[this.state.draggedIndex] = null;
-    const pinnedOnly = topSites.map(site => site && site.isPinned ? site : null);
-    const unpinned = topSites.filter(site => site && !site.isPinned);
+    const preview = topSites.map(site => site && (site.isPinned || site.sponsored_position) ? site : null);
+    const unpinned = topSites.filter(site => site && !site.isPinned && !site.sponsored_position);
     const siteToInsert = Object.assign({}, this.state.draggedSite, {
       isPinned: true,
       isDragged: true
     });
 
-    if (!pinnedOnly[index]) {
-      pinnedOnly[index] = siteToInsert;
+    if (!preview[index]) {
+      preview[index] = siteToInsert;
     } else {
       // Find the hole to shift the pinned site(s) towards. We shift towards the
       // hole left by the site being dragged.
       let holeIndex = index;
       const indexStep = index > this.state.draggedIndex ? -1 : 1;
 
-      while (pinnedOnly[holeIndex]) {
+      while (preview[holeIndex]) {
         holeIndex += indexStep;
       } // Shift towards the hole.
 
 
       const shiftingStep = index > this.state.draggedIndex ? 1 : -1;
 
-      while (holeIndex !== index) {
-        const nextIndex = holeIndex + shiftingStep;
-        pinnedOnly[holeIndex] = pinnedOnly[nextIndex];
+      while (index > this.state.draggedIndex ? holeIndex < index : holeIndex > index) {
+        let nextIndex = holeIndex + shiftingStep;
+
+        while (preview[nextIndex] && preview[nextIndex].sponsored_position) {
+          nextIndex += shiftingStep;
+        }
+
+        preview[holeIndex] = preview[nextIndex];
         holeIndex = nextIndex;
       }
 
-      pinnedOnly[index] = siteToInsert;
+      preview[index] = siteToInsert;
     } // Fill in the remaining holes with unpinned sites.
 
-
-    const preview = pinnedOnly;
 
     for (let i = 0; i < preview.length; i++) {
       if (!preview[i]) {
@@ -10629,7 +9970,7 @@ class TopSiteList extends react__WEBPACK_IMPORTED_MODULE_4___default.a.PureCompo
 }
 
 /***/ }),
-/* 67 */
+/* 62 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10651,18 +9992,18 @@ class HorizontalRule extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureCo
 }
 
 /***/ }),
-/* 68 */
+/* 63 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Topic", function() { return Topic; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Navigation", function() { return Navigation; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(35);
-/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(39);
+/* harmony import */ var _SafeAnchor_SafeAnchor__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(30);
+/* harmony import */ var content_src_components_FluentOrText_FluentOrText__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(34);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10766,7 +10107,7 @@ class Navigation extends react__WEBPACK_IMPORTED_MODULE_1___default.a.PureCompon
 }
 
 /***/ }),
-/* 69 */
+/* 64 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10798,7 +10139,7 @@ class SectionTitle extends react__WEBPACK_IMPORTED_MODULE_0___default.a.PureComp
 }
 
 /***/ }),
-/* 70 */
+/* 65 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -11069,17 +10410,17 @@ const selectLayoutRender = ({
 };
 
 /***/ }),
-/* 71 */
+/* 66 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_TopSites", function() { return _TopSites; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TopSites", function() { return TopSites; });
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(22);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var content_src_components_TopSites_TopSites__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(63);
-/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(77);
+/* harmony import */ var content_src_components_TopSites_TopSites__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(58);
+/* harmony import */ var common_Reducers_jsm__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(74);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_3__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -11220,17 +10561,17 @@ const TopSites = Object(react_redux__WEBPACK_IMPORTED_MODULE_0__["connect"])(sta
 }))(_TopSites);
 
 /***/ }),
-/* 72 */
+/* 67 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "_Search", function() { return _Search; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Search", function() { return Search; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(22);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(7);
 /* harmony import */ var react_redux__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_redux__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var content_src_lib_constants__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(11);
+/* harmony import */ var content_src_lib_constants__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(14);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(9);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_3__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -11412,14 +10753,14 @@ class _Search extends react__WEBPACK_IMPORTED_MODULE_3___default.a.PureComponent
 const Search = Object(react_redux__WEBPACK_IMPORTED_MODULE_1__["connect"])()(_Search);
 
 /***/ }),
-/* 73 */
+/* 68 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 /* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DetectUserSessionStart", function() { return DetectUserSessionStart; });
-/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var content_src_lib_perf_service__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(59);
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var content_src_lib_perf_service__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(54);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11491,10 +10832,195 @@ class DetectUserSessionStart {
   }
 
 }
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(1)))
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
 
 /***/ }),
-/* 74 */
+/* 69 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* WEBPACK VAR INJECTION */(function(global) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "MERGE_STORE_ACTION", function() { return MERGE_STORE_ACTION; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "OUTGOING_MESSAGE_NAME", function() { return OUTGOING_MESSAGE_NAME; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "INCOMING_MESSAGE_NAME", function() { return INCOMING_MESSAGE_NAME; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "EARLY_QUEUED_ACTIONS", function() { return EARLY_QUEUED_ACTIONS; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "rehydrationMiddleware", function() { return rehydrationMiddleware; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "queueEarlyMessageMiddleware", function() { return queueEarlyMessageMiddleware; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "initStore", function() { return initStore; });
+/* harmony import */ var common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var redux__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(70);
+/* harmony import */ var redux__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(redux__WEBPACK_IMPORTED_MODULE_1__);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* eslint-env mozilla/frame-script */
+
+
+const MERGE_STORE_ACTION = "NEW_TAB_INITIAL_STATE";
+const OUTGOING_MESSAGE_NAME = "ActivityStream:ContentToMain";
+const INCOMING_MESSAGE_NAME = "ActivityStream:MainToContent";
+const EARLY_QUEUED_ACTIONS = [common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].SAVE_SESSION_PERF_DATA];
+/**
+ * A higher-order function which returns a reducer that, on MERGE_STORE action,
+ * will return the action.data object merged into the previous state.
+ *
+ * For all other actions, it merely calls mainReducer.
+ *
+ * Because we want this to merge the entire state object, it's written as a
+ * higher order function which takes the main reducer (itself often a call to
+ * combineReducers) as a parameter.
+ *
+ * @param  {function} mainReducer reducer to call if action != MERGE_STORE_ACTION
+ * @return {function}             a reducer that, on MERGE_STORE_ACTION action,
+ *                                will return the action.data object merged
+ *                                into the previous state, and the result
+ *                                of calling mainReducer otherwise.
+ */
+
+function mergeStateReducer(mainReducer) {
+  return (prevState, action) => {
+    if (action.type === MERGE_STORE_ACTION) {
+      return { ...prevState,
+        ...action.data
+      };
+    }
+
+    return mainReducer(prevState, action);
+  };
+}
+/**
+ * messageMiddleware - Middleware that looks for SentToMain type actions, and sends them if necessary
+ */
+
+
+const messageMiddleware = store => next => action => {
+  const skipLocal = action.meta && action.meta.skipLocal;
+
+  if (common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isSendToMain(action)) {
+    RPMSendAsyncMessage(OUTGOING_MESSAGE_NAME, action);
+  }
+
+  if (!skipLocal) {
+    next(action);
+  }
+};
+
+const rehydrationMiddleware = ({
+  getState
+}) => {
+  // NB: The parameter here is MiddlewareAPI which looks like a Store and shares
+  // the same getState, so attached properties are accessible from the store.
+  getState.didRehydrate = false;
+  getState.didRequestInitialState = false;
+  return next => action => {
+    if (getState.didRehydrate || window.__FROM_STARTUP_CACHE__) {
+      // Startup messages can be safely ignored by the about:home document
+      // stored in the startup cache.
+      if (window.__FROM_STARTUP_CACHE__ && action.meta && action.meta.isStartup) {
+        return null;
+      }
+
+      return next(action);
+    }
+
+    const isMergeStoreAction = action.type === MERGE_STORE_ACTION;
+    const isRehydrationRequest = action.type === common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].NEW_TAB_STATE_REQUEST;
+
+    if (isRehydrationRequest) {
+      getState.didRequestInitialState = true;
+      return next(action);
+    }
+
+    if (isMergeStoreAction) {
+      getState.didRehydrate = true;
+      return next(action);
+    } // If init happened after our request was made, we need to re-request
+
+
+    if (getState.didRequestInitialState && action.type === common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].INIT) {
+      return next(common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionCreators"].AlsoToMain({
+        type: common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionTypes"].NEW_TAB_STATE_REQUEST
+      }));
+    }
+
+    if (common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isBroadcastToContent(action) || common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isSendToOneContent(action) || common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isSendToPreloaded(action)) {
+      // Note that actions received before didRehydrate will not be dispatched
+      // because this could negatively affect preloading and the the state
+      // will be replaced by rehydration anyway.
+      return null;
+    }
+
+    return next(action);
+  };
+};
+/**
+ * This middleware queues up all the EARLY_QUEUED_ACTIONS until it receives
+ * the first action from main. This is useful for those actions for main which
+ * require higher reliability, i.e. the action will not be lost in the case
+ * that it gets sent before the main is ready to receive it. Conversely, any
+ * actions allowed early are accepted to be ignorable or re-sendable.
+ */
+
+const queueEarlyMessageMiddleware = ({
+  getState
+}) => {
+  // NB: The parameter here is MiddlewareAPI which looks like a Store and shares
+  // the same getState, so attached properties are accessible from the store.
+  getState.earlyActionQueue = [];
+  getState.receivedFromMain = false;
+  return next => action => {
+    if (getState.receivedFromMain) {
+      next(action);
+    } else if (common_Actions_jsm__WEBPACK_IMPORTED_MODULE_0__["actionUtils"].isFromMain(action)) {
+      next(action);
+      getState.receivedFromMain = true; // Sending out all the early actions as main is ready now
+
+      getState.earlyActionQueue.forEach(next);
+      getState.earlyActionQueue.length = 0;
+    } else if (EARLY_QUEUED_ACTIONS.includes(action.type)) {
+      getState.earlyActionQueue.push(action);
+    } else {
+      // Let any other type of action go through
+      next(action);
+    }
+  };
+};
+/**
+ * initStore - Create a store and listen for incoming actions
+ *
+ * @param  {object} reducers An object containing Redux reducers
+ * @param  {object} intialState (optional) The initial state of the store, if desired
+ * @return {object}          A redux store
+ */
+
+function initStore(reducers, initialState) {
+  const store = Object(redux__WEBPACK_IMPORTED_MODULE_1__["createStore"])(mergeStateReducer(Object(redux__WEBPACK_IMPORTED_MODULE_1__["combineReducers"])(reducers)), initialState, global.RPMAddMessageListener && Object(redux__WEBPACK_IMPORTED_MODULE_1__["applyMiddleware"])(queueEarlyMessageMiddleware, rehydrationMiddleware, messageMiddleware));
+
+  if (global.RPMAddMessageListener) {
+    global.RPMAddMessageListener(INCOMING_MESSAGE_NAME, msg => {
+      try {
+        store.dispatch(msg.data);
+      } catch (ex) {
+        console.error("Content msg:", msg, "Dispatch error: ", ex); // eslint-disable-line no-console
+
+        dump(`Content msg: ${JSON.stringify(msg)}\nDispatch error: ${ex}\n${ex.stack}`);
+      }
+    });
+  }
+
+  return store;
+}
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(3)))
+
+/***/ }),
+/* 70 */
+/***/ (function(module, exports) {
+
+module.exports = Redux;
+
+/***/ }),
+/* 71 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -11504,7 +11030,7 @@ __webpack_require__.r(__webpack_exports__);
 var external_React_ = __webpack_require__(9);
 
 // EXTERNAL MODULE: external "PropTypes"
-var external_PropTypes_ = __webpack_require__(10);
+var external_PropTypes_ = __webpack_require__(13);
 var external_PropTypes_default = /*#__PURE__*/__webpack_require__.n(external_PropTypes_);
 
 // CONCATENATED MODULE: ./node_modules/fluent-sequence/src/map_sync.js
@@ -12291,7 +11817,7 @@ localized_Localized.propTypes = {
 
 
 /***/ }),
-/* 75 */
+/* 72 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -12339,12 +11865,97 @@ const ConditionalWrapper = ({
 }) => condition && wrap ? wrap(children) : children;
 
 /* harmony default export */ var ConditionalWrapper_ConditionalWrapper = (ConditionalWrapper);
-// EXTERNAL MODULE: ./content-src/asrouter/components/RichText/RichText.jsx
-var RichText = __webpack_require__(13);
+// EXTERNAL MODULE: ./node_modules/fluent-react/src/index.js + 14 modules
+var src = __webpack_require__(71);
 
-// EXTERNAL MODULE: ./content-src/asrouter/template-utils.js
-var template_utils = __webpack_require__(14);
+// EXTERNAL MODULE: ./content-src/asrouter/rich-text-strings.js + 7 modules
+var rich_text_strings = __webpack_require__(73);
 
+// CONCATENATED MODULE: ./content-src/asrouter/template-utils.js
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+function safeURI(url) {
+  if (!url) {
+    return "";
+  }
+
+  const {
+    protocol
+  } = new URL(url);
+  const isAllowed = ["http:", "https:", "data:", "resource:", "chrome:"].includes(protocol);
+
+  if (!isAllowed) {
+    console.warn(`The protocol ${protocol} is not allowed for template URLs.`); // eslint-disable-line no-console
+  }
+
+  return isAllowed ? url : "";
+}
+// CONCATENATED MODULE: ./content-src/asrouter/components/RichText/RichText.jsx
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+ // Elements allowed in snippet content
+
+const ALLOWED_TAGS = {
+  b: external_React_default.a.createElement("b", null),
+  i: external_React_default.a.createElement("i", null),
+  u: external_React_default.a.createElement("u", null),
+  strong: external_React_default.a.createElement("strong", null),
+  em: external_React_default.a.createElement("em", null),
+  br: external_React_default.a.createElement("br", null)
+};
+/**
+ * Transform an object (tag name: {url}) into (tag name: anchor) where the url
+ * is used as href, in order to render links inside a Fluent.Localized component.
+ */
+
+function convertLinks(links, sendClick, doNotAutoBlock, openNewWindow = false) {
+  if (links) {
+    return Object.keys(links).reduce((acc, linkTag) => {
+      const {
+        action
+      } = links[linkTag]; // Setting the value to false will not include the attribute in the anchor
+
+      const url = action ? false : safeURI(links[linkTag].url);
+      acc[linkTag] = // eslint was getting a false positive caused by the dynamic injection
+      // of content.
+      // eslint-disable-next-line jsx-a11y/anchor-has-content
+      external_React_default.a.createElement("a", {
+        href: url,
+        target: openNewWindow ? "_blank" : "",
+        "data-metric": links[linkTag].metric,
+        "data-action": action,
+        "data-args": links[linkTag].args,
+        "data-do_not_autoblock": doNotAutoBlock,
+        "data-entrypoint_name": links[linkTag].entrypoint_name,
+        "data-entrypoint_value": links[linkTag].entrypoint_value,
+        onClick: sendClick
+      });
+      return acc;
+    }, {});
+  }
+
+  return null;
+}
+/**
+ * Message wrapper used to sanitize markup and render HTML.
+ */
+
+function RichText(props) {
+  if (!rich_text_strings["RICH_TEXT_KEYS"].includes(props.localization_id)) {
+    throw new Error(`ASRouter: ${props.localization_id} is not a valid rich text property. If you want it to be processed, you need to add it to asrouter/rich-text-strings.js`);
+  }
+
+  return external_React_default.a.createElement(src["Localized"], _extends({
+    id: props.localization_id
+  }, ALLOWED_TAGS, props.customElements, convertLinks(props.links, props.sendClick, props.doNotAutoBlock, props.openNewWindow)), external_React_default.a.createElement("span", null, props.text));
+}
 // CONCATENATED MODULE: ./content-src/asrouter/components/SnippetBase/SnippetBase.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -12455,7 +12066,7 @@ class SnippetBase_SnippetBase extends external_React_default.a.PureComponent {
 
 }
 // CONCATENATED MODULE: ./content-src/asrouter/templates/SimpleSnippet/SimpleSnippet.jsx
-function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+function SimpleSnippet_extends() { SimpleSnippet_extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return SimpleSnippet_extends.apply(this, arguments); }
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -12521,8 +12132,8 @@ class SimpleSnippet_SimpleSnippet extends external_React_default.a.PureComponent
   }
 
   renderTitleIcon() {
-    const titleIconLight = Object(template_utils["safeURI"])(this.props.content.title_icon);
-    const titleIconDark = Object(template_utils["safeURI"])(this.props.content.title_icon_dark_theme || this.props.content.title_icon);
+    const titleIconLight = safeURI(this.props.content.title_icon);
+    const titleIconDark = safeURI(this.props.content.title_icon_dark_theme || this.props.content.title_icon);
 
     if (!titleIconLight) {
       return null;
@@ -12561,7 +12172,7 @@ class SimpleSnippet_SimpleSnippet extends external_React_default.a.PureComponent
     const {
       props
     } = this;
-    return external_React_default.a.createElement(RichText["RichText"], {
+    return external_React_default.a.createElement(RichText, {
       text: props.content.text,
       customElements: this.props.customElements,
       localization_id: "text",
@@ -12590,8 +12201,8 @@ class SimpleSnippet_SimpleSnippet extends external_React_default.a.PureComponent
     } = this; // an icon and text must be specified to render the section header
 
     if (props.content.section_title_icon && props.content.section_title_text) {
-      const sectionTitleIconLight = Object(template_utils["safeURI"])(props.content.section_title_icon);
-      const sectionTitleIconDark = Object(template_utils["safeURI"])(props.content.section_title_icon_dark_theme || props.content.section_title_icon);
+      const sectionTitleIconLight = safeURI(props.content.section_title_icon);
+      const sectionTitleIconDark = safeURI(props.content.section_title_icon_dark_theme || props.content.section_title_icon);
       const sectionTitleURL = props.content.section_title_url;
       return external_React_default.a.createElement("div", {
         className: "section-header"
@@ -12639,18 +12250,18 @@ class SimpleSnippet_SimpleSnippet extends external_React_default.a.PureComponent
 
     return external_React_default.a.createElement("div", {
       className: "snippet-hover-wrapper"
-    }, external_React_default.a.createElement(SnippetBase_SnippetBase, _extends({}, props, {
+    }, external_React_default.a.createElement(SnippetBase_SnippetBase, SimpleSnippet_extends({}, props, {
       className: className,
       textStyle: this.props.textStyle
     }), sectionHeader, external_React_default.a.createElement(ConditionalWrapper_ConditionalWrapper, {
       condition: sectionHeader,
       wrap: this.wrapSnippetContent
     }, external_React_default.a.createElement("img", {
-      src: Object(template_utils["safeURI"])(props.content.icon) || DEFAULT_ICON_PATH,
+      src: safeURI(props.content.icon) || DEFAULT_ICON_PATH,
       className: "icon icon-light-theme",
       alt: props.content.icon_alt_text || ICON_ALT_TEXT
     }), external_React_default.a.createElement("img", {
-      src: Object(template_utils["safeURI"])(props.content.icon_dark_theme || props.content.icon) || DEFAULT_ICON_PATH,
+      src: safeURI(props.content.icon_dark_theme || props.content.icon) || DEFAULT_ICON_PATH,
       className: "icon icon-dark-theme",
       alt: props.content.icon_alt_text || ICON_ALT_TEXT
     }), external_React_default.a.createElement("div", null, this.renderTitle(), " ", external_React_default.a.createElement("p", {
@@ -12971,7 +12582,7 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
 
     return external_React_default.a.createElement("p", {
       className: "disclaimerText"
-    }, external_React_default.a.createElement(RichText["RichText"], {
+    }, external_React_default.a.createElement(RichText, {
       text: content.scene2_disclaimer_html,
       localization_id: "disclaimer_html",
       links: content.links,
@@ -12999,7 +12610,7 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
       required: "required"
     }), external_React_default.a.createElement("label", {
       htmlFor: "id_privacy"
-    }, external_React_default.a.createElement(RichText["RichText"], {
+    }, external_React_default.a.createElement(RichText, {
       text: content.scene2_privacy_html,
       localization_id: "privacy_html",
       links: content.links,
@@ -13025,7 +12636,7 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
       className: "submissionStatus"
     }, successTitle ? external_React_default.a.createElement("h2", {
       className: "submitStatusTitle"
-    }, successTitle) : null, external_React_default.a.createElement("p", null, external_React_default.a.createElement(RichText["RichText"], SubmitFormSnippet_extends({}, bodyText, {
+    }, successTitle) : null, external_React_default.a.createElement("p", null, external_React_default.a.createElement(RichText, SubmitFormSnippet_extends({}, bodyText, {
       localization_id: isSuccess ? "success_text" : "error_text"
     })), isSuccess ? null : external_React_default.a.createElement(Button, {
       onClick: this.expandSnippet
@@ -13088,11 +12699,11 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
     return external_React_default.a.createElement("div", {
       className: "scene2Icon"
     }, external_React_default.a.createElement("img", {
-      src: Object(template_utils["safeURI"])(content.scene2_icon),
+      src: safeURI(content.scene2_icon),
       className: "icon-light-theme",
       alt: content.scene2_icon_alt_text || SubmitFormSnippet_ICON_ALT_TEXT
     }), external_React_default.a.createElement("img", {
-      src: Object(template_utils["safeURI"])(content.scene2_icon_dark_theme || content.scene2_icon),
+      src: safeURI(content.scene2_icon_dark_theme || content.scene2_icon),
       className: "icon-dark-theme",
       alt: content.scene2_icon_alt_text || SubmitFormSnippet_ICON_ALT_TEXT
     }));
@@ -13110,7 +12721,7 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
       className: "message"
     }, external_React_default.a.createElement("p", null, content.scene2_title && external_React_default.a.createElement("h3", {
       className: "scene2Title"
-    }, content.scene2_title), " ", content.scene2_text && external_React_default.a.createElement(RichText["RichText"], {
+    }, content.scene2_title), " ", content.scene2_text && external_React_default.a.createElement(RichText, {
       scene2_text: content.scene2_text,
       localization_id: "scene2_text"
     }))), this.renderForm());
@@ -13122,8 +12733,8 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
     } = this; // an icon and text must be specified to render the section header
 
     if (props.content.section_title_icon && props.content.section_title_text) {
-      const sectionTitleIconLight = Object(template_utils["safeURI"])(props.content.section_title_icon);
-      const sectionTitleIconDark = Object(template_utils["safeURI"])(props.content.section_title_icon_dark_theme || props.content.section_title_icon);
+      const sectionTitleIconLight = safeURI(props.content.section_title_icon);
+      const sectionTitleIconDark = safeURI(props.content.section_title_icon_dark_theme || props.content.section_title_icon);
       const sectionTitleURL = props.content.section_title_url;
       return external_React_default.a.createElement("div", {
         className: "section-header"
@@ -13161,7 +12772,7 @@ class SubmitFormSnippet_SubmitFormSnippet extends external_React_default.a.PureC
       footerDismiss: false
     }), this.renderSectionHeader(), this.renderScene2Icon(), external_React_default.a.createElement("div", {
       className: "message"
-    }, external_React_default.a.createElement("p", null, content.scene2_text && external_React_default.a.createElement(RichText["RichText"], {
+    }, external_React_default.a.createElement("p", null, content.scene2_text && external_React_default.a.createElement(RichText, {
       scene2_text: content.scene2_text,
       localization_id: "scene2_text"
     })), this.renderForm()));
@@ -13411,7 +13022,7 @@ class SimpleBelowSearchSnippet_SimpleBelowSearchSnippet extends external_React_d
     const {
       props
     } = this;
-    return props.content.text ? external_React_default.a.createElement(RichText["RichText"], {
+    return props.content.text ? external_React_default.a.createElement(RichText, {
       text: props.content.text,
       customElements: this.props.customElements,
       localization_id: "text",
@@ -13498,11 +13109,11 @@ class SimpleBelowSearchSnippet_SimpleBelowSearchSnippet extends external_React_d
       className: className,
       textStyle: this.props.textStyle
     }), external_React_default.a.createElement("img", {
-      src: Object(template_utils["safeURI"])(props.content.icon) || SimpleBelowSearchSnippet_DEFAULT_ICON_PATH,
+      src: safeURI(props.content.icon) || SimpleBelowSearchSnippet_DEFAULT_ICON_PATH,
       className: "icon icon-light-theme",
       alt: props.content.icon_alt_text || SimpleBelowSearchSnippet_ICON_ALT_TEXT
     }), external_React_default.a.createElement("img", {
-      src: Object(template_utils["safeURI"])(props.content.icon_dark_theme || props.content.icon) || SimpleBelowSearchSnippet_DEFAULT_ICON_PATH,
+      src: safeURI(props.content.icon_dark_theme || props.content.icon) || SimpleBelowSearchSnippet_DEFAULT_ICON_PATH,
       className: "icon icon-dark-theme",
       alt: props.content.icon_alt_text || SimpleBelowSearchSnippet_ICON_ALT_TEXT
     }), external_React_default.a.createElement("div", {
@@ -13538,7 +13149,7 @@ const SnippetsTemplates = {
 };
 
 /***/ }),
-/* 76 */
+/* 73 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -14958,14 +14569,14 @@ function generateBundles(content) {
 }
 
 /***/ }),
-/* 77 */
+/* 74 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 
 // EXTERNAL MODULE: ./common/Actions.jsm
-var Actions = __webpack_require__(2);
+var Actions = __webpack_require__(1);
 
 // CONCATENATED MODULE: ./common/Dedupe.jsm
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -15928,305 +15539,24 @@ var reducers = {
 };
 
 /***/ }),
-/* 78 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-
-// EXTERNAL MODULE: external "React"
-var external_React_ = __webpack_require__(9);
-var external_React_default = /*#__PURE__*/__webpack_require__.n(external_React_);
-
-// EXTERNAL MODULE: ./content-src/asrouter/templates/Trailhead/Trailhead.jsx
-var Trailhead = __webpack_require__(15);
-
-// EXTERNAL MODULE: ./content-src/asrouter/templates/ReturnToAMO/ReturnToAMO.jsx
-var ReturnToAMO = __webpack_require__(19);
-
-// EXTERNAL MODULE: ./content-src/asrouter/templates/FullPageInterrupt/FullPageInterrupt.jsx
-var FullPageInterrupt = __webpack_require__(20);
-
-// EXTERNAL MODULE: ./node_modules/fluent-react/src/index.js + 14 modules
-var src = __webpack_require__(74);
-
-// EXTERNAL MODULE: ./content-src/asrouter/rich-text-strings.js + 7 modules
-var rich_text_strings = __webpack_require__(76);
-
-// CONCATENATED MODULE: ./content-src/asrouter/templates/FirstRun/Interrupt.jsx
-function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
-
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-class Interrupt_Interrupt extends external_React_default.a.PureComponent {
-  render() {
-    const {
-      cards,
-      onDismiss,
-      onNextScene,
-      message,
-      sendUserActionTelemetry,
-      executeAction,
-      dispatch,
-      fxaEndpoint,
-      UTMTerm,
-      flowParams
-    } = this.props;
-
-    switch (message.template) {
-      case "return_to_amo_overlay":
-        return external_React_default.a.createElement(src["LocalizationProvider"], {
-          bundles: Object(rich_text_strings["generateBundles"])({
-            amo_html: message.content.text
-          })
-        }, external_React_default.a.createElement(ReturnToAMO["ReturnToAMO"], _extends({}, message, {
-          document: this.props.document,
-          UISurface: "NEWTAB_OVERLAY",
-          onBlock: onDismiss,
-          onAction: executeAction,
-          sendUserActionTelemetry: sendUserActionTelemetry
-        })));
-
-      case "full_page_interrupt":
-        return external_React_default.a.createElement(FullPageInterrupt["FullPageInterrupt"], {
-          document: this.props.document,
-          cards: cards,
-          message: message,
-          onBlock: onDismiss,
-          onAction: executeAction,
-          dispatch: dispatch,
-          fxaEndpoint: fxaEndpoint,
-          sendUserActionTelemetry: sendUserActionTelemetry,
-          UTMTerm: UTMTerm,
-          flowParams: flowParams,
-          onBlockById: this.props.onBlockById
-        });
-
-      case "trailhead":
-        return external_React_default.a.createElement(Trailhead["Trailhead"], {
-          document: this.props.document,
-          message: message,
-          onNextScene: onNextScene,
-          onAction: executeAction,
-          sendUserActionTelemetry: sendUserActionTelemetry,
-          dispatch: dispatch,
-          fxaEndpoint: fxaEndpoint,
-          UTMTerm: UTMTerm,
-          flowParams: flowParams
-        });
-
-      default:
-        throw new Error(`${message.template} is not a valid FirstRun message`);
-    }
-  }
-
-}
-// EXTERNAL MODULE: ./content-src/asrouter/templates/FirstRun/Triplets.jsx
-var Triplets = __webpack_require__(21);
-
-// EXTERNAL MODULE: ./content-src/asrouter/templates/FirstRun/addUtmParams.js
-var addUtmParams = __webpack_require__(18);
-
-// CONCATENATED MODULE: ./content-src/asrouter/templates/FirstRun/FirstRun.jsx
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FLUENT_FILES", function() { return FLUENT_FILES; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "helpers", function() { return helpers; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "FirstRun", function() { return FirstRun_FirstRun; });
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
- // Note: should match the transition time on .trailheadCards in _Trailhead.scss
-
-const TRANSITION_LENGTH = 500;
-const FLUENT_FILES = ["branding/brand.ftl", "browser/branding/brandings.ftl", "browser/branding/sync-brand.ftl", "browser/newtab/onboarding.ftl"];
-const helpers = {
-  addFluent(document) {
-    FLUENT_FILES.forEach(file => {
-      const link = document.head.appendChild(document.createElement("link"));
-      link.href = file;
-      link.rel = "localization";
-    });
-  }
-
-};
-class FirstRun_FirstRun extends external_React_default.a.PureComponent {
-  constructor(props) {
-    super(props);
-    this.didLoadFlowParams = false;
-    this.state = {
-      didUserClearInterrupt: false,
-      didUserClearTriplets: false,
-      flowParams: undefined
-    };
-    this.closeInterrupt = this.closeInterrupt.bind(this);
-    this.closeTriplets = this.closeTriplets.bind(this);
-    helpers.addFluent(this.props.document); // Update utm campaign parameters by appending channel for
-    // differentiating campaign in amplitude
-
-    if (this.props.appUpdateChannel) {
-      addUtmParams["BASE_PARAMS"].utm_campaign += `-${this.props.appUpdateChannel}`;
-    }
-  }
-
-  get UTMTerm() {
-    const {
-      message
-    } = this.props;
-    let UTMTerm = message.utm_term || "";
-    UTMTerm = message.utm_term && message.trailheadTriplet ? `${message.utm_term}-${message.trailheadTriplet}` : UTMTerm;
-    return UTMTerm;
-  }
-
-  async fetchFlowParams() {
-    const {
-      fxaEndpoint,
-      fetchFlowParams
-    } = this.props;
-
-    if (fxaEndpoint && this.UTMTerm && !this.didLoadFlowParams) {
-      this.didLoadFlowParams = true;
-      const flowParams = await fetchFlowParams({ ...addUtmParams["BASE_PARAMS"],
-        entrypoint: "activity-stream-firstrun",
-        form_type: "email",
-        utm_term: this.UTMTerm
-      });
-      this.setState({
-        flowParams
-      });
-    }
-  }
-
-  removeHideMain() {
-    if (!this.isInterruptVisible) {
-      // We need to remove hide-main since we should show it underneath everything that has rendered
-      this.props.document.body.classList.remove("hide-main", "welcome");
-    }
-  } // Is there any interrupt content? This is false for new tab triplets.
-
-
-  get hasInterrupt() {
-    const {
-      message
-    } = this.props;
-    return Boolean(message && message.content);
-  } // Are all conditions met for the interrupt to actually be visible?
-  // 1. hasInterrupt - Is there interrupt content?
-  // 2. state.didUserClearInterrupt - Was it cleared by the user?
-  // 3. props.interruptCleared - Was it cleared externally?
-
-
-  get isInterruptVisible() {
-    return this.hasInterrupt && !this.state.didUserClearInterrupt && !this.props.interruptCleared;
-  }
-
-  componentDidMount() {
-    this.fetchFlowParams();
-    this.removeHideMain();
-  }
-
-  componentDidUpdate() {
-    // In case we didn't have FXA info immediately, try again when we receive it.
-    this.fetchFlowParams();
-    this.removeHideMain();
-  }
-
-  closeInterrupt() {
-    this.setState({
-      didUserClearInterrupt: true
-    });
-  }
-
-  closeTriplets() {
-    this.setState({
-      didUserClearTriplets: true
-    }); // Closing triplets should prevent any future extended triplets from showing up
-
-    setTimeout(() => {
-      this.props.onBlockById("EXTENDED_TRIPLETS_1");
-    }, TRANSITION_LENGTH);
-  }
-
-  render() {
-    const {
-      props,
-      state,
-      UTMTerm
-    } = this;
-    const {
-      sendUserActionTelemetry,
-      fxaEndpoint,
-      dispatch,
-      executeAction,
-      message
-    } = props;
-    const {
-      didUserClearTriplets,
-      flowParams
-    } = state;
-    const hasTriplets = Boolean(message.bundle && message.bundle.length);
-    const interrupt = this.hasInterrupt ? message : null;
-    const triplets = hasTriplets ? message.bundle : null;
-    const isTripletsContainerVisible = hasTriplets && !didUserClearTriplets; // Allow 1) falsy to not render a header 2) default welcome 3) custom header
-
-    const tripletsHeaderId = message.tripletsHeaderId === undefined ? "onboarding-welcome-header" : message.tripletsHeaderId;
-    return external_React_default.a.createElement(external_React_default.a.Fragment, null, this.isInterruptVisible ? external_React_default.a.createElement(Interrupt_Interrupt, {
-      document: props.document,
-      cards: triplets,
-      message: interrupt,
-      onNextScene: this.closeInterrupt,
-      UTMTerm: UTMTerm,
-      sendUserActionTelemetry: sendUserActionTelemetry,
-      executeAction: executeAction,
-      dispatch: dispatch,
-      flowParams: flowParams,
-      onDismiss: this.closeInterrupt,
-      fxaEndpoint: fxaEndpoint,
-      onBlockById: props.onBlockById
-    }) : null, hasTriplets ? external_React_default.a.createElement(Triplets["Triplets"], {
-      document: props.document,
-      cards: triplets,
-      headerId: tripletsHeaderId,
-      showCardPanel: isTripletsContainerVisible,
-      showContent: !this.isInterruptVisible,
-      hideContainer: this.closeTriplets,
-      sendUserActionTelemetry: sendUserActionTelemetry,
-      UTMTerm: `${UTMTerm}-card`,
-      flowParams: flowParams,
-      onAction: executeAction,
-      onBlockById: props.onBlockById
-    }) : null);
-  }
-
-}
-
-/***/ }),
-/* 79 */
+/* 75 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
 
 // EXTERNAL MODULE: ./common/Actions.jsm
-var Actions = __webpack_require__(2);
+var Actions = __webpack_require__(1);
 
 // EXTERNAL MODULE: ./content-src/components/A11yLinkButton/A11yLinkButton.jsx
-var A11yLinkButton = __webpack_require__(45);
+var A11yLinkButton = __webpack_require__(40);
 
 // EXTERNAL MODULE: external "React"
 var external_React_ = __webpack_require__(9);
 var external_React_default = /*#__PURE__*/__webpack_require__.n(external_React_);
 
 // EXTERNAL MODULE: ./content-src/components/TopSites/TopSitesConstants.js
-var TopSitesConstants = __webpack_require__(64);
+var TopSitesConstants = __webpack_require__(59);
 
 // CONCATENATED MODULE: ./content-src/components/TopSites/TopSiteFormInput.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -16341,7 +15671,7 @@ TopSiteFormInput_TopSiteFormInput.defaultProps = {
   validationError: false
 };
 // EXTERNAL MODULE: ./content-src/components/TopSites/TopSite.jsx
-var TopSite = __webpack_require__(66);
+var TopSite = __webpack_require__(61);
 
 // CONCATENATED MODULE: ./content-src/components/TopSites/TopSiteForm.jsx
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "TopSiteForm", function() { return TopSiteForm_TopSiteForm; });
@@ -16638,7 +15968,7 @@ TopSiteForm_TopSiteForm.defaultProps = {
 };
 
 /***/ }),
-/* 80 */
+/* 76 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";

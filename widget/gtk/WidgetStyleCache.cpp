@@ -630,7 +630,7 @@ static void CreateHeaderBarButtons() {
   ButtonLayout buttonLayout[TOOLBAR_BUTTONS];
 
   size_t activeButtons =
-      GetGtkHeaderBarButtonLayout(mozilla::MakeSpan(buttonLayout), nullptr);
+      GetGtkHeaderBarButtonLayout(mozilla::Span(buttonLayout), nullptr);
 
   if (IsToolbarButtonEnabled(buttonLayout, activeButtons,
                              MOZ_GTK_HEADER_BAR_BUTTON_MINIMIZE)) {
@@ -735,6 +735,8 @@ static GtkWidget* CreateWidget(WidgetNodeType aAppearance) {
       return CreateComboBoxEntryButtonWidget();
     case MOZ_GTK_COMBOBOX_ENTRY_ARROW:
       return CreateComboBoxEntryArrowWidget();
+    case MOZ_GTK_HEADERBAR_WINDOW:
+    case MOZ_GTK_HEADERBAR_WINDOW_MAXIMIZED:
     case MOZ_GTK_HEADER_BAR:
     case MOZ_GTK_HEADER_BAR_MAXIMIZED:
     case MOZ_GTK_HEADER_BAR_BUTTON_CLOSE:
@@ -1070,6 +1072,9 @@ static GtkStyleContext* GetCssNodeStyleInternal(WidgetNodeType aNodeType) {
       // TODO - create from CSS node
       style = CreateSubStyleWithClass(MOZ_GTK_SCROLLED_WINDOW,
                                       GTK_STYLE_CLASS_FRAME);
+      break;
+    case MOZ_GTK_TEXT_VIEW_TEXT_SELECTION:
+      style = CreateChildCSSNode("selection", MOZ_GTK_TEXT_VIEW_TEXT);
       break;
     case MOZ_GTK_TEXT_VIEW_TEXT:
     case MOZ_GTK_RESIZER:

@@ -15,9 +15,12 @@
 #include "nsAHttpConnection.h"
 #include "EventTokenBucket.h"
 #include "nsCOMPtr.h"
+#include "nsIAsyncOutputStream.h"
 #include "nsThreadUtils.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIPipe.h"
+#include "nsIAsyncOutputStream.h"
+#include "nsITimer.h"
 #include "TimingStruct.h"
 #include "Http2Push.h"
 #include "mozilla/net/DNS.h"
@@ -27,14 +30,17 @@
 //-----------------------------------------------------------------------------
 
 class nsIHttpActivityObserver;
+class nsIDNSHTTPSSVCRecord;
 class nsIEventTarget;
 class nsIInputStream;
 class nsIOutputStream;
 class nsIRequestContext;
+class nsISVCBRecord;
 
 namespace mozilla {
 namespace net {
 
+class HTTPSRecordResolver;
 class nsHttpChunkedDecoder;
 class nsHttpHeaderArray;
 class nsHttpRequestHead;
@@ -52,13 +58,15 @@ class nsHttpTransaction final : public nsAHttpTransaction,
                                 public ATokenBucketEvent,
                                 public nsIInputStreamCallback,
                                 public nsIOutputStreamCallback,
-                                public ARefBase {
+                                public ARefBase,
+                                public nsITimerCallback {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSAHTTPTRANSACTION
   NS_DECL_HTTPTRANSACTIONSHELL
   NS_DECL_NSIINPUTSTREAMCALLBACK
   NS_DECL_NSIOUTPUTSTREAMCALLBACK
+  NS_DECL_NSITIMERCALLBACK
 
   nsHttpTransaction();
 
@@ -78,6 +86,8 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   void MakeSticky() { mCaps |= NS_HTTP_STICKY_CONNECTION; }
   void MakeNonSticky() override { mCaps &= ~NS_HTTP_STICKY_CONNECTION; }
 
+  void MakeDontWaitHTTPSSVC() { mCaps &= ~NS_HTTP_WAIT_HTTPSSVC_RESULT; }
+
   // SetPriority() may only be used by the connection manager.
   void SetPriority(int32_t priority) { mPriority = priority; }
   int32_t Priority() { return mPriority; }
@@ -87,6 +97,12 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // Sets mPendingTime to the current time stamp or to a null time stamp (if now
   // is false)
   void SetPendingTime(bool now = true) {
+    if (!now && !mPendingTime.IsNull()) {
+      // Remember how long it took. We will use this vaule to record
+      // TRANSACTION_WAIT_TIME_HTTP2_SUP_HTTP3 telemetry, but we need to wait
+      // for the response headers.
+      mPendingDurationTime = TimeStamp::Now() - mPendingTime;
+    }
     mPendingTime = now ? TimeStamp::Now() : TimeStamp();
   }
   const TimeStamp GetPendingTime() { return mPendingTime; }
@@ -97,6 +113,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   void RemoveDispatchedAsBlocking();
 
   void DisableSpdy() override;
+  void DisableHttp3() override;
 
   nsHttpTransaction* QueryHttpTransaction() override { return this; }
 
@@ -148,6 +165,14 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // transaction.
   void OnPush(Http2PushedStreamWrapper* aStream);
 
+  void UpdateConnectionInfo(nsHttpConnectionInfo* aConnInfo);
+
+  void SetClassOfService(uint32_t cos);
+
+  virtual nsresult OnHTTPSRRAvailable(
+      nsIDNSHTTPSSVCRecord* aHTTPSSVCRecord,
+      nsISVCBRecord* aHighestPriorityRecord) override;
+
  private:
   friend class DeleteHttpTransaction;
   virtual ~nsHttpTransaction();
@@ -186,6 +211,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // connection from very start of the authentication process.
   void CheckForStickyAuthScheme();
   void CheckForStickyAuthSchemeAt(nsHttpAtom const& header);
+  bool IsStickyAuthSchemeAt(nsACString const& auth);
 
   // Called from WriteSegments.  Checks for conditions whether to throttle
   // reading the content.  When this returns true, WriteSegments returns
@@ -194,8 +220,31 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   void NotifyTransactionObserver(nsresult reason);
 
+  // When echConfig is enabled, this function put other available records
+  // in mRecordsForRetry. Returns true when mRecordsForRetry is not empty,
+  // otherwise returns false.
+  bool PrepareSVCBRecordsForRetry(const nsACString& aFailedDomainName,
+                                  bool& aAllRecordsHaveEchConfig);
+  // This function setups a new connection info for restarting this transaction.
+  void PrepareConnInfoForRetry(nsresult aReason);
+
   already_AddRefed<Http2PushedStreamWrapper> TakePushedStreamById(
       uint32_t aStreamId);
+
+  // IMPORTANT: when adding new values, always add them to the end, otherwise
+  // it will mess up telemetry.
+  enum HTTPSSVC_CONNECTION_FAILED_REASON : uint32_t {
+    HTTPSSVC_CONNECTION_OK = 0,
+    HTTPSSVC_CONNECTION_UNKNOWN_HOST = 1,
+    HTTPSSVC_CONNECTION_UNREACHABLE = 2,
+    HTTPSSVC_CONNECTION_421_RECEIVED = 3,
+    HTTPSSVC_CONNECTION_SECURITY_ERROR = 4,
+    HTTPSSVC_CONNECTION_NO_USABLE_RECORD = 5,
+    HTTPSSVC_CONNECTION_ALL_RECORDS_EXCLUDED = 6,
+    HTTPSSVC_CONNECTION_OTHERS = 7,
+  };
+  HTTPSSVC_CONNECTION_FAILED_REASON ErrorCodeToFailedReason(
+      nsresult aErrorCode);
 
  private:
   class UpdateSecurityCallbacks : public Runnable {
@@ -238,6 +287,17 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   RefPtr<nsAHttpConnection> mConnection;
   RefPtr<nsHttpConnectionInfo> mConnInfo;
+  // This is only set in UpdateConnectionInfo() when we have received a SVCB RR.
+  // When echConfig is not used and the connection is failed, this transaction
+  // will be restarted with this origin connection info directly.
+  // When echConfig is enabled, there are two cases below.
+  // 1. If all records have echConfig, we will retry other records except the
+  // failed one. In the case all other records with echConfig are failed and the
+  // pref network.dns.echconfig.fallback_to_origin_when_all_failed is true, this
+  // origin connection info will be used.
+  // 2. If only some records have echConfig and some not, we always fallback to
+  // this origin conn info.
+  RefPtr<nsHttpConnectionInfo> mOrigConnInfo;
   nsHttpRequestHead* mRequestHead;    // weak ref
   nsHttpResponseHead* mResponseHead;  // owning pointer
 
@@ -300,6 +360,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // conservative side, e.g. by going ahead with a 2nd DNS refresh.
   Atomic<uint32_t> mCapsToClear;
   Atomic<bool, ReleaseAcquire> mResponseIsComplete;
+  Atomic<bool, ReleaseAcquire> mClosed;
 
   // True iff WriteSegments was called while this transaction should be
   // throttled (stop reading) Used to resume read on unblock of reading.  Conn
@@ -308,7 +369,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   // state flags, all logically boolean, but not packed together into a
   // bitfield so as to avoid bitfield-induced races.  See bug 560579.
-  bool mClosed;
   bool mConnected;
   bool mActivated;
   bool mHaveStatusLine;
@@ -347,8 +407,13 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   UniquePtr<nsHttpHeaderArray> mForTakeResponseTrailers;
   bool mResponseTrailersTaken;
 
+  // Set when this transaction was restarted by call to Restart().  Used to tell
+  // the http channel to reset proxy authentication.
+  Atomic<bool> mRestarted;
+
   // The time when the transaction was submitted to the Connection Manager
   TimeStamp mPendingTime;
+  TimeDuration mPendingDurationTime;
 
   uint64_t mTopLevelOuterContentWindowId;
 
@@ -390,7 +455,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   uint32_t ClassOfService() { return mClassOfService; }
 
  private:
-  uint32_t mClassOfService;
+  Atomic<uint32_t, Relaxed> mClassOfService;
 
  public:
   // setting TunnelProvider to non-null means the transaction should only
@@ -432,6 +497,32 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   OnPushCallback mOnPushCallback;
   nsDataHashtable<nsUint32HashKey, RefPtr<Http2PushedStreamWrapper>>
       mIDToStreamMap;
+
+  nsCOMPtr<nsICancelable> mDNSRequest;
+  Maybe<uint32_t> mHTTPSSVCReceivedStage;
+  bool m421Received = false;
+  nsCOMPtr<nsIDNSHTTPSSVCRecord> mHTTPSSVCRecord;
+  nsTArray<RefPtr<nsISVCBRecord>> mRecordsForRetry;
+  bool mDontRetryWithDirectRoute = false;
+  bool mFastFallbackTriggered = false;
+  nsCOMPtr<nsITimer> mFastFallbackTimer;
+  nsCOMPtr<nsISVCBRecord> mFastFallbackRecord;
+  RefPtr<HTTPSRecordResolver> mResolver;
+
+  // IMPORTANT: when adding new values, always add them to the end, otherwise
+  // it will mess up telemetry.
+  enum TRANSACTION_RESTART_REASON : uint32_t {
+    TRANSACTION_RESTART_NONE = 0,    // The transacion was not restarted.
+    TRANSACTION_RESTART_FORCED = 1,  // The transaction was forced to restart.
+    TRANSACTION_RESTART_HTTPSSVC_INVOLVED = 2,
+    TRANSACTION_RESTART_NO_DATA_SENT = 3,
+    TRANSACTION_RESTART_DOWNGRADE_WITH_EARLY_DATA = 4,
+    TRANSACTION_RESTART_OTHERS = 5,
+  };
+
+  nsDataHashtable<nsUint32HashKey, uint32_t> mEchRetryCounterMap;
+
+  bool mSupportsHTTP3 = false;
 };
 
 }  // namespace net

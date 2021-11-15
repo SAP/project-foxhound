@@ -83,6 +83,7 @@ exports.POLL_SESSION = 1000 * 60 * 20; // 20 minutes
 exports.ONLOGIN_NOTIFICATION = "fxaccounts:onlogin";
 exports.ONVERIFIED_NOTIFICATION = "fxaccounts:onverified";
 exports.ONLOGOUT_NOTIFICATION = "fxaccounts:onlogout";
+exports.ON_PRELOGOUT_NOTIFICATION = "fxaccounts:on_pre_logout";
 // Internal to services/fxaccounts only
 exports.ON_DEVICE_CONNECTED_NOTIFICATION = "fxaccounts:device_connected";
 exports.ON_DEVICE_DISCONNECTED_NOTIFICATION = "fxaccounts:device_disconnected";
@@ -110,7 +111,14 @@ exports.COMMAND_SENDTAB = exports.COMMAND_PREFIX + exports.COMMAND_SENDTAB_TAIL;
 // OAuth
 exports.FX_OAUTH_CLIENT_ID = "5882386c6d801776";
 exports.SCOPE_PROFILE = "profile";
+exports.SCOPE_PROFILE_WRITE = "profile:write";
 exports.SCOPE_OLD_SYNC = "https://identity.mozilla.com/apps/oldsync";
+exports.SCOPE_ECOSYSTEM_TELEMETRY =
+  "https://identity.mozilla.com/ids/ecosystem_telemetry";
+// This scope and its associated key material are used by the old Kinto webextension
+// storage backend. We plan to remove that at some point (ref Bug 1637465) and when
+// we do, all uses of this legacy scope can be removed.
+exports.LEGACY_SCOPE_WEBEXT_SYNC = "sync:addon_storage";
 
 // OAuth metadata for other Firefox-related services that we might need to know about
 // in order to provide an enhanced user experience.
@@ -263,7 +271,14 @@ exports.ERROR_INVALID_PARAMETER = "INVALID_PARAMETER";
 exports.ERROR_CODE_METHOD_NOT_ALLOWED = 405;
 exports.ERROR_MSG_METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
 
-exports.DERIVED_KEYS_NAMES = ["kSync", "kXCS", "kExtSync", "kExtKbHash"];
+// When FxA support first landed in Firefox, it was only used for sync and
+// we stored the relevant encryption keys as top-level fields in the account state.
+// We've since grown a more elaborate scheme of derived keys linked to specific
+// OAuth scopes, which are stored in a map in the `scopedKeys` field.
+// These are the names of pre-scoped-keys key material, maintained for b/w
+// compatibility to code elsewhere in Firefox; once all consuming code is updated
+// to use scoped keys, these fields can be removed from the account userData.
+exports.LEGACY_DERIVED_KEYS_NAMES = ["kSync", "kXCS", "kExtSync", "kExtKbHash"];
 
 // FxAccounts has the ability to "split" the credentials between a plain-text
 // JSON file in the profile dir and in the login manager.
@@ -278,6 +293,7 @@ exports.FXA_PWDMGR_PLAINTEXT_FIELDS = new Set([
   "authAt",
   "sessionToken",
   "uid",
+  "ecosystemAnonId",
   "ecosystemUserId",
   "oauthTokens",
   "profile",
@@ -287,7 +303,7 @@ exports.FXA_PWDMGR_PLAINTEXT_FIELDS = new Set([
 
 // Fields we store in secure storage if it exists.
 exports.FXA_PWDMGR_SECURE_FIELDS = new Set([
-  ...exports.DERIVED_KEYS_NAMES,
+  ...exports.LEGACY_DERIVED_KEYS_NAMES,
   "keyFetchToken",
   "unwrapBKey",
   "assertion",

@@ -6,8 +6,9 @@
 
 #include "jit/IonIC.h"
 
+#include "jit/AutoDetectInvalidation.h"
 #include "jit/CacheIRCompiler.h"
-#include "jit/Linker.h"
+#include "jit/VMFunctions.h"
 #include "util/DiagnosticAssertions.h"
 
 #include "jit/MacroAssembler-inl.h"
@@ -56,8 +57,12 @@ Register IonIC::scratchRegisterForEntryJump() {
       return asInIC()->temp();
     case CacheKind::HasOwn:
       return asHasOwnIC()->output();
+    case CacheKind::CheckPrivateField:
+      return asCheckPrivateFieldIC()->output();
     case CacheKind::GetIterator:
       return asGetIteratorIC()->temp1();
+    case CacheKind::OptimizeSpreadCall:
+      return asOptimizeSpreadCallIC()->temp();
     case CacheKind::InstanceOf:
       return asInstanceOfIC()->output();
     case CacheKind::UnaryArith:
@@ -165,6 +170,9 @@ bool IonGetPropertyIC::update(JSContext* cx, HandleScript outerScript,
   IonScript* ionScript = outerScript->ionScript();
   AutoDetectInvalidation adi(cx, res, ionScript);
 
+  // Optimized-arguments and other magic values must not escape to Ion ICs.
+  MOZ_ASSERT(!val.isMagic());
+
   // If the IC is idempotent, we will redo the op in the interpreter.
   if (ic->idempotent()) {
     adi.disable();
@@ -215,6 +223,15 @@ bool IonGetPropertyIC::update(JSContext* cx, HandleScript outerScript,
     // Do not re-invalidate if the lookup already caused invalidation.
     if (outerScript->hasIonScript()) {
       Invalidate(cx, outerScript);
+    }
+
+    // IonBuilder::createScriptedThis does not use InvalidedIdempotentCache
+    // flag so prevent bailout-loop by disabling Ion for the script.
+    MOZ_ASSERT(ic->kind() == CacheKind::GetProp);
+    if (idVal.toString()->asAtom().asPropertyName() == cx->names().prototype) {
+      if (val.isObject() && val.toObject().is<JSFunction>()) {
+        outerScript->disableIon();
+      }
     }
 
     // We will redo the potentially effectful lookup in Baseline.
@@ -477,6 +494,18 @@ JSObject* IonGetIteratorIC::update(JSContext* cx, HandleScript outerScript,
 }
 
 /* static */
+bool IonOptimizeSpreadCallIC::update(JSContext* cx, HandleScript outerScript,
+                                     IonOptimizeSpreadCallIC* ic,
+                                     HandleValue value, bool* result) {
+  IonScript* ionScript = outerScript->ionScript();
+
+  TryAttachIonStub<OptimizeSpreadCallIRGenerator, IonOptimizeSpreadCallIC>(
+      cx, ic, ionScript, value);
+
+  return OptimizeSpreadCall(cx, value, result);
+}
+
+/* static */
 bool IonHasOwnIC::update(JSContext* cx, HandleScript outerScript,
                          IonHasOwnIC* ic, HandleValue val, HandleValue idVal,
                          int32_t* res) {
@@ -492,6 +521,19 @@ bool IonHasOwnIC::update(JSContext* cx, HandleScript outerScript,
 
   *res = found;
   return true;
+}
+
+/* static */
+bool IonCheckPrivateFieldIC::update(JSContext* cx, HandleScript outerScript,
+                                    IonCheckPrivateFieldIC* ic, HandleValue val,
+                                    HandleValue idVal, bool* res) {
+  IonScript* ionScript = outerScript->ionScript();
+  jsbytecode* pc = ic->pc();
+
+  TryAttachIonStub<CheckPrivateFieldIRGenerator, IonCheckPrivateFieldIC>(
+      cx, ic, ionScript, CacheKind::CheckPrivateField, idVal, val);
+
+  return CheckPrivateFieldOperation(cx, pc, val, idVal, res);
 }
 
 /* static */

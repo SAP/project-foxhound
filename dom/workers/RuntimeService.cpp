@@ -21,7 +21,9 @@
 #include <algorithm>
 #include "mozilla/ipc/BackgroundChild.h"
 #include "GeckoProfiler.h"
+#include "js/experimental/CTypes.h"  // JS::CTypesActivityType, JS::SetCTypesActivityCallback
 #include "jsfriendapi.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/ContextOptions.h"
 #include "js/LocaleSensitive.h"
 #include "mozilla/ArrayUtils.h"
@@ -266,18 +268,23 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
       .setWasmForTrustedPrinciples(
           GetWorkerPref<bool>("wasm_trustedprincipals"_ns))
       .setWasmBaseline(GetWorkerPref<bool>("wasm_baselinejit"_ns))
-      .setWasmIon(GetWorkerPref<bool>("wasm_ionjit"_ns))
-      .setWasmReftypes(GetWorkerPref<bool>("wasm_reftypes"_ns))
 #ifdef ENABLE_WASM_CRANELIFT
-      .setWasmCranelift(GetWorkerPref<bool>("wasm_cranelift"_ns))
+      .setWasmCranelift(GetWorkerPref<bool>("wasm_optimizingjit"_ns))
+#else
+      .setWasmIon(GetWorkerPref<bool>("wasm_optimizingjit"_ns))
 #endif
+      .setWasmReftypes(GetWorkerPref<bool>("wasm_reftypes"_ns))
 #ifdef ENABLE_WASM_MULTI_VALUE
       .setWasmMultiValue(GetWorkerPref<bool>("wasm_multi_value"_ns))
 #endif
 #ifdef ENABLE_WASM_SIMD
       .setWasmSimd(GetWorkerPref<bool>("wasm_simd"_ns))
 #endif
-#ifdef ENABLE_WASM_REFTYPES
+#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+      .setWasmFunctionReferences(
+          GetWorkerPref<bool>("wasm_function_references"_ns))
+#endif
+#ifdef ENABLE_WASM_GC
       .setWasmGc(GetWorkerPref<bool>("wasm_gc"_ns))
 #endif
       .setWasmVerbose(GetWorkerPref<bool>("wasm_verbose"_ns))
@@ -286,7 +293,11 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
       .setSourcePragmas(GetWorkerPref<bool>("source_pragmas"_ns))
       .setAsyncStack(GetWorkerPref<bool>("asyncstack"_ns))
       .setAsyncStackCaptureDebuggeeOnly(
-          GetWorkerPref<bool>("asyncstack_capture_debuggee_only"_ns));
+          GetWorkerPref<bool>("asyncstack_capture_debuggee_only"_ns))
+      .setPrivateClassFields(
+          GetWorkerPref<bool>("experimental.private_fields"_ns))
+      .setPrivateClassMethods(
+          GetWorkerPref<bool>("experimental.private_methods"_ns));
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
   if (xr) {
@@ -541,7 +552,7 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleString aCode) {
     JS::AutoFilename file;
     if (JS::DescribeScriptedCaller(aCx, &file, &lineNum, &columnNum) &&
         file.get()) {
-      fileName = NS_ConvertUTF8toUTF16(file.get());
+      CopyUTF8toUTF16(MakeStringSpan(file.get()), fileName);
     } else {
       MOZ_ASSERT(!JS_IsExceptionPending(aCx));
     }
@@ -560,24 +571,24 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleString aCode) {
   return worker->IsEvalAllowed();
 }
 
-void CTypesActivityCallback(JSContext* aCx, js::CTypesActivityType aType) {
+void CTypesActivityCallback(JSContext* aCx, JS::CTypesActivityType aType) {
   WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
   worker->AssertIsOnWorkerThread();
 
   switch (aType) {
-    case js::CTYPES_CALL_BEGIN:
+    case JS::CTypesActivityType::BeginCall:
       worker->BeginCTypesCall();
       break;
 
-    case js::CTYPES_CALL_END:
+    case JS::CTypesActivityType::EndCall:
       worker->EndCTypesCall();
       break;
 
-    case js::CTYPES_CALLBACK_BEGIN:
+    case JS::CTypesActivityType::BeginCallback:
       worker->BeginCTypesCallback();
       break;
 
-    case js::CTYPES_CALLBACK_END:
+    case JS::CTypesActivityType::EndCallback:
       worker->EndCTypesCallback();
       break;
 
@@ -723,7 +734,7 @@ bool InitJSContextForWorker(WorkerPrivate* aWorkerPrivate,
 
   JS_AddInterruptCallback(aWorkerCx, InterruptCallback);
 
-  js::SetCTypesActivityCallback(aWorkerCx, CTypesActivityCallback);
+  JS::SetCTypesActivityCallback(aWorkerCx, CTypesActivityCallback);
 
 #ifdef JS_GC_ZEAL
   JS_SetGCZeal(aWorkerCx, settings.gcZeal, settings.gcZealFrequency);
@@ -907,7 +918,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
 
     std::queue<RefPtr<MicroTaskRunnable>>* microTaskQueue = nullptr;
 
-    JSContext* cx = GetCurrentWorkerThreadJSContext();
+    JSContext* cx = Context();
     NS_ASSERTION(cx, "This should never be null!");
 
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
@@ -1574,17 +1585,21 @@ class CrashIfHangingRunnable : public WorkerControlRunnable {
         mMonitor("CrashIfHangingRunnable::mMonitor") {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
-    aWorkerPrivate->DumpCrashInformation(mMsg);
-
     MonitorAutoLock lock(mMonitor);
+    if (!mHasMsg) {
+      aWorkerPrivate->DumpCrashInformation(mMsg);
+      mHasMsg.Flip();
+    }
     lock.Notify();
     return true;
   }
 
   nsresult Cancel() override {
-    mMsg.Assign("Canceled");
-
     MonitorAutoLock lock(mMonitor);
+    if (!mHasMsg) {
+      mMsg.Assign("Canceled");
+      mHasMsg.Flip();
+    }
     lock.Notify();
 
     return NS_OK;
@@ -1599,7 +1614,13 @@ class CrashIfHangingRunnable : public WorkerControlRunnable {
       return false;
     }
 
-    lock.Wait();
+    // To avoid any possibility of process hangs we never receive reports on
+    // we give the worker 1sec to react.
+    lock.Wait(TimeDuration::FromMilliseconds(1000));
+    if (!mHasMsg) {
+      mMsg.Append("NoResponse");
+      mHasMsg.Flip();
+    }
     return true;
   }
 
@@ -1613,6 +1634,7 @@ class CrashIfHangingRunnable : public WorkerControlRunnable {
 
   Monitor mMonitor;
   nsCString mMsg;
+  FlippedOnce<false> mHasMsg;
 };
 
 struct ActiveWorkerStats {
@@ -1627,6 +1649,8 @@ struct ActiveWorkerStats {
         // BC: Busy Count
         mMessage.AppendPrintf("-BC:%d", worker->BusyCount());
         mMessage.Append(runnable->MsgData());
+      } else {
+        mMessage.AppendPrintf("-BC:%d DispatchFailed", worker->BusyCount());
       }
     }
   }
@@ -2123,8 +2147,8 @@ bool LogViolationDetailsRunnable::MainThreadRun() {
       csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_EVAL,
                                nullptr,  // triggering element
                                mWorkerPrivate->CSPEventListener(), mFileName,
-                               mScriptSample, mLineNum, mColumnNum,
-                               EmptyString(), EmptyString());
+                               mScriptSample, mLineNum, mColumnNum, u""_ns,
+                               u""_ns);
     }
   }
 

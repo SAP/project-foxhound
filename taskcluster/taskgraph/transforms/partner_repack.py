@@ -12,13 +12,27 @@ from taskgraph.util.schema import resolve_keyed_by
 from taskgraph.util.scriptworker import get_release_config
 from taskgraph.util.partners import (
     check_if_partners_enabled,
+    get_partner_config_by_kind,
     get_partner_url_config,
+    get_repack_ids_by_platform,
     apply_partner_priority,
 )
 
 
 transforms = TransformSequence()
+transforms.add(check_if_partners_enabled)
 transforms.add(apply_partner_priority)
+
+
+@transforms.add
+def skip_unnecessary_platforms(config, tasks):
+    for task in tasks:
+        if config.kind == "release-partner-repack":
+            platform = task["attributes"]["build_platform"]
+            repack_ids = get_repack_ids_by_platform(config, platform)
+            if not repack_ids:
+                continue
+        yield task
 
 
 @transforms.add
@@ -28,22 +42,25 @@ def populate_repack_manifests_url(config, tasks):
 
         for k in partner_url_config:
             if config.kind.startswith(k):
-                task['worker'].setdefault('env', {})['REPACK_MANIFESTS_URL'] = \
-                    partner_url_config[k]
+                task["worker"].setdefault("env", {})[
+                    "REPACK_MANIFESTS_URL"
+                ] = partner_url_config[k]
                 break
         else:
             raise Exception("Can't find partner REPACK_MANIFESTS_URL")
 
-        for property in ("limit-locales", ):
+        for property in ("limit-locales",):
             property = "extra.{}".format(property)
             resolve_keyed_by(
-                task, property, property,
-                **{'release-level': config.params.release_level()}
+                task,
+                property,
+                property,
+                **{"release-level": config.params.release_level()}
             )
 
-        if task['worker']['env']['REPACK_MANIFESTS_URL'].startswith('git@'):
-            task.setdefault('scopes', []).append(
-                'secrets:get:project/releng/gecko/build/level-{level}/partner-github-ssh'.format(
+        if task["worker"]["env"]["REPACK_MANIFESTS_URL"].startswith("git@"):
+            task.setdefault("scopes", []).append(
+                "secrets:get:project/releng/gecko/build/level-{level}/partner-github-ssh".format(
                     **config.params
                 )
             )
@@ -54,52 +71,52 @@ def populate_repack_manifests_url(config, tasks):
 @transforms.add
 def make_label(config, tasks):
     for task in tasks:
-        task['label'] = "{}-{}".format(config.kind, task['name'])
+        task["label"] = "{}-{}".format(config.kind, task["name"])
         yield task
 
 
 @transforms.add
 def add_command_arguments(config, tasks):
     release_config = get_release_config(config)
+
+    # staging releases - pass reduced set of locales to the repacking script
     all_locales = set()
-    for partner_class in config.params['release_partner_config'].values():
-        for partner in partner_class.values():
-            for sub_partner in partner.values():
-                all_locales.update(sub_partner.get('locales', []))
+    partner_config = get_partner_config_by_kind(config, config.kind)
+    for partner in partner_config.values():
+        for sub_partner in partner.values():
+            all_locales.update(sub_partner.get("locales", []))
+
     for task in tasks:
         # add the MOZHARNESS_OPTIONS, eg version=61.0, build-number=1, platform=win64
-        if not task['attributes']['build_platform'].endswith('-shippable'):
+        if not task["attributes"]["build_platform"].endswith("-shippable"):
             raise Exception(
                 "Unexpected partner repack platform: {}".format(
-                    task['attributes']['build_platform'],
+                    task["attributes"]["build_platform"],
                 ),
             )
-        platform = task['attributes']['build_platform'].partition('-shippable')[0]
-        task['run']['options'] = [
-            'version={}'.format(release_config['version']),
-            'build-number={}'.format(release_config['build_number']),
-            'platform={}'.format(platform),
+        platform = task["attributes"]["build_platform"].partition("-shippable")[0]
+        task["run"]["options"] = [
+            "version={}".format(release_config["version"]),
+            "build-number={}".format(release_config["build_number"]),
+            "platform={}".format(platform),
         ]
-        if task['extra']['limit-locales']:
+        if task["extra"]["limit-locales"]:
             for locale in all_locales:
-                task['run']['options'].append('limit-locale={}'.format(locale))
-        if 'partner' in config.kind and config.params['release_partners']:
-            for partner in config.params['release_partners']:
-                task['run']['options'].append('partner={}'.format(partner))
+                task["run"]["options"].append("limit-locale={}".format(locale))
+        if "partner" in config.kind and config.params["release_partners"]:
+            for partner in config.params["release_partners"]:
+                task["run"]["options"].append("partner={}".format(partner))
 
         # The upstream taskIds are stored a special environment variable, because we want to use
         # task-reference's to resolve dependencies, but the string handling of MOZHARNESS_OPTIONS
         # blocks that. It's space-separated string of ids in the end.
-        task['worker']['env']['UPSTREAM_TASKIDS'] = {
-            'task-reference': ' '.join(['<{}>'.format(dep) for dep in task['dependencies']])
+        task["worker"]["env"]["UPSTREAM_TASKIDS"] = {
+            "task-reference": " ".join(
+                ["<{}>".format(dep) for dep in task["dependencies"]]
+            )
         }
 
         # Forward the release type for bouncer product construction
-        task['worker']['env']['RELEASE_TYPE'] = config.params['release_type']
+        task["worker"]["env"]["RELEASE_TYPE"] = config.params["release_type"]
 
         yield task
-
-
-# This needs to be run at the *end*, because the generators are called in
-# reverse order, when each downstream transform references `tasks`.
-transforms.add(check_if_partners_enabled)

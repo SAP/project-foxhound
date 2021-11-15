@@ -10,6 +10,7 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/Element.h"
 #include "PluginInstanceParent.h"
 #include "BrowserStreamParent.h"
@@ -34,7 +35,6 @@
 #include "ImageContainer.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
-#include "LayersLogging.h"
 #include "mozilla/layers/TextureWrapperImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
 #include "mozilla/layers/ImageBridgeChild.h"
@@ -230,8 +230,8 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVnetscapeWindow(
   XID id;
 #elif defined(XP_DARWIN)
   intptr_t id;
-#elif defined(ANDROID)
-  // TODO: Need Android impl
+#elif defined(ANDROID) || defined(MOZ_WAYLAND)
+  // TODO: Need impl
   int id;
 #else
 #  warning Implement me
@@ -314,7 +314,7 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value,
 }
 
 static inline bool AllowDirectBitmapSurfaceDrawing() {
-  if (!StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
+  if (!mozilla::StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
     return false;
   }
   return gfxPlatform::GetPlatform()->SupportsPluginDirectBitmapDrawing();
@@ -331,7 +331,11 @@ PluginInstanceParent::AnswerNPN_GetValue_SupportsAsyncBitmapSurface(
 bool PluginInstanceParent::SupportsPluginDirectDXGISurfaceDrawing() {
   bool value = false;
 #if defined(XP_WIN)
-  if (StaticPrefs::dom_ipc_plugins_allow_dxgi_surface()) {
+  // When WebRender does not use ANGLE, DXGISurface could not be used.
+  bool useAsyncDXGISurface =
+      StaticPrefs::dom_ipc_plugins_allow_dxgi_surface() &&
+      !(gfx::gfxVars::UseWebRender() && !gfx::gfxVars::UseWebRenderANGLE());
+  if (useAsyncDXGISurface) {
     auto cbc = CompositorBridgeChild::Get();
     if (cbc) {
       cbc->SendSupportsAsyncDXGISurface(&value);
@@ -854,8 +858,8 @@ mozilla::ipc::IPCResult PluginInstanceParent::RecvShowDirectBitmap(
 
   PLUGIN_LOG_DEBUG(
       ("   (RecvShowDirectBitmap received shmem=%p stride=%d size=%s dirty=%s)",
-       buffer.get<unsigned char>(), stride, Stringify(size).c_str(),
-       Stringify(dirty).c_str()));
+       buffer.get<unsigned char>(), stride, ToString(size).c_str(),
+       ToString(dirty).c_str()));
   return IPC_OK();
 }
 
@@ -911,7 +915,7 @@ mozilla::ipc::IPCResult PluginInstanceParent::RecvShowDirectDXGISurface(
 
   PLUGIN_LOG_DEBUG(("   (RecvShowDirectDXGISurface received handle=%p rect=%s)",
                     reinterpret_cast<void*>(pluginSurfHandle),
-                    Stringify(dirty).c_str()));
+                    ToString(dirty).c_str()));
 #endif
   return IPC_OK();
 }
@@ -2216,7 +2220,7 @@ mozilla::ipc::IPCResult PluginInstanceParent::AnswerPluginFocusChange(
   if (gotFocus) {
     nsPluginInstanceOwner* owner = GetOwner();
     if (owner) {
-      nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+      nsFocusManager* fm = nsFocusManager::GetFocusManager();
       RefPtr<dom::Element> element;
       owner->GetDOMElement(getter_AddRefs(element));
       if (fm && element) {

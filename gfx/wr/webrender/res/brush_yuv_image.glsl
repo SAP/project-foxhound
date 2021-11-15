@@ -2,11 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#define VECS_PER_YUV_BRUSH 1
-#define VECS_PER_SPECIFIC_BRUSH VECS_PER_YUV_BRUSH
-
-#define WR_BRUSH_VS_FUNCTION yuv_brush_vs
-#define WR_BRUSH_FS_FUNCTION yuv_brush_fs
+#define VECS_PER_SPECIFIC_BRUSH 1
 
 #include shared,prim_shared,brush,yuv
 
@@ -27,6 +23,7 @@ flat varying vec4 vUvBounds_V;
 
 flat varying float vCoefficient;
 flat varying mat3 vYuvColorMatrix;
+flat varying vec3 vYuvOffsetVector;
 flat varying int vFormat;
 
 #ifdef WR_VERTEX_SHADER
@@ -42,7 +39,7 @@ YuvPrimitive fetch_yuv_primitive(int address) {
     return YuvPrimitive(data.x, int(data.y), int(data.z));
 }
 
-void yuv_brush_vs(
+void brush_vs(
     VertexInfo vi,
     int prim_address,
     RectWithSize local_rect,
@@ -60,6 +57,7 @@ void yuv_brush_vs(
     vCoefficient = prim.coefficient;
 
     vYuvColorMatrix = get_yuv_color_matrix(prim.color_space);
+    vYuvOffsetVector = get_yuv_offset_vector(prim.color_space);
     vFormat = prim.yuv_format;
 
 #ifdef WR_FEATURE_ALPHA_PASS
@@ -90,10 +88,11 @@ void yuv_brush_vs(
 
 #ifdef WR_FRAGMENT_SHADER
 
-Fragment yuv_brush_fs() {
+Fragment brush_fs() {
     vec4 color = sample_yuv(
         vFormat,
         vYuvColorMatrix,
+        vYuvOffsetVector,
         vCoefficient,
         vYuvLayers,
         vUv_Y,

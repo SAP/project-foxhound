@@ -153,6 +153,13 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
       perfActorVersion: 1,
       // Supports watchpoints in the server for Fx71+
       watchpoints: true,
+      // Added in Fx84 to expose the pref value to the client. Services.prefs is undefined
+      // in xpcshell tests.
+      workerConsoleApiMessagesDispatchedToMainThread: Services.prefs
+        ? Services.prefs.getBoolPref(
+            "dom.worker.console.dispatch_events_to_main_thread"
+          )
+        : true,
     };
   },
 
@@ -218,8 +225,8 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     if (this._addonTargetActorPool) {
       this._addonTargetActorPool.destroy();
     }
-    if (this._workerTargetActorPool) {
-      this._workerTargetActorPool.destroy();
+    if (this._workerDescriptorActorPool) {
+      this._workerDescriptorActorPool.destroy();
     }
     if (this._frameDescriptorActorPool) {
       this._frameDescriptorActorPool.destroy();
@@ -426,11 +433,11 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
       // Do not destroy the pool before transfering ownership to the newly created
       // pool, so that we do not accidently destroy actors that are still in use.
-      if (this._workerTargetActorPool) {
-        this._workerTargetActorPool.destroy();
+      if (this._workerDescriptorActorPool) {
+        this._workerDescriptorActorPool.destroy();
       }
 
-      this._workerTargetActorPool = pool;
+      this._workerDescriptorActorPool = pool;
 
       return {
         workers: actors,
@@ -583,10 +590,6 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
       DevToolsServer.chromeWindowType
     );
     return id == window.docShell.browsingContext.id;
-  },
-
-  protocolDescription: function() {
-    return require("devtools/shared/protocol").dumpProtocolSpec();
   },
 
   /**

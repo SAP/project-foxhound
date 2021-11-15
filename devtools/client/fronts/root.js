@@ -66,10 +66,11 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
         registrationFront.installingWorker,
         registrationFront.evaluatingWorker,
       ]
-        .filter(w => !!w) // filter out non-existing workers
-        // build a worker object with its WorkerTargetFront
+        // filter out non-existing workers
+        .filter(w => !!w)
+        // build a worker object with its WorkerDescriptorFront
         .map(workerFront => {
-          const workerTargetFront = allWorkers.find(
+          const workerDescriptorFront = allWorkers.find(
             targetFront => targetFront.id === workerFront.id
           );
 
@@ -79,7 +80,7 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
             state: workerFront.state,
             stateText: workerFront.stateText,
             url: workerFront.url,
-            workerTargetFront,
+            workerDescriptorFront,
           };
         });
 
@@ -136,7 +137,7 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
         id: front.id,
         url: front.url,
         name: front.url,
-        workerTargetFront: front,
+        workerDescriptorFront: front,
       };
 
       switch (front.type) {
@@ -222,13 +223,10 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
         if (browser.frameLoader.remoteTab) {
           // Tabs in child process
           packet.tabId = browser.frameLoader.remoteTab.tabId;
-        } else if (browser.outerWindowID) {
-          // <xul:browser> tabs in parent process
-          packet.outerWindowID = browser.outerWindowID;
         } else {
-          // <iframe mozbrowser> tabs in parent process
-          const windowUtils = browser.contentWindow.windowUtils;
-          packet.outerWindowID = windowUtils.outerWindowID;
+          // <xul:browser> or <iframe mozbrowser> tabs in parent process
+          packet.outerWindowID =
+            browser.browsingContext.currentWindowGlobal.outerWindowId;
         }
       } else {
         // Throw if a filter object have been passed but without
@@ -277,7 +275,7 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     if (!worker) {
       return null;
     }
-    return worker.workerTargetFront || worker.registrationFront;
+    return worker.workerDescriptorFront || worker.registrationFront;
   }
 
   /**

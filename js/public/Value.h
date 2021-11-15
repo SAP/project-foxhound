@@ -1080,6 +1080,10 @@ static inline Value PrivateValue(void* ptr) {
   return v;
 }
 
+static inline Value PrivateValue(uintptr_t ptr) {
+  return PrivateValue(reinterpret_cast<void*>(ptr));
+}
+
 static inline Value PrivateUint32Value(uint32_t ui) {
   Value v;
   v.setPrivateUint32(ui);
@@ -1229,8 +1233,10 @@ class MutableWrappedPtrOperations<JS::Value, Wrapper>
   void setInfinity() { set(JS::InfinityValue()); }
   void setBoolean(bool b) { set(JS::BooleanValue(b)); }
   void setMagic(JSWhyMagic why) { set(JS::MagicValue(why)); }
-  void setNumber(uint32_t ui) { set(JS::NumberValue(ui)); }
-  void setNumber(double d) { set(JS::NumberValue(d)); }
+  template <typename T>
+  void setNumber(T t) {
+    set(JS::NumberValue(t));
+  }
   void setString(JSString* str) { set(JS::StringValue(str)); }
   void setSymbol(JS::Symbol* sym) { set(JS::SymbolValue(sym)); }
   void setBigInt(JS::BigInt* bi) { set(JS::BigIntValue(bi)); }
@@ -1273,6 +1279,9 @@ class HeapBase<JS::Value, Wrapper>
   }
 };
 
+MOZ_HAVE_NORETURN MOZ_COLD MOZ_NEVER_INLINE void ReportBadValueTypeAndCrash(
+    const JS::Value& val);
+
 // If the Value is a GC pointer type, call |f| with the pointer cast to that
 // type and return the result wrapped in a Maybe, otherwise return None().
 template <typename F>
@@ -1314,7 +1323,7 @@ auto MapGCThingTyped(const JS::Value& val, F&& f) {
     }
   }
 
-  MOZ_CRASH("no missing return");
+  ReportBadValueTypeAndCrash(val);
 }
 
 // If the Value is a GC pointer type, call |f| with the pointer cast to that

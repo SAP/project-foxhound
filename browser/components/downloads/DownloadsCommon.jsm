@@ -91,6 +91,7 @@ const kFileExtensions = [
   "aif",
   "aifc",
   "aiff",
+  "apng",
   "aspx",
   "avi",
   "bat",
@@ -109,15 +110,19 @@ const kFileExtensions = [
   "eml",
   "eps",
   "exe",
+  "flac",
   "flv",
   "gif",
   "htm",
   "html",
+  "ico",
   "ini",
   "iso",
   "jar",
+  "jfif",
   "jpg",
   "jpeg",
+  "json",
   "m4a",
   "mdb",
   "mid",
@@ -129,7 +134,13 @@ const kFileExtensions = [
   "mpg",
   "msi",
   "mui",
+  "oga",
+  "ogg",
+  "ogv",
+  "opus",
   "pdf",
+  "pjpeg",
+  "pjp",
   "png",
   "pot",
   "potm",
@@ -145,9 +156,12 @@ const kFileExtensions = [
   "pst",
   "pub",
   "rar",
+  "rdf",
   "rtf",
+  "shtml",
   "sldm",
   "sldx",
+  "svg",
   "swf",
   "sys",
   "tif",
@@ -165,6 +179,8 @@ const kFileExtensions = [
   "vstx",
   "wav",
   "wbk",
+  "webm",
+  "webp",
   "wks",
   "wma",
   "wmd",
@@ -173,6 +189,8 @@ const kFileExtensions = [
   "wms",
   "wpd",
   "wp5",
+  "xht",
+  "xhtml",
   "xla",
   "xlam",
   "xll",
@@ -183,6 +201,7 @@ const kFileExtensions = [
   "xlt",
   "xltm",
   "xltx",
+  "xml",
   "zip",
 ];
 
@@ -683,7 +702,10 @@ var DownloadsCommon = {
       // the OS handler try to open the directory.
       Cc["@mozilla.org/uriloader/external-protocol-service;1"]
         .getService(Ci.nsIExternalProtocolService)
-        .loadURI(NetUtil.newURI(aDirectory));
+        .loadURI(
+          NetUtil.newURI(aDirectory),
+          Services.scriptSecurityManager.getSystemPrincipal()
+        );
     }
   },
 
@@ -1361,6 +1383,7 @@ DownloadsIndicatorDataCtor.prototype = {
       switch (download.error.reputationCheckVerdict) {
         case Downloads.Error.BLOCK_VERDICT_UNCOMMON: // fall-through
         case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
+        case Downloads.Error.BLOCK_VERDICT_INSECURE:
           // Existing higher level attention indication trumps ATTENTION_WARNING.
           if (this._attention != DownloadsCommon.ATTENTION_SEVERE) {
             this.attention = DownloadsCommon.ATTENTION_WARNING;

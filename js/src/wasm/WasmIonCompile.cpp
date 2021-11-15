@@ -23,7 +23,10 @@
 #include <algorithm>
 
 #include "jit/CodeGenerator.h"
-
+#include "jit/CompileInfo.h"
+#include "jit/Ion.h"
+#include "jit/IonOptimizationLevels.h"
+#include "js/ScalarType.h"  // js::Scalar::Type
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmGC.h"
@@ -64,7 +67,7 @@ class FunctionCompiler;
 
 class CallCompileState {
   // A generator object that is passed each argument as it is compiled.
-  ABIArgGenerator abi_;
+  WasmABIArgGenerator abi_;
 
   // Accumulates the register arguments while compiling arguments.
   MWasmCall::Args regArgs_;
@@ -95,7 +98,7 @@ class FunctionCompiler {
   typedef Vector<ControlFlowPatchVector, 0, SystemAllocPolicy>
       ControlFlowPatchsVector;
 
-  const ModuleEnvironment& env_;
+  const ModuleEnvironment& moduleEnv_;
   IonOpIter iter_;
   const FuncCompileInput& func_;
   const ValTypeVector& locals_;
@@ -118,11 +121,11 @@ class FunctionCompiler {
   MWasmParameter* stackResultPointer_;
 
  public:
-  FunctionCompiler(const ModuleEnvironment& env, Decoder& decoder,
+  FunctionCompiler(const ModuleEnvironment& moduleEnv, Decoder& decoder,
                    const FuncCompileInput& func, const ValTypeVector& locals,
                    MIRGenerator& mirGen)
-      : env_(env),
-        iter_(env, decoder),
+      : moduleEnv_(moduleEnv),
+        iter_(moduleEnv, decoder),
         func_(func),
         locals_(locals),
         lastReadCallSite_(0),
@@ -137,16 +140,19 @@ class FunctionCompiler {
         tlsPointer_(nullptr),
         stackResultPointer_(nullptr) {}
 
-  const ModuleEnvironment& env() const { return env_; }
+  const ModuleEnvironment& moduleEnv() const { return moduleEnv_; }
+
   IonOpIter& iter() { return iter_; }
   TempAllocator& alloc() const { return alloc_; }
   // FIXME(1401675): Replace with BlockType.
   uint32_t funcIndex() const { return func_.index; }
-  const FuncType& funcType() const { return *env_.funcTypes[func_.index]; }
+  const FuncType& funcType() const {
+    return *moduleEnv_.funcTypes[func_.index];
+  }
 
   BytecodeOffset bytecodeOffset() const { return iter_.bytecodeOffset(); }
   BytecodeOffset bytecodeIfNotAsmJS() const {
-    return env_.isAsmJS() ? BytecodeOffset() : iter_.bytecodeOffset();
+    return moduleEnv_.isAsmJS() ? BytecodeOffset() : iter_.bytecodeOffset();
   }
 
   bool init() {
@@ -161,7 +167,7 @@ class FunctionCompiler {
       return false;
     }
 
-    for (ABIArgIter i(args); !i.done(); i++) {
+    for (WasmABIArgIter i(args); !i.done(); i++) {
       MWasmParameter* ins = MWasmParameter::New(alloc(), *i, i.mirType());
       curBlock_->add(ins);
       if (args.isSyntheticStackResultPointerArg(i.index())) {
@@ -380,7 +386,7 @@ class FunctionCompiler {
   }
 
   bool mustPreserveNaN(MIRType type) {
-    return IsFloatingPointType(type) && !env().isAsmJS();
+    return IsFloatingPointType(type) && !moduleEnv().isAsmJS();
   }
 
   MDefinition* sub(MDefinition* lhs, MDefinition* rhs, MIRType type) {
@@ -440,7 +446,7 @@ class FunctionCompiler {
     if (inDeadCode()) {
       return nullptr;
     }
-    bool trapOnError = !env().isAsmJS();
+    bool trapOnError = !moduleEnv().isAsmJS();
     if (!unsignd && type == MIRType::Int32) {
       // Enforce the signedness of the operation by coercing the operands
       // to signed.  Otherwise, operands that "look" unsigned to Ion but
@@ -450,20 +456,41 @@ class FunctionCompiler {
       // Do this for Int32 only since Int64 is not subject to the same
       // issues.
       //
-      // Note the offsets passed to MTruncateToInt32 are wrong here, but
-      // it doesn't matter: they're not codegen'd to calls since inputs
+      // Note the offsets passed to MWasmBuiltinTruncateToInt32 are wrong here,
+      // but it doesn't matter: they're not codegen'd to calls since inputs
       // already are int32.
-      auto* lhs2 = MTruncateToInt32::New(alloc(), lhs);
+      auto* lhs2 = createTruncateToInt32(lhs);
       curBlock_->add(lhs2);
       lhs = lhs2;
-      auto* rhs2 = MTruncateToInt32::New(alloc(), rhs);
+      auto* rhs2 = createTruncateToInt32(rhs);
       curBlock_->add(rhs2);
       rhs = rhs2;
     }
+
+    // For x86 and arm we implement i64 div via c++ builtin.
+    // A call to c++ builtin requires tls pointer.
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_ARM)
+    if (type == MIRType::Int64) {
+      auto* ins =
+          MWasmBuiltinDivI64::New(alloc(), lhs, rhs, tlsPointer_, unsignd,
+                                  trapOnError, bytecodeOffset());
+      curBlock_->add(ins);
+      return ins;
+    }
+#endif
+
     auto* ins = MDiv::New(alloc(), lhs, rhs, type, unsignd, trapOnError,
                           bytecodeOffset(), mustPreserveNaN(type));
     curBlock_->add(ins);
     return ins;
+  }
+
+  MInstruction* createTruncateToInt32(MDefinition* op) {
+    if (op->type() == MIRType::Double || op->type() == MIRType::Float32) {
+      return MWasmBuiltinTruncateToInt32::New(alloc(), op, tlsPointer_);
+    }
+
+    return MTruncateToInt32::New(alloc(), op);
   }
 
   MDefinition* mod(MDefinition* lhs, MDefinition* rhs, MIRType type,
@@ -471,16 +498,38 @@ class FunctionCompiler {
     if (inDeadCode()) {
       return nullptr;
     }
-    bool trapOnError = !env().isAsmJS();
+    bool trapOnError = !moduleEnv().isAsmJS();
     if (!unsignd && type == MIRType::Int32) {
       // See block comment in div().
-      auto* lhs2 = MTruncateToInt32::New(alloc(), lhs);
+      auto* lhs2 = createTruncateToInt32(lhs);
       curBlock_->add(lhs2);
       lhs = lhs2;
-      auto* rhs2 = MTruncateToInt32::New(alloc(), rhs);
+      auto* rhs2 = createTruncateToInt32(rhs);
       curBlock_->add(rhs2);
       rhs = rhs2;
     }
+
+    // For x86 and arm we implement i64 mod via c++ builtin.
+    // A call to c++ builtin requires tls pointer.
+#if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_ARM)
+    if (type == MIRType::Int64) {
+      auto* ins =
+          MWasmBuiltinModI64::New(alloc(), lhs, rhs, tlsPointer_, unsignd,
+                                  trapOnError, bytecodeOffset());
+      curBlock_->add(ins);
+      return ins;
+    }
+#endif
+
+    // Should be handled separately because we call BuiltinThunk for this case
+    // and so, need to add the dependency from tlsPointer.
+    if (type == MIRType::Double) {
+      auto* ins = MWasmBuiltinModD::New(alloc(), lhs, rhs, tlsPointer_, type,
+                                        bytecodeOffset());
+      curBlock_->add(ins);
+      return ins;
+    }
+
     auto* ins = MMod::New(alloc(), lhs, rhs, type, unsignd, trapOnError,
                           bytecodeOffset());
     curBlock_->add(ins);
@@ -568,8 +617,13 @@ class FunctionCompiler {
     if (inDeadCode()) {
       return nullptr;
     }
+#if defined(JS_CODEGEN_ARM)
+    auto* ins = MBuiltinInt64ToFloatingPoint::New(
+        alloc(), op, tlsPointer_, type, bytecodeOffset(), isUnsigned);
+#else
     auto* ins = MInt64ToFloatingPoint::New(alloc(), op, type, bytecodeOffset(),
                                            isUnsigned);
+#endif
     curBlock_->add(ins);
     return ins;
   }
@@ -590,6 +644,16 @@ class FunctionCompiler {
       return nullptr;
     }
     auto* ins = T::New(alloc(), op, flags, bytecodeOffset());
+    curBlock_->add(ins);
+    return ins;
+  }
+
+  MDefinition* truncateWithTls(MDefinition* op, TruncFlags flags) {
+    if (inDeadCode()) {
+      return nullptr;
+    }
+    auto* ins = MWasmBuiltinTruncateToInt64::New(alloc(), op, tlsPointer_,
+                                                 flags, bytecodeOffset());
     curBlock_->add(ins);
     return ins;
   }
@@ -782,11 +846,20 @@ class FunctionCompiler {
       return nullptr;
     }
 
-    // Expand load-and-splat as integer load followed by splat.
     MemoryAccessDesc access(viewType, addr.align, addr.offset,
                             bytecodeIfNotAsmJS());
-    ValType resultType =
-        viewType == Scalar::Int64 ? ValType::I64 : ValType::I32;
+
+    // Generate better code (on x86)
+    if (viewType == Scalar::Float64) {
+      access.setSplatSimd128Load();
+      return load(addr.base, &access, ValType::V128);
+    }
+
+    ValType resultType = ValType::I32;
+    if (viewType == Scalar::Float32) {
+      resultType = ValType::F32;
+      splatOp = wasm::SimdOp::F32x4Splat;
+    }
     auto* scalar = load(addr.base, &access, resultType);
     if (!inDeadCode() && !scalar) {
       return nullptr;
@@ -800,14 +873,24 @@ class FunctionCompiler {
       return nullptr;
     }
 
-    MemoryAccessDesc access(Scalar::Int64, addr.align, addr.offset,
+    // Generate better code (on x86) by loading as a double with an
+    // operation that sign extends directly.
+    MemoryAccessDesc access(Scalar::Float64, addr.align, addr.offset,
                             bytecodeIfNotAsmJS());
-    // Expand load-and-extend as integer load followed by widen.
-    auto* scalar = load(addr.base, &access, ValType::I64);
-    if (!inDeadCode() && !scalar) {
+    access.setWidenSimd128Load(op);
+    return load(addr.base, &access, ValType::V128);
+  }
+
+  MDefinition* loadZeroSimd128(Scalar::Type viewType, size_t numBytes,
+                               const LinearMemoryAddress<MDefinition*>& addr) {
+    if (inDeadCode()) {
       return nullptr;
     }
-    return scalarToSimd128(scalar, op);
+
+    MemoryAccessDesc access(viewType, addr.align, addr.offset,
+                            bytecodeIfNotAsmJS());
+    access.setZeroExtendSimd128Load();
+    return load(addr.base, &access, ValType::V128);
   }
 #endif  // ENABLE_WASM_SIMD
 
@@ -815,7 +898,7 @@ class FunctionCompiler {
   MWasmLoadTls* maybeLoadMemoryBase() {
     MWasmLoadTls* load = nullptr;
 #ifdef JS_CODEGEN_X86
-    AliasSet aliases = env_.maxMemoryLength.isSome()
+    AliasSet aliases = moduleEnv_.maxMemoryLength.isSome()
                            ? AliasSet::None()
                            : AliasSet::Load(AliasSet::WasmHeapMeta);
     load = MWasmLoadTls::New(alloc(), tlsPointer_,
@@ -826,15 +909,15 @@ class FunctionCompiler {
     return load;
   }
 
-  MWasmLoadTls* maybeLoadBoundsCheckLimit() {
-    if (env_.hugeMemoryEnabled()) {
+  MWasmLoadTls* maybeLoadBoundsCheckLimit32() {
+    if (moduleEnv_.hugeMemoryEnabled()) {
       return nullptr;
     }
-    AliasSet aliases = env_.maxMemoryLength.isSome()
+    AliasSet aliases = moduleEnv_.maxMemoryLength.isSome()
                            ? AliasSet::None()
                            : AliasSet::Load(AliasSet::WasmHeapMeta);
     auto load = MWasmLoadTls::New(alloc(), tlsPointer_,
-                                  offsetof(wasm::TlsData, boundsCheckLimit),
+                                  offsetof(wasm::TlsData, boundsCheckLimit32),
                                   MIRType::Int32, aliases);
     curBlock_->add(load);
     return load;
@@ -843,7 +926,7 @@ class FunctionCompiler {
  public:
   MWasmHeapBase* memoryBase() {
     MWasmHeapBase* base = nullptr;
-    AliasSet aliases = env_.maxMemoryLength.isSome()
+    AliasSet aliases = moduleEnv_.maxMemoryLength.isSome()
                            ? AliasSet::None()
                            : AliasSet::Load(AliasSet::WasmHeapMeta);
     base = MWasmHeapBase::New(alloc(), tlsPointer_, aliases);
@@ -858,7 +941,7 @@ class FunctionCompiler {
     MOZ_ASSERT(!*mustAdd);
 
     // asm.js accesses are always aligned and need no checks.
-    if (env_.isAsmJS() || !access->isAtomic()) {
+    if (moduleEnv_.isAsmJS() || !access->isAtomic()) {
       return false;
     }
 
@@ -878,7 +961,8 @@ class FunctionCompiler {
                                         MDefinition** base) {
     MOZ_ASSERT(!inDeadCode());
 
-    uint32_t offsetGuardLimit = GetOffsetGuardLimit(env_.hugeMemoryEnabled());
+    uint32_t offsetGuardLimit =
+        GetOffsetGuardLimit(moduleEnv_.hugeMemoryEnabled());
 
     // Fold a constant base into the offset (so the base is 0 in which case
     // the codegen is optimized), if it doesn't wrap or trigger an
@@ -913,9 +997,9 @@ class FunctionCompiler {
           alloc(), *base, access->byteSize(), bytecodeOffset()));
     }
 
-    MWasmLoadTls* boundsCheckLimit = maybeLoadBoundsCheckLimit();
-    if (boundsCheckLimit) {
-      auto* ins = MWasmBoundsCheck::New(alloc(), *base, boundsCheckLimit,
+    MWasmLoadTls* boundsCheckLimit32 = maybeLoadBoundsCheckLimit32();
+    if (boundsCheckLimit32) {
+      auto* ins = MWasmBoundsCheck::New(alloc(), *base, boundsCheckLimit32,
                                         bytecodeOffset());
       curBlock_->add(ins);
       if (JitOptions.spectreIndexMasking) {
@@ -957,10 +1041,10 @@ class FunctionCompiler {
 
     MWasmLoadTls* memoryBase = maybeLoadMemoryBase();
     MInstruction* load = nullptr;
-    if (env_.isAsmJS()) {
+    if (moduleEnv_.isAsmJS()) {
       MOZ_ASSERT(access->offset() == 0);
-      MWasmLoadTls* boundsCheckLimit = maybeLoadBoundsCheckLimit();
-      load = MAsmJSLoadHeap::New(alloc(), memoryBase, base, boundsCheckLimit,
+      MWasmLoadTls* boundsCheckLimit32 = maybeLoadBoundsCheckLimit32();
+      load = MAsmJSLoadHeap::New(alloc(), memoryBase, base, boundsCheckLimit32,
                                  access->type());
     } else {
       checkOffsetAndAlignmentAndBounds(access, &base);
@@ -981,11 +1065,11 @@ class FunctionCompiler {
 
     MWasmLoadTls* memoryBase = maybeLoadMemoryBase();
     MInstruction* store = nullptr;
-    if (env_.isAsmJS()) {
+    if (moduleEnv_.isAsmJS()) {
       MOZ_ASSERT(access->offset() == 0);
-      MWasmLoadTls* boundsCheckLimit = maybeLoadBoundsCheckLimit();
-      store = MAsmJSStoreHeap::New(alloc(), memoryBase, base, boundsCheckLimit,
-                                   access->type(), v);
+      MWasmLoadTls* boundsCheckLimit32 = maybeLoadBoundsCheckLimit32();
+      store = MAsmJSStoreHeap::New(alloc(), memoryBase, base,
+                                   boundsCheckLimit32, access->type(), v);
     } else {
       checkOffsetAndAlignmentAndBounds(access, &base);
       store = MWasmStore::New(alloc(), memoryBase, base, *access, v);
@@ -1441,14 +1525,14 @@ class FunctionCompiler {
       return true;
     }
 
-    const FuncTypeWithId& funcType = env_.types[funcTypeIndex].funcType();
+    const FuncTypeWithId& funcType = moduleEnv_.types[funcTypeIndex].funcType();
 
     CalleeDesc callee;
-    if (env_.isAsmJS()) {
+    if (moduleEnv_.isAsmJS()) {
       MOZ_ASSERT(tableIndex == 0);
       MOZ_ASSERT(funcType.id.kind() == FuncTypeIdDescKind::None);
       const TableDesc& table =
-          env_.tables[env_.asmJSSigToTableIndex[funcTypeIndex]];
+          moduleEnv_.tables[moduleEnv_.asmJSSigToTableIndex[funcTypeIndex]];
       MOZ_ASSERT(IsPowerOfTwo(table.initialLength));
 
       MConstant* mask =
@@ -1461,7 +1545,7 @@ class FunctionCompiler {
       callee = CalleeDesc::asmJSTable(table);
     } else {
       MOZ_ASSERT(funcType.id.kind() != FuncTypeIdDescKind::None);
-      const TableDesc& table = env_.tables[tableIndex];
+      const TableDesc& table = moduleEnv_.tables[tableIndex];
       callee = CalleeDesc::wasmTable(table, funcType.id);
     }
 
@@ -1559,7 +1643,7 @@ class FunctionCompiler {
     }
 
     if (values.empty()) {
-      curBlock_->end(MWasmReturnVoid::New(alloc()));
+      curBlock_->end(MWasmReturnVoid::New(alloc(), tlsPointer_));
     } else {
       ResultType resultType = ResultType::Vector(funcType().results());
       ABIResultIter iter(resultType);
@@ -1591,7 +1675,7 @@ class FunctionCompiler {
         } else {
           MOZ_ASSERT(iter.remaining() == 1);
           MOZ_ASSERT(i + 1 == values.length());
-          curBlock_->end(MWasmReturn::New(alloc(), values[i]));
+          curBlock_->end(MWasmReturn::New(alloc(), values[i], tlsPointer_));
         }
       }
     }
@@ -2146,11 +2230,13 @@ MDefinition* FunctionCompiler::unary<MToFloat32>(MDefinition* op) {
 }
 
 template <>
-MDefinition* FunctionCompiler::unary<MTruncateToInt32>(MDefinition* op) {
+MDefinition* FunctionCompiler::unary<MWasmBuiltinTruncateToInt32>(
+    MDefinition* op) {
   if (inDeadCode()) {
     return nullptr;
   }
-  auto* ins = MTruncateToInt32::New(alloc(), op, bytecodeOffset());
+  auto* ins = MWasmBuiltinTruncateToInt32::New(alloc(), op, tlsPointer_,
+                                               bytecodeOffset());
   curBlock_->add(ins);
   return ins;
 }
@@ -2435,7 +2521,7 @@ static bool EmitCall(FunctionCompiler& f, bool asmJSFuncDef) {
   uint32_t funcIndex;
   DefVector args;
   if (asmJSFuncDef) {
-    if (!f.iter().readOldCallDirect(f.env().numFuncImports(), &funcIndex,
+    if (!f.iter().readOldCallDirect(f.moduleEnv().numFuncImports(), &funcIndex,
                                     &args)) {
       return false;
     }
@@ -2449,7 +2535,7 @@ static bool EmitCall(FunctionCompiler& f, bool asmJSFuncDef) {
     return true;
   }
 
-  const FuncType& funcType = *f.env().funcTypes[funcIndex];
+  const FuncType& funcType = *f.moduleEnv().funcTypes[funcIndex];
 
   CallCompileState call;
   if (!EmitCallArgs(f, funcType, args, &call)) {
@@ -2457,8 +2543,9 @@ static bool EmitCall(FunctionCompiler& f, bool asmJSFuncDef) {
   }
 
   DefVector results;
-  if (f.env().funcIsImport(funcIndex)) {
-    uint32_t globalDataOffset = f.env().funcImportGlobalDataOffsets[funcIndex];
+  if (f.moduleEnv().funcIsImport(funcIndex)) {
+    uint32_t globalDataOffset =
+        f.moduleEnv().funcImportGlobalDataOffsets[funcIndex];
     if (!f.callImport(globalDataOffset, lineOrBytecode, call, funcType,
                       &results)) {
       return false;
@@ -2496,7 +2583,7 @@ static bool EmitCallIndirect(FunctionCompiler& f, bool oldStyle) {
     return true;
   }
 
-  const FuncType& funcType = f.env().types[funcTypeIndex].funcType();
+  const FuncType& funcType = f.moduleEnv().types[funcTypeIndex].funcType();
 
   CallCompileState call;
   if (!EmitCallArgs(f, funcType, args, &call)) {
@@ -2551,7 +2638,7 @@ static bool EmitGetGlobal(FunctionCompiler& f) {
     return false;
   }
 
-  const GlobalDesc& global = f.env().globals[id];
+  const GlobalDesc& global = f.moduleEnv().globals[id];
   if (!global.isConstant()) {
     f.iter().setResult(f.loadGlobalVar(global.offset(), !global.isMutable(),
                                        global.isIndirect(),
@@ -2586,7 +2673,8 @@ static bool EmitGetGlobal(FunctionCompiler& f) {
     case ValType::Ref:
       switch (value.type().refTypeKind()) {
         case RefType::Func:
-        case RefType::Any:
+        case RefType::Extern:
+        case RefType::Eq:
           MOZ_ASSERT(value.ref().isNull());
           result = f.nullRefConstant();
           break;
@@ -2611,7 +2699,7 @@ static bool EmitSetGlobal(FunctionCompiler& f) {
     return false;
   }
 
-  const GlobalDesc& global = f.env().globals[id];
+  const GlobalDesc& global = f.moduleEnv().globals[id];
   MOZ_ASSERT(global.isMutable());
   MInstruction* barrierAddr =
       f.storeGlobalVar(global.offset(), global.isIndirect(), value);
@@ -2645,7 +2733,7 @@ static bool EmitTeeGlobal(FunctionCompiler& f) {
     return false;
   }
 
-  const GlobalDesc& global = f.env().globals[id];
+  const GlobalDesc& global = f.moduleEnv().globals[id];
   MOZ_ASSERT(global.isMutable());
 
   f.storeGlobalVar(global.offset(), global.isIndirect(), value);
@@ -2702,7 +2790,7 @@ static bool EmitConversionWithType(FunctionCompiler& f, ValType operandType,
 static bool EmitTruncate(FunctionCompiler& f, ValType operandType,
                          ValType resultType, bool isUnsigned,
                          bool isSaturating) {
-  MDefinition* input;
+  MDefinition* input = nullptr;
   if (!f.iter().readConversion(operandType, resultType, &input)) {
     return false;
   }
@@ -2715,15 +2803,24 @@ static bool EmitTruncate(FunctionCompiler& f, ValType operandType,
     flags |= TRUNC_SATURATING;
   }
   if (resultType == ValType::I32) {
-    if (f.env().isAsmJS()) {
-      f.iter().setResult(f.unary<MTruncateToInt32>(input));
+    if (f.moduleEnv().isAsmJS()) {
+      if (input && (input->type() == MIRType::Double ||
+                    input->type() == MIRType::Float32)) {
+        f.iter().setResult(f.unary<MWasmBuiltinTruncateToInt32>(input));
+      } else {
+        f.iter().setResult(f.unary<MTruncateToInt32>(input));
+      }
     } else {
       f.iter().setResult(f.truncate<MWasmTruncateToInt32>(input, flags));
     }
   } else {
     MOZ_ASSERT(resultType == ValType::I64);
-    MOZ_ASSERT(!f.env().isAsmJS());
+    MOZ_ASSERT(!f.moduleEnv().isAsmJS());
+#if defined(JS_CODEGEN_ARM)
+    f.iter().setResult(f.truncateWithTls(input, flags));
+#else
     f.iter().setResult(f.truncate<MWasmTruncateToInt64>(input, flags));
+#endif
   }
   return true;
 }
@@ -3346,7 +3443,7 @@ static bool EmitMemCopyCall(FunctionCompiler& f, MDefinition* dst,
   uint32_t lineOrBytecode = f.readCallSiteLineOrBytecode();
 
   const SymbolicAddressSignature& callee =
-      (f.env().usesSharedMemory() ? SASigMemCopyShared : SASigMemCopy);
+      (f.moduleEnv().usesSharedMemory() ? SASigMemCopyShared : SASigMemCopy);
   CallCompileState args;
   if (!f.passInstance(callee.argTypes[0], &args)) {
     return false;
@@ -3481,13 +3578,6 @@ static bool EmitMemCopyInline(FunctionCompiler& f, MDefinition* dst,
 }
 
 static bool EmitMemCopy(FunctionCompiler& f) {
-  // Bulk memory must be available if shared memory is enabled.
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  if (f.env().sharedMemoryEnabled == Shareable::False) {
-    return f.iter().fail("bulk memory ops disabled");
-  }
-#endif
-
   MDefinition *dst, *src, *len;
   uint32_t dstMemIndex;
   uint32_t srcMemIndex;
@@ -3509,13 +3599,6 @@ static bool EmitMemCopy(FunctionCompiler& f) {
 }
 
 static bool EmitTableCopy(FunctionCompiler& f) {
-  // Bulk memory must be available if shared memory is enabled.
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  if (f.env().sharedMemoryEnabled == Shareable::False) {
-    return f.iter().fail("bulk memory ops disabled");
-  }
-#endif
-
   MDefinition *dst, *src, *len;
   uint32_t dstTableIndex;
   uint32_t srcTableIndex;
@@ -3567,13 +3650,6 @@ static bool EmitTableCopy(FunctionCompiler& f) {
 }
 
 static bool EmitDataOrElemDrop(FunctionCompiler& f, bool isData) {
-  // Bulk memory must be available if shared memory is enabled.
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  if (f.env().sharedMemoryEnabled == Shareable::False) {
-    return f.iter().fail("bulk memory ops disabled");
-  }
-#endif
-
   uint32_t segIndexVal = 0;
   if (!f.iter().readDataOrElemDrop(isData, &segIndexVal)) {
     return false;
@@ -3610,7 +3686,7 @@ static bool EmitMemFillCall(FunctionCompiler& f, MDefinition* start,
   uint32_t lineOrBytecode = f.readCallSiteLineOrBytecode();
 
   const SymbolicAddressSignature& callee =
-      f.env().usesSharedMemory() ? SASigMemFillShared : SASigMemFill;
+      f.moduleEnv().usesSharedMemory() ? SASigMemFillShared : SASigMemFill;
   CallCompileState args;
   if (!f.passInstance(callee.argTypes[0], &args)) {
     return false;
@@ -3714,13 +3790,6 @@ static bool EmitMemFillInline(FunctionCompiler& f, MDefinition* start,
 }
 
 static bool EmitMemFill(FunctionCompiler& f) {
-  // Bulk memory must be available if shared memory is enabled.
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  if (f.env().sharedMemoryEnabled == Shareable::False) {
-    return f.iter().fail("bulk memory ops disabled");
-  }
-#endif
-
   MDefinition *start, *val, *len;
   if (!f.iter().readMemFill(&start, &val, &len)) {
     return false;
@@ -3740,13 +3809,6 @@ static bool EmitMemFill(FunctionCompiler& f) {
 }
 
 static bool EmitMemOrTableInit(FunctionCompiler& f, bool isMem) {
-  // Bulk memory must be available if shared memory is enabled.
-#ifndef ENABLE_WASM_BULKMEM_OPS
-  if (f.env().sharedMemoryEnabled == Shareable::False) {
-    return f.iter().fail("bulk memory ops disabled");
-  }
-#endif
-
   uint32_t segIndexVal = 0, dstTableIndex = 0;
   MDefinition *dstOff, *srcOff, *len;
   if (!f.iter().readMemOrTableInit(isMem, &segIndexVal, &dstTableIndex, &dstOff,
@@ -4240,6 +4302,16 @@ static bool EmitLoadExtendSimd128(FunctionCompiler& f, wasm::SimdOp op) {
   return true;
 }
 
+static bool EmitLoadZeroSimd128(FunctionCompiler& f, Scalar::Type viewType,
+                                size_t numBytes) {
+  LinearMemoryAddress<MDefinition*> addr;
+  if (!f.iter().readLoadSplat(numBytes, &addr)) {
+    return false;
+  }
+
+  f.iter().setResult(f.loadZeroSimd128(viewType, numBytes, addr));
+  return true;
+}
 #endif
 
 static bool EmitBodyExprs(FunctionCompiler& f) {
@@ -4250,6 +4322,12 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
 #define CHECK(c)          \
   if (!(c)) return false; \
   break
+
+#ifdef ENABLE_WASM_SIMD_EXPERIMENTAL
+#  define CHECK_SIMD_EXPERIMENTAL() (void)(0)
+#else
+#  define CHECK_SIMD_EXPERIMENTAL() return f.iter().unrecognizedOpcode(&op)
+#endif
 
   while (true) {
     if (!f.mirGen().ensureBallast()) {
@@ -4305,7 +4383,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
       case uint16_t(Op::SelectNumeric):
         CHECK(EmitSelect(f, /*typed*/ false));
       case uint16_t(Op::SelectTyped):
-        if (!f.env().refTypesEnabled()) {
+        if (!f.moduleEnv().refTypesEnabled()) {
           return f.iter().unrecognizedOpcode(&op);
         }
         CHECK(EmitSelect(f, /*typed*/ true));
@@ -4679,10 +4757,10 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
 
 #ifdef ENABLE_WASM_GC
       case uint16_t(Op::RefEq):
-        if (!f.env().gcTypesEnabled()) {
+        if (!f.moduleEnv().gcTypesEnabled()) {
           return f.iter().unrecognizedOpcode(&op);
         }
-        CHECK(EmitComparison(f, RefType::any(), JSOp::Eq,
+        CHECK(EmitComparison(f, RefType::extern_(), JSOp::Eq,
                              MCompare::Compare_RefOrNull));
 #endif
 #ifdef ENABLE_WASM_REFTYPES
@@ -4725,7 +4803,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
       // SIMD operations
 #ifdef ENABLE_WASM_SIMD
       case uint16_t(Op::SimdPrefix): {
-        if (!f.env().v128Enabled()) {
+        if (!f.moduleEnv().v128Enabled()) {
           return f.iter().unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -4781,6 +4859,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(SimdOp::F32x4Ne):
           case uint32_t(SimdOp::F64x2Eq):
           case uint32_t(SimdOp::F64x2Ne):
+          case uint32_t(SimdOp::I32x4DotSI16x8):
             CHECK(EmitBinarySimd128(f, /* commutative= */ true, SimdOp(op.b1)));
           case uint32_t(SimdOp::V128AndNot):
           case uint32_t(SimdOp::I8x16Sub):
@@ -4832,6 +4911,10 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(SimdOp::F64x2Le):
           case uint32_t(SimdOp::F64x2Ge):
           case uint32_t(SimdOp::V8x16Swizzle):
+          case uint32_t(SimdOp::F32x4PMax):
+          case uint32_t(SimdOp::F32x4PMin):
+          case uint32_t(SimdOp::F64x2PMax):
+          case uint32_t(SimdOp::F64x2PMin):
             CHECK(
                 EmitBinarySimd128(f, /* commutative= */ false, SimdOp(op.b1)));
           case uint32_t(SimdOp::I8x16Splat):
@@ -4870,6 +4953,14 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(SimdOp::I8x16Abs):
           case uint32_t(SimdOp::I16x8Abs):
           case uint32_t(SimdOp::I32x4Abs):
+          case uint32_t(SimdOp::F32x4Ceil):
+          case uint32_t(SimdOp::F32x4Floor):
+          case uint32_t(SimdOp::F32x4Trunc):
+          case uint32_t(SimdOp::F32x4Nearest):
+          case uint32_t(SimdOp::F64x2Ceil):
+          case uint32_t(SimdOp::F64x2Floor):
+          case uint32_t(SimdOp::F64x2Trunc):
+          case uint32_t(SimdOp::F64x2Nearest):
             CHECK(EmitUnarySimd128(f, SimdOp(op.b1)));
           case uint32_t(SimdOp::I8x16AnyTrue):
           case uint32_t(SimdOp::I16x8AnyTrue):
@@ -4929,9 +5020,9 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(SimdOp::V16x8LoadSplat):
             CHECK(EmitLoadSplatSimd128(f, Scalar::Uint16, SimdOp::I16x8Splat));
           case uint32_t(SimdOp::V32x4LoadSplat):
-            CHECK(EmitLoadSplatSimd128(f, Scalar::Uint32, SimdOp::I32x4Splat));
+            CHECK(EmitLoadSplatSimd128(f, Scalar::Float32, SimdOp::I32x4Splat));
           case uint32_t(SimdOp::V64x2LoadSplat):
-            CHECK(EmitLoadSplatSimd128(f, Scalar::Int64, SimdOp::I64x2Splat));
+            CHECK(EmitLoadSplatSimd128(f, Scalar::Float64, SimdOp::I64x2Splat));
           case uint32_t(SimdOp::I16x8LoadS8x8):
           case uint32_t(SimdOp::I16x8LoadU8x8):
           case uint32_t(SimdOp::I32x4LoadS16x4):
@@ -4939,6 +5030,10 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(SimdOp::I64x2LoadS32x2):
           case uint32_t(SimdOp::I64x2LoadU32x2):
             CHECK(EmitLoadExtendSimd128(f, SimdOp(op.b1)));
+          case uint32_t(SimdOp::V128Load32Zero):
+            CHECK(EmitLoadZeroSimd128(f, Scalar::Float32, 4));
+          case uint32_t(SimdOp::V128Load64Zero):
+            CHECK(EmitLoadZeroSimd128(f, Scalar::Float64, 8));
           default:
             return f.iter().unrecognizedOpcode(&op);
         }  // switch (op.b1)
@@ -4995,7 +5090,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
 
       // Thread operations
       case uint16_t(Op::ThreadPrefix): {
-        if (f.env().sharedMemoryEnabled == Shareable::False) {
+        if (f.moduleEnv().sharedMemoryEnabled() == Shareable::False) {
           return f.iter().unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -5187,7 +5282,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
 
       // asm.js-specific operators
       case uint16_t(Op::MozPrefix): {
-        if (!f.env().isAsmJS()) {
+        if (!f.moduleEnv().isAsmJS()) {
           return f.iter().unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -5267,13 +5362,17 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
   MOZ_CRASH("unreachable");
 
 #undef CHECK
+#undef CHECK_SIMD_EXPERIMENTAL
 }
 
-bool wasm::IonCompileFunctions(const ModuleEnvironment& env, LifoAlloc& lifo,
+bool wasm::IonCompileFunctions(const ModuleEnvironment& moduleEnv,
+                               const CompilerEnvironment& compilerEnv,
+                               LifoAlloc& lifo,
                                const FuncCompileInputVector& inputs,
                                CompiledCode* code, UniqueChars* error) {
-  MOZ_ASSERT(env.tier() == Tier::Optimized);
-  MOZ_ASSERT(env.optimizedBackend() == OptimizedBackend::Ion);
+  MOZ_ASSERT(compilerEnv.tier() == Tier::Optimized);
+  MOZ_ASSERT(compilerEnv.debug() == DebugEnabled::False);
+  MOZ_ASSERT(compilerEnv.optimizedBackend() == OptimizedBackend::Ion);
 
   TempAllocator alloc(&lifo);
   JitContext jitContext(&alloc);
@@ -5302,13 +5401,12 @@ bool wasm::IonCompileFunctions(const ModuleEnvironment& env, LifoAlloc& lifo,
 
     // Build the local types vector.
 
-    const FuncTypeWithId& funcType = *env.funcTypes[func.index];
+    const FuncTypeWithId& funcType = *moduleEnv.funcTypes[func.index];
     ValTypeVector locals;
     if (!locals.appendAll(funcType.args())) {
       return false;
     }
-    if (!DecodeLocalEntries(d, env.types, env.refTypesEnabled(),
-                            env.gcTypesEnabled(), &locals)) {
+    if (!DecodeLocalEntries(d, moduleEnv.types, moduleEnv.features, &locals)) {
       return false;
     }
 
@@ -5319,11 +5417,11 @@ bool wasm::IonCompileFunctions(const ModuleEnvironment& env, LifoAlloc& lifo,
     CompileInfo compileInfo(locals.length());
     MIRGenerator mir(nullptr, options, &alloc, &graph, &compileInfo,
                      IonOptimizations.get(OptimizationLevel::Wasm));
-    mir.initMinWasmHeapLength(env.minMemoryLength);
+    mir.initMinWasmHeapLength(moduleEnv.minMemoryLength);
 
     // Build MIR graph
     {
-      FunctionCompiler f(env, d, func, locals, mir);
+      FunctionCompiler f(moduleEnv, d, func, locals, mir);
       if (!f.init()) {
         return false;
       }

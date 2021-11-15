@@ -13,7 +13,7 @@ use crate::translation_utils::{
     tabletype_to_type, type_to_type, DataIndex, ElemIndex, FuncIndex, Global, GlobalIndex,
     GlobalInit, Memory, MemoryIndex, SignatureIndex, Table, TableElementType, TableIndex,
 };
-use crate::{wasm_unsupported, HashMap};
+use crate::wasm_unsupported;
 use core::convert::TryFrom;
 use core::convert::TryInto;
 use cranelift_codegen::ir::immediates::V128Imm;
@@ -26,8 +26,8 @@ use wasmparser::{
     self, Data, DataKind, DataSectionReader, Element, ElementItem, ElementItems, ElementKind,
     ElementSectionReader, Export, ExportSectionReader, ExternalKind, FunctionSectionReader,
     GlobalSectionReader, GlobalType, ImportSectionEntryType, ImportSectionReader,
-    MemorySectionReader, MemoryType, NameSectionReader, Naming, NamingReader, Operator,
-    TableSectionReader, Type, TypeDef, TypeSectionReader,
+    MemorySectionReader, MemoryType, NameSectionReader, Naming, Operator, TableSectionReader,
+    TypeDef, TypeSectionReader,
 };
 
 /// Parses the Type section of the wasm module.
@@ -88,7 +88,7 @@ pub fn parse_import_section<'data>(
             ImportSectionEntryType::Module(_sig) | ImportSectionEntryType::Instance(_sig) => {
                 unimplemented!("module linking not implemented yet")
             }
-            ImportSectionEntryType::Memory(MemoryType {
+            ImportSectionEntryType::Memory(MemoryType::M32 {
                 limits: ref memlimits,
                 shared,
             }) => {
@@ -101,6 +101,9 @@ pub fn parse_import_section<'data>(
                     module_name,
                     field_name,
                 )?;
+            }
+            ImportSectionEntryType::Memory(MemoryType::M64 { .. }) => {
+                unimplemented!();
             }
             ImportSectionEntryType::Global(ref ty) => {
                 environ.declare_global_import(
@@ -189,11 +192,16 @@ pub fn parse_memory_section(
 
     for entry in memories {
         let memory = entry?;
-        environ.declare_memory(Memory {
-            minimum: memory.limits.initial,
-            maximum: memory.limits.maximum,
-            shared: memory.shared,
-        })?;
+        match memory {
+            MemoryType::M32 { limits, shared } => {
+                environ.declare_memory(Memory {
+                    minimum: limits.initial,
+                    maximum: limits.maximum,
+                    shared: shared,
+                })?;
+            }
+            MemoryType::M64 { .. } => unimplemented!(),
+        }
     }
 
     Ok(())
@@ -313,13 +321,7 @@ pub fn parse_element_section<'data>(
     environ.reserve_table_elements(elements.get_count())?;
 
     for (index, entry) in elements.into_iter().enumerate() {
-        let Element { kind, items, ty } = entry?;
-        if ty != Type::FuncRef {
-            return Err(wasm_unsupported!(
-                "unsupported table element type: {:?}",
-                ty
-            ));
-        }
+        let Element { kind, items, ty: _ } = entry?;
         let segments = read_elems(&items)?;
         match kind {
             ElementKind::Active {
@@ -404,53 +406,40 @@ pub fn parse_data_section<'data>(
 
 /// Parses the Name section of the wasm module.
 pub fn parse_name_section<'data>(
-    mut names: NameSectionReader<'data>,
+    names: NameSectionReader<'data>,
     environ: &mut dyn ModuleEnvironment<'data>,
 ) -> WasmResult<()> {
-    while let Ok(subsection) = names.read() {
-        match subsection {
-            wasmparser::Name::Function(function_subsection) => {
-                if let Some(function_names) = function_subsection
-                    .get_map()
-                    .ok()
-                    .and_then(parse_function_name_subsection)
-                {
-                    for (index, name) in function_names {
-                        environ.declare_func_name(index, name)?;
+    for subsection in names {
+        match subsection? {
+            wasmparser::Name::Function(f) => {
+                let mut names = f.get_map()?;
+                for _ in 0..names.get_count() {
+                    let Naming { index, name } = names.read()?;
+                    // We reserve `u32::MAX` for our own use in cranelift-entity.
+                    if index != u32::max_value() {
+                        environ.declare_func_name(FuncIndex::from_u32(index), name);
                     }
                 }
             }
             wasmparser::Name::Module(module) => {
-                if let Ok(name) = module.get_name() {
-                    environ.declare_module_name(name)?;
+                let name = module.get_name()?;
+                environ.declare_module_name(name);
+            }
+            wasmparser::Name::Local(l) => {
+                let mut reader = l.get_function_local_reader()?;
+                for _ in 0..reader.get_count() {
+                    let f = reader.read()?;
+                    if f.func_index == u32::max_value() {
+                        continue;
+                    }
+                    let mut map = f.get_map()?;
+                    for _ in 0..map.get_count() {
+                        let Naming { index, name } = map.read()?;
+                        environ.declare_local_name(FuncIndex::from_u32(f.func_index), index, name)
+                    }
                 }
             }
-            wasmparser::Name::Local(_) => {}
-        };
+        }
     }
     Ok(())
-}
-
-fn parse_function_name_subsection(
-    mut naming_reader: NamingReader<'_>,
-) -> Option<HashMap<FuncIndex, &str>> {
-    let mut function_names = HashMap::new();
-    for _ in 0..naming_reader.get_count() {
-        let Naming { index, name } = naming_reader.read().ok()?;
-        if index == std::u32::MAX {
-            // We reserve `u32::MAX` for our own use in cranelift-entity.
-            return None;
-        }
-
-        if function_names
-            .insert(FuncIndex::from_u32(index), name)
-            .is_some()
-        {
-            // If the function index has been previously seen, then we
-            // break out of the loop and early return `None`, because these
-            // should be unique.
-            return None;
-        }
-    }
-    Some(function_names)
 }

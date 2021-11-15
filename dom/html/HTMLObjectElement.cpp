@@ -29,8 +29,7 @@
 #  include "nsFocusManager.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLObjectElement::HTMLObjectElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -487,7 +486,6 @@ JSObject* HTMLObjectElement::WrapNode(JSContext* aCx,
   return obj;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Object)

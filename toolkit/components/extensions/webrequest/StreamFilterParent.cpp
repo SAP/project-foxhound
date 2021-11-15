@@ -159,7 +159,9 @@ void StreamFilterParent::Init(nsIChannel* aChannel) {
   nsCOMPtr<nsITraceableChannel> traceable = do_QueryInterface(aChannel);
   MOZ_RELEASE_ASSERT(traceable);
 
-  nsresult rv = traceable->SetNewListener(this, getter_AddRefs(mOrigListener));
+  nsresult rv =
+      traceable->SetNewListener(this, /* aMustApplyContentConversion = */ true,
+                                getter_AddRefs(mOrigListener));
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 }
 
@@ -355,7 +357,7 @@ nsresult StreamFilterParent::Write(Data& aData) {
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(
       getter_AddRefs(stream),
-      MakeSpan(reinterpret_cast<char*>(aData.Elements()), aData.Length()),
+      Span(reinterpret_cast<char*>(aData.Elements()), aData.Length()),
       NS_ASSIGNMENT_DEPEND);
   NS_ENSURE_SUCCESS(rv, rv);
 

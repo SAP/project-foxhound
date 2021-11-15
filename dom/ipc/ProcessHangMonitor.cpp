@@ -784,6 +784,12 @@ void HangMonitorParent::CancelContentJSExecutionIfRunning(
     const dom::CancelContentJSOptions& aCancelContentJSOptions) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
+  if (!aBrowserParent->CanCancelContentJS(aNavigationType,
+                                          aCancelContentJSOptions.mIndex,
+                                          aCancelContentJSOptions.mUri)) {
+    return;
+  }
+
   TabId id = aBrowserParent->GetTabId();
   Dispatch(NewNonOwningRunnableMethod<TabId, nsIRemoteTab::NavigationType,
                                       int32_t, nsIURI*, int32_t>(
@@ -1211,6 +1217,15 @@ HangMonitoredProcess::UserCanceled() {
     uint32_t id = mHangData.get_PluginHangData().pluginId();
     mActor->CleanupPluginHang(id, true);
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HangMonitoredProcess::GetChildID(uint64_t* aChildID) {
+  if (!mContentParent) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  *aChildID = mContentParent->ChildID();
   return NS_OK;
 }
 

@@ -5,21 +5,33 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFMediaDataDecoder.h"
+
 #include "VideoUtils.h"
 #include "WMFUtils.h"
+#include "mozilla/Logging.h"
+#include "mozilla/SyncRunnable.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/Telemetry.h"
 #include "nsTArray.h"
 
-#include "mozilla/Logging.h"
-#include "mozilla/SyncRunnable.h"
-
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+
+#ifdef MOZ_GECKO_PROFILER
+#  include "ProfilerMarkerPayload.h"
+#  define WFM_MEDIA_DATA_DECODER_STATUS_MARKER(tag, text, markerTime)        \
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(tag, MEDIA_PLAYBACK, TextMarkerPayload, \
+                                     (text, markerTime))
+#else
+#  define WFM_MEDIA_DATA_DECODER_STATUS_MARKER(tag, text, markerTime)
+#endif
 
 namespace mozilla {
 
-WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager,
-                                         TaskQueue* aTaskQueue)
-    : mTaskQueue(aTaskQueue), mMFTManager(aMFTManager) {}
+WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager)
+    : mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "WMFMediaDataDecoder")),
+      mMFTManager(aMFTManager) {}
 
 WMFMediaDataDecoder::~WMFMediaDataDecoder() {}
 
@@ -55,25 +67,18 @@ static void SendTelemetry(unsigned long hr) {
 
 RefPtr<ShutdownPromise> WMFMediaDataDecoder::Shutdown() {
   MOZ_DIAGNOSTIC_ASSERT(!mIsShutDown);
-
   mIsShutDown = true;
 
-  if (mTaskQueue) {
-    return InvokeAsync(mTaskQueue, this, __func__,
-                       &WMFMediaDataDecoder::ProcessShutdown);
-  }
-  return ProcessShutdown();
-}
-
-RefPtr<ShutdownPromise> WMFMediaDataDecoder::ProcessShutdown() {
-  if (mMFTManager) {
-    mMFTManager->Shutdown();
-    mMFTManager = nullptr;
-    if (!mRecordedError && mHasSuccessfulOutput) {
-      SendTelemetry(S_OK);
+  return InvokeAsync(mTaskQueue, __func__, [self = RefPtr{this}, this] {
+    if (mMFTManager) {
+      mMFTManager->Shutdown();
+      mMFTManager = nullptr;
+      if (!mRecordedError && mHasSuccessfulOutput) {
+        SendTelemetry(S_OK);
+      }
     }
-  }
-  return ShutdownPromise::CreateAndResolve(true, __func__);
+    return mTaskQueue->BeginShutdown();
+  });
 }
 
 // Inserts data into the decoder's pipeline.
@@ -91,6 +96,14 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessError(
     SendTelemetry(aError);
     mRecordedError = true;
   }
+
+  nsPrintfCString markerString(
+      "WMFMediaDataDecoder::ProcessError for decoder with description %s with "
+      "reason: %s",
+      GetDescriptionName().get(), aReason);
+  LOG(markerString.get());
+  WFM_MEDIA_DATA_DECODER_STATUS_MARKER("WMFDecoder Error", markerString,
+                                       TimeStamp::NowUnfuzzed());
 
   // TODO: For the error DXGI_ERROR_DEVICE_RESET, we could return
   // NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER to get the latest device. Maybe retry

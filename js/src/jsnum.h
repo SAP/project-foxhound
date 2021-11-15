@@ -14,10 +14,18 @@
 #include "NamespaceImports.h"
 
 #include "js/Conversions.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
 
 #include "vm/StringType.h"
 
 namespace js {
+
+namespace frontend {
+
+class ParserAtomsTable;
+class ParserAtom;
+
+}  // namespace frontend
 
 class GlobalObject;
 class StringBuffer;
@@ -38,16 +46,22 @@ extern JSObject* InitNumberClass(JSContext* cx, Handle<GlobalObject*> global);
 template <AllowGC allowGC>
 extern JSString* NumberToString(JSContext* cx, double d);
 
-extern JSString* NumberToStringHelperPure(JSContext* cx, double d);
+extern JSString* NumberToStringPure(JSContext* cx, double d);
 
 extern JSAtom* NumberToAtom(JSContext* cx, double d);
+
+const frontend::ParserAtom* NumberToParserAtom(
+    JSContext* cx, frontend::ParserAtomsTable& parserAtoms, double d);
 
 template <AllowGC allowGC>
 extern JSLinearString* Int32ToString(JSContext* cx, int32_t i);
 
-extern JSLinearString* Int32ToStringHelperPure(JSContext* cx, int32_t i);
+extern JSLinearString* Int32ToStringPure(JSContext* cx, int32_t i);
 
 extern JSAtom* Int32ToAtom(JSContext* cx, int32_t si);
+
+const frontend::ParserAtom* Int32ToParserAtom(
+    JSContext* cx, frontend::ParserAtomsTable& parserAtoms, int32_t si);
 
 // ES6 15.7.3.12
 extern bool IsInteger(const Value& val);
@@ -176,9 +190,8 @@ template <typename CharT>
 extern MOZ_MUST_USE bool GetDecimalNonInteger(JSContext* cx, const CharT* start,
                                               const CharT* end, double* dp);
 
-bool CharsToNumber(JSContext* cx, const Latin1Char* chars, size_t length,
-                   double* result);
-bool CharsToNumber(JSContext* cx, const char16_t* chars, size_t length,
+template <typename CharT>
+bool CharsToNumber(JSContext* cx, const CharT* chars, size_t length,
                    double* result);
 
 extern MOZ_MUST_USE bool StringToNumber(JSContext* cx, JSString* str,
@@ -186,6 +199,14 @@ extern MOZ_MUST_USE bool StringToNumber(JSContext* cx, JSString* str,
 
 extern MOZ_MUST_USE bool StringToNumberPure(JSContext* cx, JSString* str,
                                             double* result);
+
+/*
+ * Return true and set |*result| to the parsed number value if |str| can be
+ * parsed as a number using the same rules as in |StringToNumber|. Otherwise
+ * return false and leave |*result| in an indeterminate state.
+ */
+extern MOZ_MUST_USE bool MaybeStringToNumber(JSLinearString* str,
+                                             double* result);
 
 /* ES5 9.3 ToNumber, overwriting *vp with the appropriate number value. */
 MOZ_ALWAYS_INLINE MOZ_MUST_USE bool ToNumber(JSContext* cx,
@@ -224,8 +245,6 @@ MOZ_ALWAYS_INLINE MOZ_MUST_USE bool ToInt32OrBigInt(JSContext* cx,
   }
   return ToInt32OrBigIntSlow(cx, vp);
 }
-
-MOZ_MUST_USE bool num_parseInt(JSContext* cx, unsigned argc, Value* vp);
 
 } /* namespace js */
 

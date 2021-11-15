@@ -47,13 +47,11 @@ function BoxModel(inspector, window) {
 
   this.updateBoxModel = this.updateBoxModel.bind(this);
 
-  this.onHideBoxModelHighlighter = this.onHideBoxModelHighlighter.bind(this);
   this.onHideGeometryEditor = this.onHideGeometryEditor.bind(this);
   this.onMarkupViewLeave = this.onMarkupViewLeave.bind(this);
   this.onMarkupViewNodeHover = this.onMarkupViewNodeHover.bind(this);
   this.onNewSelection = this.onNewSelection.bind(this);
   this.onShowBoxModelEditor = this.onShowBoxModelEditor.bind(this);
-  this.onShowBoxModelHighlighter = this.onShowBoxModelHighlighter.bind(this);
   this.onShowRulePreviewTooltip = this.onShowRulePreviewTooltip.bind(this);
   this.onSidebarSelect = this.onSidebarSelect.bind(this);
   this.onToggleGeometryEditor = this.onToggleGeometryEditor.bind(this);
@@ -106,9 +104,7 @@ BoxModel.prototype = {
    */
   getComponentProps() {
     return {
-      onHideBoxModelHighlighter: this.onHideBoxModelHighlighter,
       onShowBoxModelEditor: this.onShowBoxModelEditor,
-      onShowBoxModelHighlighter: this.onShowBoxModelHighlighter,
       onShowRulePreviewTooltip: this.onShowRulePreviewTooltip,
       onToggleGeometryEditor: this.onToggleGeometryEditor,
     };
@@ -227,14 +223,6 @@ BoxModel.prototype = {
       });
 
     this._lastRequest = lastRequest;
-  },
-
-  /**
-   * Hides the box-model highlighter on the currently selected element.
-   */
-  onHideBoxModelHighlighter() {
-    const { highlighter } = this.getCurrentInspectorFront();
-    highlighter.unhighlight();
   },
 
   /**
@@ -386,22 +374,6 @@ BoxModel.prototype = {
       },
       event
     );
-  },
-
-  /**
-   * Shows the box-model highlighter on the currently selected element.
-   *
-   * @param  {Object} options
-   *         Options passed to the highlighter actor.
-   */
-  onShowBoxModelHighlighter(options = {}) {
-    if (!this.inspector) {
-      return;
-    }
-
-    const { highlighter } = this.getCurrentInspectorFront();
-    const { nodeFront } = this.inspector.selection;
-    highlighter.highlight(nodeFront, options);
   },
 
   /**

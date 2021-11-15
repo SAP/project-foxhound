@@ -2739,7 +2739,7 @@ nsresult WebSocketChannel::SetupRequest() {
 
   rv = mRandomGenerator->GenerateRandomBytes(16, &secKey);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = Base64Encode(nsDependentCSubstring((char*)secKey, 16), secKeyString);
+  rv = Base64Encode(reinterpret_cast<const char*>(secKey), 16, secKeyString);
   free(secKey);
   if (NS_FAILED(rv)) {
     return rv;
@@ -2776,9 +2776,9 @@ nsresult WebSocketChannel::DoAdmissionDNS() {
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIEventTarget> main = GetMainThreadEventTarget();
   MOZ_ASSERT(!mCancelable);
-  return dns->AsyncResolveNative(hostName, 0, this, main,
-                                 mLoadInfo->GetOriginAttributes(),
-                                 getter_AddRefs(mCancelable));
+  return dns->AsyncResolveNative(
+      hostName, nsIDNSService::RESOLVE_TYPE_DEFAULT, 0, nullptr, this, main,
+      mLoadInfo->GetOriginAttributes(), getter_AddRefs(mCancelable));
 }
 
 nsresult WebSocketChannel::ApplyForAdmission() {
@@ -2967,7 +2967,9 @@ WebSocketChannel::OnLookupComplete(nsICancelable* aRequest,
     // set host in case we got here without calling DoAdmissionDNS()
     mURI->GetHost(mAddress);
   } else {
-    nsresult rv = aRecord->GetNextAddrAsString(mAddress);
+    nsCOMPtr<nsIDNSAddrRecord> record = do_QueryInterface(aRecord);
+    MOZ_ASSERT(record);
+    nsresult rv = record->GetNextAddrAsString(mAddress);
     if (NS_FAILED(rv))
       LOG(("WebSocketChannel::OnLookupComplete: Failed GetNextAddr\n"));
   }

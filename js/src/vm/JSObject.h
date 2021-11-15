@@ -11,8 +11,10 @@
 
 #include "gc/Barrier.h"
 #include "js/Conversions.h"
+#include "js/friend/ErrorMessages.h"  // JSErrNum
 #include "js/GCVector.h"
 #include "js/HeapAPI.h"
+#include "js/shadow/Zone.h"  // JS::shadow::Zone
 #include "js/Wrapper.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/Printer.h"
@@ -248,21 +250,6 @@ class JSObject
    */
   MOZ_ALWAYS_INLINE bool maybeHasInterestingSymbolProperty() const;
 
-  /*
-   * If this object was instantiated with `new Ctor`, return the constructor's
-   * display atom. Otherwise, return nullptr.
-   */
-  static bool constructorDisplayAtom(JSContext* cx, js::HandleObject obj,
-                                     js::MutableHandleAtom name);
-
-  /*
-   * The same as constructorDisplayAtom above, however if this object has a
-   * lazy group, nullptr is returned. This allows for use in situations that
-   * cannot GC and where having some information, even if it is inconsistently
-   * available, is better than no information.
-   */
-  JSAtom* maybeConstructorDisplayAtom() const;
-
   /* GC support. */
 
   void traceChildren(JSTracer* trc);
@@ -286,10 +273,10 @@ class JSObject
   MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZoneFromAnyThread() const {
     return JS::shadow::Zone::from(zoneFromAnyThread());
   }
-  static MOZ_ALWAYS_INLINE void readBarrier(JSObject* obj);
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(JSObject* obj);
-  static MOZ_ALWAYS_INLINE void writeBarrierPost(void* cellp, JSObject* prev,
-                                                 JSObject* next);
+  static MOZ_ALWAYS_INLINE void postWriteBarrier(void* cellp, JSObject* prev,
+                                                 JSObject* next) {
+    js::gc::PostWriteBarrierImpl<JSObject>(cellp, prev, next);
+  }
 
   /* Return the allocKind we would use if we were to tenure this object. */
   js::gc::AllocKind allocKindForTenure(const js::Nursery& nursery) const;
@@ -502,8 +489,8 @@ class JSObject
    * triplet (along with any class YObject that derives XObject).
    *
    * Note that X represents a low-level representation and does not query the
-   * [[Class]] property of object defined by the spec (for this, see
-   * js::GetBuiltinClass).
+   * [[Class]] property of object defined by the spec: use |JS::GetBuiltinClass|
+   * for this.
    */
 
   template <class T>
@@ -547,11 +534,19 @@ class JSObject
   /*
    * Tries to unwrap and downcast to class T. Returns nullptr if (and only if) a
    * wrapper with a security policy is involved. Crashes in all builds if the
-   * (possibly unwrapped) object is not of class T (for example because it's a
+   * (possibly unwrapped) object is not of class T (for example, because it's a
    * dead wrapper).
    */
   template <class T>
-  T* maybeUnwrapAs();
+  inline T* maybeUnwrapAs();
+
+  /*
+   * Tries to unwrap and downcast to an object with class |clasp|.  Returns
+   * nullptr if (and only if) a wrapper with a security policy is involved.
+   * Crashes in all builds if the (possibly unwrapped) object doesn't have class
+   * |clasp| (for example, because it's a dead wrapper).
+   */
+  inline JSObject* maybeUnwrapAs(const JSClass* clasp);
 
   /*
    * Tries to unwrap and downcast to class T. Returns nullptr if a wrapper with
@@ -645,7 +640,7 @@ T& JSObject::unwrapAs() {
 }
 
 template <class T>
-T* JSObject::maybeUnwrapAs() {
+inline T* JSObject::maybeUnwrapAs() {
   static_assert(!std::is_convertible_v<T*, js::Wrapper*>,
                 "T can't be a Wrapper type; this function discards wrappers");
 
@@ -660,6 +655,23 @@ T* JSObject::maybeUnwrapAs() {
 
   if (MOZ_LIKELY(unwrapped->is<T>())) {
     return &unwrapped->as<T>();
+  }
+
+  MOZ_CRASH("Invalid object. Dead wrapper?");
+}
+
+inline JSObject* JSObject::maybeUnwrapAs(const JSClass* clasp) {
+  if (hasClass(clasp)) {
+    return this;
+  }
+
+  JSObject* unwrapped = js::CheckedUnwrapStatic(this);
+  if (!unwrapped) {
+    return nullptr;
+  }
+
+  if (MOZ_LIKELY(unwrapped->hasClass(clasp))) {
+    return unwrapped;
   }
 
   MOZ_CRASH("Invalid object. Dead wrapper?");
@@ -717,44 +729,6 @@ struct JSObject_Slots16 : JSObject {
   void* data[2];
   js::Value fslots[16];
 };
-
-/* static */ MOZ_ALWAYS_INLINE void JSObject::readBarrier(JSObject* obj) {
-  if (obj && obj->isTenured()) {
-    obj->asTenured().readBarrier(&obj->asTenured());
-  }
-}
-
-/* static */ MOZ_ALWAYS_INLINE void JSObject::writeBarrierPre(JSObject* obj) {
-  if (obj && obj->isTenured()) {
-    obj->asTenured().writeBarrierPre(&obj->asTenured());
-  }
-}
-
-/* static */ MOZ_ALWAYS_INLINE void JSObject::writeBarrierPost(void* cellp,
-                                                               JSObject* prev,
-                                                               JSObject* next) {
-  MOZ_ASSERT(cellp);
-
-  // If the target needs an entry, add it.
-  js::gc::StoreBuffer* buffer;
-  if (next && (buffer = next->storeBuffer())) {
-    // If we know that the prev has already inserted an entry, we can skip
-    // doing the lookup to add the new entry. Note that we cannot safely
-    // assert the presence of the entry because it may have been added
-    // via a different store buffer.
-    if (prev && prev->storeBuffer()) {
-      return;
-    }
-    buffer->putCell(static_cast<JSObject**>(cellp));
-    return;
-  }
-
-  // Remove the prev entry if the new value does not need it. There will only
-  // be a prev entry if the prev value was in the nursery.
-  if (prev && (buffer = prev->storeBuffer())) {
-    buffer->unputCell(static_cast<JSObject**>(cellp));
-  }
-}
 
 namespace js {
 
@@ -1137,6 +1111,17 @@ template <typename ObjectSubclass>
 void CallTraceMethod(JSTracer* trc, JSObject* obj) {
   obj->as<ObjectSubclass>().trace(trc);
 }
+
+#ifdef JS_HAS_CTYPES
+
+namespace ctypes {
+
+extern size_t SizeOfDataIfCDataObject(mozilla::MallocSizeOf mallocSizeOf,
+                                      JSObject* obj);
+
+}  // namespace ctypes
+
+#endif
 
 } /* namespace js */
 

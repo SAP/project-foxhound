@@ -12,7 +12,6 @@ But there can be a wide variety of highlighters. In particular, highlighters are
 
 * the exact form of a css shape,
 * how a css transform applied to an element,
-* where are the color stops of a css gradient,
 * which are all the elements that match a given selector,
 * ...
 
@@ -20,33 +19,15 @@ But there can be a wide variety of highlighters. In particular, highlighters are
 
 Highlighters run on the debuggee side, not on the toolbox side. This is so that it's possible to highlight elements on a remote device for instance. This means you need to go through the [Remote Debugging Protocol](protocol.md) to use a highlighter.
 
-Since the box-model highlighter (HighlighterFront) is the most used type of highlighter (for instance it's displayed when you move your mouse over nodes in the inspector), the HighlighterFront provides a custom set of methods to interact with it:
-
-| Method                             | Description                                                                                                                                                                                                                   |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `startPicker()`                    | Starts the node picker mode which will highlight every node you hover over in the page, and will change the current node selection in the inspector on click. “picker-node-hovered” and “picker-node-picked” events are sent. |
-| `stopPicker()`                     | Stops the node picker mode.                                                                                                                                                                                                   |
-| `highlightNodeFront(nodeFront)`    | Display the box-model highlighter on a given node. NodeFront objects are what the WalkerActor return.                                                                                                                         |
-| `highlightDomValueGrip(valueGrip)` | Display the box-model highlighter on a given node, represented by a debugger object value grip.                                                                                                                               |
-| `unhighlight()`                    | Hide the box-model highlighter.                                                                                                                                                                                               |
-
-Not all methods that are related to highlighters are present on the HighlighterFront. The
-`highlightDomValueGrip` method also requires the WalkerFront in order to transform a Grip into a
-NodeFront. Therefore, methods that access other Fronts are available on the InspectorFront.
-
-| Method                             | Description                                                                                                                                                                                                                   |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `highlightDomValueGrip(valueGrip)` | Display the box-model highlighter on a given node, represented by a debugger object value grip.                                                                                                                               |
-
-But the box-model highlighter isn't the only type of highlighter, so the InspectorFront also provides the following method:
+The InspectorFront provides the following method:
 
 | Method                           | Description                                                                                                                                                                                                                                                                                                   |
 |----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `getHighlighterByType(typeName)` | Instantiate a new highlighter, given its type (as a String). At the time of writing, the available types of highlighters are: `BoxModelHighlighter`, `CssTransformHighlighter`, `SelectorHighlighter` and `RectHighlighter`. This returns a promise that resolves to the new instance of [protocol.js](https://wiki.mozilla.org/DevTools/protocol.js) actor. |
+| `getHighlighterByType(typeName)` | Instantiate a new highlighter, given its type (as a String). At the time of writing, the available types of highlighters are: `CssGridHighlighter`, `BoxModelHighlighter`, `CssTransformHighlighter`, `FlexboxHighlighter`, `FontsHighlighter`, `GeometryEditorHighlighter`, `MeasuringToolHighlighter`, `PausedDebuggerOverlay`, `RulersHighlighter`, `SelectorHighlighter` and `ShapesHighlighter`. This returns a promise that resolves to the new instance of [protocol.js](https://wiki.mozilla.org/DevTools/protocol.js) actor. |
 
 ### The highlighter API
 
-When getting a highlighter via `toolbox.inspector.getHighlighterByType(typeName)`, the right type of highlighter will be instantiated on the server-side and will be wrapped into a `CustomHighlighterActor` and that's what will be returned to the caller. This means that all types of highlighters share the same following API:
+When getting a highlighter via `InspectorFront.getHighlighterByType(typeName)`, the right type of highlighter will be instantiated on the server-side and will be wrapped into a `CustomHighlighterActor` and that's what will be returned to the caller. This means that all types of highlighters share the same following API:
 
 | Method                                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 |------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -110,7 +91,7 @@ In this example, the test DIV will be inserted in the page, and will be displaye
 
 ### The AnonymousContent API
 
-In the previous example, the returned `insertedEl` object isn't a DOM node, and it certainly is not `el`. It is a new object, whose type is `AnonymousContent` ([see the WebIDL here](https://dxr.mozilla.org/mozilla-central/source/dom/webidl/AnonymousContent.webidl)).
+In the previous example, the returned `insertedEl` object isn't a DOM node, and it certainly is not `el`. It is a new object, whose type is `AnonymousContent` ([see the WebIDL here](https://searchfox.org/mozilla-central/source/dom/webidl/AnonymousContent.webidl)).
 
 Because of the way content is inserted into the page, it isn't wanted to give consumers a direct reference to the inserted DOM node. This is why `document.insertAnonymousContent(el)` actually **clones** `el` and returns a new object whose API lets consumers make changes to the inserted element in a way that never gives back a reference to the inserted DOM node.
 
@@ -118,12 +99,13 @@ Because of the way content is inserted into the page, it isn't wanted to give co
 
 In order to help with the API described in the previous section, the `CanvasFrameAnonymousContentHelper` class was introduced.
 
-Its goal is to provide a simple way for highlighters to insert their content into the page and modify it dynamically later. One of its goal is also to re-insert the highlighters' content on page navigation. Indeed, the frame tree is destroyed when the page is navigated away from since it represents the document element.
+Its goal is to provide a simple way for highlighters to insert their content into the page and modify it dynamically later. One of its goal is also to re-insert the highlighters' content on page navigation. Indeed, the frame tree is destroyed when the page is navigated away from since it represents the document element. One thing to note is that highlighter content insertion is asynchronous and `CanvasFrameAnonymousContentHelper` users must call and wait for its `initialize` method to resolve.
 
 Using this helper is quite simple:
 
 ```js
 let helper = new CanvasFrameAnonymousContentHelper(targetActor, this.buildMarkup.bind(this));
+await helper.initialize();
 ```
 
 It only requires a `targetActor`, which highlighters get when they are instantiated, and a callback function that will be used to create and insert the content the first time the highlighter is shown, and every time there's a page navigation.
@@ -142,7 +124,7 @@ The returned object provides the following API:
 
   ### Creating a new highlighter class
 
-A good way to get started is by taking a look at [existing highlighters here](https://dxr.mozilla.org/mozilla-central/source/devtools/server/actors/highlighters.js#697-727).
+A good way to get started is by taking a look at [existing highlighters here](https://searchfox.org/mozilla-central/rev/1a973762afcbc5066f73f1508b0c846872fe3952/devtools/server/actors/highlighters.js#519-530).
 
 Here is some boilerplate code for a new highlighter class:
 
@@ -150,6 +132,7 @@ Here is some boilerplate code for a new highlighter class:
  function MyNewHighlighter(targetActor) {
    this.doc = targetActor.window.document;
    this.markup = new CanvasFrameAnonymousContentHelper(targetActor, this._buildMarkup.bind(this));
+   this.markup.initialize();
  }
 
  MyNewHighlighter.prototype = {
@@ -159,7 +142,7 @@ Here is some boilerplate code for a new highlighter class:
    },
 
    _buildMarkup: function() {
-     let container = this.doc.createElement("div");
+     let container = this.markup.anonymousContentDocument.createElement("div");
      container.innerHTML = '<div id="new-highlighted-" style="display:none;">';
      return container;
    },

@@ -6,6 +6,7 @@
 
 #include "mozilla/ProcInfo.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
+#include "nsMemoryReporterManager.h"
 #include <windows.h>
 #include <psapi.h>
 #include <tlhelp32.h>
@@ -84,11 +85,19 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
           info.childId = request.childId;
           info.type = request.processType;
           info.origin = request.origin;
+          info.windows = std::move(request.windowInfo);
           info.filename.Assign(filename);
           info.cpuKernel = ToNanoSeconds(kernelTime);
           info.cpuUser = ToNanoSeconds(userTime);
           info.residentSetSize = memoryCounters.WorkingSetSize;
-          info.virtualMemorySize = memoryCounters.PagefileUsage;
+
+          // Computing the resident unique size is somewhat tricky,
+          // so we use about:memory's implementation. This implementation
+          // uses the `HANDLE` so, in theory, should be no additional
+          // race condition. However, in case of error, the result is `0`.
+          info.residentUniqueSize =
+              nsMemoryReporterManager::ResidentUnique(handle.get());
+
           if (!gathered.put(request.pid, std::move(info))) {
             holder->Reject(NS_ERROR_OUT_OF_MEMORY, __func__);
             return;
@@ -136,17 +145,25 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
                          /* bInheritHandle = */ FALSE,
                          /* dwThreadId = */ te32.th32ThreadID));
           if (!hThread) {
-            // Cannot open thread. Not sure why, but let's attempt to find data
-            // on other threads.
+            // Cannot open thread. Not sure why, but let's erase this thread
+            // and attempt to find data on other threads.
+            processLookup->value().threads.RemoveLastElement();
             continue;
           }
 
+          threadInfo->tid = te32.th32ThreadID;
+
+          // Attempt to get thread times.
+          // If we fail, continue without this piece of information.
           FILETIME createTime, exitTime, kernelTime, userTime;
-          if (!GetThreadTimes(hThread.get(), &createTime, &exitTime,
-                              &kernelTime, &userTime)) {
-            continue;
+          if (GetThreadTimes(hThread.get(), &createTime, &exitTime, &kernelTime,
+                             &userTime)) {
+            threadInfo->cpuKernel = ToNanoSeconds(kernelTime);
+            threadInfo->cpuUser = ToNanoSeconds(userTime);
           }
 
+          // Attempt to get thread name.
+          // If we fail, continue without this piece of information.
           if (getThreadDescription) {
             PWSTR threadName = nullptr;
             if (getThreadDescription(hThread.get(), &threadName) &&
@@ -157,9 +174,6 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
               LocalFree(threadName);
             }
           }
-          threadInfo->tid = te32.th32ThreadID;
-          threadInfo->cpuKernel = ToNanoSeconds(kernelTime);
-          threadInfo->cpuUser = ToNanoSeconds(userTime);
         }
 
         // ----- We're ready to return.

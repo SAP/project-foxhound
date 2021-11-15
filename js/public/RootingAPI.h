@@ -10,7 +10,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EnumeratedArray.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 
@@ -23,6 +22,7 @@
 #include "js/GCAnnotations.h"
 #include "js/GCPolicyAPI.h"
 #include "js/GCTypeMacros.h"  // JS_FOR_EACH_PUBLIC_{,TAGGED_}GC_POINTER_TYPE
+#include "js/HashTable.h"
 #include "js/HeapAPI.h"
 #include "js/ProfilingStack.h"
 #include "js/Realm.h"

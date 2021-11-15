@@ -22,8 +22,7 @@ from moztest.resolve import (
 )
 
 from taskgraph import GECKO
-from taskgraph.util.backstop import is_backstop
-from taskgraph.util.bugbug import BugbugTimeoutException, CT_LOW, push_schedules
+from taskgraph.util.bugbug import BugbugTimeoutException, push_schedules
 
 logger = logging.getLogger(__name__)
 here = os.path.abspath(os.path.dirname(__file__))
@@ -44,43 +43,48 @@ def guess_mozinfo_from_task(task):
         A dict that can be used as a mozinfo replacement.
     """
     info = {
-        'asan': 'asan' in task['build-attributes']['build_platform'],
-        'bits': 32 if '32' in task['build-attributes']['build_platform'] else 64,
-        'ccov': 'ccov' in task['build-attributes']['build_platform'],
-        'debug': task['build-attributes']['build_type'] == 'debug',
-        'e10s': task['attributes']['e10s'],
-        'fission': task['attributes'].get('unittest_variant') == 'fission',
-        'headless': '-headless' in task['test-name'],
-        'tsan': 'tsan' in task['build-attributes']['build_platform'],
-        'webrender': task.get('webrender', False),
+        "asan": "asan" in task["build-attributes"]["build_platform"],
+        "bits": 32 if "32" in task["build-attributes"]["build_platform"] else 64,
+        "ccov": "ccov" in task["build-attributes"]["build_platform"],
+        "debug": task["build-attributes"]["build_type"] == "debug",
+        "e10s": task["attributes"]["e10s"],
+        "fission": task["attributes"].get("unittest_variant") == "fission",
+        "headless": "-headless" in task["test-name"],
+        "tsan": "tsan" in task["build-attributes"]["build_platform"],
+        "webrender": task.get("webrender", False),
     }
-    for platform in ('android', 'linux', 'mac', 'win'):
-        if platform in task['build-attributes']['build_platform']:
-            info['os'] = platform
+    for platform in ("android", "linux", "mac", "win"):
+        if platform in task["build-attributes"]["build_platform"]:
+            info["os"] = platform
             break
     else:
-        raise ValueError("{} is not a known platform!".format(
-                         task['build-attributes']['build_platform']))
+        raise ValueError(
+            "{} is not a known platform!".format(
+                task["build-attributes"]["build_platform"]
+            )
+        )
 
-    info['appname'] = 'fennec' if info['os'] == 'android' else 'firefox'
+    info["appname"] = "fennec" if info["os"] == "android" else "firefox"
 
     # guess processor
-    if 'aarch64' in task['build-attributes']['build_platform']:
-        info['processor'] = 'aarch64'
-    elif info['os'] == 'android' and 'arm' in task['test-platform']:
-        info['processor'] = 'arm'
-    elif info['bits'] == 32:
-        info['processor'] = 'x86'
+    if "aarch64" in task["build-attributes"]["build_platform"]:
+        info["processor"] = "aarch64"
+    elif info["os"] == "android" and "arm" in task["test-platform"]:
+        info["processor"] = "arm"
+    elif info["bits"] == 32:
+        info["processor"] = "x86"
     else:
-        info['processor'] = 'x86_64'
+        info["processor"] = "x86_64"
 
     # guess toolkit
-    if info['os'] in ('android', 'windows'):
-        info['toolkit'] = info['os']
-    elif info['os'] == 'mac':
-        info['toolkit'] = 'cocoa'
+    if info["os"] == "android":
+        info["toolkit"] = "android"
+    elif info["os"] == "win":
+        info["toolkit"] = "windows"
+    elif info["os"] == "mac":
+        info["toolkit"] = "cocoa"
     else:
-        info['toolkit'] = 'gtk'
+        info["toolkit"] = "gtk"
 
     return info
 
@@ -88,20 +92,20 @@ def guess_mozinfo_from_task(task):
 @memoize
 def get_runtimes(platform, suite_name):
     if not suite_name or not platform:
-        raise TypeError('suite_name and platform cannot be empty.')
+        raise TypeError("suite_name and platform cannot be empty.")
 
-    base = os.path.join(GECKO, 'testing', 'runtimes', 'manifest-runtimes-{}.json')
-    for key in ('android', 'windows'):
+    base = os.path.join(GECKO, "testing", "runtimes", "manifest-runtimes-{}.json")
+    for key in ("android", "windows"):
         if key in platform:
             path = base.format(key)
             break
     else:
-        path = base.format('unix')
+        path = base.format("unix")
 
     if not os.path.exists(path):
-        raise IOError('manifest runtime file at {} not found.'.format(path))
+        raise IOError("manifest runtime file at {} not found.".format(path))
 
-    with open(path, 'r') as fh:
+    with open(path, "r") as fh:
         return json.load(fh)[suite_name]
 
 
@@ -120,13 +124,14 @@ def chunk_manifests(suite, platform, chunks, manifests):
     manifests = set(manifests)
 
     if "web-platform-tests" not in suite:
-        runtimes = {k: v for k, v in get_runtimes(platform, suite).items() if k in manifests}
+        runtimes = {
+            k: v for k, v in get_runtimes(platform, suite).items() if k in manifests
+        }
         return [
-            c[1] for c in chunk_by_runtime(
-                None,
-                chunks,
-                runtimes
-            ).get_chunked_manifests(manifests)
+            c[1]
+            for c in chunk_by_runtime(None, chunks, runtimes).get_chunked_manifests(
+                manifests
+            )
         ]
 
     # Keep track of test paths for each chunk, and the runtime information.
@@ -146,7 +151,6 @@ def chunk_manifests(suite, platform, chunks, manifests):
 
 @six.add_metaclass(ABCMeta)
 class BaseManifestLoader(object):
-
     def __init__(self, params):
         self.params = params
 
@@ -179,10 +183,14 @@ class DefaultLoader(BaseManifestLoader):
     @memoize
     def get_tests(self, suite):
         suite_definition = TEST_SUITES[suite]
-        return list(resolver.resolve_tests(
-            flavor=suite_definition['build_flavor'],
-            subsuite=suite_definition.get('kwargs', {}).get('subsuite', 'undefined'),
-        ))
+        return list(
+            resolver.resolve_tests(
+                flavor=suite_definition["build_flavor"],
+                subsuite=suite_definition.get("kwargs", {}).get(
+                    "subsuite", "undefined"
+                ),
+            )
+        )
 
     @memoize
     def get_manifests(self, suite, mozinfo):
@@ -193,7 +201,7 @@ class DefaultLoader(BaseManifestLoader):
         if "web-platform-tests" in suite:
             manifests = set()
             for t in tests:
-                manifests.add(t['manifest'])
+                manifests.add(t["manifest"])
             return {"active": list(manifests), "skipped": []}
 
         manifests = set(chunk_by_runtime.get_manifest(t) for t in tests)
@@ -210,7 +218,8 @@ class DefaultLoader(BaseManifestLoader):
 class BugbugLoader(DefaultLoader):
     """Load manifests using metadata from the TestResolver, and then
     filter them based on a query to bugbug."""
-    CONFIDENCE_THRESHOLD = CT_LOW
+
+    CONFIDENCE_THRESHOLD = 0.5
 
     def __init__(self, *args, **kwargs):
         super(BugbugLoader, self).__init__(*args, **kwargs)
@@ -221,25 +230,41 @@ class BugbugLoader(DefaultLoader):
         manifests = super(BugbugLoader, self).get_manifests(suite, mozinfo)
 
         # Don't prune any manifests if we're on a backstop push or there was a timeout.
-        if is_backstop(self.params) or self.timedout:
+        if self.params["backstop"] or self.timedout:
             return manifests
 
         try:
-            data = push_schedules(self.params['project'], self.params['head_rev'])
+            data = push_schedules(self.params["project"], self.params["head_rev"])
         except BugbugTimeoutException:
             logger.warning("Timed out waiting for bugbug, loading all test manifests.")
             self.timedout = True
             return self.get_manifests(suite, mozinfo)
 
-        bugbug_manifests = {m for m, c in data.get('groups', {}).items()
-                            if c >= self.CONFIDENCE_THRESHOLD}
+        bugbug_manifests = {
+            m
+            for m, c in data.get("groups", {}).items()
+            if c >= self.CONFIDENCE_THRESHOLD
+        }
 
-        manifests['active'] = list(set(manifests['active']) & bugbug_manifests)
-        manifests['skipped'] = list(set(manifests['skipped']) & bugbug_manifests)
+        manifests["active"] = list(set(manifests["active"]) & bugbug_manifests)
+        manifests["skipped"] = list(set(manifests["skipped"]) & bugbug_manifests)
         return manifests
 
 
 manifest_loaders = {
-    'bugbug': BugbugLoader,
-    'default': DefaultLoader,
+    "bugbug": BugbugLoader,
+    "default": DefaultLoader,
 }
+
+_loader_cache = {}
+
+
+def get_manifest_loader(name, params):
+    # Ensure we never create more than one instance of the same loader type for
+    # performance reasons.
+    if name in _loader_cache:
+        return _loader_cache[name]
+
+    loader = manifest_loaders[name](dict(params))
+    _loader_cache[name] = loader
+    return loader

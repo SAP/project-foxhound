@@ -45,7 +45,6 @@ Project names are the repositories.  They can be:
 * `mozilla-central`
 * `mozilla-beta`
 * `mozilla-release`
-* `mozilla-esr68`
 * `mozilla-esr78`
 * ... A partial list can be found in taskcluster/taskgraph/util/attributes.py
 
@@ -309,6 +308,12 @@ build kinds where the full crashsymbols should be enabled, set this attribute
 to True. The full symbol packages will then be generated and uploaded on
 release branches and on try.
 
+skip-upload-crashsymbols
+========================
+Shippable/nightly builds are normally required to set enable-full-crashsymbols,
+but in some limited corner cases (universal builds), that is not wanted, because
+the symbols are uploaded independently already.
+
 cron
 ====
 Indicates that a task is meant to be run via cron tasks, and should not be run
@@ -326,6 +331,13 @@ identify the current version of the artifacts. See :py:mod:`taskgraph.util.cache
        digest: 66dfc2204600b48d92a049b6a18b83972bb9a92f9504c06608a9c20eb4c9d8ae
        name: debian7-base
        type: docker-images.v2
+
+eager_indexes
+=============
+A list of strings of indexes to populate before the task ever completes. Some tasks (e.g. cached tasks) we
+want to exist in the index before they even run/complete. Our current use is to allow us to depend on an
+unfinished cached task in future pushes. This avoids extra overhead from multiple tasks running, and
+can allow us to have our results in just a bit earlier.
 
 required_signoffs
 =================
@@ -359,6 +371,12 @@ If a task set this boolean attribute to `true`, it will be processed by the code
 review bot, the task will ran for every new Phabricator diff.
 Any supported and detected issue will be automatically reported on the
 Phabricator revision.
+
+resource-monitor
+================
+If a task set this boolean attribute to `true`, it will collect CPU, memory, and
+- if available - Disk and Network IO by running the resource-monitor utility,
+provided through fetches.
 
 retrigger
 =========

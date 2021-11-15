@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "jit/BitSet.h"
+#include "jit/CompileInfo.h"
 #include "js/Printf.h"
 
 using namespace js;
@@ -675,6 +676,14 @@ bool BacktrackingAllocator::buildLivenessInfo() {
           }
         }
 
+        // * For non-call instructions, temps cover both the input and output,
+        //   so temps never alias uses (even at-start uses) or defs.
+        // * For call instructions, temps only cover the input (the output is
+        //   used for the force-spill ranges added above). This means temps
+        //   still don't alias uses but they can alias the (fixed) defs. For now
+        //   we conservatively require temps to have a fixed register for call
+        //   instructions to prevent a footgun.
+        MOZ_ASSERT_IF(ins->isCall(), temp->policy() == LDefinition::FIXED);
         CodePosition to =
             ins->isCall() ? outputOf(*ins) : outputOf(*ins).next();
 
@@ -698,18 +707,6 @@ bool BacktrackingAllocator::buildLivenessInfo() {
                         use->usedAtStart());
 
 #ifdef DEBUG
-          // Don't allow at-start call uses if there are temps of the same kind,
-          // so that we don't assign the same register. Only allow this when the
-          // use and temp are fixed registers, as they can't alias.
-          if (ins->isCall() && use->usedAtStart()) {
-            for (size_t i = 0; i < ins->numTemps(); i++) {
-              MOZ_ASSERT_IF(
-                  !ins->getTemp(i)->isBogusTemp(),
-                  vreg(ins->getTemp(i)).type() != vreg(use).type() ||
-                      (use->isFixedRegister() && ins->getTemp(i)->isFixed()));
-            }
-          }
-
           // If there are both useRegisterAtStart(x) and useRegister(y)
           // uses, we may assign the same register to both operands
           // (bug 772830). Don't allow this for now.
@@ -1627,16 +1624,11 @@ bool BacktrackingAllocator::tryAllocateRegister(PhysicalRegister& r,
 #endif
 
     if (conflicting.empty()) {
-      if (!conflicting.appendAll(aliasedConflicting)) {
-        return false;
-      }
+      conflicting = std::move(aliasedConflicting);
     } else {
       if (maximumSpillWeight(aliasedConflicting) <
           maximumSpillWeight(conflicting)) {
-        conflicting.clear();
-        if (!conflicting.appendAll(aliasedConflicting)) {
-          return false;
-        }
+        conflicting = std::move(aliasedConflicting);
       }
     }
     return true;
@@ -1684,6 +1676,35 @@ bool BacktrackingAllocator::evictBundle(LiveBundle* bundle) {
 
 bool BacktrackingAllocator::splitAndRequeueBundles(
     LiveBundle* bundle, const LiveBundleVector& newBundles) {
+#ifdef DEBUG
+  if (newBundles.length() == 1) {
+    LiveBundle* newBundle = newBundles[0];
+    if (newBundle->numRanges() == bundle->numRanges() &&
+        computePriority(newBundle) == computePriority(bundle)) {
+      bool different = false;
+      LiveRange::BundleLinkIterator oldRanges = bundle->rangesBegin();
+      LiveRange::BundleLinkIterator newRanges = newBundle->rangesBegin();
+      while (oldRanges) {
+        LiveRange* oldRange = LiveRange::get(*oldRanges);
+        LiveRange* newRange = LiveRange::get(*newRanges);
+        if (oldRange->from() != newRange->from() ||
+            oldRange->to() != newRange->to()) {
+          different = true;
+          break;
+        }
+        oldRanges++;
+        newRanges++;
+      }
+
+      // This is likely to trigger an infinite loop in register allocation. This
+      // can be the result of invalid register constraints, making regalloc
+      // impossible; consider relaxing those.
+      MOZ_ASSERT(different,
+                 "Split results in the same bundle with the same priority");
+    }
+  }
+#endif
+
   if (JitSpewEnabled(JitSpew_RegAlloc)) {
     JitSpew(JitSpew_RegAlloc,
             "    splitting bundle %s into:", bundle->toString().get());

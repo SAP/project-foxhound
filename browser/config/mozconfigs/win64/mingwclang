@@ -2,12 +2,9 @@
 #    MOZ_AUTOMATION flags
 #    SOCORRO_SYMBOL_UPLOAD_TOKEN_FILE - shouldn't be used?
 #    TOOLTOOL_DIR
-#    MAKECAB - shouldn't be used?
 #    DUMP_SYMS - isn't used.
 . "$topsrcdir/build/mozconfig.win-common"
 
-# MinGW does not have (or need) makecab
-unset MAKECAB
 unset DUMP_SYMS
 
 # Sets:
@@ -15,7 +12,6 @@ unset DUMP_SYMS
 #    AUTOCLOBBER=1
 #    --enable-crashreporter
 #    --enable-release
-#    LLVM_CONFIG
 #    MOZ_ADDON_SIGNING
 #    MOZ_REQUIRE_SIGNING
 #    --enable-js-shell

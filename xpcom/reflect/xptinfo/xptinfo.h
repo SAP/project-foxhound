@@ -505,6 +505,17 @@ struct nsXPTMethodInfo {
 // The fields in nsXPTMethodInfo were carefully ordered to minimize size.
 static_assert(sizeof(nsXPTMethodInfo) == 8, "wrong size");
 
+// This number is chosen to be no larger than the maximum number of parameters
+// any XPIDL-defined function needs; there is a static assert in the generated
+// code from xptcodegen.py to verify that decision.  It is therefore also the
+// maximum number of stack allocated nsXPTCMiniVariant structures for argument
+// passing purposes in PrepareAndDispatch implementations.
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+#  define PARAM_BUFFER_COUNT 18
+#else
+#  define PARAM_BUFFER_COUNT 14
+#endif
+
 /**
  * A nsXPTConstantInfo is used to describe a single interface constant.
  */

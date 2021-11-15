@@ -2080,10 +2080,7 @@ void TrackBuffersManager::InsertFrames(TrackBuffer& aSamples,
   // the previous step and the next random access point after those removed
   // frames.
 
-  TimeIntervals intersection = trackBuffer.mBufferedRanges;
-  intersection.Intersection(aIntervals);
-
-  if (!intersection.IsEmpty()) {
+  if (trackBuffer.mBufferedRanges.IntersectsStrict(aIntervals)) {
     if (aSamples[0]->mKeyframe &&
         (mType.Type() == MEDIAMIMETYPE("video/webm") ||
          mType.Type() == MEDIAMIMETYPE("audio/webm"))) {
@@ -2862,7 +2859,7 @@ void TrackBuffersManager::TrackData::AddSizeOfResources(
 
 void TrackBuffersManager::GetDebugInfo(
     dom::TrackBuffersManagerDebugInfo& aInfo) {
-  aInfo.mType = NS_ConvertUTF8toUTF16(mType.Type().AsString());
+  CopyUTF8toUTF16(mType.Type().AsString(), aInfo.mType);
 
   if (HasAudio()) {
     aInfo.mNextSampleTime = mAudioTracks.mNextSampleTime.ToSeconds();

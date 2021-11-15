@@ -146,12 +146,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // After the parent document has been fully cloned, a new frameloader will be
   // created for the cloned iframe, and `FinishStaticClone` will be called on
   // it, which will clone the inner document of the source nsFrameLoader.
-  //
-  // The `aCloneDocShell` and `aCloneDocument` outparameters will be filled with
-  // the values from the newly cloned subframe.
   nsresult FinishStaticClone(nsFrameLoader* aStaticCloneOf,
-                             nsIDocShell** aCloneDocShell,
-                             Document** aCloneDocument);
+                             bool* aOutHasInProcessPrintCallbacks);
+
+  nsresult DoRemoteStaticClone(nsFrameLoader* aStaticCloneOf);
 
   // WebIDL methods
 
@@ -224,6 +222,13 @@ class nsFrameLoader final : public nsStubMutationObserver,
   void RequestEpochUpdate(uint32_t aEpoch);
 
   void RequestSHistoryUpdate(bool aImmediately = false);
+
+  already_AddRefed<Promise> PrintPreview(
+      nsIPrintSettings* aPrintSettings,
+      const mozilla::dom::Optional<uint64_t>& aSourceOuterWindowID,
+      mozilla::ErrorResult& aRv);
+
+  void ExitPrintPreview();
 
   already_AddRefed<Promise> Print(uint64_t aOuterWindowID,
                                   nsIPrintSettings* aPrintSettings,

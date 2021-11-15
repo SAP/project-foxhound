@@ -40,9 +40,10 @@ add_task(async function() {
 
   let failed = false;
   for (const [key, packet] of generatedStubs) {
-    const packetStr = getSerializedPacket(packet);
+    const packetStr = getSerializedPacket(packet, { sortKeys: true });
     const existingPacketStr = getSerializedPacket(
-      existingStubs.rawPackets.get(key)
+      existingStubs.rawPackets.get(key),
+      { sortKeys: true }
     );
     is(packetStr, existingPacketStr, `"${key}" packet has expected value`);
     failed = failed || packetStr !== existingPacketStr;
@@ -79,8 +80,10 @@ async function generatePlatformMessagesStubs() {
   // resource to `handlePlatformMessage`, dynamically updated for each command.
   let handlePlatformMessage = function() {};
 
-  const onPlatformMessageAvailable = ({ resource }) => {
-    handlePlatformMessage(resource);
+  const onPlatformMessageAvailable = resources => {
+    for (const resource of resources) {
+      handlePlatformMessage(resource);
+    }
   };
   await resourceWatcher.watchResources(
     [resourceWatcher.TYPES.PLATFORM_MESSAGE],
@@ -100,7 +103,7 @@ async function generatePlatformMessagesStubs() {
     stubs.set(key, getCleanedPacket(key, packet));
   }
 
-  resourceWatcher.targetList.stopListening();
+  resourceWatcher.targetList.destroy();
   await client.close();
 
   return stubs;

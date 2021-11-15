@@ -11,6 +11,7 @@
 #include "mozilla/Unused.h"
 
 #include "ds/OrderedHashTable.h"
+#include "gc/Barrier.h"
 #include "js/SliceBudget.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
@@ -25,6 +26,8 @@ class WeakMapBase;
 static const size_t NON_INCREMENTAL_MARK_STACK_BASE_CAPACITY = 4096;
 static const size_t INCREMENTAL_MARK_STACK_BASE_CAPACITY = 32768;
 static const size_t SMALL_MARK_STACK_BASE_CAPACITY = 256;
+
+enum class SlotsOrElementsKind { Elements, FixedSlots, DynamicSlots };
 
 namespace gc {
 
@@ -81,10 +84,9 @@ class MarkStack {
    * the context of push or pop operation.
    */
   enum Tag {
-    ValueArrayTag,
+    SlotsOrElementsRangeTag,
     ObjectTag,
     GroupTag,
-    SavedValueArrayTag,
     JitCodeTag,
     ScriptTag,
     TempRopeTag,
@@ -110,29 +112,26 @@ class MarkStack {
     template <typename T>
     T* as() const;
 
-    JSObject* asValueArrayObject() const;
-    JSObject* asSavedValueArrayObject() const;
+    JSObject* asRangeObject() const;
     JSRope* asTempRope() const;
 
     void assertValid() const;
   };
 
-  struct ValueArray {
-    ValueArray(JSObject* obj, HeapSlot* start, HeapSlot* end);
+  struct SlotsOrElementsRange {
+    SlotsOrElementsRange(SlotsOrElementsKind kind, JSObject* obj, size_t start);
     void assertValid() const;
 
-    HeapSlot* end;
-    HeapSlot* start;
-    TaggedPtr ptr;
-  };
+    SlotsOrElementsKind kind() const;
+    size_t start() const;
+    TaggedPtr ptr() const;
 
-  struct SavedValueArray {
-    SavedValueArray(JSObject* obj, size_t index, HeapSlot::Kind kind);
-    void assertValid() const;
+    static constexpr size_t StartShift = 2;
+    static constexpr size_t KindMask = (1 << StartShift) - 1;
 
-    uintptr_t kind;
-    uintptr_t index;
-    TaggedPtr ptr;
+   private:
+    uintptr_t startAndKind_;
+    TaggedPtr ptr_;
   };
 
   explicit MarkStack(size_t maxCapacity = DefaultCapacity);
@@ -156,9 +155,8 @@ class MarkStack {
   template <typename T>
   MOZ_MUST_USE bool push(T* ptr);
 
-  MOZ_MUST_USE bool push(JSObject* obj, HeapSlot* start, HeapSlot* end);
-  MOZ_MUST_USE bool push(const ValueArray& array);
-  MOZ_MUST_USE bool push(const SavedValueArray& array);
+  MOZ_MUST_USE bool push(JSObject* obj, SlotsOrElementsKind kind, size_t start);
+  MOZ_MUST_USE bool push(const SlotsOrElementsRange& array);
 
   // GCMarker::eagerlyMarkChildren uses unused marking stack as temporary
   // storage to hold rope pointers.
@@ -168,8 +166,7 @@ class MarkStack {
 
   Tag peekTag() const;
   TaggedPtr popPtr();
-  ValueArray popValueArray();
-  SavedValueArray popSavedValueArray();
+  SlotsOrElementsRange popSlotsOrElementsRange();
 
   void clear() {
     // Fall back to the smaller initial capacity so we don't hold on to excess
@@ -229,13 +226,10 @@ class MarkStackIter {
   bool done() const;
   MarkStack::Tag peekTag() const;
   MarkStack::TaggedPtr peekPtr() const;
-  MarkStack::ValueArray peekValueArray() const;
+  MarkStack::SlotsOrElementsRange peekSlotsOrElementsRange() const;
   void next();
   void nextPtr();
   void nextArray();
-
-  // Mutate the current ValueArray to a SavedValueArray.
-  void saveValueArray(const MarkStack::SavedValueArray& savedArray);
 
  private:
   size_t position() const;
@@ -421,7 +415,8 @@ class GCMarker : public JSTracer {
   template <typename T>
   inline void pushTaggedPtr(T* ptr);
 
-  inline void pushValueArray(JSObject* obj, HeapSlot* start, HeapSlot* end);
+  inline void pushValueRange(JSObject* obj, SlotsOrElementsKind kind,
+                             size_t start, size_t end);
 
   bool isMarkStackEmpty() { return stack.isEmpty() && auxStack.isEmpty(); }
 
@@ -432,16 +427,6 @@ class GCMarker : public JSTracer {
   bool hasGrayEntries() const {
     return !getStack(gc::MarkColor::Gray).isEmpty();
   }
-
-  MOZ_MUST_USE bool restoreValueArray(
-      const gc::MarkStack::SavedValueArray& array, HeapSlot** vpp,
-      HeapSlot** endp);
-  gc::MarkStack::ValueArray restoreValueArray(
-      const gc::MarkStack::SavedValueArray& savedArray);
-
-  void saveValueRanges();
-  gc::MarkStack::SavedValueArray saveValueRange(
-      const gc::MarkStack::ValueArray& array);
 
   inline void processMarkStackTop(SliceBudget& budget);
 
@@ -578,12 +563,5 @@ class MOZ_RAII AutoSetMarkColor {
 } /* namespace gc */
 
 } /* namespace js */
-
-// Exported for Tracer.cpp
-inline bool ThingIsPermanentAtomOrWellKnownSymbol(js::gc::Cell* thing) {
-  return false;
-}
-bool ThingIsPermanentAtomOrWellKnownSymbol(JSString*);
-bool ThingIsPermanentAtomOrWellKnownSymbol(JS::Symbol*);
 
 #endif /* gc_GCMarker_h */

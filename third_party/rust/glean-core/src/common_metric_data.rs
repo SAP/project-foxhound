@@ -12,6 +12,7 @@ use crate::Glean;
 ///
 /// A metric's lifetime determines when its stored data gets reset.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(i32)] // Use i32 to be compatible with our JNA definition
 pub enum Lifetime {
     /// The metric is reset with each sent ping
     Ping,
@@ -74,7 +75,7 @@ pub struct CommonMetricData {
 }
 
 impl CommonMetricData {
-    /// Create a new metadata object.
+    /// Creates a new metadata object.
     pub fn new<A: Into<String>, B: Into<String>, C: Into<String>>(
         category: A,
         name: B,

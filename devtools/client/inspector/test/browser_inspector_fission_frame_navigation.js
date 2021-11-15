@@ -12,8 +12,6 @@ const TEST_ORG_URI =
   ORG_URL_ROOT + "doc_inspector_fission_frame_navigation.html";
 
 add_task(async function() {
-  await pushPref("devtools.contenttoolbox.fission", true);
-
   const { inspector } = await openInspectorForURL(TEST_ORG_URI);
   const tree = `
     id="root"
@@ -68,8 +66,6 @@ add_task(async function navigateFrameNotExpandedInMarkupView() {
     return;
   }
 
-  await pushPref("devtools.contenttoolbox.fission", true);
-
   const { inspector } = await openInspectorForURL(TEST_ORG_URI);
   const resourceWatcher = inspector.toolbox.resourceWatcher;
 
@@ -81,13 +77,10 @@ add_task(async function navigateFrameNotExpandedInMarkupView() {
   //
   // The iframe we are about to navigate is therefore hidden and we are not
   // watching it - ie, it is not in the list of known NodeFronts/Actors.
-  const { resource, targetFront } = await navigateIframeTo(
-    inspector,
-    EXAMPLE_COM_URI
-  );
+  const resource = await navigateIframeTo(inspector, EXAMPLE_COM_URI);
 
   is(
-    resource?.resourceType,
+    resource.resourceType,
     resourceWatcher.TYPES.ROOT_NODE,
     "A resource with resourceType ROOT_NODE was received when navigating"
   );
@@ -108,30 +101,24 @@ add_task(async function navigateFrameNotExpandedInMarkupView() {
   // This should be fixed when implementing the RootNode resource on the server
   // in https://bugzilla.mozilla.org/show_bug.cgi?id=1644190
   todo(
-    !targetFront.getCachedFront("inspector"),
+    !resource.targetFront.getCachedFront("inspector"),
     "The inspector front for the new target should not be initialized"
   );
 });
 
 async function navigateIframeTo(inspector, url) {
   info("Navigate the test iframe to " + url);
-  const resourceWatcher = inspector.toolbox.resourceWatcher;
-  let onNewRoot;
-  if (isFissionEnabled()) {
-    // With Fission, the frame navigation will result in a new root-node
-    // resource.
-    onNewRoot = waitForResourceOnce(
-      resourceWatcher,
-      resourceWatcher.TYPES.ROOT_NODE
-    );
-  } else {
-    // Without Fission, the frame navigation is handled on the server and will
-    // create two (fake) mutations: frameLoad + childList.
-    onNewRoot = Promise.all([
-      waitForMutation(inspector, "childList"),
-      waitForMutation(inspector, "frameLoad"),
-    ]);
-  }
+
+  const { resourceWatcher, targetList } = inspector.toolbox;
+  const onTargetProcessed = waitForTargetProcessed(targetList, url);
+
+  const onNewRoot = waitForNextResource(
+    resourceWatcher,
+    resourceWatcher.TYPES.ROOT_NODE,
+    {
+      ignoreExistingResources: true,
+    }
+  );
 
   info("Update the src attribute of the iframe tag");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [url], function(_url) {
@@ -144,6 +131,30 @@ async function navigateIframeTo(inspector, url) {
   info("Wait for pending children updates");
   await inspector.markup._waitForChildren();
 
+  if (isFissionEnabled()) {
+    info("Wait until the new target has been processed by TargetList");
+    await onTargetProcessed;
+  }
+
   // Note: the newRootResult changes when the test runs with or without fission.
   return newRootResult;
+}
+
+/**
+ * Returns a promise that waits until the provided TargetList has fully
+ * processed a target with the provided URL.
+ * This will avoid navigating again before the new resource watchers have fully
+ * attached to the new target.
+ */
+function waitForTargetProcessed(targetList, url) {
+  return new Promise(resolve => {
+    const onTargetProcessed = targetFront => {
+      if (targetFront.url !== encodeURI(url)) {
+        return;
+      }
+      targetList.off("processed-available-target", onTargetProcessed);
+      resolve();
+    };
+    targetList.on("processed-available-target", onTargetProcessed);
+  });
 }

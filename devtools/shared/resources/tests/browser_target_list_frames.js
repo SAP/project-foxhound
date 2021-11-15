@@ -10,9 +10,8 @@ const { TargetList } = require("devtools/shared/resources/target-list");
 const FISSION_TEST_URL = URL_ROOT_SSL + "/fission_document.html";
 
 add_task(async function() {
-  // Enabled fission's prefs as the TargetList is almost disabled without it
+  // Enabled fission prefs
   await pushPref("devtools.browsertoolbox.fission", true);
-  await pushPref("devtools.contenttoolbox.fission", true);
   // Disable the preloaded process as it gets created lazily and may interfere
   // with process count assertions
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -103,7 +102,8 @@ async function testBrowserFrames(mainRoot) {
   ok(hasTabDocument, "retrieve the target for tab via getAllTargets");
   */
 
-  targetList.stopListening();
+  targetList.destroy();
+  await waitForAllTargetsToBeAttached(targetList);
 }
 
 async function testTabFrames(mainRoot) {
@@ -119,7 +119,13 @@ async function testTabFrames(mainRoot) {
 
   // Check that calling getAllTargets([frame]) return the same target instances
   const frames = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
-  is(frames.length, 1, "retrieved only the top level document");
+  // When fission is enabled, we also get the remote example.org iframe.
+  const expectedFramesCount = isFissionEnabled() ? 2 : 1;
+  is(
+    frames.length,
+    expectedFramesCount,
+    "retrieved only the top level document"
+  );
 
   // Assert that watchTargets will call the create callback for all existing frames
   const targets = [];
@@ -141,16 +147,17 @@ async function testTabFrames(mainRoot) {
     frames.length,
     "retrieved the same number of frames via watchTargets"
   );
-  for (let i = 0; i < frames.length; i++) {
-    is(
-      frames[i],
-      targets[i],
-      `frame ${i} targets are the same via watchTargets`
+
+  for (const frame of frames) {
+    ok(
+      targets.find(t => t === frame),
+      "frame " + frame.actorID + " target is the same via watchTargets"
     );
   }
   targetList.unwatchTargets([TargetList.TYPES.FRAME], onAvailable);
 
-  targetList.stopListening();
+  targetList.destroy();
+  await waitForAllTargetsToBeAttached(targetList);
 
   BrowserTestUtils.removeTab(tab);
 }

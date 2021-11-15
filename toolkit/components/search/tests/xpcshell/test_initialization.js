@@ -5,7 +5,11 @@ let getStub;
 
 add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
-  getStub = await useTestEngines("simple-engines");
+  getStub = await SearchTestUtils.useTestEngines("simple-engines");
+
+  // We are testing receiving an empty configuration.
+  consoleAllowList.push("Received empty search configuration");
+  consoleAllowList.push("_init: failure initializing search:");
 });
 
 add_task(async function test_init_success() {
@@ -16,7 +20,7 @@ add_task(async function test_init_success() {
   Assert.equal(
     scalars["browser.searchinit.init_result_status_code"],
     Cr.NS_OK,
-    "Should have recorded the engines cache as not corrupted"
+    "Should have recorded the engine settings as not corrupted"
   );
 
   await Services.search.init();

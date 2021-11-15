@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ApiMsg, DebugCommand, DebugFlags};
 use api::units::DeviceIntSize;
+use api::channel::{fast_channel, Sender, Receiver};
+use api::DebugFlags;
+use crate::render_api::{ApiMsg, DebugCommand};
 use crate::print_tree::PrintTreePrinter;
 use crate::renderer;
-use std::sync::mpsc::{channel, Receiver};
-use std::sync::mpsc::Sender;
 use std::thread;
 use ws;
 use base64::encode;
@@ -111,7 +111,7 @@ pub struct DebugServerImpl {
 
 impl DebugServerImpl {
     pub fn new(api_tx: Sender<ApiMsg>) -> DebugServerImpl {
-        let (debug_tx, debug_rx) = channel();
+        let (debug_tx, debug_rx) = fast_channel(64);
 
         let socket = ws::Builder::new()
             .build(move |out| {

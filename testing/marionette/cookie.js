@@ -4,15 +4,18 @@
 
 "use strict";
 
+const EXPORTED_SYMBOLS = ["cookie"];
+
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { assert } = ChromeUtils.import("chrome://marionette/content/assert.js");
-const { InvalidCookieDomainError, UnableToSetCookieError } = ChromeUtils.import(
-  "chrome://marionette/content/error.js"
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
-const { pprint } = ChromeUtils.import("chrome://marionette/content/format.js");
 
-this.EXPORTED_SYMBOLS = ["cookie"];
+XPCOMUtils.defineLazyModuleGetters(this, {
+  assert: "chrome://marionette/content/assert.js",
+  error: "chrome://marionette/content/error.js",
+  pprint: "chrome://marionette/content/format.js",
+});
 
 const IPV4_PORT_EXPR = /:\d+$/;
 
@@ -164,7 +167,7 @@ cookie.add = function(
         isIpAddress = true;
         break;
       default:
-        throw new InvalidCookieDomainError(newCookie.domain);
+        throw new error.InvalidCookieDomainError(newCookie.domain);
     }
   }
 
@@ -180,7 +183,7 @@ cookie.add = function(
       "." + restrictToHost !== newCookie.domain &&
       restrictToHost !== newCookie.domain
     ) {
-      throw new InvalidCookieDomainError(
+      throw new error.InvalidCookieDomainError(
         `Cookies may only be set ` +
           `for the current domain (${restrictToHost})`
       );
@@ -220,7 +223,7 @@ cookie.add = function(
       schemeType
     );
   } catch (e) {
-    throw new UnableToSetCookieError(e);
+    throw new error.UnableToSetCookieError(e);
   }
 };
 

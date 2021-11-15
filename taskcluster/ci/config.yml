@@ -28,8 +28,14 @@ treeherder:
         'Btime-live-ChR': 'Browsertime performance tests on Firefox'
         'Btime-ChR': 'Browsertime performance tests on Google Chrome Release'
         'Btime-Cr': 'Browsertime performance tests on Google Chromium'
-        'Btime-P': 'Browsertime power tests on Firefox'
-        'Btime-P-1proc': 'Browsertime power tests on Firefox without e10s'
+        'Btime-P': 'Browsertime power tests on Firefox/Geckoview'
+        'Btime-P-wr': 'Browsertime power tests on Firefox/Geckoview with webrender enabled'
+        'Btime-P-fenix': 'Browsertime power tests on Fenix'
+        'Btime-P-fenix-wr': 'Browsertime power tests on Fenix with webrender enabled'
+        'Btime-P-1proc': 'Browsertime power tests on Fennec'
+        'Btime-P-1proc-wr': 'Browsertime power tests on Fennec with webrender enabled'
+        'Btime-P-refbrow': 'Browsertime power tests on reference browser'
+        'Btime-P-refbrow-wr': 'Browsertime power tests on reference browser with webrender enabled'
         'Btime-fenix': 'Browsertime performance tests on Fenix'
         'Btime-fenix-wr': 'Browsertime performance tests on Fenix with webrender enabled'
         'Btime-fennec': 'Browsertime performance tests on Fennec'
@@ -41,6 +47,7 @@ treeherder:
         'Btime-Prof-fennec-1proc': 'Browsertime performance tests on Fennec without e10s with Gecko Profiling'
         'Btime-Prof-refbrow': 'Browsertime performance tests on the reference browser with Gecko Profiling'
         'Btime-wr': 'Browsertime performance tests on Android with webrender enabled'
+        'Btime-live-wr': 'Browsertime performance tests on Android with webrender enabled'
         'Fetch': 'Fetch and store content'
         'Fxfn-l': 'Firefox functional tests (local)'
         'Fxfn-l-1proc': 'Firefox functional tests (local) without e10s'
@@ -55,13 +62,18 @@ treeherder:
         'M-gli': 'Mochitests with WebGL over IPC'
         'M-spi': 'Mochitests with socket process'
         'M-spi-1proc': 'Mochitests with socket process without e10s'
+        'M-spi-nw': 'Mochitests with networking on socket process'
+        'M-spi-nw-1proc': 'Mochitests with networking on socket process without e10s'
         'M-V-1proc': 'Mochitests on Valgrind without e10s'
         'MSI': 'Repack installers into MSIs'
         'MSIs': 'Signing of Repacked installers of MSIs'
         'R': 'Reftests'
         'R-1proc': 'Reftests without e10s'
         'R-fis': 'Reftests with fission enabled'
+        'R-swr': 'Reftests with software webrender enabled'
         'Rap': 'Raptor performance tests on Firefox'
+        'Rap-wr': 'Raptor performance tests on Firefox'
+        'Rap-live': 'Raptor performance tests on Firefox with live sites'
         'Rap-1proc': 'Raptor performance tests on Firefox without e10s'
         'Rap-fis': 'Raptor performance tests on Firefox with fission enabled'
         'Rap-Prof': 'Raptor performance tests on Firefox with Gecko Profiling'
@@ -74,6 +86,7 @@ treeherder:
         'Rap-fennec': 'Raptor performance tests on Fennec'
         'Rap-fennec-1proc': 'Raptor performance tests on Fennec without e10s'
         'Rap-refbrow': 'Raptor performance tests on the reference browser'
+        'Rap-refbrow-wr': 'Raptor performance tests on the reference browser'
         'remote': 'Remote debugging protocol tests'
         'T': 'Talos performance tests'
         'T-1proc': 'Talos performance tests without e10s'
@@ -83,6 +96,7 @@ treeherder:
         'T-Prof-1proc': 'Talos performance tests on Firefox with Gecko Profiling and without e10s'
         'T-Prof-fis': 'Talos performance tests on Firefox with fission and Gecko Profiling'
         'T-Prof-gli': 'Talos performance tests with WebGL over IPC and Gecko Profiling'
+        'T-swr': 'Talos performance tests with software webrender enabled'
         'Tss': 'Talos performance tests, Stylo sequential'
         'Tss-fis': 'Talos performance tests, Stylo sequential with fission enabled'
         'Tss-1proc': 'Talos performance tests with Stylo sequential without e10s'
@@ -159,6 +173,7 @@ treeherder:
         'doc': 'Documentation'
         'GhS': 'GitHub Synchronization'
         'perftest': 'Performance tests'
+        'perftest-http3': 'Performance tests with HTTP/3'
 
 index:
     products:
@@ -194,6 +209,7 @@ try:
             - 'sm-msan-linux64'
             - 'sm-fuzzing-linux64'
             - 'sm-rust-bindings-linux64'
+            - 'sm-nowarp-linux64'
         'win32':
             - 'sm-plain-win32'
             - 'sm-compacting-win32'
@@ -212,15 +228,23 @@ release-promotion:
             product: firefox
             target-tasks-method: promote_desktop
             partial-updates: true
-        promote_firefox_partners:
+        promote_firefox_partner_repack:
             product: firefox
             rebuild-kinds:
                 - release-partner-repack
-                - release-partner-beetmover
                 - release-partner-repack-chunking-dummy
-                - release-partner-repackage-signing
-                - release-partner-repackage
-                - release-partner-signing
+                - release-partner-repack-signing
+                - release-partner-repack-notarization-part-1
+                - release-partner-repack-notarization-poller
+                - release-partner-repack-repackage
+                - release-partner-repack-repackage-signing
+                - release-partner-repack-beetmover
+            target-tasks-method: promote_desktop
+        promote_firefox_partner_attribution:
+            product: firefox
+            rebuild-kinds:
+                - release-partner-attribution
+                - release-partner-attribution-beetmover
             target-tasks-method: promote_desktop
         promote_firefox_rc:
             product: firefox
@@ -324,24 +348,6 @@ merge-automation:
             base-tag: "FIREFOX_ESR_{major_version}_BASE"
             from-repo: 'https://hg.mozilla.org/releases/mozilla-release'
             from-branch: 'release'
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr68'
-            to-branch: 'esr68'
-        release-to-esr78:
-            fetch-version-from: "browser/config/version.txt"
-            version-files:
-                - filename: "browser/config/version_display.txt"
-                  new-suffix: 'esr'
-            replacements:
-                - - "build/mozconfig.common"
-                  - "# Enable enforcing that add-ons are signed by the trusted root"
-                  - "# Disable enforcing that add-ons are signed by the trusted root"
-                - - build/mozconfig.common
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-1}'
-                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-0}'
-            merge-old-head: false
-            base-tag: "FIREFOX_ESR_{major_version}_BASE"
-            from-repo: 'https://hg.mozilla.org/releases/mozilla-release'
-            from-branch: 'release'
             to-repo: 'https://hg.mozilla.org/releases/mozilla-esr78'
             to-branch: 'esr78'
         bump-central:
@@ -376,31 +382,6 @@ merge-automation:
                   version-bump: "minor"
                 - filename: "browser/config/version_display.txt"
                   version-bump: "minor"
-                - filename: "mobile/android/config/version-files/beta/version.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/beta/version_display.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/nightly/version.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/nightly/version_display.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/release/version.txt"
-                  version-bump: "minor"
-                - filename: "mobile/android/config/version-files/release/version_display.txt"
-                  version-bump: "minor"
-            replacements: []
-            merge-old-head: false
-            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr68'
-            to-branch: 'esr68'
-        bump-esr78:
-            fetch-version-from: "browser/config/version.txt"
-            version-files:
-                - filename: "config/milestone.txt"
-                  version-bump: "minor"
-                - filename: "browser/config/version.txt"
-                  version-bump: "minor"
-                - filename: "browser/config/version_display.txt"
-                  version-bump: "minor"
             replacements: []
             merge-old-head: false
             to-repo: 'https://hg.mozilla.org/releases/mozilla-esr78'
@@ -425,6 +406,16 @@ partner-urls:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/esr-repack-manifests.git'
                             staging: 'git@github.com:moz-releng-automation-stage/esr-repack-manifests.git'
+    release-partner-attribution:
+        by-release-product:
+            default: null
+            firefox:
+                by-release-type:
+                    default: null
+                    beta|release.*:
+                        by-release-level:
+                            production: 'git@github.com:mozilla-partners/repack-manifests.git'
+                            staging: 'git@github.com:moz-releng-automation-stage/repack-manifests.git'
     release-eme-free-repack:
         by-release-product:
             default: null
@@ -536,11 +527,6 @@ workers:
             implementation: treescript
             os: scriptworker
             worker-type: '{trust-domain}-1-tree-dev'
-        t-ap.*:
-            provisioner: proj-autophone
-            implementation: script-engine-autophone
-            os: linux
-            worker-type: 'gecko-{alias}'
         t-bitbar-gw.*:
             provisioner: proj-autophone
             implementation: generic-worker
@@ -555,11 +541,6 @@ workers:
             provisioner: releng-hardware
             implementation: generic-worker
             os: linux
-            worker-type: 'gecko-{alias}'
-        t-osx-1010:
-            provisioner: releng-hardware
-            implementation: generic-worker
-            os: macosx
             worker-type: 'gecko-{alias}'
         t-osx-1014:
             provisioner: releng-hardware
@@ -579,14 +560,14 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: 't-linux-xlarge'
-        t-osx-1010-pgo:
+        b-osx-1015:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
             worker-type:
                 by-level:
-                    '3': 'gecko-{level}-t-osx-1010'
-                    default: 'gecko-t-osx-1010'
+                    '3': 'gecko-3-b-osx-1015'
+                    default: 'gecko-1-b-osx-1015'
         t-osx-1014-pgo:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -600,7 +581,7 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        t-win10-64(-hw|-ref-hw):
+        t-win10-64(-hw|-ref-hw|-1803-hw):
             provisioner: releng-hardware
             implementation: generic-worker
             os: windows

@@ -41,8 +41,7 @@
 #  undef PostMessage
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void UniqueMessagePortId::ForceClose() {
   if (!mIdentifier.neutered()) {
@@ -157,8 +156,8 @@ class PostMessageRunnable final : public CancelableRunnable {
     }
 
     event->InitMessageEvent(nullptr, u"message"_ns, CanBubble::eNo,
-                            Cancelable::eNo, value, EmptyString(),
-                            EmptyString(), nullptr, ports);
+                            Cancelable::eNo, value, u""_ns, u""_ns, nullptr,
+                            ports);
     event->SetTrusted(true);
 
     mPort->DispatchEvent(*event);
@@ -834,22 +833,9 @@ void MessagePort::RemoveDocFromBFCache() {
     return;
   }
 
-  nsPIDOMWindowInner* window = GetOwner();
-  if (!window) {
-    return;
+  if (nsPIDOMWindowInner* window = GetOwner()) {
+    window->RemoveFromBFCacheSync();
   }
-
-  Document* doc = window->GetExtantDoc();
-  if (!doc) {
-    return;
-  }
-
-  nsCOMPtr<nsIBFCacheEntry> bfCacheEntry = doc->GetBFCacheEntry();
-  if (!bfCacheEntry) {
-    return;
-  }
-
-  bfCacheEntry->RemoveFromBFCacheSync();
 }
 
 /* static */
@@ -885,5 +871,4 @@ void MessagePort::DispatchError() {
   DispatchEvent(*event);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -7,6 +7,7 @@
 #ifndef nsDNSService2_h__
 #define nsDNSService2_h__
 
+#include "nsClassHashtable.h"
 #include "nsPIDNSService.h"
 #include "nsIIDNService.h"
 #include "nsIMemoryReporter.h"
@@ -59,15 +60,16 @@ class nsDNSService final : public nsPIDNSService,
                               nsIIDNService* aIDN, nsACString& aACE);
 
   nsresult AsyncResolveInternal(
-      const nsACString& aHostname, const nsACString& aTrrServer, uint16_t type,
-      uint32_t flags, nsIDNSListener* aListener, nsIEventTarget* target_,
+      const nsACString& aHostname, uint16_t type, uint32_t flags,
+      nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener,
+      nsIEventTarget* target_,
       const mozilla::OriginAttributes& aOriginAttributes,
       nsICancelable** result);
 
   nsresult CancelAsyncResolveInternal(
-      const nsACString& aHostname, const nsACString& aTrrServer, uint16_t aType,
-      uint32_t aFlags, nsIDNSListener* aListener, nsresult aReason,
-      const mozilla::OriginAttributes& aOriginAttributes);
+      const nsACString& aHostname, uint16_t aType, uint32_t aFlags,
+      nsIDNSResolverInfo* aResolver, nsIDNSListener* aListener,
+      nsresult aReason, const mozilla::OriginAttributes& aOriginAttributes);
 
   nsresult ResolveInternal(const nsACString& aHostname, uint32_t flags,
                            const mozilla::OriginAttributes& aOriginAttributes,
@@ -78,7 +80,8 @@ class nsDNSService final : public nsPIDNSService,
   RefPtr<nsHostResolver> mResolver;
   nsCOMPtr<nsIIDNService> mIDN;
 
-  // mLock protects access to mResolver, mLocalDomains and mIPv4OnlyDomains
+  // mLock protects access to mResolver, mLocalDomains, mIPv4OnlyDomains and
+  // mFailedSVCDomainNames
   mozilla::Mutex mLock;
 
   // mIPv4OnlyDomains is a comma-separated list of domains for which only
@@ -100,6 +103,7 @@ class nsDNSService final : public nsPIDNSService,
   uint32_t mResCacheExpiration;
   uint32_t mResCacheGrace;
   bool mResolverPrefsUpdated;
+  nsClassHashtable<nsCStringHashKey, nsTArray<nsCString>> mFailedSVCDomainNames;
 };
 
 #endif  // nsDNSService2_h__

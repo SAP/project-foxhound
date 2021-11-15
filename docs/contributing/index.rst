@@ -22,6 +22,14 @@ development process and source code documentation.
 
 
 .. toctree::
+   :caption: Debugging
+   :maxdepth: 1
+   :glob:
+
+   debugging/*
+
+
+.. toctree::
    :caption: Additional Information
    :maxdepth: 1
    

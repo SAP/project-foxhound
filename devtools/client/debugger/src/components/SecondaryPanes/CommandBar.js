@@ -100,6 +100,7 @@ type Props = {
   pauseOnExceptions: typeof actions.pauseOnExceptions,
   toggleSkipPausing: typeof actions.toggleSkipPausing,
   toggleInlinePreview: typeof actions.toggleInlinePreview,
+  toggleEditorWrapping: typeof actions.toggleEditorWrapping,
   toggleSourceMapsEnabled: typeof actions.toggleSourceMapsEnabled,
   toggleJavaScriptEnabled: typeof actions.toggleJavaScriptEnabled,
 };
@@ -119,14 +120,14 @@ class CommandBar extends Component<Props> {
     const { shortcuts } = this.context;
 
     COMMANDS.forEach(action =>
-      shortcuts.on(getKey(action), (_, e) => this.handleEvent(e, action))
+      shortcuts.on(getKey(action), e => this.handleEvent(e, action))
     );
 
     if (isMacOS) {
       // The Mac supports both the Windows Function keys
       // as well as the Mac non-Function keys
       COMMANDS.forEach(action =>
-        shortcuts.on(getKeyForOS("WINNT", action), (_, e) =>
+        shortcuts.on(getKeyForOS("WINNT", action), e =>
           this.handleEvent(e, action)
         )
       );
@@ -279,6 +280,13 @@ class CommandBar extends Component<Props> {
           }
         />
         <MenuItem
+          key="debugger-settings-menu-item-disable-wrap-lines"
+          checked={prefs.editorWrapping}
+          label={L10N.getStr("editorWrapping.toggle.label")}
+          tooltip={L10N.getStr("editorWrapping.toggle.tooltip")}
+          onClick={() => this.props.toggleEditorWrapping(!prefs.editorWrapping)}
+        />
+        <MenuItem
           key="debugger-settings-menu-item-disable-sourcemaps"
           checked={prefs.clientSourceMapsEnabled}
           label={L10N.getStr("settings.toggleSourceMaps.label")}
@@ -330,6 +338,7 @@ export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
   pauseOnExceptions: actions.pauseOnExceptions,
   toggleSkipPausing: actions.toggleSkipPausing,
   toggleInlinePreview: actions.toggleInlinePreview,
+  toggleEditorWrapping: actions.toggleEditorWrapping,
   toggleSourceMapsEnabled: actions.toggleSourceMapsEnabled,
   toggleJavaScriptEnabled: actions.toggleJavaScriptEnabled,
 })(CommandBar);

@@ -27,8 +27,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Embed)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLEmbedElement::HTMLEmbedElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -137,7 +136,7 @@ nsresult HTMLEmbedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   if (aNamespaceID == kNameSpaceID_None &&
       aName == nsGkAtoms::allowfullscreen && mFrameLoader) {
     if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
-      bc->SetFullscreenAllowedByOwner(AllowFullscreen());
+      MOZ_ALWAYS_SUCCEEDS(bc->SetFullscreenAllowedByOwner(AllowFullscreen()));
     }
   }
 
@@ -307,5 +306,4 @@ nsContentPolicyType HTMLEmbedElement::GetContentPolicyType() const {
   return nsIContentPolicy::TYPE_INTERNAL_EMBED;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

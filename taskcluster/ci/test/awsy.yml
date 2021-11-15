@@ -8,7 +8,7 @@ job-defaults:
     instance-size: xlarge
     virtualization:
         by-test-platform:
-            windows10-64(?:-pgo|-shippable)?-qr/.*: virtual-with-gpu
+            windows10-64(?:-shippable)?-qr/.*: virtual-with-gpu
             windows10-64/.*: virtual-with-gpu
             default: virtual
     allow-software-gl-layers: false
@@ -33,6 +33,7 @@ job-defaults:
             .*-devedition/.*: []  # don't run on devedition
             (linux|win|mac)(?!.*shippable).*/opt: []
             default: ['integration', 'mozilla-central', 'mozilla-beta', 'mozilla-release']
+    test-manifest-loader: null  # don't load tests in the taskgraph
     fission-run-on-projects:
         by-test-platform:
             linux1804-64-shippable-qr/opt: ['mozilla-central']
@@ -46,14 +47,11 @@ awsy:
 
 awsy-tp6:
     description: "Are we slim yet - tp6 pageset"
-    variants:
-        by-test-platform:
-            windows10-64-shippable-qr/opt: []  # temporary disable on win
-            default: ['fission']
+    variants: ["fission"]
     treeherder-symbol: SY(sy-tp6)
     run-on-projects:
         by-test-platform:
-            .*-ccov/.*: []  # don't run on coverage
+            .*-ccov.*/.*: []  # don't run on coverage
             .*-devedition/.*: []  # don't run on devedition
             (linux|win|mac)(?!.*shippable)(?!.*ccov).*/opt: []
             default: ['integration', 'mozilla-central', 'mozilla-beta', 'mozilla-release']

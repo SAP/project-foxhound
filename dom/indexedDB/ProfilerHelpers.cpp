@@ -16,9 +16,7 @@
 #include "Key.h"
 #include "ThreadLocal.h"
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+namespace mozilla::dom::indexedDB {
 
 namespace {
 static const char kQuote = '\"';
@@ -46,12 +44,12 @@ void LoggingHelper(bool aUseProfiler, const char* aFmt, va_list args) {
   ) {
     nsAutoCString message;
 
-    message.AppendPrintf(aFmt, args);
+    message.AppendVprintf(aFmt, args);
 
     MOZ_LOG(logModule, logLevel, ("%s", message.get()));
 
     if (aUseProfiler) {
-      PROFILER_ADD_MARKER(message.get(), DOM);
+      PROFILER_MARKER_UNTYPED(message, DOM);
     }
   }
 }
@@ -287,6 +285,4 @@ void LoggingHelper(const char* aDetailedFmt, const char* aConciseFmt, ...) {
   }
 }
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB

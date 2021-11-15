@@ -14,6 +14,7 @@
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/NativeLayer.h"
+#include "mozilla/widget/ThemeChangeKind.h"
 #include "nsRect.h"
 #include "nsIWidget.h"
 #include "nsWidgetsCID.h"
@@ -114,7 +115,8 @@ class WidgetShutdownObserver final : public nsIObserver {
  */
 
 class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
-  friend class DispatchWheelEventOnMainThread;
+  template <class EventType, class InputType>
+  friend class DispatchEventOnMainThread;
   friend class mozilla::widget::InProcessCompositorWidget;
   friend class mozilla::layers::RemoteCompositorSession;
 
@@ -348,7 +350,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   // Should be called by derived implementations to notify on system color and
   // theme changes.
-  void NotifyThemeChanged();
+  void NotifyThemeChanged(mozilla::widget::ThemeChangeKind);
   void NotifyUIStateChanged(UIStateChangeType aShowFocusRings);
 
 #ifdef ACCESSIBILITY
@@ -433,8 +435,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   void RecvToolbarAnimatorMessageFromCompositor(int32_t) override{};
   void UpdateRootFrameMetrics(const ScreenPoint& aScrollOffset,
                               const CSSToScreenScale& aZoom) override{};
-  void RecvScreenPixels(mozilla::ipc::Shmem&& aMem,
-                        const ScreenIntSize& aSize) override{};
+  void RecvScreenPixels(mozilla::ipc::Shmem&& aMem, const ScreenIntSize& aSize,
+                        bool aNeedsYFlip) override{};
 #endif
 
  protected:

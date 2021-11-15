@@ -393,7 +393,7 @@ ConnectionData.prototype = Object.freeze({
       },
       close: {
         value: async () => {
-          status.isPending = false;
+          status.isPending = true;
           status.command = "<close>";
           try {
             return await this.close();
@@ -404,8 +404,8 @@ ConnectionData.prototype = Object.freeze({
       },
       executeCached: {
         value: async (sql, ...rest) => {
-          status.isPending = false;
-          status.command = sql;
+          status.isPending = true;
+          status.command = "cached: " + sql;
           try {
             return await this.executeCached(sql, ...rest);
           } finally {
@@ -1190,6 +1190,7 @@ function cloneStorageConnection(options) {
       if (!connection) {
         log.warn("Could not clone connection: " + status);
         reject(new Error("Could not clone connection: " + status));
+        return;
       }
       log.info("Connection cloned");
       try {
@@ -1383,13 +1384,8 @@ OpenedConnection.prototype = Object.freeze({
    * @return Promise<int>
    */
   getSchemaVersion(schemaName = "main") {
-    return this.execute(`PRAGMA ${schemaName}.user_version`).then(
-      function onSuccess(result) {
-        if (result == null) {
-          return 0;
-        }
-        return result[0].getInt32(0);
-      }
+    return this.execute(`PRAGMA ${schemaName}.user_version`).then(result =>
+      result[0].getInt32(0)
     );
   },
 

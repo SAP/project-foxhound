@@ -19,6 +19,7 @@
 //! internal data structures.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use cranelift_codegen::cursor::{Cursor, FuncCursor};
 use cranelift_codegen::entity::{EntityRef, PrimaryMap, SecondaryMap};
@@ -36,6 +37,7 @@ use cranelift_wasm::{
 use crate::bindings::{self, GlobalDesc, SymbolicAddress};
 use crate::compile::{symbolic_function_name, wasm_function_name};
 use crate::isa::{platform::USES_HEAP_REG, POINTER_SIZE};
+use bindings::typecode_to_nonvoid_type;
 
 #[cfg(target_pointer_width = "64")]
 pub const POINTER_TYPE: ir::Type = ir::types::I64;
@@ -59,22 +61,41 @@ fn imm64(offset: usize) -> ir::immediates::Imm64 {
 }
 
 /// Initialize a `Signature` from a wasm signature.
+///
+/// These signatures are used by Cranelift both to perform calls (e.g., to other
+/// Wasm functions, or back to JS or native code) and to generate code that
+/// accesses its own args and sets its return value(s) properly.
+///
+/// Note that the extension modes are in principle applicable to *both* sides of
+/// the call. They must be respected when setting up args for a callee, and when
+/// setting up a return value to a caller; they may be used/relied upon when
+/// using an arg that came from a caller, or using a return value that came from
+/// a callee.
 fn init_sig_from_wsig(
     call_conv: CallConv,
-    wsig: bindings::FuncTypeWithId,
+    wsig: &bindings::FuncTypeWithId,
 ) -> WasmResult<ir::Signature> {
     let mut sig = ir::Signature::new(call_conv);
 
-    for arg in wsig.args()? {
-        sig.params.push(ir::AbiParam::new(arg));
+    for arg_type in wsig.args() {
+        let ty = typecode_to_nonvoid_type(*arg_type)?;
+        let arg = match ty {
+            // SpiderMonkey requires i32 arguments to callees (e.g., from Wasm
+            // back into JS or native code) to have their high 32 bits zero so
+            // that it can directly box them.
+            ir::types::I32 => ir::AbiParam::new(ty).uext(),
+            _ => ir::AbiParam::new(ty),
+        };
+        sig.params.push(arg);
     }
 
-    for ret_type in wsig.results()? {
-        let ret = match ret_type {
-            // Spidermonkey requires i32 returns to have their high 32 bits
+    for ret_type in wsig.results() {
+        let ty = typecode_to_nonvoid_type(*ret_type)?;
+        let ret = match ty {
+            // SpiderMonkey requires i32 returns to have their high 32 bits
             // zero so that it can directly box them.
-            ir::types::I32 => ir::AbiParam::new(ret_type).uext(),
-            _ => ir::AbiParam::new(ret_type),
+            ir::types::I32 => ir::AbiParam::new(ty).uext(),
+            _ => ir::AbiParam::new(ty),
         };
         sig.returns.push(ret);
     }
@@ -84,6 +105,16 @@ fn init_sig_from_wsig(
     sig.params.push(ir::AbiParam::special(
         POINTER_TYPE,
         ir::ArgumentPurpose::VMContext,
+    ));
+
+    // Add a callee-TLS and caller-TLS argument.
+    sig.params.push(ir::AbiParam::special(
+        POINTER_TYPE,
+        ir::ArgumentPurpose::CalleeTLS,
+    ));
+    sig.params.push(ir::AbiParam::special(
+        POINTER_TYPE,
+        ir::ArgumentPurpose::CallerTLS,
     ));
 
     Ok(sig)
@@ -96,7 +127,7 @@ pub fn init_sig(
     func_index: FuncIndex,
 ) -> WasmResult<ir::Signature> {
     let wsig = env.func_sig(func_index);
-    init_sig_from_wsig(call_conv, wsig)
+    init_sig_from_wsig(call_conv, &wsig)
 }
 
 /// An instance call may return a special value to indicate that the operation
@@ -109,6 +140,9 @@ enum FailureMode {
     NotZero {
         internal_ret: bool,
     },
+    /// The value returned by the function must be checked.  An error is deemed to have
+    /// happened if the value, when viewed as a signed 32-bit int, is negative.
+    IsNegativeI32,
     InvalidRef,
 }
 
@@ -253,6 +287,24 @@ const FN_POST_BARRIER: InstanceCall = InstanceCall {
     ret: None,
     failure_mode: FailureMode::Infallible,
 };
+const FN_WAIT_I32: InstanceCall = InstanceCall {
+    address: SymbolicAddress::WaitI32,
+    arguments: &[ir::types::I32, ir::types::I32, ir::types::I64],
+    ret: Some(ir::types::I32),
+    failure_mode: FailureMode::IsNegativeI32,
+};
+const FN_WAIT_I64: InstanceCall = InstanceCall {
+    address: SymbolicAddress::WaitI64,
+    arguments: &[ir::types::I32, ir::types::I64, ir::types::I64],
+    ret: Some(ir::types::I32),
+    failure_mode: FailureMode::IsNegativeI32,
+};
+const FN_WAKE: InstanceCall = InstanceCall {
+    address: SymbolicAddress::Wake,
+    arguments: &[ir::types::I32, ir::types::I32],
+    ret: Some(ir::types::I32),
+    failure_mode: FailureMode::IsNegativeI32,
+};
 
 // Custom trap codes specific to this embedding
 
@@ -261,13 +313,13 @@ pub const TRAP_THROW_REPORTED: u16 = 1;
 /// A translation context that implements `FuncEnvironment` for the specific Spidermonkey
 /// translation bits.
 pub struct TransEnv<'static_env, 'module_env> {
-    env: bindings::ModuleEnvironment<'module_env>,
     static_env: &'static_env bindings::StaticEnvironment,
+    module_env: Rc<bindings::ModuleEnvironment<'module_env>>,
 
     target_frontend_config: TargetFrontendConfig,
 
-    /// Information about the function pointer tables `self.env` knowns about. Indexed by table
-    /// index.
+    /// Information about the function pointer tables `self.module_env` knowns about. Indexed by
+    /// table index.
     tables: PrimaryMap<TableIndex, TableInfo>,
 
     /// For those signatures whose ID is stored in a global, keep track of the globals we have
@@ -311,12 +363,12 @@ pub struct TransEnv<'static_env, 'module_env> {
 impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
     pub fn new(
         isa: &dyn TargetIsa,
-        env: bindings::ModuleEnvironment<'module_env>,
+        module_env: Rc<bindings::ModuleEnvironment<'module_env>>,
         static_env: &'static_env bindings::StaticEnvironment,
     ) -> Self {
         TransEnv {
-            env,
             static_env,
+            module_env,
             target_frontend_config: isa.frontend_config(),
             tables: PrimaryMap::new(),
             signatures: HashMap::new(),
@@ -363,7 +415,7 @@ impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
         // Allocate all tables up to the requested index.
         let vmctx = self.get_vmctx_gv(func);
         while self.tables.len() <= table.index() {
-            let wtab = self.env.table(TableIndex::new(self.tables.len()));
+            let wtab = self.module_env.table(TableIndex::new(self.tables.len()));
             self.tables.push(TableInfo::new(wtab, func, vmctx));
         }
         self.tables[table].clone()
@@ -391,7 +443,7 @@ impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
         let vmctx = self.get_vmctx_gv(func);
         let gv = func.create_global_value(ir::GlobalValueData::IAddImm {
             base: vmctx,
-            offset: imm64(self.env.func_import_tls_offset(index)),
+            offset: imm64(self.module_env.func_import_tls_offset(index)),
             global_type: POINTER_TYPE,
         });
         // Save it for next time.
@@ -580,6 +632,15 @@ impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
                 POINTER_TYPE,
                 ir::ArgumentPurpose::VMContext,
             ));
+            // Add a callee-TLS and caller-TLS argument.
+            sig.params.push(ir::AbiParam::special(
+                POINTER_TYPE,
+                ir::ArgumentPurpose::CalleeTLS,
+            ));
+            sig.params.push(ir::AbiParam::special(
+                POINTER_TYPE,
+                ir::ArgumentPurpose::CallerTLS,
+            ));
             if let Some(ret) = &call.ret {
                 sig.returns.push(ir::AbiParam::new(*ret));
             }
@@ -601,6 +662,8 @@ impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
         built_arguments.push(instance, &mut pos.func.dfg.value_lists);
         built_arguments.extend(arguments.iter().cloned(), &mut pos.func.dfg.value_lists);
         built_arguments.push(vmctx, &mut pos.func.dfg.value_lists);
+        built_arguments.push(vmctx, &mut pos.func.dfg.value_lists); // callee_tls
+        built_arguments.push(vmctx, &mut pos.func.dfg.value_lists); // caller_tls
         pos.func.dfg[call_ins].put_value_list(built_arguments);
 
         self.switch_to_wasm_tls_realm(pos);
@@ -621,6 +684,17 @@ impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
                 } else {
                     Some(ret)
                 }
+            }
+            FailureMode::IsNegativeI32 => {
+                let ty = pos.func.dfg.value_type(ret);
+                assert!(ty == ir::types::I32);
+                let f = pos.ins().ifcmp_imm(ret, i64::from(0));
+                pos.ins().trapif(
+                    IntCC::SignedLessThan,
+                    f,
+                    ir::TrapCode::User(TRAP_THROW_REPORTED),
+                );
+                Some(ret)
             }
             FailureMode::InvalidRef => {
                 let invalid = pos.ins().is_invalid(ret);
@@ -675,7 +749,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         func: &mut ir::Function,
         index: GlobalIndex,
     ) -> WasmResult<GlobalVariable> {
-        let global = self.env.global(index);
+        let global = self.module_env.global(index);
         if global.is_constant() {
             // Constant globals have a known value at compile time. We insert an instruction to
             // materialize the constant at the front of the entry block.
@@ -738,7 +812,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
             ir::HeapStyle::Dynamic { bound_gv }
         };
 
-        let min_size = (self.env.min_memory_length() as u64).into();
+        let min_size = (self.module_env.min_memory_length() as u64).into();
         let offset_guard_size = (self.static_env.memory_guard_size as u64).into();
 
         Ok(func.create_heap(ir::HeapData {
@@ -755,8 +829,8 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         func: &mut ir::Function,
         index: SignatureIndex,
     ) -> WasmResult<ir::SigRef> {
-        let wsig = self.env.signature(index);
-        let mut sigdata = init_sig_from_wsig(self.static_env.call_conv(), wsig)?;
+        let wsig = self.module_env.signature(index);
+        let mut sigdata = init_sig_from_wsig(self.static_env.call_conv(), &wsig)?;
 
         if wsig.id_kind() != bindings::FuncTypeIdDescKind::None {
             // A signature to be used for an indirect call also takes a signature id.
@@ -803,7 +877,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         index: FuncIndex,
     ) -> WasmResult<ir::FuncRef> {
         // Create a signature.
-        let sigdata = init_sig(&self.env, self.static_env.call_conv(), index)?;
+        let sigdata = init_sig(&*self.module_env, self.static_env.call_conv(), index)?;
         let signature = func.import_signature(sigdata);
 
         Ok(func.import_function(ir::ExtFuncData {
@@ -823,7 +897,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         callee: ir::Value,
         call_args: &[ir::Value],
     ) -> WasmResult<ir::Inst> {
-        let wsig = self.env.signature(sig_index);
+        let wsig = self.module_env.signature(sig_index);
 
         let wtable = self.get_table(pos.func, table_index);
 
@@ -880,6 +954,10 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         pos.ins()
             .trapz(callee_func, ir::TrapCode::IndirectCallToNull);
 
+        // Get the caller TLS value.
+        let vmctx_gv = self.get_vmctx_gv(&mut pos.func);
+        let caller_vmctx = pos.ins().global_value(POINTER_TYPE, vmctx_gv);
+
         // Handle external tables, set up environment.
         // A function table call could redirect execution to another module with a different realm,
         // so switch to this realm just in case.
@@ -897,6 +975,8 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         args.push(callee_func, &mut pos.func.dfg.value_lists);
         args.extend(call_args.iter().cloned(), &mut pos.func.dfg.value_lists);
         args.push(callee_vmctx, &mut pos.func.dfg.value_lists);
+        args.push(callee_vmctx, &mut pos.func.dfg.value_lists);
+        args.push(caller_vmctx, &mut pos.func.dfg.value_lists);
         if let Some(sigid) = sigid_value {
             args.push(sigid, &mut pos.func.dfg.value_lists);
         }
@@ -924,7 +1004,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         args.extend(call_args.iter().cloned(), &mut pos.func.dfg.value_lists);
 
         // Is this an imported function in a different instance, or a local function?
-        if self.env.func_is_import(callee_index) {
+        if self.module_env.func_is_import(callee_index) {
             // This is a call to an imported function. We need to load the callee address and vmctx
             // from the associated `FuncImportTls` struct in a global.
             let gv = self.func_import_global(pos.func, callee_index);
@@ -942,12 +1022,21 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
                 POINTER_SIZE as i32,
             );
 
+            // Save the caller TLS value.
+            let vmctx_gv = self.get_vmctx_gv(&mut pos.func);
+            let caller_vmctx = pos.ins().global_value(POINTER_TYPE, vmctx_gv);
+
             // Switch to the callee's realm.
             self.switch_to_import_realm(&mut pos, fit_tls, gv_addr);
             self.load_pinned_reg(&mut pos, fit_tls);
 
             // The `tls` field is the VM context pointer for the callee.
             args.push(fit_tls, &mut pos.func.dfg.value_lists);
+
+            // callee-TLS slot (ABI-2020).
+            args.push(fit_tls, &mut pos.func.dfg.value_lists);
+            // caller-TLS slot (ABI-2020).
+            args.push(caller_vmctx, &mut pos.func.dfg.value_lists);
 
             // Now make an indirect call to `fit_code`.
             // TODO: We don't need the `FuncRef` that was allocated for this callee since we're
@@ -970,6 +1059,11 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
                 .func
                 .special_param(ir::ArgumentPurpose::VMContext)
                 .expect("Missing vmctx arg");
+            args.push(vmctx, &mut pos.func.dfg.value_lists);
+
+            // callee-TLS slot (ABI-2020).
+            args.push(vmctx, &mut pos.func.dfg.value_lists);
+            // caller-TLS slot (ABI-2020).
             args.push(vmctx, &mut pos.func.dfg.value_lists);
 
             Ok(pos
@@ -1014,7 +1108,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
 
         // We have a specialized version of `memory.copy` when we are using
         // shared memory or not.
-        let ret = if self.env.uses_shared_memory() {
+        let ret = if self.module_env.uses_shared_memory() {
             self.instance_call(&mut pos, &FN_MEMORY_COPY_SHARED, &[dst, src, len, mem_base])
         } else {
             self.instance_call(&mut pos, &FN_MEMORY_COPY, &[dst, src, len, mem_base])
@@ -1037,7 +1131,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
 
         // We have a specialized version of `memory.fill` when we are using
         // shared memory or not.
-        let ret = if self.env.uses_shared_memory() {
+        let ret = if self.module_env.uses_shared_memory() {
             self.instance_call(&mut pos, &FN_MEMORY_FILL_SHARED, &[dst, val, len, mem_base])
         } else {
             self.instance_call(&mut pos, &FN_MEMORY_FILL, &[dst, val, len, mem_base])
@@ -1209,7 +1303,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         mut pos: FuncCursor,
         global_index: GlobalIndex,
     ) -> WasmResult<ir::Value> {
-        let global = self.env.global(global_index);
+        let global = self.module_env.global(global_index);
         let ty = global.value_type()?;
         debug_assert!(ty == ir::types::R32 || ty == ir::types::R64);
 
@@ -1225,7 +1319,7 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         global_index: GlobalIndex,
         val: ir::Value,
     ) -> WasmResult<()> {
-        let global = self.env.global(global_index);
+        let global = self.module_env.global(global_index);
         let ty = global.value_type()?;
         debug_assert!(ty == ir::types::R32 || ty == ir::types::R64);
 
@@ -1246,6 +1340,40 @@ impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module
         debug_assert!(res.is_none());
 
         Ok(())
+    }
+
+    fn translate_atomic_wait(
+        &mut self,
+        mut pos: FuncCursor,
+        _index: MemoryIndex,
+        _heap: ir::Heap,
+        addr: ir::Value,
+        expected: ir::Value,
+        timeout: ir::Value,
+    ) -> WasmResult<ir::Value> {
+        let callee = match pos.func.dfg.value_type(expected) {
+            ir::types::I64 => &FN_WAIT_I64,
+            ir::types::I32 => &FN_WAIT_I32,
+            _ => {
+                return Err(WasmError::Unsupported(
+                    "atomic_wait is only supported for I32 and I64".to_string(),
+                ))
+            }
+        };
+        let ret = self.instance_call(&mut pos, callee, &[addr, expected, timeout]);
+        Ok(ret.unwrap())
+    }
+
+    fn translate_atomic_notify(
+        &mut self,
+        mut pos: FuncCursor,
+        _index: MemoryIndex,
+        _heap: ir::Heap,
+        addr: ir::Value,
+        count: ir::Value,
+    ) -> WasmResult<ir::Value> {
+        let ret = self.instance_call(&mut pos, &FN_WAKE, &[addr, count]);
+        Ok(ret.unwrap())
     }
 
     fn translate_loop_header(&mut self, mut pos: FuncCursor) -> WasmResult<()> {

@@ -47,9 +47,9 @@ add_task(async () => {
 
       // The toggle center, because of how it slides out, is actually outside
       // of the bounds of a click event. For now, we move the mouse in by a
-      // hard-coded 2 pixels along the x and y axis to achieve the hover.
-      let toggleLeft = toggleClientRect.left + 2;
-      let toggleTop = toggleClientRect.top + 2;
+      // hard-coded 15 pixels along the x and y axis to achieve the hover.
+      let toggleLeft = toggleClientRect.left + 15;
+      let toggleTop = toggleClientRect.top + 15;
 
       info(
         "Clicking on toggle, and expecting a Picture-in-Picture window to open"
@@ -79,6 +79,14 @@ add_task(async () => {
 
       let win = await domWindowOpened;
       ok(win, "A Picture-in-Picture window opened.");
+
+      await SpecialPowers.spawn(browser, [videoID], async videoID => {
+        let video = content.document.getElementById(videoID);
+        await ContentTaskUtils.waitForCondition(() => {
+          return video.isCloningElementVisually;
+        }, "Video is being cloned visually.");
+      });
+
       await BrowserTestUtils.closeWindow(win);
       await assertSawMouseEvents(browser, false);
 

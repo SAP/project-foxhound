@@ -15,12 +15,12 @@ import java.util.Map;
 import android.annotation.TargetApi;
 import android.graphics.Rect;
 import android.os.Build;
-import android.support.annotation.AnyThread;
-import android.support.annotation.IntDef;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.UiThread;
-import android.support.v4.util.ArrayMap;
+import androidx.annotation.AnyThread;
+import androidx.annotation.IntDef;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.UiThread;
+import androidx.collection.ArrayMap;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
@@ -785,8 +785,8 @@ public class Autofill {
                     .setId(bundle.getInt("id"))
                     .setParentId(bundle.getInt("parent", View.NO_ID))
                     .setRootId(bundle.getInt("root", View.NO_ID))
-                    .setDomain(bundle.getString("origin"))
-                    .setValue(bundle.getString("value"))
+                    .setDomain(bundle.getString("origin", ""))
+                    .setValue(bundle.getString("value", ""))
                     .setDimensions(
                         new Rect(bounds.getInt("left"),
                                  bounds.getInt("top"),
@@ -1143,7 +1143,7 @@ public class Autofill {
             }
 
             final Node node = getAutofillSession().getNode(id);
-            final String value = message.getString("value");
+            final String value = message.getString("value", "");
 
             if (node == null) {
                 Log.d(LOGTAG, "could not find node " + id);

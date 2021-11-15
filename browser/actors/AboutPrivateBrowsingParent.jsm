@@ -26,6 +26,10 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  Region: "resource://gre/modules/Region.jsm",
+});
+
 // We only show the private search banner once per browser session.
 let gSearchBannerShownThisSession;
 
@@ -54,9 +58,7 @@ class AboutPrivateBrowsingParent extends JSWindowActorParent {
       }
       case "SearchHandoff": {
         let searchAlias = "";
-        let searchAliases =
-          Services.search.defaultPrivateEngine.wrappedJSObject
-            .__internalAliases;
+        let searchAliases = Services.search.defaultPrivateEngine.aliases;
         if (searchAliases && searchAliases.length) {
           searchAlias = `${searchAliases[0]} `;
         }
@@ -67,7 +69,9 @@ class AboutPrivateBrowsingParent extends JSWindowActorParent {
           urlBar.setHiddenFocus();
         } else {
           // Pass the provided text to the awesomebar. Prepend the @engine shortcut.
-          urlBar.search(`${searchAlias}${aMessage.data.text}`);
+          urlBar.search(`${searchAlias}${aMessage.data.text}`, {
+            searchModeEntry: "handoff",
+          });
           isFirstChange = false;
         }
 
@@ -78,7 +82,7 @@ class AboutPrivateBrowsingParent extends JSWindowActorParent {
           if (isFirstChange) {
             isFirstChange = false;
             urlBar.removeHiddenFocus();
-            urlBar.search(searchAlias);
+            urlBar.search(searchAlias, { searchModeEntry: "handoff" });
             this.sendAsyncMessage("HideSearch");
             urlBar.removeEventListener("compositionstart", checkFirstChange);
             urlBar.removeEventListener("paste", checkFirstChange);
@@ -144,6 +148,14 @@ class AboutPrivateBrowsingParent extends JSWindowActorParent {
       case "SearchBannerDismissed": {
         Services.prefs.setIntPref(SHOWN_PREF, MAX_SEARCH_BANNER_SHOW_COUNT);
         break;
+      }
+      case "ShouldShowVPNPromo": {
+        const homeRegion = Region.home || "";
+        const currentRegion = Region.current || "";
+        return (
+          homeRegion.toLowerCase() !== "cn" &&
+          currentRegion.toLowerCase() !== "cn"
+        );
       }
     }
 

@@ -38,35 +38,6 @@ function logThreadEvents(dbg, event) {
   });
 }
 
-/**
- * Wait for a predicate to return a result.
- *
- * @param function condition
- *        Invoked once in a while until it returns a truthy value. This should be an
- *        idempotent function, since we have to run it a second time after it returns
- *        true in order to return the value.
- * @param string message [optional]
- *        A message to output if the condition fails.
- * @param number interval [optional]
- *        How often the predicate is invoked, in milliseconds.
- * @return object
- *         A promise that is resolved with the result of the condition.
- */
-async function waitFor(
-  condition,
-  message = "waitFor",
-  interval = 10,
-  maxTries = 500
-) {
-  await BrowserTestUtils.waitForCondition(
-    condition,
-    message,
-    interval,
-    maxTries
-  );
-  return condition();
-}
-
 // Wait until an action of `type` is dispatched. This is different
 // then `waitForDispatch` because it doesn't wait for async actions
 // to be done/errored. Use this if you want to listen for the "start"
@@ -1282,7 +1253,7 @@ const selectors = {
     `.expressions-list .expression-container:nth-child(${i}) .object-delimiter + *`,
   expressionClose: i =>
     `.expressions-list .expression-container:nth-child(${i}) .close`,
-  expressionInput: ".expressions-list  input.input-expression",
+  expressionInput: ".watch-expressions-pane input.input-expression",
   expressionNodes: ".expressions-list .tree-node",
   expressionPlus: ".watch-expressions-pane button.plus",
   expressionRefresh: ".watch-expressions-pane button.refresh",
@@ -1842,9 +1813,10 @@ async function waitForBreakableLine(dbg, source, lineNumber) {
 async function waitForSourceCount(dbg, i) {
   // We are forced to wait until the DOM nodes appear because the
   // source tree batches its rendering.
+  info(`waiting for ${i} sources`);
   await waitUntil(() => {
     return findAllElements(dbg, "sourceNodes").length === i;
-  }, `waiting for ${i} sources`);
+  });
 }
 
 async function assertSourceCount(dbg, count) {
@@ -2008,6 +1980,35 @@ function setInputValue(hud, value) {
   hud.jsterm._setValue(value);
   return onValueSet;
 }
+
+
+function assertMenuItemChecked(menuItem, isChecked) {
+  is(
+    !!menuItem.getAttribute("aria-checked"),
+    isChecked,
+    `Item has expected state: ${isChecked ? "checked" : "unchecked"}`
+  );
+}
+
+async function toggleDebbuggerSettingsMenuItem(dbg, { className, isChecked }) {
+  const menuButton = findElementWithSelector(dbg, ".debugger-settings-menu-button");
+  const { parent } = dbg.panel.panelWin;
+  const { document } = parent;
+
+  menuButton.click();
+  // Waits for the debugger settings panel to appear.
+  await waitFor(() => document.querySelector("#debugger-settings-menu-list"));
+
+  const menuItem = document.querySelector(className);
+
+  assertMenuItemChecked(menuItem, isChecked);
+
+  menuItem.click();
+
+  // Waits for the debugger settings panel to disappear.
+  await waitFor(() => menuButton.getAttribute("aria-expanded") === "false");
+}
+
 
 const { PromiseTestUtils } = ChromeUtils.import(
   "resource://testing-common/PromiseTestUtils.jsm"

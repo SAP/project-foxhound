@@ -10,6 +10,7 @@
 #include "js/TypeDecls.h"
 #include "mozilla/dom/JSActor.h"
 #include "mozilla/ErrorResult.h"
+#include "nsRefPtrHashtable.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -27,24 +28,29 @@ class JSActorManager : public nsISupports {
   /**
    * Get or create an actor by it's name.
    *
-   * Will return an error if the actor fails to be constructed, or `nullptr` if
-   * actor creation was vetoed by a constraint.
+   * Will set an error on |aRv| if the actor fails to be constructed.
    */
-  already_AddRefed<JSActor> GetActor(const nsACString& aName, ErrorResult& aRv);
+  already_AddRefed<JSActor> GetActor(JSContext* aCx, const nsACString& aName,
+                                     ErrorResult& aRv);
 
   /**
    * Handle receiving a raw message from the other side.
    */
   void ReceiveRawMessage(const JSActorMessageMeta& aMetadata,
-                         ipc::StructuredCloneData&& aData,
-                         ipc::StructuredCloneData&& aStack);
+                         Maybe<ipc::StructuredCloneData>&& aData,
+                         Maybe<ipc::StructuredCloneData>&& aStack);
 
  protected:
   /**
-   * Lifecycle methods which will fire the `willDestroy` and `didDestroy`
-   * methods on relevant actors.
+   * The actor is about to be destroyed so prevent it from sending any
+   * more messages.
    */
   void JSActorWillDestroy();
+
+  /**
+   * Lifecycle method which will fire the `didDestroy` methods on relevant
+   * actors.
+   */
   void JSActorDidDestroy();
 
   /**

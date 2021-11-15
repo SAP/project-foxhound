@@ -237,7 +237,7 @@ nsresult nsSelectionCommandsBase::GetSelectionControllerFromWindow(
 // Helpers for nsSelectMoveScrollCommand and nsPhysicalSelectMoveScrollCommand
 static void AdjustFocusAfterCaretMove(nsPIDOMWindowOuter* aWindow) {
   // adjust the focus to the new caret position
-  nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
     RefPtr<dom::Element> result;
     fm->MoveFocus(aWindow, nullptr, nsIFocusManager::MOVEFOCUS_CARET,
@@ -487,7 +487,7 @@ nsresult nsClipboardCommand::IsCommandEnabled(const char* aCommandName,
   RefPtr<dom::Document> doc = window->GetExtantDoc();
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-  if (doc->IsHTMLOrXHTML() && !nsContentUtils::IsChromeDoc(doc)) {
+  if (doc->AreClipboardCommandsUnconditionallyEnabled()) {
     // In HTML and XHTML documents, we always want the cut, copy and paste
     // commands to be enabled, but if the document is chrome, let it control it.
     *outCmdEnabled = true;

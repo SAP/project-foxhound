@@ -58,11 +58,17 @@ typedef struct {
   // journal and start update process whenever this flag is set during index
   // parsing.
   uint32_t mIsDirty;
+
+  // The amount of data written to the cache. When it reaches
+  // kTelemetryReportBytesLimit a telemetry report is sent and the counter is
+  // reset.
+  uint32_t mKBWritten;
 } CacheIndexHeader;
 
 static_assert(sizeof(CacheIndexHeader::mVersion) +
                       sizeof(CacheIndexHeader::mTimeStamp) +
-                      sizeof(CacheIndexHeader::mIsDirty) ==
+                      sizeof(CacheIndexHeader::mIsDirty) +
+                      sizeof(CacheIndexHeader::mKBWritten) ==
                   sizeof(CacheIndexHeader),
               "Unexpected sizeof(CacheIndexHeader)!");
 
@@ -1033,8 +1039,6 @@ class CacheIndex final : public CacheFileIOListener, public nsIRunnable {
 
   // Memory reporting (private part)
   size_t SizeOfExcludingThisInternal(mozilla::MallocSizeOf mallocSizeOf) const;
-
-  void ReportHashStats();
 
   // Reports telemetry about cache, i.e. size, entry count and content type
   // stats.

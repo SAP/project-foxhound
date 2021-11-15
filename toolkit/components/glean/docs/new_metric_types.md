@@ -7,7 +7,49 @@ and it is needed in Firefox Desktop.
 
 ## IPC
 
-To Be Implemented.
+For detailed information about the IPC design,
+including a list of forbidden operations,
+please consult
+[the FOG IPC documentation](ipc.md).
+
+When adding a new metric type, the main IPC considerations are:
+* Which operations are forbidden because they are not commutative?
+    * Most `set`-style operations cannot be reconciled sensibly across multiple processes.
+* If there are non-forbidden operations,
+what partial representation will this metric have in non-main processes?
+Put another way, what shape of storage will this take up in the
+[IPC Payload](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/api/src/ipc.rs)?
+    * For example, Counters can aggregate all partial counts together to a single
+    "partial sum". So
+    [its representation](https://searchfox.org/mozilla-central/rev/803b368879fa332e8e2c1840bf1ec164f7ed2c32/toolkit/components/glean/api/src/ipc.rs#45)
+    in the IPC Payload is just a single number per Counter.
+    * In contrast, Timing Distributions' durations are calculated in the core,
+    so it can't calculate samples in child processes.
+    Instead we will need to record the start and stop instants as pairs,
+    more or less sending a command stream with timing information.
+
+To implement IPC support in a metric type,
+we split the metric into three pieces:
+1. An umbrella `enum` with the name `MetricTypeMetric`.
+    * It has a `Child` and a `Parent` variant.
+    * It is IPC-aware and is responsible for
+        * If on a non-parent-process,
+        either storing partial representations in the IPC Payload,
+        or logging errors if forbidden non-test APIs are called.
+        (Or panicking if test APIs are called.)
+        * If on the parent process, dispatching API calls to the core.
+2. The `MetricTypeImpl` is the parent-process implementation.
+    * It talks to the core and supports test APIs too.
+    * For testing, it stores the `MetricId` that identifies this particular metric in a cross-process fashion.
+    * For testing, it exposes a `child_metric()` function to create its `Child` equivalent.
+    * For testing and if it supports operations in a non-parent-process, it exposes a `metric_id()` function to access the stored `MetricId`.
+3. The `MetricTypeIpc` is the ipc-aware non-parent-process implementation.
+    * If it does support operations in non-parent processes it stores the `MetricId` that identifies this particular metric in a cross-process fashion.
+
+**Note:** This will change once the Rust Language Binding is moved into
+[mozilla/glean](https://github.com/mozilla/glean/)
+in
+[bug 1662868](https://bugzilla.mozilla.org/show_bug.cgi?id=1662868).
 
 ## Rust
 
@@ -16,18 +58,66 @@ so has been granted special permission to implement directly atop `glean_core`.
 For now.
 
 The Rust API is implemented in the
-[`metrics` module of the `api` crate](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/api/src/metrics).
+[`private` module of the `fog` crate](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/api/src/metrics).
 
-Each metric gets its own file, mimicking the structure in
+Each metric type gets its own file, mimicking the structure in
 [`glean_core`](https://github.com/mozilla/glean/tree/master/glean-core/src/metrics).
 
 Every method on the metric type is public for now,
 including test methods.
 
-## C++
+To allow for pre-init instrumentation to work
+(and to be sensitive to performance in the event that metric recording is expensive)
+each write to a metric is dispatched to another thread using the
+[`Dispatcher`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/api/src/dispatcher/mod.rs).
+Test methods must first call
+`dispatcher::block_on_queue()`
+before retrieving stored data to ensure pending operations have been completed before we read the value.
 
-To Be Implemented.
+## C++ and JS
 
-## JS
+The C++ and JS APIs are implemented [atop the Rust API](code_organization.md).
+We treat them both together since, though they're different languages,
+they're both implemented in C++ and share much of their implementation.
 
-To Be Implemented.
+Each metric type has six pieces you'll need to cover:
+1. **MLA FFI** - Using our convenient macros,
+   define the Multi-Language Architecture's FFI layer above the Rust API in
+   [`api/src/ffi/mod.rs`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/api/src/ffi/mod.rs).
+2. **C++ Impl** - Implement a type called `XMetric`
+   (e.g. `CounterMetric`) in `mozilla::glean::impl` in
+   [`bindings/private/`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/bindings/private/).
+   Its methods should be named the same as the ones in the Rust API,
+   transformed to `CamelCase`. They should all be public.
+3. **IDL** - Duplicate the public API (including its docs) to
+   [`xpcom/nsIGleanMetrics.idl`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/xpcom/nsIGleanMetrics.idl)
+   with the name `nsIGleanX` (e.g. `nsIGleanCounter`).
+   Inherit from `nsISupports`.
+   The naming style for members here is `lowerCamelCase`.
+   You'll need a
+   [GUID](https://developer.mozilla.org/en-US/docs/Mozilla/Tech/XPCOM/Generating_GUIDs)
+   because this is XPCOM,
+   but you'll only need the canonical form since we're only exposing to JS.
+4. **JS Impl** - Add an `nsIGleanX`-deriving, `XMetric`-owning type called `GleanX`
+   (e.g. `GleanCounter`) in the same header and `.cpp` as `XMetric` in
+   [`bindings/private/`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/bindings/private/).
+   Don't declare any methods beyond a ctor
+   (takes a `uint32_t` metric id, init-constructs a `impl::XMetric` member)
+   and dtor (`default`): the IDL will do the rest so long as you remember to add
+   `NS_DECL_ISUPPORTS` and `NS_DECL_NSIGLEANX`.
+   In the definition of `GleanX`, member identifiers are back to
+   `CamelCase` and need macros like `NS_IMETHODIMP`.
+   Delegate operations to the owned `XMetric`, returning `NS_OK`
+   no matter what in non-test methods.
+   (Test-only methods can return `NS_ERROR` codes on failures).
+5. **Tests** - Two languages means two test suites.
+   Add a never-expiring test-only metric of your type to
+   [`test_metrics.yaml`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/test_metrics.yaml).
+   Feel free to be clever with the name, but be sure to make clear that it is test-only.
+    * **C++ Tests (GTest)** - Add a small test case to
+      [`gtest/TestFog.cpp`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/gtest/TestFog.cpp).
+      For more details, peruse the [testing docs](testing.md).
+    * **JS Tests (xpcshell)** - Add a small test case to
+      [`xpcshell/test_Glean.js`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/xpcshell/test_Glean.js).
+      For more details, peruse the [testing docs](testing.md).
+6. **API Documentation** - TODO

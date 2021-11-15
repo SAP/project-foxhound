@@ -6,7 +6,9 @@
 #include "nsPageContentFrame.h"
 
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 
+#include "nsContentUtils.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
@@ -23,13 +25,14 @@ nsPageContentFrame* NS_NewPageContentFrame(PresShell* aPresShell,
 NS_IMPL_FRAMEARENA_HELPERS(nsPageContentFrame)
 
 void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
-                                ReflowOutput& aDesiredSize,
+                                ReflowOutput& aReflowOutput,
                                 const ReflowInput& aReflowInput,
                                 nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsPageContentFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
+  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aReflowOutput, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
+  MOZ_ASSERT(mPD, "Need a pointer to nsSharedPageData before reflow starts");
 
   if (GetPrevInFlow() && HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     nsresult rv =
@@ -57,7 +60,9 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
     kidReflowInput.SetComputedBSize(logicalSize.BSize(wm));
 
     // Reflow the page content area
-    ReflowChild(frame, aPresContext, aDesiredSize, kidReflowInput, 0, 0,
+    // XXXdholbert It's weird that we're passing down our own aReflowOutput
+    // outparam to be used for the child frame's reflow here. See bug 1655856.
+    ReflowChild(frame, aPresContext, aReflowOutput, kidReflowInput, 0, 0,
                 ReflowChildFlags::Default, aStatus);
 
     // The document element's background should cover the entire canvas, so
@@ -76,8 +81,8 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
     if (frame->HasOverflowAreas()) {
       // The background covers the content area and padding area, so check
       // for children sticking outside the child frame's padding edge
-      nscoord xmost = aDesiredSize.ScrollableOverflow().XMost();
-      if (xmost > aDesiredSize.Width()) {
+      nscoord xmost = aReflowOutput.ScrollableOverflow().XMost();
+      if (xmost > aReflowOutput.Width()) {
         nscoord widthToFit =
             xmost + padding.right +
             kidReflowInput.mStyleBorder->GetComputedBorderWidth(eSideRight);
@@ -86,10 +91,24 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
                      "invalid shrink-to-fit ratio");
         mPD->mShrinkToFitRatio = std::min(mPD->mShrinkToFitRatio, ratio);
       }
+      // In the case of pdf.js documents, we also want to consider the height,
+      // so that we don't clip the page in either axis if the aspect ratio of
+      // the PDF doesn't match the destination.
+      if (nsContentUtils::IsPDFJS(PresContext()->Document()->GetPrincipal())) {
+        nscoord ymost = aReflowOutput.ScrollableOverflow().YMost();
+        if (ymost > aReflowOutput.Height()) {
+          nscoord heightToFit =
+              ymost + padding.bottom +
+              kidReflowInput.mStyleBorder->GetComputedBorderWidth(eSideBottom);
+          float ratio = float(maxSize.height) / heightToFit;
+          MOZ_ASSERT(ratio >= 0.0 && ratio < 1.0);
+          mPD->mShrinkToFitRatio = std::min(mPD->mShrinkToFitRatio, ratio);
+        }
+      }
     }
 
     // Place and size the child
-    FinishReflowChild(frame, aPresContext, aDesiredSize, &kidReflowInput, 0, 0,
+    FinishReflowChild(frame, aPresContext, aReflowOutput, &kidReflowInput, 0, 0,
                       ReflowChildFlags::Default);
 
     NS_ASSERTION(aPresContext->IsDynamic() || !aStatus.IsFullyComplete() ||
@@ -99,19 +118,42 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
 
   // Reflow our fixed frames
   nsReflowStatus fixedStatus;
-  ReflowAbsoluteFrames(aPresContext, aDesiredSize, aReflowInput, fixedStatus);
+  ReflowAbsoluteFrames(aPresContext, aReflowOutput, aReflowInput, fixedStatus);
   NS_ASSERTION(fixedStatus.IsComplete(),
                "fixed frames can be truncated, but not incomplete");
 
   // Return our desired size
   WritingMode wm = aReflowInput.GetWritingMode();
-  aDesiredSize.ISize(wm) = aReflowInput.ComputedISize();
+  aReflowOutput.ISize(wm) = aReflowInput.ComputedISize();
   if (aReflowInput.ComputedBSize() != NS_UNCONSTRAINEDSIZE) {
-    aDesiredSize.BSize(wm) = aReflowInput.ComputedBSize();
+    aReflowOutput.BSize(wm) = aReflowInput.ComputedBSize();
   }
-  FinishAndStoreOverflow(&aDesiredSize);
+  FinishAndStoreOverflow(&aReflowOutput);
 
-  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
+  if (StaticPrefs::layout_display_list_improve_fragmentation() &&
+      mFrames.NotEmpty()) {
+    auto* previous = static_cast<nsPageContentFrame*>(GetPrevContinuation());
+    const nscoord previousPageOverflow =
+        previous ? previous->mRemainingOverflow : 0;
+
+    const nscoord overflowHeight = InkOverflowRect().YMost();
+    const nscoord pageHeight = GetRect().Height();
+    const nscoord currentPageOverflow = overflowHeight - pageHeight;
+
+    nscoord remainingOverflow =
+        std::max(currentPageOverflow, previousPageOverflow - pageHeight);
+    if (aStatus.IsFullyComplete() && remainingOverflow > 0) {
+      // If we have InkOverflow off the end of our page, then we report
+      // ourselves as overflow-incomplete in order to produce an additional
+      // content-less page, which we expect to draw our InkOverflow on our
+      // behalf.
+      aStatus.SetOverflowIncomplete();
+    }
+
+    mRemainingOverflow = std::max(remainingOverflow, 0);
+  }
+
+  NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aReflowOutput);
 }
 
 void nsPageContentFrame::AppendDirectlyOwnedAnonBoxes(

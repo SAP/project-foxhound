@@ -166,9 +166,7 @@ nsresult ChannelFromScriptURL(
       false /* aForceInherit */);
 
   bool isData = uri->SchemeIs("data");
-  bool isURIUniqueOrigin =
-      StaticPrefs::security_data_uri_unique_opaque_origin() && isData;
-  if (inheritAttrs && !isURIUniqueOrigin) {
+  if (inheritAttrs && !isData) {
     secFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
   }
 
@@ -1117,11 +1115,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
         respectedCOEP = mWorkerPrivate->GetOwnerEmbedderPolicy();
       }
 
-      nsCOMPtr<nsILoadInfo> channelLoadInfo;
-      rv = channel->GetLoadInfo(getter_AddRefs(channelLoadInfo));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
+      nsCOMPtr<nsILoadInfo> channelLoadInfo = channel->LoadInfo();
       channelLoadInfo->SetLoadingEmbedderPolicy(respectedCOEP);
     }
 
@@ -1904,7 +1898,7 @@ void CacheScriptLoader::ResolvedCallback(JSContext* aCx,
     return;
   }
 
-  rv = mPump->AsyncRead(loader, nullptr);
+  rv = mPump->AsyncRead(loader);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mPump = nullptr;
     Fail(rv);

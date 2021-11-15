@@ -5,17 +5,21 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # possibly Notifications and Alerts
-with Files('**'):
-    BUG_COMPONENT = ('Toolkit', 'General')
+with Files("**"):
+    BUG_COMPONENT = ("Toolkit", "General")
 
-DIRS += ['src']
+DIRS += ["src"]
 
-SPHINX_TREES['prompts'] = 'docs'
+SPHINX_TREES["prompts"] = "docs"
 
-with Files('docs/**'):
-    SCHEDULES.exclusive = ['docs']
+with Files("docs/**"):
+    SCHEDULES.exclusive = ["docs"]
 
-MOCHITEST_MANIFESTS += ['test/mochitest.ini']
-MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
+TESTING_JS_MODULES += [
+    "test/PromptTestUtils.jsm",
+]
 
-JAR_MANIFESTS += ['jar.mn']
+MOCHITEST_MANIFESTS += ["test/mochitest.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome.ini"]
+
+JAR_MANIFESTS += ["jar.mn"]

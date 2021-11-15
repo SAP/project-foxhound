@@ -10,6 +10,7 @@
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/quota/FileStreams.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/SnappyCompressOutputStream.h"
 #include "mozilla/Unused.h"
 #include "nsIObjectInputStream.h"
@@ -22,9 +23,7 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::dom::quota::Client;
 using mozilla::dom::quota::FileInputStream;
@@ -133,9 +132,7 @@ nsresult BodyGetCacheDir(nsIFile* aBaseDir, const nsID& aId,
   // in a single directory.  Mitigate this issue by spreading the body
   // files out into sub-directories.  We use the last byte of the ID for
   // the name of the sub-directory.
-  nsAutoString subDirName;
-  subDirName.AppendInt(aId.m3[7]);
-  rv = (*aCacheDirOut)->Append(subDirName);
+  rv = (*aCacheDirOut)->Append(IntToString(aId.m3[7]));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -205,9 +202,8 @@ nsresult BodyStartWriteStream(const QuotaInfo& aQuotaInfo, nsIFile* aBaseDir,
     return NS_ERROR_FILE_ALREADY_EXISTS;
   }
 
-  nsCOMPtr<nsIOutputStream> fileStream =
-      CreateFileOutputStream(PERSISTENCE_TYPE_DEFAULT, aQuotaInfo.mGroup,
-                             aQuotaInfo.mOrigin, Client::DOMCACHE, tmpFile);
+  nsCOMPtr<nsIOutputStream> fileStream = CreateFileOutputStream(
+      PERSISTENCE_TYPE_DEFAULT, aQuotaInfo, Client::DOMCACHE, tmpFile);
   if (NS_WARN_IF(!fileStream)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -297,9 +293,8 @@ nsresult BodyOpen(const QuotaInfo& aQuotaInfo, nsIFile* aBaseDir,
     return NS_ERROR_FILE_NOT_FOUND;
   }
 
-  nsCOMPtr<nsIInputStream> fileStream =
-      CreateFileInputStream(PERSISTENCE_TYPE_DEFAULT, aQuotaInfo.mGroup,
-                            aQuotaInfo.mOrigin, Client::DOMCACHE, finalFile);
+  nsCOMPtr<nsIInputStream> fileStream = CreateFileInputStream(
+      PERSISTENCE_TYPE_DEFAULT, aQuotaInfo, Client::DOMCACHE, finalFile);
   if (NS_WARN_IF(!fileStream)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -330,9 +325,9 @@ nsresult BodyMaybeUpdatePaddingSize(const QuotaInfo& aQuotaInfo,
   MOZ_DIAGNOSTIC_ASSERT(quotaManager);
 
   int64_t fileSize = 0;
-  RefPtr<QuotaObject> quotaObject = quotaManager->GetQuotaObject(
-      PERSISTENCE_TYPE_DEFAULT, aQuotaInfo.mGroup, aQuotaInfo.mOrigin,
-      Client::DOMCACHE, bodyFile, -1, &fileSize);
+  RefPtr<QuotaObject> quotaObject =
+      quotaManager->GetQuotaObject(PERSISTENCE_TYPE_DEFAULT, aQuotaInfo,
+                                   Client::DOMCACHE, bodyFile, -1, &fileSize);
   MOZ_DIAGNOSTIC_ASSERT(quotaObject);
   MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
   // XXXtt: bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1422815
@@ -749,8 +744,7 @@ void DecreaseUsageForQuotaInfo(const QuotaInfo& aQuotaInfo,
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_DIAGNOSTIC_ASSERT(quotaManager);
 
-  quotaManager->DecreaseUsageForOrigin(PERSISTENCE_TYPE_DEFAULT,
-                                       aQuotaInfo.mGroup, aQuotaInfo.mOrigin,
+  quotaManager->DecreaseUsageForOrigin(PERSISTENCE_TYPE_DEFAULT, aQuotaInfo,
                                        Client::DOMCACHE, aUpdatingSize);
 }
 
@@ -871,10 +865,7 @@ nsresult LockedUpdateDirectoryPaddingFile(nsIFile* aBaseDir,
 
     // We don't need to add the aIncreaseSize or aDecreaseSize here, because
     // it's already encompassed within the database.
-    rv = db::FindOverallPaddingSize(aConn, &currentPaddingSize);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    CACHE_TRY_UNWRAP(currentPaddingSize, db::FindOverallPaddingSize(*aConn));
   } else {
     bool shouldRevise = false;
     if (aIncreaseSize > 0) {
@@ -903,12 +894,7 @@ nsresult LockedUpdateDirectoryPaddingFile(nsIFile* aBaseDir,
         return rv;
       }
 
-      int64_t paddingSizeFromDB = 0;
-      rv = db::FindOverallPaddingSize(aConn, &paddingSizeFromDB);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      currentPaddingSize = paddingSizeFromDB;
+      CACHE_TRY_UNWRAP(currentPaddingSize, db::FindOverallPaddingSize(*aConn));
 
       // XXXtt: we should have an easy way to update (increase or recalulate)
       // padding size in the QM. For now, only correct the padding size in
@@ -919,13 +905,10 @@ nsresult LockedUpdateDirectoryPaddingFile(nsIFile* aBaseDir,
     }
 
 #ifdef DEBUG
-    int64_t paddingSizeFromDB = 0;
-    rv = db::FindOverallPaddingSize(aConn, &paddingSizeFromDB);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    int64_t lastPaddingSize = currentPaddingSize;
+    CACHE_TRY_UNWRAP(currentPaddingSize, db::FindOverallPaddingSize(*aConn));
 
-    MOZ_DIAGNOSTIC_ASSERT(paddingSizeFromDB == currentPaddingSize);
+    MOZ_DIAGNOSTIC_ASSERT(currentPaddingSize == lastPaddingSize);
 #endif  // DEBUG
   }
 
@@ -995,16 +978,11 @@ nsresult LockedDirectoryPaddingRestore(nsIFile* aBaseDir,
     return rv;
   }
 
-  int64_t paddingSize = 0;
-  rv = db::FindOverallPaddingSize(aConn, &paddingSize);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  CACHE_TRY_UNWRAP(*aPaddingSizeOut, db::FindOverallPaddingSize(*aConn));
+  MOZ_DIAGNOSTIC_ASSERT(*aPaddingSizeOut >= 0);
 
-  MOZ_DIAGNOSTIC_ASSERT(paddingSize >= 0);
-  *aPaddingSizeOut = paddingSize;
-
-  rv = LockedDirectoryPaddingWrite(aBaseDir, DirPaddingFile::FILE, paddingSize);
+  rv = LockedDirectoryPaddingWrite(aBaseDir, DirPaddingFile::FILE,
+                                   *aPaddingSizeOut);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     // If we cannot write the correct padding size to file, just keep the
     // temporary file and let the padding size to be recalculate in the next
@@ -1049,6 +1027,4 @@ nsresult LockedDirectoryPaddingDeleteFile(nsIFile* aBaseDir,
 
   return rv;
 }
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

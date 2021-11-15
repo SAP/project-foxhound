@@ -11,6 +11,7 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/ContextOptions.h"
 #include "js/Exception.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_OUT_OF_MEMORY
 #include "js/LocaleSensitive.h"
 #include "js/MemoryMetrics.h"
 #include "js/SourceText.h"
@@ -1243,7 +1244,7 @@ WorkerPrivate::MemoryReporter::FinishCollectRunnable::Run() {
       nsCString path = mCxStats.Path();
       path.AppendLiteral("dom/performance/user-entries");
       mHandleReport->Callback(
-          EmptyCString(), path, nsIMemoryReporter::KIND_HEAP,
+          ""_ns, path, nsIMemoryReporter::KIND_HEAP,
           nsIMemoryReporter::UNITS_BYTES, mPerformanceUserEntries,
           "Memory used for performance user entries."_ns, mHandlerData);
     }
@@ -1252,7 +1253,7 @@ WorkerPrivate::MemoryReporter::FinishCollectRunnable::Run() {
       nsCString path = mCxStats.Path();
       path.AppendLiteral("dom/performance/resource-entries");
       mHandleReport->Callback(
-          EmptyCString(), path, nsIMemoryReporter::KIND_HEAP,
+          ""_ns, path, nsIMemoryReporter::KIND_HEAP,
           nsIMemoryReporter::UNITS_BYTES, mPerformanceResourceEntries,
           "Memory used for performance resource entries."_ns, mHandlerData);
     }
@@ -1336,7 +1337,7 @@ nsresult WorkerPrivate::SetCSPFromHeaderValues(
   MOZ_ASSERT(selfURI, "need a self URI for CSP");
 
   rv = csp->SetRequestContextWithPrincipal(mLoadInfo.mPrincipal, selfURI,
-                                           EmptyString(), 0);
+                                           u""_ns, 0);
   NS_ENSURE_SUCCESS(rv, rv);
 
   csp->EnsureEventTarget(mMainThreadEventTarget);
@@ -1807,8 +1808,8 @@ bool WorkerPrivate::ProxyReleaseMainThreadObjects() {
     mLoadInfo.mLoadGroup.swap(loadGroupToCancel);
   }
 
-  bool result =
-      mLoadInfo.ProxyReleaseMainThreadObjects(this, loadGroupToCancel);
+  bool result = mLoadInfo.ProxyReleaseMainThreadObjects(
+      this, std::move(loadGroupToCancel));
 
   mMainThreadObjectsForgotten = true;
 
@@ -3842,8 +3843,7 @@ already_AddRefed<nsIEventTarget> WorkerPrivate::CreateNewSyncLoop(
     }
   }
 
-  auto queue =
-      static_cast<ThreadEventQueue<EventQueue>*>(mThread->EventQueue());
+  auto queue = static_cast<ThreadEventQueue*>(mThread->EventQueue());
   nsCOMPtr<nsISerialEventTarget> realEventTarget = queue->PushEventQueue();
   MOZ_ASSERT(realEventTarget);
 
@@ -3966,8 +3966,7 @@ bool WorkerPrivate::DestroySyncLoop(uint32_t aLoopIndex) {
 
   bool result = loopInfo->mResult;
 
-  auto queue =
-      static_cast<ThreadEventQueue<EventQueue>*>(mThread->EventQueue());
+  auto queue = static_cast<ThreadEventQueue*>(mThread->EventQueue());
   queue->PopEventQueue(nestedEventTarget);
 
   // Are we making a 1 -> 0 transition here?
@@ -5158,6 +5157,13 @@ void WorkerPrivate::AssertIsOnWorkerThread() const {
 void WorkerPrivate::DumpCrashInformation(nsACString& aString) {
   auto data = mWorkerThreadAccessible.Access();
 
+  aString.Append("IsChromeWorker(");
+  if (IsChromeWorker()) {
+    aString.Append(NS_ConvertUTF16toUTF8(ScriptURL()));
+  } else {
+    aString.Append("false");
+  }
+  aString.Append(")");
   for (const auto* workerRef : data->mWorkerRefs.NonObservingRange()) {
     if (workerRef->IsPreventingShutdown()) {
       aString.Append("|");

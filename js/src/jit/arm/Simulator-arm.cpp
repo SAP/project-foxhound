@@ -42,6 +42,7 @@
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
 #include "threading/LockGuard.h"
+#include "vm/JSContext.h"
 #include "vm/Runtime.h"
 #include "vm/SharedMem.h"
 #include "wasm/WasmInstance.h"
@@ -50,6 +51,18 @@
 extern "C" {
 
 int64_t __aeabi_idivmod(int x, int y) {
+  // Run-time ABI for the ARM architecture specifies that for |INT_MIN / -1|
+  // "an implementation is (sic) may return any convenient value, possibly the
+  // original numerator."
+  //
+  // |INT_MIN / -1| traps on x86, which isn't listed as an allowed behavior in
+  // the ARM docs, so instead follow LLVM and return the numerator. (And zero
+  // for the remainder.)
+
+  if (x == INT32_MIN && y == -1) {
+    return uint32_t(x);
+  }
+
   uint32_t lo = uint32_t(x / y);
   uint32_t hi = uint32_t(x % y);
   return (int64_t(hi) << 32) | lo;
@@ -2381,8 +2394,8 @@ typedef int32_t (*Prototype_Int32_GeneralGeneralInt32Int32)(int32_t, int32_t,
 typedef int32_t (*Prototype_General_GeneralInt32)(int32_t, int32_t);
 typedef int32_t (*Prototype_General_GeneralInt32Int32)(int32_t, int32_t,
                                                        int32_t);
-typedef int32_t (*Prototype_General_GeneralInt32Int32General)(int32_t, int32_t,
-                                                              int32_t, int32_t);
+typedef int32_t (*Prototype_General_GeneralInt32General)(int32_t, int32_t,
+                                                         int32_t);
 
 // Fill the volatile registers with scratch values.
 //
@@ -2914,11 +2927,10 @@ void Simulator::softwareInterrupt(SimInstruction* instr) {
           setCallResult(result);
           break;
         }
-        case Args_General_GeneralInt32Int32General: {
-          Prototype_General_GeneralInt32Int32General target =
-              reinterpret_cast<Prototype_General_GeneralInt32Int32General>(
-                  external);
-          int64_t result = target(arg0, arg1, arg2, arg3);
+        case Args_General_GeneralInt32General: {
+          Prototype_General_GeneralInt32General target =
+              reinterpret_cast<Prototype_General_GeneralInt32General>(external);
+          int64_t result = target(arg0, arg1, arg2);
           scratchVolatileRegisters(/* scratchFloat = true */);
           setCallResult(result);
           break;
@@ -5099,8 +5111,9 @@ int32_t Simulator::call(uint8_t* entry, int argument_count, ...) {
   va_start(parameters, argument_count);
 
   // First four arguments passed in registers.
-  MOZ_ASSERT(argument_count >= 1);
-  set_register(r0, va_arg(parameters, int32_t));
+  if (argument_count >= 1) {
+    set_register(r0, va_arg(parameters, int32_t));
+  }
   if (argument_count >= 2) {
     set_register(r1, va_arg(parameters, int32_t));
   }

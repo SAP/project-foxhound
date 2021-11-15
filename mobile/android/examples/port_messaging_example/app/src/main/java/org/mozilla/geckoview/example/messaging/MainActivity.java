@@ -1,8 +1,8 @@
 package org.mozilla.geckoview.example.messaging;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v7.app.AppCompatActivity;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -63,7 +63,7 @@ public class MainActivity extends AppCompatActivity {
 
 
         sRuntime.getWebExtensionController()
-                .installBuiltIn("resource://android/assets/messaging/")
+                .ensureBuiltIn("resource://android/assets/messaging/", "messaging@example.com")
                 .accept(
                     // Register message delegate for background script
                     extension -> extension.setMessageDelegate(messageDelegate, "browser"),

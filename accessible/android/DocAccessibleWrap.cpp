@@ -5,9 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Accessible-inl.h"
+#include "AccessibleOrProxy.h"
 #include "DocAccessibleChild.h"
 #include "DocAccessibleWrap.h"
 #include "nsIDocShell.h"
+#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
@@ -145,7 +147,7 @@ void DocAccessibleWrap::CacheViewportCallback(nsITimer* aTimer,
     }
 
     ipcDoc->SendBatch(eBatch_Viewport, cacheData);
-  } else if (SessionAccessibility* sessionAcc =
+  } else if (RefPtr<SessionAccessibility> sessionAcc =
                  SessionAccessibility::GetInstanceFor(docAcc)) {
     nsTArray<AccessibleWrap*> accessibles(inViewAccs.Count());
     for (auto iter = inViewAccs.Iter(); !iter.Done(); iter.Next()) {
@@ -157,10 +159,11 @@ void DocAccessibleWrap::CacheViewportCallback(nsITimer* aTimer,
   }
 
   if (docAcc->mCachePivotBoundaries) {
-    a11y::Pivot pivot(docAcc);
+    AccessibleOrProxy accOrProxy = AccessibleOrProxy(docAcc);
+    a11y::Pivot pivot(accOrProxy);
     TraversalRule rule(java::SessionAccessibility::HTML_GRANULARITY_DEFAULT);
-    Accessible* first = pivot.First(rule);
-    Accessible* last = pivot.Last(rule);
+    Accessible* first = pivot.First(rule).AsAccessible();
+    Accessible* last = pivot.Last(rule).AsAccessible();
 
     // If first/last are null, pass the root document as pivot boundary.
     if (IPCAccessibilityActive()) {
@@ -175,7 +178,7 @@ void DocAccessibleWrap::CacheViewportCallback(nsITimer* aTimer,
         ipcDoc->GetPlatformExtension()->SendSetPivotBoundaries(
             firstDoc, UNIQUE_ID(first), lastDoc, UNIQUE_ID(last));
       }
-    } else if (SessionAccessibility* sessionAcc =
+    } else if (RefPtr<SessionAccessibility> sessionAcc =
                    SessionAccessibility::GetInstanceFor(docAcc)) {
       sessionAcc->UpdateAccessibleFocusBoundaries(
           first ? static_cast<AccessibleWrap*>(first) : docAcc,
@@ -241,7 +244,7 @@ void DocAccessibleWrap::CacheFocusPath(AccessibleWrap* aAccessible) {
     }
 
     ipcDoc->SendBatch(eBatch_FocusPath, cacheData);
-  } else if (SessionAccessibility* sessionAcc =
+  } else if (RefPtr<SessionAccessibility> sessionAcc =
                  SessionAccessibility::GetInstanceFor(this)) {
     nsTArray<AccessibleWrap*> accessibles;
     for (AccessibleWrap* acc = aAccessible; acc && acc != this->Parent();
@@ -278,7 +281,7 @@ void DocAccessibleWrap::UpdateFocusPathBounds() {
     }
 
     ipcDoc->SendBatch(eBatch_BoundsUpdate, boundsData);
-  } else if (SessionAccessibility* sessionAcc =
+  } else if (RefPtr<SessionAccessibility> sessionAcc =
                  SessionAccessibility::GetInstanceFor(this)) {
     nsTArray<AccessibleWrap*> accessibles(mFocusPath.Count());
     for (auto iter = mFocusPath.Iter(); !iter.Done(); iter.Next()) {

@@ -7,10 +7,13 @@
 #include "jit/Jit.h"
 
 #include "jit/BaselineJIT.h"
+#include "jit/CalleeToken.h"
 #include "jit/Ion.h"
 #include "jit/JitCommon.h"
-#include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit
 #include "vm/Interpreter.h"
+#include "vm/JSContext.h"
 
 #include "vm/Stack-inl.h"
 

@@ -8,19 +8,107 @@ const {
   ResourceWatcher,
 } = require("devtools/shared/resources/resource-watcher");
 
-module.exports = async function({ targetFront, onAvailable }) {
+module.exports = async function({ targetFront, onAvailable, onUpdated }) {
   if (!targetFront.hasActor("styleSheets")) {
     return;
   }
 
+  const onStyleSheetAdded = async (styleSheet, isNew, fileName) => {
+    const onMediaRules = styleSheet.getMediaRules();
+    const resource = toResource(styleSheet, isNew, fileName);
+
+    let previousMediaRules = [];
+
+    function updateMediaRule(index, rule) {
+      onUpdated([
+        {
+          resourceType: resource.resourceType,
+          resourceId: resource.resourceId,
+          updateType: "matches-change",
+          nestedResourceUpdates: [
+            {
+              path: ["mediaRules", index],
+              value: rule,
+            },
+          ],
+        },
+      ]);
+    }
+
+    function addMatchesChangeListener(mediaRules) {
+      for (const rule of previousMediaRules) {
+        rule.destroy();
+      }
+
+      mediaRules.forEach((rule, index) => {
+        rule.on("matches-change", matches => updateMediaRule(index, rule));
+      });
+
+      previousMediaRules = mediaRules;
+    }
+
+    styleSheet.on("style-applied", () => {
+      onUpdated([
+        {
+          resourceType: resource.resourceType,
+          resourceId: resource.resourceId,
+          updateType: "style-applied",
+        },
+      ]);
+    });
+
+    styleSheet.on("property-change", (property, value) => {
+      onUpdated([
+        {
+          resourceType: resource.resourceType,
+          resourceId: resource.resourceId,
+          updateType: "property-change",
+          resourceUpdates: { [property]: value },
+        },
+      ]);
+    });
+
+    styleSheet.on("media-rules-changed", mediaRules => {
+      addMatchesChangeListener(mediaRules);
+      onUpdated([
+        {
+          resourceType: resource.resourceType,
+          resourceId: resource.resourceId,
+          updateType: "media-rules-changed",
+          resourceUpdates: { mediaRules },
+        },
+      ]);
+    });
+
+    try {
+      resource.mediaRules = await onMediaRules;
+      addMatchesChangeListener(resource.mediaRules);
+    } catch (e) {
+      // There are cases that the stylesheet front was destroyed already when/while calling
+      // methods of stylesheet.
+      console.warn("fetching media rules failed", e);
+    }
+
+    return resource;
+  };
+
   const styleSheetsFront = await targetFront.getFront("stylesheets");
   try {
     const styleSheets = await styleSheetsFront.getStyleSheets();
-    onAvailable(styleSheets.map(styleSheet => toResource(styleSheet, false)));
+    onAvailable(
+      await Promise.all(
+        styleSheets.map(styleSheet =>
+          onStyleSheetAdded(styleSheet, false, null)
+        )
+      )
+    );
 
-    styleSheetsFront.on("stylesheet-added", (styleSheet, isNew) => {
-      onAvailable([toResource(styleSheet, isNew)]);
-    });
+    styleSheetsFront.on(
+      "stylesheet-added",
+      async (styleSheet, isNew, fileName) => {
+        onAvailable([await onStyleSheetAdded(styleSheet, isNew, fileName)]);
+      }
+    );
   } catch (e) {
     // There are cases that the stylesheet front was destroyed already when/while calling
     // methods of stylesheet.
@@ -30,10 +118,12 @@ module.exports = async function({ targetFront, onAvailable }) {
   }
 };
 
-function toResource(styleSheet, isNew) {
-  return {
+function toResource(styleSheet, isNew, fileName) {
+  Object.assign(styleSheet, {
+    resourceId: styleSheet.actorID,
     resourceType: ResourceWatcher.TYPES.STYLESHEET,
-    styleSheet,
     isNew,
-  };
+    fileName,
+  });
+  return styleSheet;
 }

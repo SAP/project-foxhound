@@ -10,9 +10,8 @@
 
 #include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
-#include "jsapi.h"        // JS_ReportErrorNumberASCII
-#include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*
-#include "jspubtd.h"      // JSProto_ReadableStream
+#include "jsapi.h"    // JS_ReportErrorNumberASCII
+#include "jspubtd.h"  // JSProto_ReadableStream
 
 #include "builtin/Array.h"                   // js::NewDenseFullyAllocatedArray
 #include "builtin/streams/ClassSpecMacro.h"  // JS_STREAMS_CLASS_SPEC
@@ -25,7 +24,8 @@
 #include "builtin/streams/WritableStream.h"  // js::WritableStream
 #include "js/CallArgs.h"                     // JS::CallArgs{,FromVp}
 #include "js/Class.h"  // JSCLASS_PRIVATE_IS_NSISUPPORTS, JSCLASS_HAS_PRIVATE, JS_NULL_CLASS_OPS
-#include "js/Conversions.h"  // JS::ToBoolean
+#include "js/Conversions.h"           // JS::ToBoolean
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"  // JS{Function,Property}Spec, JS_FN, JS_PSG, JS_{FS,PS}_END
 #include "js/RootingAPI.h"        // JS::Handle, JS::Rooted, js::CanGC
 #include "js/Stream.h"            // JS::ReadableStream{Mode,UnderlyingSource}
@@ -34,10 +34,10 @@
 #include "vm/JSObject.h"          // js::GetPrototypeFromBuiltinConstructor
 #include "vm/ObjectOperations.h"  // js::GetProperty
 #include "vm/PlainObject.h"       // js::PlainObject
-#include "vm/Runtime.h"           // JSAtomState
+#include "vm/Runtime.h"           // JSAtomState, JSRuntime
 #include "vm/StringType.h"        // js::EqualStrings, js::ToString
 
-#include "vm/Compartment-inl.h"   // js::UnwrapAndTypeCheck{Argument,This}
+#include "vm/Compartment-inl.h"   // js::UnwrapAndTypeCheck{Argument,This,Value}
 #include "vm/JSObject-inl.h"      // js::NewBuiltinClassInstance
 #include "vm/NativeObject-inl.h"  // js::ThrowIfNotConstructing
 
@@ -58,6 +58,7 @@ using js::ReturnPromiseRejectedWithPendingError;
 using js::ToString;
 using js::UnwrapAndTypeCheckArgument;
 using js::UnwrapAndTypeCheckThis;
+using js::UnwrapAndTypeCheckValue;
 using js::WritableStream;
 
 using JS::CallArgs;
@@ -414,22 +415,18 @@ static bool ReadableStream_pipeTo(JSContext* cx, unsigned argc, Value* vp) {
   //         AbortSignal interface, return a promise rejected with a TypeError
   //         exception.
   Rooted<JSObject*> signal(cx, nullptr);
-  do {
-    if (signalVal.isUndefined()) {
-      break;
+  if (!signalVal.isUndefined()) {
+    if (!UnwrapAndTypeCheckValue(
+            cx, signalVal, cx->runtime()->maybeAbortSignalClass(), [cx] {
+              JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                        JSMSG_READABLESTREAM_PIPETO_BAD_SIGNAL);
+            })) {
+      return ReturnPromiseRejectedWithPendingError(cx, args);
     }
 
-    if (signalVal.isObject()) {
-      // XXX jwalden need some JSAPI hooks to detect AbortSignal instances, or
-      //             something
-
-      signal = &signalVal.toObject();
-    }
-
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_READABLESTREAM_PIPETO_BAD_SIGNAL);
-    return ReturnPromiseRejectedWithPendingError(cx, args);
-  } while (false);
+    // Note: |signal| can be a wrapper.
+    signal = &signalVal.toObject();
+  }
 
   // Step 5: If ! IsReadableStreamLocked(this) is true, return a promise
   //         rejected with a TypeError exception.

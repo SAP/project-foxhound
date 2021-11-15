@@ -37,6 +37,7 @@
 #include "jsfriendapi.h"
 #include "js/ArrayBuffer.h"  // JS::GetArrayBufferByteLength,IsArrayBufferObject,NewArrayBufferWithContents,StealArrayBufferContents
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_NewUint8ArrayWithBuffer
 #include "js/MemoryFunctions.h"
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
@@ -100,9 +101,8 @@ struct ScopedArrayBufferContentsTraits {
 
 struct MOZ_NON_TEMPORARY_CLASS ScopedArrayBufferContents
     : public Scoped<ScopedArrayBufferContentsTraits> {
-  explicit ScopedArrayBufferContents(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM)
-      : Scoped<ScopedArrayBufferContentsTraits>(
-            MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_TO_PARENT) {}
+  explicit ScopedArrayBufferContents()
+      : Scoped<ScopedArrayBufferContentsTraits>() {}
 
   ScopedArrayBufferContents& operator=(ArrayBufferContents ptr) {
     Scoped<ScopedArrayBufferContentsTraits>::operator=(ptr);
@@ -826,7 +826,7 @@ class DoReadToStringEvent final : public AbstractReadEvent {
                  ScopedArrayBufferContents& aBuffer) override {
     MOZ_ASSERT(!NS_IsMainThread());
 
-    auto src = MakeSpan(aBuffer.get().data, aBuffer.get().nbytes);
+    auto src = Span(aBuffer.get().data, aBuffer.get().nbytes);
 
     CheckedInt<size_t> needed = mDecoder->MaxUTF16BufferLength(src.Length());
     if (!needed.isValid() ||

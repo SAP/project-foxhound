@@ -35,6 +35,10 @@ export type UIAction =
       +value: boolean,
     |}
   | {|
+      +type: "TOGGLE_EDITOR_WRAPPING",
+      +value: boolean,
+    |}
+  | {|
       +type: "TOGGLE_SOURCE_MAPS_ENABLED",
       +value: boolean,
     |}
@@ -78,6 +82,7 @@ export type UIAction =
       +type: "SET_PROJECT_DIRECTORY_ROOT",
       +cx: Context,
       +url: URL,
+      +name: string,
     |}
   | {|
       +type: "SET_PRIMARY_PANE_TAB",

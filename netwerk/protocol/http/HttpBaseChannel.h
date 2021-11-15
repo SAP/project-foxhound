@@ -194,6 +194,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
                               nsACString& aValue) override;
   NS_IMETHOD SetRequestHeader(const nsACString& aHeader,
                               const nsACString& aValue, bool aMerge) override;
+  NS_IMETHOD SetNewReferrerInfo(const nsACString& aUrl,
+                                nsIReferrerInfo::ReferrerPolicyIDL aPolicy,
+                                bool aSendReferrer) override;
   NS_IMETHOD SetEmptyRequestHeader(const nsACString& aHeader) override;
   NS_IMETHOD VisitRequestHeaders(nsIHttpHeaderVisitor* visitor) override;
   NS_IMETHOD VisitNonDefaultRequestHeaders(
@@ -228,6 +231,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetRequestSize(uint64_t* aRequestSize) override;
   NS_IMETHOD GetDecodedBodySize(uint64_t* aDecodedBodySize) override;
   NS_IMETHOD GetEncodedBodySize(uint64_t* aEncodedBodySize) override;
+  NS_IMETHOD GetSupportsHTTP3(bool* aSupportsHTTP3) override;
   NS_IMETHOD SetRequestContextID(uint64_t aRCID) override;
   NS_IMETHOD GetIsMainDocumentChannel(bool* aValue) override;
   NS_IMETHOD SetIsMainDocumentChannel(bool aValue) override;
@@ -269,6 +273,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetConnectOnly() override;
   NS_IMETHOD GetAllowSpdy(bool* aAllowSpdy) override;
   NS_IMETHOD SetAllowSpdy(bool aAllowSpdy) override;
+  NS_IMETHOD GetAllowHttp3(bool* aAllowHttp3) override;
+  NS_IMETHOD SetAllowHttp3(bool aAllowHttp3) override;
   NS_IMETHOD GetAllowAltSvc(bool* aAllowAltSvc) override;
   NS_IMETHOD SetAllowAltSvc(bool aAllowAltSvc) override;
   NS_IMETHOD GetBeConservative(bool* aBeConservative) override;
@@ -339,6 +345,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD HTTPUpgrade(const nsACString& aProtocolName,
                          nsIHttpUpgradeListener* aListener) override;
   void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() override;
+
+  NS_IMETHOD SetWaitForHTTPSSVCRecord() override;
 
   // nsISupportsPriority
   NS_IMETHOD GetPriority(int32_t* value) override;
@@ -610,6 +618,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   nsresult ComputeCrossOriginOpenerPolicyMismatch();
 
+  nsresult ValidateMIMEType();
+
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
 
@@ -725,6 +735,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   uint64_t mTransferSize;
   uint64_t mRequestSize;
   uint64_t mDecodedBodySize;
+  // True only when the channel supports any of the versions of HTTP3
+  bool mSupportsHTTP3;
   uint64_t mEncodedBodySize;
   uint64_t mRequestContextID;
   // ID of the top-level document's inner window this channel is being
@@ -772,6 +784,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   uint32_t mTimingEnabled : 1;
   uint32_t mReportTiming : 1;
   uint32_t mAllowSpdy : 1;
+  uint32_t mAllowHttp3 : 1;
   uint32_t mAllowAltSvc : 1;
   // !!! This is also used by the URL classifier to exempt channels from
   // classification. If this is changed or removed, make sure we also update
@@ -853,38 +866,46 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Number of internal redirects that has occurred.
   int8_t mInternalRedirectCount;
 
-  bool mAsyncOpenTimeOverriden;
-  bool mForcePending;
+  bool mAsyncOpenTimeOverriden : 1;
+  bool mForcePending : 1;
 
   // true if the channel is deliving alt-data.
-  bool mDeliveringAltData;
+  bool mDeliveringAltData : 1;
 
-  bool mCorsIncludeCredentials;
+  bool mCorsIncludeCredentials : 1;
 
   // These parameters are used to ensure that we do not call OnStartRequest and
   // OnStopRequest more than once.
-  bool mOnStartRequestCalled;
-  bool mOnStopRequestCalled;
+  bool mOnStartRequestCalled : 1;
+  bool mOnStopRequestCalled : 1;
 
   // Defaults to false. Is set to true at the begining of OnStartRequest.
   // Used to ensure methods can't be called before OnStartRequest.
-  bool mAfterOnStartRequestBegun;
+  bool mAfterOnStartRequestBegun : 1;
 
-  bool mRequireCORSPreflight;
+  bool mRequireCORSPreflight : 1;
 
   // This flag will be true if the consumer is requesting alt-data AND the
   // consumer is in the child process.
-  bool mAltDataForChild;
+  bool mAltDataForChild : 1;
 
   // This flag will be true if the consumer cannot process alt-data.  This
   // is used in the webextension StreamFilter handler.  If true, we bypass
   // using alt-data for the request.
-  bool mDisableAltDataCache;
+  bool mDisableAltDataCache : 1;
 
-  bool mForceMainDocumentChannel;
+  bool mForceMainDocumentChannel : 1;
   // This is set true if the channel is waiting for the
   // InputStreamLengthHelper::GetAsyncLength callback.
-  bool mPendingInputStreamLengthOperation;
+  bool mPendingInputStreamLengthOperation : 1;
+
+  // Set to true if our listener has indicated that it requires
+  // content conversion to be done by us.
+  bool mListenerRequiresContentConversion : 1;
+
+  // True if this is a navigation to a page with a different cross origin
+  // opener policy ( see ComputeCrossOriginOpenerPolicyMismatch )
+  uint32_t mHasCrossOriginOpenerPolicyMismatch : 1;
 
   bool EnsureRequestContextID();
   bool EnsureRequestContext();
@@ -896,10 +917,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   void RemoveAsNonTailRequest();
 
   void EnsureTopLevelOuterContentWindowId();
-
-  // True if this is a navigation to a page with a different cross origin
-  // opener policy ( see ComputeCrossOriginOpenerPolicyMismatch )
-  uint32_t mHasCrossOriginOpenerPolicyMismatch : 1;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpBaseChannel, HTTP_BASE_CHANNEL_IID)

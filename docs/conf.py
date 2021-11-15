@@ -27,6 +27,7 @@ EXTRA_PATHS = (
     "third_party/python/futures",
     "third_party/python/jsmin",
     "third_party/python/which",
+    "toolkit/components/glean/sphinx",
 )
 
 sys.path[:0] = [os.path.join(topsrcdir, p) for p in EXTRA_PATHS]
@@ -46,28 +47,31 @@ extensions = [
     "recommonmark",
     "sphinx_copybutton",
     "sphinx_markdown_tables",
+    "glean",
 ]
 
 # JSDoc must run successfully for dirs specified, so running
 # tree-wide (the default) will not work currently.
 js_source_path = [
-    "browser/components/extensions",
-    "browser/components/uitour",
-    "testing/marionette",
-    "toolkit/components/extensions",
-    "toolkit/components/extensions/parent",
-    "toolkit/components/featuregates",
-    "toolkit/mozapps/extensions",
-    "toolkit/components/prompts/src",
+    "../browser/components/extensions",
+    "../browser/components/uitour",
+    "../testing/marionette",
+    "../toolkit/components/extensions",
+    "../toolkit/components/extensions/parent",
+    "../toolkit/components/featuregates",
+    "../toolkit/mozapps/extensions",
+    "../toolkit/components/prompts/src",
 ]
-root_for_relative_js_paths = "."
+root_for_relative_js_paths = ".."
 jsdoc_config_path = "jsdoc.json"
 
 templates_path = ["_templates"]
 source_suffix = [".rst", ".md"]
 master_doc = "index"
 project = "Firefox Source Docs"
-html_logo = os.path.join(topsrcdir, "browser/branding/nightly/content/firefox-wordmark.svg")
+html_logo = os.path.join(
+    topsrcdir, "browser/branding/nightly/content/firefox-wordmark.svg"
+)
 html_favicon = os.path.join(topsrcdir, "browser/branding/nightly/firefox.ico")
 
 exclude_patterns = ["_build", "_staging", "_venv"]
@@ -98,6 +102,13 @@ htmlhelp_basename = "MozillaTreeDocs"
 moz_project_name = "main"
 
 html_show_copyright = False
+
+# Only run autosection for the page title.
+# Otherwise, we have a huge number of duplicate links.
+# For example, the page https://firefox-source-docs.mozilla.org/code-quality/lint/
+# is called "Linting"
+# just like https://firefox-source-docs.mozilla.org/remote/CodeStyle.html
+autosectionlabel_maxdepth = 1
 
 
 def setup(app):

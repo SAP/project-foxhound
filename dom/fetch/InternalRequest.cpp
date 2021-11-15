@@ -6,6 +6,7 @@
 
 #include "InternalRequest.h"
 
+#include "InternalResponse.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchTypes.h"
@@ -18,8 +19,7 @@
 #include "nsIContentPolicy.h"
 #include "nsStreamUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 // The global is used to extract the principal.
 SafeRefPtr<InternalRequest> InternalRequest::GetRequestConstructorCopy(
     nsIGlobalObject* aGlobal, ErrorResult& aRv) const {
@@ -203,6 +203,7 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
     case nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER:
     case nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS:
     case nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT:
+    case nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT:
     case nsIContentPolicy::TYPE_SCRIPT:
       destination = RequestDestination::Script;
       break;
@@ -289,6 +290,7 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_FETCH:
+    case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_WEB_MANIFEST:
@@ -432,5 +434,4 @@ void InternalRequest::SetPrincipalInfo(
   mPrincipalInfo = std::move(aPrincipalInfo);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

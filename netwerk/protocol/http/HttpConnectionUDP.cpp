@@ -58,7 +58,6 @@ HttpConnectionUDP::HttpConnectionUDP()
       mLastReadTime(0),
       mLastWriteTime(0),
       mTotalBytesRead(0),
-      mContentBytesWritten(0),
       mConnectedTransport(false),
       mDontReuse(false),
       mIsReused(false),
@@ -116,8 +115,7 @@ nsresult HttpConnectionUDP::Init(
 
   MOZ_ASSERT(mConnInfo->IsHttp3());
   mHttp3Session = new Http3Session();
-  nsresult rv = mHttp3Session->Init(
-      mConnInfo->GetOrigin(), mConnInfo->GetNPNToken(), mSocketTransport, this);
+  nsresult rv = mHttp3Session->Init(mConnInfo, mSocketTransport, this);
   if (NS_FAILED(rv)) {
     LOG(
         ("HttpConnectionUDP::Init mHttp3Session->Init failed "
@@ -556,7 +554,6 @@ nsresult HttpConnectionUDP::OnSocketWritable() {
   LOG(("  writing transaction request stream\n"));
   nsresult rv = mHttp3Session->ReadSegmentsAgain(
       this, nsIOService::gDefaultSegmentSize, &transactionBytes, &again);
-  mContentBytesWritten += transactionBytes;
   return rv;
 }
 
@@ -748,15 +745,9 @@ void HttpConnectionUDP::SetEvent(nsresult aStatus) {
     case NS_NET_STATUS_CONNECTING_TO:
       mBootstrappedTimings.connectStart = TimeStamp::Now();
       break;
-    case NS_NET_STATUS_CONNECTED_TO: {
-      TimeStamp tnow = TimeStamp::Now();
-      mBootstrappedTimings.tcpConnectEnd = tnow;
-      mBootstrappedTimings.connectEnd = tnow;
-      if (!mBootstrappedTimings.secureConnectionStart.IsNull()) {
-        mBootstrappedTimings.secureConnectionStart = tnow;
-      }
+    case NS_NET_STATUS_CONNECTED_TO:
+      mBootstrappedTimings.connectEnd = TimeStamp::Now();
       break;
-    }
     case NS_NET_STATUS_TLS_HANDSHAKE_STARTING:
       mBootstrappedTimings.secureConnectionStart = TimeStamp::Now();
       break;

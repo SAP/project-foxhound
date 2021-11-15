@@ -276,8 +276,9 @@ static already_AddRefed<nsIArray> ConvertArgsToArray(nsISupports* aArguments) {
 }
 
 NS_IMETHODIMP
-nsWindowWatcher::OpenWindow(mozIDOMWindowProxy* aParent, const char* aUrl,
-                            const char* aName, const char* aFeatures,
+nsWindowWatcher::OpenWindow(mozIDOMWindowProxy* aParent, const nsACString& aUrl,
+                            const nsACString& aName,
+                            const nsACString& aFeatures,
                             nsISupports* aArguments,
                             mozIDOMWindowProxy** aResult) {
   nsCOMPtr<nsIArray> argv = ConvertArgsToArray(aArguments);
@@ -294,7 +295,7 @@ nsWindowWatcher::OpenWindow(mozIDOMWindowProxy* aParent, const char* aUrl,
                              /* navigate = */ true, argv,
                              /* aIsPopupSpam = */ false,
                              /* aForceNoOpener = */ false,
-                             /* aForceNoReferrer = */ false,
+                             /* aForceNoReferrer = */ false, PRINT_NONE,
                              /* aLoadState = */ nullptr, getter_AddRefs(bc)));
   if (bc) {
     nsCOMPtr<mozIDOMWindowProxy> win(bc->GetDOMWindow());
@@ -348,12 +349,13 @@ struct SizeSpec {
 };
 
 NS_IMETHODIMP
-nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent, const char* aUrl,
-                             const char* aName, const char* aFeatures,
+nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent,
+                             const nsACString& aUrl, const nsACString& aName,
+                             const nsACString& aFeatures,
                              bool aCalledFromScript, bool aDialog,
                              bool aNavigate, nsISupports* aArguments,
                              bool aIsPopupSpam, bool aForceNoOpener,
-                             bool aForceNoReferrer,
+                             bool aForceNoReferrer, PrintKind aPrintKind,
                              nsDocShellLoadState* aLoadState,
                              BrowsingContext** aResult) {
   nsCOMPtr<nsIArray> argv = ConvertArgsToArray(aArguments);
@@ -373,8 +375,8 @@ nsWindowWatcher::OpenWindow2(mozIDOMWindowProxy* aParent, const char* aUrl,
 
   return OpenWindowInternal(aParent, aUrl, aName, aFeatures, aCalledFromScript,
                             dialog, aNavigate, argv, aIsPopupSpam,
-                            aForceNoOpener, aForceNoReferrer, aLoadState,
-                            aResult);
+                            aForceNoOpener, aForceNoReferrer, aPrintKind,
+                            aLoadState, aResult);
 }
 
 // This static function checks if the aDocShell uses an UserContextId equal to
@@ -582,11 +584,11 @@ nsWindowWatcher::OpenWindowWithRemoteTab(nsIRemoteTab* aRemoteTab,
 }
 
 nsresult nsWindowWatcher::OpenWindowInternal(
-    mozIDOMWindowProxy* aParent, const char* aUrl, const char* aName,
-    const char* aFeatures, bool aCalledFromJS, bool aDialog, bool aNavigate,
-    nsIArray* aArgv, bool aIsPopupSpam, bool aForceNoOpener,
-    bool aForceNoReferrer, nsDocShellLoadState* aLoadState,
-    BrowsingContext** aResult) {
+    mozIDOMWindowProxy* aParent, const nsACString& aUrl,
+    const nsACString& aName, const nsACString& aFeatures, bool aCalledFromJS,
+    bool aDialog, bool aNavigate, nsIArray* aArgv, bool aIsPopupSpam,
+    bool aForceNoOpener, bool aForceNoReferrer, PrintKind aPrintKind,
+    nsDocShellLoadState* aLoadState, BrowsingContext** aResult) {
   MOZ_ASSERT_IF(aForceNoReferrer, aForceNoOpener);
 
   nsresult rv = NS_OK;
@@ -621,7 +623,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   // We expect BrowserParent to have provided us the absolute URI of the window
   // we're to open, so there's no need to call URIfromURL (or more importantly,
   // to check for a chrome URI, which cannot be opened from a remote tab).
-  if (aUrl) {
+  if (!aUrl.IsVoid()) {
     rv = URIfromURL(aUrl, aParent, getter_AddRefs(uriToLoad));
     if (NS_FAILED(rv)) {
       return rv;
@@ -630,8 +632,8 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   }
 
   bool nameSpecified = false;
-  if (aName) {
-    CopyUTF8toUTF16(MakeStringSpan(aName), name);
+  if (!aName.IsEmpty()) {
+    CopyUTF8toUTF16(aName, name);
     nameSpecified = true;
   } else {
     name.SetIsVoid(true);
@@ -639,7 +641,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
 
   WindowFeatures features;
   nsAutoCString featuresStr;
-  if (aFeatures) {
+  if (!aFeatures.IsEmpty()) {
     featuresStr.Assign(aFeatures);
     features.Tokenize(featuresStr);
   } else {
@@ -672,6 +674,12 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   // because of sandboxing, we wouldn't want that to happen.
   if (parentBC && parentBC->IsSandboxedFrom(newBC)) {
     return NS_ERROR_DOM_INVALID_ACCESS_ERR;
+  }
+
+  // If our target BrowsingContext is still pending initialization, ignore the
+  // navigation request targeting it.
+  if (newBC && NS_WARN_IF(newBC->GetPendingInitialization())) {
+    return NS_ERROR_ABORT;
   }
 
   // no extant window? make a new one.
@@ -773,6 +781,8 @@ nsresult nsWindowWatcher::OpenWindowInternal(
     openWindowInfo = new nsOpenWindowInfo();
     openWindowInfo->mForceNoOpener = aForceNoOpener;
     openWindowInfo->mParent = parentBC;
+    openWindowInfo->mIsForPrinting = aPrintKind != PRINT_NONE;
+    openWindowInfo->mIsForWindowDotPrint = aPrintKind == PRINT_WINDOW_DOT_PRINT;
 
     // We're going to want the window to be immediately available, meaning we
     // want it to match the current remoteness.
@@ -809,7 +819,10 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       if (Document* doc = parentWindow->GetDoc()) {
         // Save sandbox flags for copying to new browsing context (docShell).
         activeDocsSandboxFlags = doc->GetSandboxFlags();
-        if (activeDocsSandboxFlags & SANDBOXED_AUXILIARY_NAVIGATION) {
+        // Check to see if this frame is allowed to navigate, but don't check if
+        // we're printing, as that's not a real navigation.
+        if (aPrintKind == PRINT_NONE &&
+            (activeDocsSandboxFlags & SANDBOXED_AUXILIARY_NAVIGATION)) {
           return NS_ERROR_DOM_INVALID_ACCESS_ERR;
         }
       }
@@ -965,7 +978,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   // If our parent is sandboxed, set it as the one permitted sandboxed navigator
   // on the new window we're opening.
   if (activeDocsSandboxFlags && parentBC) {
-    newBC->SetOnePermittedSandboxedNavigator(parentBC);
+    MOZ_ALWAYS_SUCCEEDS(newBC->SetOnePermittedSandboxedNavigator(parentBC));
   }
 
   if (!aForceNoOpener && parentBC) {
@@ -996,7 +1009,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   if (activeDocsSandboxFlags &
       SANDBOX_PROPAGATES_TO_AUXILIARY_BROWSING_CONTEXTS) {
     MOZ_ASSERT(windowIsNew, "Should only get here for new windows");
-    newBC->SetSandboxFlags(activeDocsSandboxFlags);
+    MOZ_ALWAYS_SUCCEEDS(newBC->SetSandboxFlags(activeDocsSandboxFlags));
   }
 
   RefPtr<nsGlobalWindowOuter> win(
@@ -1041,9 +1054,9 @@ nsresult nsWindowWatcher::OpenWindowInternal(
      is not a window name. */
   if (windowNeedsName) {
     if (nameSpecified && !name.LowerCaseEqualsLiteral("_blank")) {
-      newBC->SetName(name);
+      MOZ_ALWAYS_SUCCEEDS(newBC->SetName(name));
     } else {
-      newBC->SetName(EmptyString());
+      MOZ_ALWAYS_SUCCEEDS(newBC->SetName(u""_ns));
     }
   }
 
@@ -1121,7 +1134,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
         // Make sure we don't mess up our counter even if the above assert
         // fails.
         if (!newBC->GetIsPopupSpam()) {
-          newBC->SetIsPopupSpam(true);
+          MOZ_ALWAYS_SUCCEEDS(newBC->SetIsPopupSpam(true));
         }
       }
     }
@@ -1136,17 +1149,25 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       newBC->UseRemoteSubframes() ==
       !!(chromeFlags & nsIWebBrowserChrome::CHROME_FISSION_WINDOW));
 
+  nsCOMPtr<nsPIDOMWindowInner> pInnerWin =
+      parentWindow ? parentWindow->GetCurrentInnerWindow() : nullptr;
+  ;
   RefPtr<nsDocShellLoadState> loadState = aLoadState;
   if (uriToLoad && loadState) {
     // If a URI was passed to this function, open that, not what was passed in
     // the original LoadState. See Bug 1515433.
     loadState->SetURI(uriToLoad);
   } else if (uriToLoad && aNavigate && !loadState) {
+    RefPtr<WindowContext> context =
+        pInnerWin ? pInnerWin->GetWindowContext() : nullptr;
     loadState = new nsDocShellLoadState(uriToLoad);
 
     loadState->SetSourceBrowsingContext(parentBC);
     loadState->SetHasValidUserGestureActivation(
-        parentBC && parentBC->HasValidTransientUserGestureActivation());
+        context && context->HasValidTransientUserGestureActivation());
+    if (parentBC) {
+      loadState->SetTriggeringSandboxFlags(parentBC->GetSandboxFlags());
+    }
 
     if (subjectPrincipal) {
       loadState->SetTriggeringPrincipal(subjectPrincipal);
@@ -1244,8 +1265,6 @@ nsresult nsWindowWatcher::OpenWindowInternal(
 
     if (parentStorageManager && newStorageManager) {
       RefPtr<Storage> storage;
-      nsCOMPtr<nsPIDOMWindowInner> pInnerWin =
-          parentWindow->GetCurrentInnerWindow();
       parentStorageManager->GetStorage(
           pInnerWin, subjectPrincipal, subjectPrincipal,
           newBC->UsePrivateBrowsing(), getter_AddRefs(storage));
@@ -1623,7 +1642,7 @@ bool nsWindowWatcher::RemoveEnumerator(nsWatcherWindowEnumerator* aEnumerator) {
   return mEnumeratorList.RemoveElement(aEnumerator);
 }
 
-nsresult nsWindowWatcher::URIfromURL(const char* aURL,
+nsresult nsWindowWatcher::URIfromURL(const nsACString& aURL,
                                      mozIDOMWindowProxy* aParent,
                                      nsIURI** aURI) {
   // Build the URI relative to the entry global.
@@ -1646,7 +1665,7 @@ nsresult nsWindowWatcher::URIfromURL(const char* aURL,
   }
 
   // build and return the absolute URI
-  return NS_NewURI(aURI, aURL, baseURI);
+  return NS_NewURI(aURI, aURL, nullptr, baseURI);
 }
 
 // static
@@ -2429,8 +2448,13 @@ void nsWindowWatcher::SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
 int32_t nsWindowWatcher::GetWindowOpenLocation(nsPIDOMWindowOuter* aParent,
                                                uint32_t aChromeFlags,
                                                bool aCalledFromJS,
-                                               bool aWidthSpecified) {
-  bool isFullScreen = aParent->GetFullScreen();
+                                               bool aWidthSpecified,
+                                               bool aIsForPrinting) {
+  // These windows are not actually visible to the user, so we return the thing
+  // that we can always handle.
+  if (aIsForPrinting) {
+    return nsIBrowserDOMWindow::OPEN_PRINT_BROWSER;
+  }
 
   // Where should we open this?
   int32_t containerPref;
@@ -2441,8 +2465,9 @@ int32_t nsWindowWatcher::GetWindowOpenLocation(nsPIDOMWindowOuter* aParent,
   }
 
   bool isDisabledOpenNewWindow =
-      isFullScreen && Preferences::GetBool(
-                          "browser.link.open_newwindow.disabled_in_fullscreen");
+      aParent->GetFullScreen() &&
+      Preferences::GetBool(
+          "browser.link.open_newwindow.disabled_in_fullscreen");
 
   if (isDisabledOpenNewWindow &&
       (containerPref == nsIBrowserDOMWindow::OPEN_NEWWINDOW)) {

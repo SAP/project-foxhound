@@ -60,15 +60,15 @@ ifdef MOZ_ARTIFACT_BUILD_SYMBOLS
 	cd $(DIST)/crashreporter-symbols && \
           zip -r5D '../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip' . -i '*.sym' -i '*.txt'
 ifeq ($(MOZ_ARTIFACT_BUILD_SYMBOLS),full)
-	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
-	cd $(DIST)/crashreporter-symbols && \
-          zip -r5D '../$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).zip' .
+	$(call py_action,symbols_archive,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst' \
+                                     $(abspath $(DIST)/crashreporter-symbols) \
+                                     --full-archive)
 endif
 endif # MOZ_ARTIFACT_BUILD_SYMBOLS
 endif # MOZ_AUTOMATION
 ifdef MOZ_CODE_COVERAGE
 	@echo 'Generating chrome-map for coverage data...'
-	$(topsrcdir)/mach build-backend -b ChromeMap
+	$(PYTHON3) $(topsrcdir)/mach build-backend -b ChromeMap
 	@echo 'Packaging code coverage data...'
 	$(RM) $(CODE_COVERAGE_ARCHIVE_BASENAME).zip
 	$(PYTHON3) -mmozbuild.codecoverage.packager \

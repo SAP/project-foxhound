@@ -1,20 +1,23 @@
-/* -*- Mode: Objective-C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format off */
+/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @protocol MOXTextMarkerSupport;
 
-// This protocol's primary use is for abstracting the NSAccessibility informal protocol
-// into a formal internal API. Conforming classes get to choose a subset of the optional
-// methods to implement. Those methods will be mapped to NSAccessibility attributes or actions.
-// A conforming class can implement moxBlockSelector to control which of its implemented
-// methods should be exposed to NSAccessibility.
+// This protocol's primary use is for abstracting the NSAccessibility informal
+// protocol into a formal internal API. Conforming classes get to choose a
+// subset of the optional methods to implement. Those methods will be mapped to
+// NSAccessibility attributes or actions. A conforming class can implement
+// moxBlockSelector to control which of its implemented methods should be
+// exposed to NSAccessibility.
 
 @protocol MOXAccessible
 
-// The deepest descendant of the accessible subtree that contains the specified point.
-// Forwarded from accessibilityHitTest.
+// The deepest descendant of the accessible subtree that contains the specified
+// point. Forwarded from accessibilityHitTest.
 - (id _Nullable)moxHitTest:(NSPoint)point;
 
 // The deepest descendant of the accessible subtree that has the focus.
@@ -124,6 +127,9 @@
 // AXURL
 - (NSURL* _Nullable)moxURL;
 
+// AXLinkUIElements
+- (NSArray* _Nullable)moxLinkUIElements;
+
 // AXPopupValue
 - (NSString* _Nullable)moxPopupValue;
 
@@ -202,6 +208,26 @@
 // AXColumnHeaderUIElements
 - (NSArray* _Nullable)moxColumnHeaderUIElements;
 
+// AXIdentifier
+- (NSString* _Nullable)moxIdentifier;
+
+// Outline Attributes
+
+// AXDisclosing
+- (NSNumber* _Nullable)moxDisclosing;
+
+// AXDisclosedByRow
+- (id _Nullable)moxDisclosedByRow;
+
+// AXDisclosureLevel
+- (NSNumber* _Nullable)moxDisclosureLevel;
+
+// AXDisclosedRows
+- (NSArray* _Nullable)moxDisclosedRows;
+
+// AXSelectedRows
+- (NSArray* _Nullable)moxSelectedRows;
+
 // Math Attributes
 
 // AXMathRootRadicand
@@ -251,6 +277,12 @@
 
 // AXInsertionPointLineNumber
 - (NSNumber* _Nullable)moxInsertionPointLineNumber;
+
+// AXEditableAncestor
+- (id _Nullable)moxEditableAncestor;
+
+// AXMozDebugDescription
+- (NSString* _Nullable)moxMozDebugDescription;
 
 #pragma mark - AttributeSetters
 
@@ -319,10 +351,22 @@
 - (NSValue* _Nullable)moxStyleRangeForIndex:(NSNumber* _Nonnull)index;
 
 // AttributedStringForRange
-- (NSAttributedString* _Nullable)moxAttributedStringForRange:(NSValue* _Nonnull)range;
+- (NSAttributedString* _Nullable)moxAttributedStringForRange:
+    (NSValue* _Nonnull)range;
+
+// AXUIElementsForSearchPredicate
+- (NSArray* _Nullable)moxUIElementsForSearchPredicate:
+    (NSDictionary* _Nonnull)searchPredicate;
+
+// AXUIElementCountForSearchPredicate
+- (NSNumber* _Nullable)moxUIElementCountForSearchPredicate:
+    (NSDictionary* _Nonnull)searchPredicate;
 
 // AXCellForColumnAndRow
 - (id _Nullable)moxCellForColumnAndRow:(NSArray* _Nonnull)columnAndRow;
+
+// AXIndexForChildUIElement
+- (NSNumber* _Nullable)moxIndexForChildUIElement:(id _Nonnull)child;
 
 @end
 
@@ -343,25 +387,26 @@
 
 #pragma mark - ParameterizedTextAttributeGetters
 
-// Bug 1657653: This is too slow for now
-// AXLengthForTextMarkerRange_
+// AXLengthForTextMarkerRange
 - (NSNumber* _Nullable)moxLengthForTextMarkerRange:(id _Nonnull)textMarkerRange;
 
-// Bug 1657653: This is too slow for now
-// AXStringForTextMarkerRange_
+// AXStringForTextMarkerRange
 - (NSString* _Nullable)moxStringForTextMarkerRange:(id _Nonnull)textMarkerRange;
 
 // AXTextMarkerRangeForUnorderedTextMarkers
-- (id _Nullable)moxTextMarkerRangeForUnorderedTextMarkers:(NSArray* _Nonnull)textMarkers;
+- (id _Nullable)moxTextMarkerRangeForUnorderedTextMarkers:
+    (NSArray* _Nonnull)textMarkers;
 
 // AXLeftWordTextMarkerRangeForTextMarker
 - (id _Nullable)moxLeftWordTextMarkerRangeForTextMarker:(id _Nonnull)textMarker;
 
 // AXRightWordTextMarkerRangeForTextMarker
-- (id _Nullable)moxRightWordTextMarkerRangeForTextMarker:(id _Nonnull)textMarker;
+- (id _Nullable)moxRightWordTextMarkerRangeForTextMarker:
+    (id _Nonnull)textMarker;
 
 // AXStartTextMarkerForTextMarkerRange
-- (id _Nullable)moxStartTextMarkerForTextMarkerRange:(id _Nonnull)textMarkerRange;
+- (id _Nullable)moxStartTextMarkerForTextMarkerRange:
+    (id _Nonnull)textMarkerRange;
 
 // AXEndTextMarkerForTextMarkerRange
 - (id _Nullable)moxEndTextMarkerForTextMarkerRange:(id _Nonnull)textMarkerRange;
@@ -372,8 +417,53 @@
 // AXPreviousTextMarkerForTextMarker
 - (id _Nullable)moxPreviousTextMarkerForTextMarker:(id _Nonnull)textMarker;
 
-// Bug 1657653: This is too slow for now
-// AXAttributedStringForTextMarkerRange_
-- (NSAttributedString* _Nullable)moxAttributedStringForTextMarkerRange:(id _Nonnull)textMarkerRange;
+// AXAttributedStringForTextMarkerRange
+- (NSAttributedString* _Nullable)moxAttributedStringForTextMarkerRange:
+    (id _Nonnull)textMarkerRange;
+
+// AXBoundsForTextMarkerRange
+- (NSValue* _Nullable)moxBoundsForTextMarkerRange:(id _Nonnull)textMarkerRange;
+
+// AXIndexForTextMarker
+- (NSNumber* _Nullable)moxIndexForTextMarker:(id _Nonnull)textMarker;
+
+// AXTextMarkerForIndex
+- (id _Nullable)moxTextMarkerForIndex:(NSNumber* _Nonnull)index;
+
+// AXUIElementForTextMarker
+- (id _Nullable)moxUIElementForTextMarker:(id _Nonnull)textMarker;
+
+// AXTextMarkerRangeForUIElement
+- (id _Nullable)moxTextMarkerRangeForUIElement:(id _Nonnull)element;
+
+// AXLineTextMarkerRangeForTextMarker
+- (id _Nullable)moxLineTextMarkerRangeForTextMarker:(id _Nonnull)textMarker;
+
+// AXLeftLineTextMarkerRangeForTextMarker
+- (id _Nullable)moxLeftLineTextMarkerRangeForTextMarker:(id _Nonnull)textMarker;
+
+// AXRightLineTextMarkerRangeForTextMarker
+- (id _Nullable)moxRightLineTextMarkerRangeForTextMarker:
+    (id _Nonnull)textMarker;
+
+// AXParagraphTextMarkerRangeForTextMarker
+- (id _Nullable)moxParagraphTextMarkerRangeForTextMarker:
+    (id _Nonnull)textMarker;
+
+// AXStyleTextMarkerRangeForTextMarker
+- (id _Nullable)moxStyleTextMarkerRangeForTextMarker:(id _Nonnull)textMarker;
+
+// AXMozDebugDescriptionForTextMarker
+- (NSString* _Nullable)moxMozDebugDescriptionForTextMarker:
+    (id _Nonnull)textMarker;
+
+// AXMozDebugDescriptionForTextMarkerRange
+- (NSString* _Nullable)moxMozDebugDescriptionForTextMarkerRange:
+    (id _Nonnull)textMarkerRange;
+
+#pragma mark - TextAttributeSetters
+
+// AXSelectedTextMarkerRange
+- (void)moxSetSelectedTextMarkerRange:(id _Nullable)textMarkerRange;
 
 @end

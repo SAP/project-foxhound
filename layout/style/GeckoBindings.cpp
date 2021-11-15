@@ -1006,7 +1006,8 @@ void Gecko_nsFont_InitSystem(nsFont* aDest, int32_t aFontId,
   LookAndFeel::FontID fontID = static_cast<LookAndFeel::FontID>(aFontId);
 
   AutoWriteLock guard(*sServoFFILock);
-  nsLayoutUtils::ComputeSystemFont(aDest, fontID, defaultVariableFont);
+  nsLayoutUtils::ComputeSystemFont(aDest, fontID, defaultVariableFont,
+                                   aDocument);
 }
 
 void Gecko_nsFont_Destroy(nsFont* aDest) { aDest->~nsFont(); }
@@ -1399,8 +1400,8 @@ static StaticRefPtr<UACacheReporter> gUACacheReporter;
 namespace mozilla {
 
 void InitializeServo() {
-  URLExtraData::InitDummy();
-  Servo_Initialize(URLExtraData::Dummy());
+  URLExtraData::Init();
+  Servo_Initialize(URLExtraData::Dummy(), URLExtraData::DummyChrome());
 
   gUACacheReporter = new UACacheReporter();
   RegisterWeakMemoryReporter(gUACacheReporter);
@@ -1415,7 +1416,10 @@ void ShutdownServo() {
   gUACacheReporter = nullptr;
 
   delete sServoFFILock;
+  sServoFFILock = nullptr;
   Servo_Shutdown();
+
+  URLExtraData::Shutdown();
 }
 
 void AssertIsMainThreadOrServoFontMetricsLocked() {

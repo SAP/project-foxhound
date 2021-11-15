@@ -112,14 +112,6 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
     return IPC_OK();
   }
 
-  mozilla::ipc::IPCResult RecvGetFrameUniformity(
-      FrameUniformityData* aOutData) override {
-    // Don't support calculating frame uniformity on the child process and
-    // this is just a stub for now.
-    MOZ_ASSERT(false);
-    return IPC_OK();
-  }
-
   /**
    * Tells this CompositorBridgeParent to send a message when the compositor has
    * received the transaction.
@@ -151,9 +143,11 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   void FlushApzRepaints(const LayersId& aLayersId) override;
   void GetAPZTestData(const LayersId& aLayersId,
                       APZTestData* aOutData) override;
+  void GetFrameUniformity(const LayersId& aLayersId,
+                          FrameUniformityData* aOutData) override;
   void SetConfirmedTargetAPZC(
       const LayersId& aLayersId, const uint64_t& aInputBlockId,
-      const nsTArray<ScrollableLayerGuid>& aTargets) override;
+      nsTArray<ScrollableLayerGuid>&& aTargets) override;
 
   AsyncCompositionManager* GetCompositionManager(
       LayerTransactionParent* aParent) override;
@@ -220,8 +214,8 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
 
   bool IsRemote() const override { return true; }
 
-  UniquePtr<SurfaceDescriptor> LookupSurfaceDescriptorForClientDrawTarget(
-      const uintptr_t aDrawTarget) final;
+  UniquePtr<SurfaceDescriptor> LookupSurfaceDescriptorForClientTexture(
+      const int64_t aTextureId) final;
 
   mozilla::ipc::IPCResult RecvSupportsAsyncDXGISurface(bool* value) override;
   mozilla::ipc::IPCResult RecvPreferredDXGIAdapter(

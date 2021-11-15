@@ -15,6 +15,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ServoStyleConstsInlines.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StyleColorInlines.h"
 #include "mozilla/UniquePtr.h"
@@ -110,12 +111,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
 
   mozilla::StyleGenericFontFamily mGenericID;
 
-  // MathML scriptlevel support
-  int8_t mScriptLevel;
+  // math-depth support (used for MathML scriptlevel)
+  int8_t mMathDepth;
   // MathML  mathvariant support
   uint8_t mMathVariant;
-  // MathML displaystyle support
-  uint8_t mMathDisplay;
+  // math-style support (used for MathML displaystyle)
+  uint8_t mMathStyle;
 
   // allow different min font-size for certain cases
   uint8_t mMinFontSizeRatio;  // percent * 100
@@ -316,7 +317,7 @@ struct nsStyleImageLayers {
                               nsStyleImageLayers::LayerType aType) const;
 
   nsStyleImageLayers& operator=(const nsStyleImageLayers& aOther);
-  nsStyleImageLayers& operator=(nsStyleImageLayers&& aOther);
+  nsStyleImageLayers& operator=(nsStyleImageLayers&& aOther) = default;
   bool operator==(const nsStyleImageLayers& aOther) const;
 
   static const nsCSSPropertyID kBackgroundLayerTable[];
@@ -819,10 +820,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   mozilla::NonNegativeLengthPercentageOrNormal mColumnGap;
   mozilla::NonNegativeLengthPercentageOrNormal mRowGap;
 
-  bool OffsetHasPercent(mozilla::Side aSide) const {
-    return mOffset.Get(aSide).HasPercent();
-  }
-
   // Logical-coordinate accessors for width and height properties,
   // given a WritingMode value. The definitions of these methods are
   // found in WritingModes.h (after the WritingMode class is fully
@@ -960,6 +957,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
            mWhiteSpace == mozilla::StyleWhiteSpace::PreWrap ||
            mWhiteSpace == mozilla::StyleWhiteSpace::BreakSpaces ||
            mWhiteSpace == mozilla::StyleWhiteSpace::PreSpace;
+  }
+
+  bool WhiteSpaceCanHangOrVisuallyCollapse() const {
+    // This was originally expressed in nsTextFrame in terms of:
+    //   mWhiteSpace != StyleWhiteSpace::BreakSpaces &&
+    //       WhiteSpaceCanWrapStyle() &&
+    //       WhiteSpaceIsSignificant()
+    // which simplifies to:
+    return mWhiteSpace == mozilla::StyleWhiteSpace::PreWrap;
   }
 
   bool NewlineIsSignificantStyle() const {
@@ -1224,7 +1230,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
  public:
   mozilla::StyleAppearance mDefaultAppearance;
-  mozilla::StyleButtonAppearance mButtonAppearance;
   mozilla::StylePositionProperty mPosition;
 
   mozilla::StyleFloat mFloat;
@@ -1334,6 +1339,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   mozilla::StyleAppearance EffectiveAppearance() const {
     switch (mAppearance) {
       case mozilla::StyleAppearance::Auto:
+      case mozilla::StyleAppearance::Button:
       case mozilla::StyleAppearance::Searchfield:
       case mozilla::StyleAppearance::Textarea:
       case mozilla::StyleAppearance::Checkbox:
@@ -1366,14 +1372,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
         // difference between menulist and menulist-button handling, we don't
         // bother.
         return mDefaultAppearance;
-      case mozilla::StyleAppearance::Button:
-        // `appearance: button` should behave like `auto` for a specific list
-        // of widget elements, and we encode that using the internal
-        // -moz-button-appearance property.
-        if (mButtonAppearance == mozilla::StyleButtonAppearance::Disallow) {
-          return mDefaultAppearance;
-        }
-        return mAppearance;
       default:
         return mAppearance;
     }
@@ -1457,6 +1455,20 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     return IsInnerTableStyle() && mozilla::StyleDisplay::TableCell != mDisplay;
   }
 
+  bool IsXULDisplayStyle() const {
+    // -moz-{inline-}box is XUL, unless we're emulating it with flexbox.
+    if (!mozilla::StaticPrefs::layout_css_emulate_moz_box_with_flex() &&
+        DisplayInside() == mozilla::StyleDisplayInside::MozBox) {
+      return true;
+    }
+
+#ifdef MOZ_XUL
+    return DisplayOutside() == mozilla::StyleDisplayOutside::XUL;
+#else
+    return false;
+#endif
+  }
+
   bool IsFloatingStyle() const { return mozilla::StyleFloat::None != mFloat; }
 
   bool IsPositionedStyle() const {
@@ -1504,10 +1516,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   }
 
   bool IsScrollableOverflow() const {
-    // mOverflowX and mOverflowY always match when one of them is
-    // Visible or MozHiddenUnscrollable.
+    // Visible and Clip can be combined but not with other values,
+    // so checking mOverflowX is enough.
     return mOverflowX != mozilla::StyleOverflow::Visible &&
-           mOverflowX != mozilla::StyleOverflow::MozHiddenUnscrollable;
+           mOverflowX != mozilla::StyleOverflow::Clip;
+  }
+
+  bool OverflowIsVisibleInBothAxis() const {
+    return mOverflowX == mozilla::StyleOverflow::Visible &&
+           mOverflowY == mozilla::StyleOverflow::Visible;
   }
 
   bool IsContainPaint() const {

@@ -7,10 +7,10 @@
 #ifndef jit_mips64_MacroAssembler_mips64_h
 #define jit_mips64_MacroAssembler_mips64_h
 
-#include "jit/JitFrames.h"
 #include "jit/mips-shared/MacroAssembler-mips-shared.h"
 #include "jit/MoveResolver.h"
 #include "vm/BytecodeUtil.h"
+#include "wasm/WasmTypes.h"
 
 namespace js {
 namespace jit {
@@ -592,7 +592,7 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
   }
   void pushValue(const Address& addr);
 
-  void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.

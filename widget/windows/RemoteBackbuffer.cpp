@@ -4,12 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteBackbuffer.h"
+#include "mozilla/Span.h"
 #include <algorithm>
 #include <type_traits>
 
 namespace mozilla {
 namespace widget {
 namespace remote_backbuffer {
+
+// This number can be adjusted as a time-memory tradeoff
+constexpr uint8_t kMaxDirtyRects = 8;
 
 struct IpcSafeRect {
   explicit IpcSafeRect(const gfx::IntRect& aRect)
@@ -44,7 +48,8 @@ struct BorrowResponseData {
 };
 
 struct PresentRequestData {
-  IpcSafeRect dirtyRect;
+  uint8_t lenDirtyRects;
+  IpcSafeRect dirtyRects[kMaxDirtyRects];
 };
 
 struct PresentResponseData {
@@ -80,8 +85,8 @@ class SharedImage {
   }
 
   bool Initialize(int32_t aWidth, int32_t aHeight) {
-    MOZ_ASSERT(aWidth);
-    MOZ_ASSERT(aHeight);
+    MOZ_ASSERT(aWidth > 0);
+    MOZ_ASSERT(aHeight > 0);
 
     mWidth = aWidth;
     mHeight = aHeight;
@@ -108,8 +113,8 @@ class SharedImage {
   }
 
   bool InitializeRemote(int32_t aWidth, int32_t aHeight, HANDLE aFileMapping) {
-    MOZ_ASSERT(aWidth);
-    MOZ_ASSERT(aHeight);
+    MOZ_ASSERT(aWidth > 0);
+    MOZ_ASSERT(aHeight > 0);
     MOZ_ASSERT(aFileMapping);
 
     mWidth = aWidth;
@@ -159,6 +164,20 @@ class SharedImage {
         GetStride(), gfx::SurfaceFormat::B8G8R8A8);
   }
 
+  void CopyPixelsFrom(const SharedImage& other) {
+    const unsigned char* src = other.mPixelData;
+    unsigned char* dst = mPixelData;
+
+    int32_t width = std::min(mWidth, other.mWidth);
+    int32_t height = std::min(mHeight, other.mHeight);
+
+    for (int32_t row = 0; row < height; ++row) {
+      memcpy(dst, src, static_cast<uint32_t>(width * kBytesPerPixel));
+      src += other.GetStride();
+      dst += GetStride();
+    }
+  }
+
   int32_t GetWidth() { return mWidth; }
 
   int32_t GetHeight() { return mHeight; }
@@ -169,9 +188,9 @@ class SharedImage {
   SharedImage& operator=(SharedImage&&) = delete;
 
  private:
-  int32_t GetStride() {
-    constexpr int32_t kBytesPerPixel = 4;
+  static constexpr int32_t kBytesPerPixel = 4;
 
+  int32_t GetStride() const {
     // DIB requires 32-bit row alignment
     return (((mWidth * kBytesPerPixel) + 3) / 4) * 4;
   }
@@ -228,7 +247,7 @@ class PresentableSharedImage {
   }
 
   bool PresentToWindow(HWND aWindowHandle, nsTransparencyMode aTransparencyMode,
-                       const IpcSafeRect& aDirtyRect) {
+                       Span<const IpcSafeRect> aDirtyRects) {
     if (aTransparencyMode == eTransparencyTransparent) {
       // If our window is a child window or a child-of-a-child, the window
       // that needs to be updated is the top level ancestor of the tree
@@ -246,18 +265,26 @@ class PresentableSharedImage {
 
     IntRect sharedImageRect{0, 0, mSharedImage.GetWidth(),
                             mSharedImage.GetHeight()};
-    IntRect dirtyRect{aDirtyRect.x, aDirtyRect.y, aDirtyRect.width,
-                      aDirtyRect.height};
-    IntRect bltRect = dirtyRect.Intersect(sharedImageRect);
+
+    bool result = true;
 
     HDC windowDC = ::GetDC(aWindowHandle);
     if (!windowDC) {
       return false;
     }
 
-    bool result = ::BitBlt(windowDC, bltRect.x /*dstX*/, bltRect.y /*dstY*/,
-                           bltRect.width, bltRect.height, mDeviceContext,
-                           bltRect.x /*srcX*/, bltRect.y /*srcY*/, SRCCOPY);
+    for (auto& ipcDirtyRect : aDirtyRects) {
+      IntRect dirtyRect{ipcDirtyRect.x, ipcDirtyRect.y, ipcDirtyRect.width,
+                        ipcDirtyRect.height};
+      IntRect bltRect = dirtyRect.Intersect(sharedImageRect);
+
+      if (!::BitBlt(windowDC, bltRect.x /*dstX*/, bltRect.y /*dstY*/,
+                    bltRect.width, bltRect.height, mDeviceContext,
+                    bltRect.x /*srcX*/, bltRect.y /*srcY*/, SRCCOPY)) {
+        result = false;
+        break;
+      }
+    }
 
     MOZ_ALWAYS_TRUE(::ReleaseDC(aWindowHandle, windowDC));
 
@@ -270,6 +297,10 @@ class PresentableSharedImage {
 
   already_AddRefed<gfx::DrawTarget> CreateDrawTarget() {
     return mSharedImage.CreateDrawTarget();
+  }
+
+  void CopyPixelsFrom(const PresentableSharedImage& other) {
+    mSharedImage.CopyPixelsFrom(other.mSharedImage);
   }
 
   int32_t GetWidth() { return mSharedImage.GetWidth(); }
@@ -473,11 +504,15 @@ void Provider::HandleBorrowRequest(BorrowResponseData* aResponseData,
     return;
   }
 
-  mBackbuffer.reset();
-
   auto newBackbuffer = std::make_unique<PresentableSharedImage>();
   if (!newBackbuffer->Initialize(width, height)) {
     return;
+  }
+
+  // Preserve the contents of the old backbuffer (if it exists)
+  if (mBackbuffer) {
+    newBackbuffer->CopyPixelsFrom(*mBackbuffer);
+    mBackbuffer.reset();
   }
 
   HANDLE remoteFileMapping =
@@ -498,14 +533,17 @@ void Provider::HandlePresentRequest(const PresentRequestData& aRequestData,
                                     PresentResponseData* aResponseData) {
   MOZ_ASSERT(aResponseData);
 
+  Span rectSpan(aRequestData.dirtyRects, kMaxDirtyRects);
+
   aResponseData->result = ResponseResult::Error;
 
   if (!mBackbuffer) {
     return;
   }
 
-  if (!mBackbuffer->PresentToWindow(mWindowHandle, mTransparencyMode,
-                                    aRequestData.dirtyRect)) {
+  if (!mBackbuffer->PresentToWindow(
+          mWindowHandle, mTransparencyMode,
+          rectSpan.First(aRequestData.lenDirtyRects))) {
     return;
   }
 
@@ -600,9 +638,22 @@ already_AddRefed<gfx::DrawTarget> Client::BorrowDrawTarget() {
   return mBackbuffer->CreateDrawTarget();
 }
 
-bool Client::PresentDrawTarget(const gfx::IntRect& aDirtyRect) {
+bool Client::PresentDrawTarget(gfx::IntRegion aDirtyRegion) {
   mSharedDataPtr->dataType = SharedDataType::PresentRequest;
-  mSharedDataPtr->data.presentRequest.dirtyRect = IpcSafeRect(aDirtyRect);
+
+  // Simplify the region until it has <= kMaxDirtyRects
+  aDirtyRegion.SimplifyOutward(kMaxDirtyRects);
+
+  Span rectSpan(mSharedDataPtr->data.presentRequest.dirtyRects, kMaxDirtyRects);
+
+  uint8_t rectIndex = 0;
+  for (auto iter = aDirtyRegion.RectIter(); !iter.Done(); iter.Next()) {
+    rectSpan[rectIndex] = IpcSafeRect(iter.Get());
+    ++rectIndex;
+  }
+
+  mSharedDataPtr->data.presentRequest.lenDirtyRects = rectIndex;
+
   MOZ_ALWAYS_TRUE(::SetEvent(mRequestReadyEvent));
   MOZ_ALWAYS_TRUE(::WaitForSingleObject(mResponseReadyEvent, INFINITE) ==
                   WAIT_OBJECT_0);

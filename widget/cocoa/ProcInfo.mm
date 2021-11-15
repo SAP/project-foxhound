@@ -8,6 +8,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 
+#include "nsMemoryReporterManager.h"
 #include "nsNetCID.h"
 
 #include <cstdio>
@@ -44,6 +45,7 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
           info.childId = request.childId;
           info.type = request.processType;
           info.origin = std::move(request.origin);
+          info.windows = std::move(request.windowInfo);
           struct proc_bsdinfo proc;
           if ((unsigned long)proc_pidinfo(request.pid, PROC_PIDTBSDINFO, 0, &proc,
                                           PROC_PIDTBSDINFO_SIZE) < PROC_PIDTBSDINFO_SIZE) {
@@ -61,12 +63,10 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
 
           // copying all the info to the ProcInfo struct
           info.filename.AssignASCII(proc.pbi_name);
-          info.virtualMemorySize = pti.pti_virtual_size;
           info.residentSetSize = pti.pti_resident_size;
           info.cpuUser = pti.pti_total_user;
           info.cpuKernel = pti.pti_total_system;
 
-          // Now getting threads info
           mach_port_t selectedTask;
           // If we did not get a task from a child process, we use mach_task_self()
           if (request.childTask == MACH_PORT_NULL) {
@@ -74,6 +74,14 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
           } else {
             selectedTask = request.childTask;
           }
+          // Computing the resident unique size is somewhat tricky,
+          // so we use about:memory's implementation. This implementation
+          // uses the `task` so, in theory, should be no additional
+          // race condition. However, in case of error, the result is `0`.
+          info.residentUniqueSize = nsMemoryReporterManager::ResidentUnique(selectedTask);
+
+          // Now getting threads info
+
           // task_threads() gives us a snapshot of the process threads
           // but those threads can go away. All the code below makes
           // the assumption that thread_info() calls may fail, and
@@ -88,6 +96,21 @@ RefPtr<ProcInfoPromise> GetProcInfo(nsTArray<ProcInfoRequest>&& aRequests) {
             // Let's stop here and ignore the entire process.
             continue;
           }
+
+          // Deallocate the thread list.
+          // Note that this deallocation is entirely undocumented, so the following code is based
+          // on guesswork and random examples found on the web.
+          auto guardThreadCount = MakeScopeExit([&] {
+            if (threadList == nullptr) {
+              return;
+            }
+            // Free each thread to avoid leaks.
+            for (mach_msg_type_number_t i = 0; i < threadCount; i++) {
+              mach_port_deallocate(mach_task_self(), threadList[i]);
+            }
+            vm_deallocate(mach_task_self(), /* address */ (vm_address_t)threadList,
+                          /* size */ sizeof(thread_t) * threadCount);
+          });
 
           mach_msg_type_number_t count;
 

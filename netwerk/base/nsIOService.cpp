@@ -152,6 +152,7 @@ int16_t gBadPortList[] = {
     532,   // netnews
     540,   // uucp
     548,   // afp
+    554,   // rtsp
     556,   // remotefs
     563,   // nntp+ssl
     587,   // smtp (outgoing)
@@ -159,9 +160,13 @@ int16_t gBadPortList[] = {
     636,   // ldap+ssl
     993,   // imap+ssl
     995,   // pop3+ssl
+    1720,  // h323hostcall
+    1723,  // pptp
     2049,  // nfs
     3659,  // apple-sasl
     4045,  // lockd
+    5060,  // sip
+    5061,  // sips
     6000,  // x11
     6665,  // irc (alternate)
     6666,  // irc (alternate)
@@ -635,8 +640,7 @@ void nsIOService::OnProcessLaunchComplete(SocketProcessHost* aHost,
   }
 
   if (!mPendingEvents.IsEmpty()) {
-    nsTArray<std::function<void()>> pendingEvents;
-    mPendingEvents.SwapElements(pendingEvents);
+    nsTArray<std::function<void()>> pendingEvents = std::move(mPendingEvents);
     for (auto& func : pendingEvents) {
       func();
     }
@@ -739,9 +743,8 @@ nsresult nsIOService::RecheckCaptivePortalIfLocalRedirect(nsIChannel* newChan) {
     return NS_OK;
   }
 
-  NetAddr netAddr;
-  PRNetAddrToNetAddr(&prAddr, &netAddr);
-  if (IsIPAddrLocal(&netAddr)) {
+  NetAddr netAddr(&prAddr);
+  if (netAddr.IsIPAddrLocal()) {
     // Redirects to local IP addresses are probably captive portals
     RecheckCaptivePortal();
   }
@@ -948,9 +951,8 @@ nsIOService::HostnameIsLocalIPAddress(nsIURI* aURI, bool* aResult) {
   PRNetAddr addr;
   PRStatus result = PR_StringToNetAddr(host.get(), &addr);
   if (result == PR_SUCCESS) {
-    NetAddr netAddr;
-    PRNetAddrToNetAddr(&addr, &netAddr);
-    if (IsIPAddrLocal(&netAddr)) {
+    NetAddr netAddr(&addr);
+    if (netAddr.IsIPAddrLocal()) {
       *aResult = true;
     }
   }
@@ -976,9 +978,8 @@ nsIOService::HostnameIsSharedIPAddress(nsIURI* aURI, bool* aResult) {
   PRNetAddr addr;
   PRStatus result = PR_StringToNetAddr(host.get(), &addr);
   if (result == PR_SUCCESS) {
-    NetAddr netAddr;
-    PRNetAddrToNetAddr(&addr, &netAddr);
-    if (IsIPAddrShared(&netAddr)) {
+    NetAddr netAddr(&addr);
+    if (netAddr.IsIPAddrShared()) {
       *aResult = true;
     }
   }
@@ -1041,8 +1042,7 @@ already_AddRefed<nsIURI> nsIOService::CreateExposableURI(nsIURI* aURI) {
   nsAutoCString userPass;
   uri->GetUserPass(userPass);
   if (!userPass.IsEmpty()) {
-    DebugOnly<nsresult> rv =
-        NS_MutateURI(uri).SetUserPass(EmptyCString()).Finalize(uri);
+    DebugOnly<nsresult> rv = NS_MutateURI(uri).SetUserPass(""_ns).Finalize(uri);
     MOZ_ASSERT(NS_SUCCEEDED(rv) && uri, "Mutating URI should never fail");
   }
   return uri.forget();

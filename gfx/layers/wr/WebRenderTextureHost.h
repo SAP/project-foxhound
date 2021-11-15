@@ -43,6 +43,8 @@ class WebRenderTextureHost : public TextureHost {
 
   virtual void NotifyNotUsed() override;
 
+  virtual bool IsValid() override;
+
   // Return the format used for reading the texture. Some hardware specific
   // textureHosts use their special data representation internally, but we could
   // treat these textureHost as the read-format when we read them.
@@ -83,11 +85,19 @@ class WebRenderTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys,
-                        const bool aPreferCompositorSurface) override;
+                        PushDisplayItemFlagSet aFlags) override;
 
   bool NeedsYFlip() const override;
 
-  void MaybeNofityForUse(wr::TransactionBuilder& aTxn);
+  void SetAcquireFence(mozilla::ipc::FileDescriptor&& aFenceFd) override;
+
+  void SetReleaseFence(mozilla::ipc::FileDescriptor&& aFenceFd) override;
+
+  mozilla::ipc::FileDescriptor GetAndResetReleaseFence() override;
+
+  AndroidHardwareBuffer* GetAndroidHardwareBuffer() const override;
+
+  void MaybeNotifyForUse(wr::TransactionBuilder& aTxn);
 
  protected:
   RefPtr<TextureHost> mWrappedTextureHost;

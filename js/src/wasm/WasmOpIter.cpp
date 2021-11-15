@@ -35,6 +35,11 @@ using namespace js::wasm;
 #  else
 #    define WASM_REF_OP(code) break
 #  endif
+#  ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#    define WASM_FUNCTION_REFERENCES_OP(code) return code
+#  else
+#    define WASM_FUNCTION_REFERENCES_OP(code) break
+#  endif
 #  ifdef ENABLE_WASM_GC
 #    define WASM_GC_OP(code) return code
 #  else
@@ -270,6 +275,10 @@ OpKind wasm::Classify(OpBytes op) {
       WASM_REF_OP(OpKind::Conversion);
     case Op::RefFunc:
       WASM_REF_OP(OpKind::RefFunc);
+    case Op::RefAsNonNull:
+      WASM_FUNCTION_REFERENCES_OP(OpKind::RefAsNonNull);
+    case Op::BrOnNull:
+      WASM_FUNCTION_REFERENCES_OP(OpKind::BrOnNull);
     case Op::RefEq:
       WASM_GC_OP(OpKind::Comparison);
     case Op::GcPrefix: {
@@ -421,6 +430,11 @@ OpKind wasm::Classify(OpBytes op) {
         case SimdOp::I16x8NarrowSI32x4:
         case SimdOp::I16x8NarrowUI32x4:
         case SimdOp::V8x16Swizzle:
+        case SimdOp::F32x4PMin:
+        case SimdOp::F32x4PMax:
+        case SimdOp::F64x2PMin:
+        case SimdOp::F64x2PMax:
+        case SimdOp::I32x4DotSI16x8:
           WASM_SIMD_OP(OpKind::Binary);
         case SimdOp::I8x16Neg:
         case SimdOp::I16x8Neg:
@@ -448,6 +462,14 @@ OpKind wasm::Classify(OpBytes op) {
         case SimdOp::I8x16Abs:
         case SimdOp::I16x8Abs:
         case SimdOp::I32x4Abs:
+        case SimdOp::F32x4Ceil:
+        case SimdOp::F32x4Floor:
+        case SimdOp::F32x4Trunc:
+        case SimdOp::F32x4Nearest:
+        case SimdOp::F64x2Ceil:
+        case SimdOp::F64x2Floor:
+        case SimdOp::F64x2Trunc:
+        case SimdOp::F64x2Nearest:
           WASM_SIMD_OP(OpKind::Unary);
         case SimdOp::I8x16Shl:
         case SimdOp::I8x16ShrS:
@@ -479,6 +501,8 @@ OpKind wasm::Classify(OpBytes op) {
         case SimdOp::I32x4LoadU16x4:
         case SimdOp::I64x2LoadS32x2:
         case SimdOp::I64x2LoadU32x2:
+        case SimdOp::V128Load32Zero:
+        case SimdOp::V128Load64Zero:
           WASM_SIMD_OP(OpKind::Load);
         case SimdOp::V128Store:
           WASM_SIMD_OP(OpKind::Store);

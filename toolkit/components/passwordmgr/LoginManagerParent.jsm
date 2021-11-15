@@ -19,6 +19,7 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.jsm",
+  ExperimentAPI: "resource://messaging-system/experiments/ExperimentAPI.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   MigrationUtils: "resource:///modules/MigrationUtils.jsm",
   PasswordGenerator: "resource://gre/modules/PasswordGenerator.jsm",
@@ -127,7 +128,8 @@ Services.ppmm.addMessageListener("PasswordManager:findRecipes", message => {
 async function getImportableLogins(formOrigin) {
   // Include the experiment state for data and UI decisions; otherwise skip
   // importing if not supported or disabled.
-  const state = LoginHelper.showAutoCompleteImport;
+  const state =
+    LoginHelper.suggestImportCount > 0 && LoginHelper.showAutoCompleteImport;
   return state
     ? {
         browsers: await ChromeMigrationUtils.getImportableLogins(formOrigin),
@@ -231,7 +233,7 @@ class LoginManagerParent extends JSWindowActorParent {
     );
   }
 
-  receiveMessage(msg) {
+  async receiveMessage(msg) {
     let data = msg.data;
     if (data.origin || data.formOrigin) {
       throw new Error(
@@ -253,6 +255,11 @@ class LoginManagerParent extends JSWindowActorParent {
       case "PasswordManager:updateDoorhangerSuggestions": {
         this.possibleValues.usernames = data.possibleValues.usernames;
         this.possibleValues.passwords = data.possibleValues.passwords;
+        break;
+      }
+
+      case "PasswordManager:decreaseSuggestImportCount": {
+        this.decreaseSuggestImportCount(data);
         break;
       }
 
@@ -296,13 +303,58 @@ class LoginManagerParent extends JSWindowActorParent {
         break;
       }
 
-      case "PasswordManager:OpenMigrationWizard": {
-        // Open the migration wizard pre-selecting the appropriate browser.
+      case "PasswordManager:OpenImportableLearnMore": {
         let window = this.getRootBrowser().ownerGlobal;
-        MigrationUtils.showMigrationWizard(window, [
-          MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS,
-          data,
-        ]);
+        window.openTrustedLinkIn(
+          Services.urlFormatter.formatURLPref("app.support.baseURL") +
+            "password-import",
+          "tab",
+          { relatedToCurrent: true }
+        );
+        break;
+      }
+
+      case "PasswordManager:HandleImportable": {
+        const { browserId, type } = data;
+
+        // Directly migrate passwords for a single profile.
+        const migrator = await MigrationUtils.getMigrator(browserId);
+        const profiles = await migrator.getSourceProfiles();
+        if (
+          profiles.length == 1 &&
+          ExperimentAPI.getFeatureValue("password-autocomplete")
+            ?.directMigrateSingleProfile
+        ) {
+          const loginAdded = new Promise(resolve => {
+            const obs = (subject, topic, data) => {
+              if (data == "addLogin") {
+                Services.obs.removeObserver(obs, "passwordmgr-storage-changed");
+                resolve();
+              }
+            };
+            Services.obs.addObserver(obs, "passwordmgr-storage-changed");
+          });
+
+          await migrator.migrate(
+            MigrationUtils.resourceTypes.PASSWORDS,
+            null,
+            profiles[0]
+          );
+          await loginAdded;
+
+          // Reshow the popup with the imported password.
+          this.sendAsyncMessage("PasswordManager:repopulateAutocompletePopup");
+        } else {
+          // Open the migration wizard pre-selecting the appropriate browser.
+          MigrationUtils.showMigrationWizard(
+            this.getRootBrowser().ownerGlobal,
+            [MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS, browserId]
+          );
+        }
+
+        Services.telemetry.recordEvent("exp_import", "event", type, browserId, {
+          profilesCount: profiles.length + "",
+        });
         break;
       }
 
@@ -318,7 +370,7 @@ class LoginManagerParent extends JSWindowActorParent {
       // Used by tests to detect that a form-fill has occurred. This redirects
       // to the top-level browsing context.
       case "PasswordManager:formProcessed": {
-        let topActor = this.browsingContext.top.currentWindowGlobal.getActor(
+        let topActor = this.browsingContext.currentWindowGlobal.getActor(
           "LoginManager"
         );
         topActor.sendAsyncMessage("PasswordManager:formProcessed", {
@@ -334,6 +386,36 @@ class LoginManagerParent extends JSWindowActorParent {
     }
 
     return undefined;
+  }
+
+  /**
+   * Update the remaining number of import suggestion impressions with debounce
+   * to allow multiple popups showing the "same" items to count as one.
+   */
+  decreaseSuggestImportCount(count) {
+    // Delay an existing timer with a potentially larger count.
+    if (this._suggestImportTimer) {
+      this._suggestImportTimer.delay =
+        LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS;
+      this._suggestImportCount = Math.max(count, this._suggestImportCount);
+      return;
+    }
+
+    this._suggestImportTimer = Cc["@mozilla.org/timer;1"].createInstance(
+      Ci.nsITimer
+    );
+    this._suggestImportTimer.init(
+      () => {
+        this._suggestImportTimer = null;
+        Services.prefs.setIntPref(
+          "signon.suggestImportCount",
+          LoginHelper.suggestImportCount - this._suggestImportCount
+        );
+      },
+      LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS,
+      Ci.nsITimer.TYPE_ONE_SHOT
+    );
+    this._suggestImportCount = count;
   }
 
   /**
@@ -1305,6 +1387,8 @@ class LoginManagerParent extends JSWindowActorParent {
     return gRecipeManager.initializationPromise;
   }
 }
+
+LoginManagerParent.SUGGEST_IMPORT_DEBOUNCE_MS = 10000;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   LoginManagerParent,

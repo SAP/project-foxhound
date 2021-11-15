@@ -338,7 +338,7 @@ var PanelMultiView = class extends AssociatedToNode {
 
     return (
       doc.getElementById(id) ||
-      viewCacheTemplate.content.querySelector("#" + id)
+      viewCacheTemplate?.content.querySelector("#" + id)
     );
   }
 
@@ -782,7 +782,10 @@ var PanelMultiView = class extends AssociatedToNode {
    */
   async _showMainView() {
     let nextPanelView = PanelView.forNode(
-      this.document.getElementById(this.node.getAttribute("mainViewId"))
+      PanelMultiView.getViewNode(
+        this.document,
+        this.node.getAttribute("mainViewId")
+      )
     );
 
     // If the view is already open in another panel, close the panel first.
@@ -1144,7 +1147,7 @@ var PanelMultiView = class extends AssociatedToNode {
     }
   }
 
-  _calculateMaxHeight() {
+  _calculateMaxHeight(aEvent) {
     // While opening the panel, we have to limit the maximum height of any
     // view based on the space that will be available. We cannot just use
     // window.screen.availTop and availHeight because these may return an
@@ -1166,7 +1169,7 @@ var PanelMultiView = class extends AssociatedToNode {
     // The distance from the anchor to the available margin of the screen is
     // based on whether the panel will open towards the top or the bottom.
     let maxHeight;
-    if (this._panel.alignmentPosition.startsWith("before_")) {
+    if (aEvent.alignmentPosition.startsWith("before_")) {
       maxHeight = anchor.screenY - cssAvailTop;
     } else {
       let anchorScreenBottom = anchor.screenY + anchorRect.height;
@@ -1226,7 +1229,7 @@ var PanelMultiView = class extends AssociatedToNode {
       }
       case "popuppositioned": {
         if (this._panel.state == "showing") {
-          let maxHeight = this._calculateMaxHeight();
+          let maxHeight = this._calculateMaxHeight(aEvent);
           this._viewStack.style.maxHeight = maxHeight + "px";
           this._offscreenViewStack.style.maxHeight = maxHeight + "px";
         }
@@ -1441,7 +1444,7 @@ var PanelView = class extends AssociatedToNode {
       // Non-hidden <label> or <description> elements that also aren't empty
       // and also don't have a value attribute can be multiline (if their
       // text content is long enough).
-      let isMultiline = ":not(:-moz-any([hidden],[value],:empty))";
+      let isMultiline = ":not(:is([hidden],[value],:empty))";
       let selector = [
         "description" + isMultiline,
         "label" + isMultiline,
@@ -1559,6 +1562,7 @@ var PanelView = class extends AssociatedToNode {
       if (
         node.tagName == "button" ||
         node.tagName == "toolbarbutton" ||
+        node.tagName == "checkbox" ||
         node.classList.contains("text-link") ||
         node.classList.contains("navigable") ||
         (!arrowKey && this._isNavigableWithTabOnly(node))

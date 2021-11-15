@@ -355,6 +355,36 @@ typedef enum JSGCParamKey {
    * This parameter is read-only.
    */
   JSGC_CHUNK_BYTES = 38,
+
+  /**
+   * The number of background threads to use for parallel GC work for each CPU
+   * core, expressed as an integer percentage.
+   *
+   * Pref: javascript.options.mem.gc_helper_thread_ratio
+   */
+  JSGC_HELPER_THREAD_RATIO = 39,
+
+  /**
+   * The maximum number of background threads to use for parallel GC work.
+   *
+   * Pref: javascript.options.mem.gc_max_helper_threads
+   */
+  JSGC_MAX_HELPER_THREADS = 40,
+
+  /**
+   * The number of background threads to use for parallel GC work.
+   *
+   * This parameter is read-only and is set based on the
+   * JSGC_HELPER_THREAD_RATIO and JSGC_MAX_HELPER_THREADS parameters.
+   */
+  JSGC_HELPER_THREAD_COUNT = 41,
+
+  /**
+   * If the percentage of the tenured strings exceeds this threshold, string
+   * will be allocated in tenured heap instead. (Default is allocated in
+   * nursery.)
+   */
+  JSGC_PRETENURE_STRING_THRESHOLD = 42,
 } JSGCParamKey;
 
 /*
@@ -467,7 +497,7 @@ namespace JS {
   D(DISABLE_GENERATIONAL_GC, 24)            \
   D(FINISH_GC, 25)                          \
   D(PREPARE_FOR_TRACING, 26)                \
-  D(INCREMENTAL_ALLOC_TRIGGER, 27)          \
+  D(UNUSED4, 27)                            \
   D(FULL_CELL_PTR_STR_BUFFER, 28)           \
   D(TOO_MUCH_JIT_CODE, 29)                  \
   D(FULL_CELL_PTR_BIGINT_BUFFER, 30)        \
@@ -1090,12 +1120,6 @@ extern JS_PUBLIC_API JSString* JS_NewExternalString(
 extern JS_PUBLIC_API JSString* JS_NewMaybeExternalString(
     JSContext* cx, const char16_t* chars, size_t length,
     const JSExternalStringCallbacks* callbacks, bool* allocatedExternal);
-
-/**
- * Return whether 'str' was created with JS_NewExternalString or
- * JS_NewExternalStringWithClosure.
- */
-extern JS_PUBLIC_API bool JS_IsExternalString(JSString* str);
 
 /**
  * Return the 'callbacks' arg passed to JS_NewExternalString or

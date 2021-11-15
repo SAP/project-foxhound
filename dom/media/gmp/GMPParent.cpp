@@ -36,13 +36,17 @@
 #  include "mozilla/java/GeckoProcessManagerWrappers.h"
 #  include "mozilla/java/GeckoProcessTypeWrappers.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
+#if defined(XP_MACOSX)
+#  include "nsMacUtilsImpl.h"
+#  include "base/process_util.h"
+#endif  // defined(XP_MACOSX)
 
 using mozilla::ipc::GeckoChildProcessHost;
 
 using CrashReporter::AnnotationTable;
 using CrashReporter::GetIDFromMinidump;
 
-namespace mozilla {
+namespace mozilla::gmp {
 
 #define GMP_PARENT_LOG_DEBUG(x, ...) \
   GMP_LOG_DEBUG("GMPParent[%p|childPid=%d] " x, this, mChildPid, ##__VA_ARGS__)
@@ -52,10 +56,9 @@ namespace mozilla {
 #endif
 #define __CLASS__ "GMPParent"
 
-namespace gmp {
-
-GMPParent::GMPParent(nsISerialEventTarget* aThread)
+GMPParent::GMPParent()
     : mState(GMPStateNotLoaded),
+      mPluginId(GeckoChildProcessHost::GetUniqueID()),
       mProcess(nullptr),
       mDeleteProcessOnlyOnUnload(false),
       mAbnormalShutdownInProgress(false),
@@ -64,12 +67,16 @@ GMPParent::GMPParent(nsISerialEventTarget* aThread)
       mGMPContentChildCount(0),
       mChildPid(0),
       mHoldingSelfRef(false),
-      mWorkerThread(aThread) {
-  mPluginId = GeckoChildProcessHost::GetUniqueID();
+#if defined(XP_MACOSX) && defined(__aarch64__)
+      mChildLaunchArch(base::PROCESS_ARCH_INVALID),
+#endif
+      mMainThread(GetMainThreadSerialEventTarget()) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_PARENT_LOG_DEBUG("GMPParent ctor id=%u", mPluginId);
 }
 
 GMPParent::~GMPParent() {
+  // This method is not restricted to a specific thread.
   GMP_PARENT_LOG_DEBUG("GMPParent dtor id=%u", mPluginId);
   MOZ_ASSERT(!mProcess);
 }
@@ -91,7 +98,45 @@ void GMPParent::CloneFrom(const GMPParent* aOther) {
     mCapabilities.AppendElement(cap);
   }
   mAdapter = aOther->mAdapter;
+
+#if defined(XP_MACOSX) && defined(__aarch64__)
+  mChildLaunchArch = aOther->mChildLaunchArch;
+#endif
 }
+
+#if defined(XP_MACOSX)
+nsresult GMPParent::GetPluginFileArch(nsIFile* aPluginDir,
+                                      nsAutoString& aLeafName,
+                                      uint32_t& aArchSet) {
+  // Build up the plugin filename
+  nsAutoString baseName;
+  baseName = Substring(aLeafName, 4, aLeafName.Length() - 1);
+  nsAutoString pluginFileName = u"lib"_ns + baseName + u".dylib"_ns;
+  GMP_PARENT_LOG_DEBUG("%s: pluginFileName: %s", __FUNCTION__,
+                       NS_LossyConvertUTF16toASCII(pluginFileName).get());
+
+  // Create an nsIFile representing the plugin
+  nsCOMPtr<nsIFile> pluginFile;
+  nsresult rv = aPluginDir->Clone(getter_AddRefs(pluginFile));
+  NS_ENSURE_SUCCESS(rv, rv);
+  pluginFile->AppendRelativePath(pluginFileName);
+
+  // Get the full plugin path
+  nsCString pluginPath;
+  rv = pluginFile->GetNativePath(pluginPath);
+  NS_ENSURE_SUCCESS(rv, rv);
+  GMP_PARENT_LOG_DEBUG("%s: pluginPath: %s", __FUNCTION__, pluginPath.get());
+
+  rv = nsMacUtilsImpl::GetArchitecturesForBinary(pluginPath.get(), &aArchSet);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+#  if defined(__aarch64__)
+  mPluginFilePath = pluginPath;
+#  endif
+
+  return NS_OK;
+}
+#endif  // defined(XP_MACOSX)
 
 RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
                                        nsIFile* aPluginDir) {
@@ -120,6 +165,76 @@ RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
   MOZ_ASSERT(parentLeafName.Length() > 4);
   mName = Substring(parentLeafName, 4);
 
+#if defined(XP_MACOSX)
+  uint32_t pluginArch = 0;
+  rv = GetPluginFileArch(aPluginDir, parentLeafName, pluginArch);
+  if (NS_FAILED(rv)) {
+    GMP_PARENT_LOG_DEBUG("%s: Plugin arch error: %d", __FUNCTION__, rv);
+  } else {
+    GMP_PARENT_LOG_DEBUG("%s: Plugin arch: 0x%x", __FUNCTION__, pluginArch);
+  }
+
+  uint32_t x86 = base::PROCESS_ARCH_X86_64 | base::PROCESS_ARCH_I386;
+#  if defined(__aarch64__)
+  uint32_t arm64 = base::PROCESS_ARCH_ARM_64;
+  // When executing in an ARM64 process, if the library is x86 or x64,
+  // set |mChildLaunchArch| to x64 and allow the library to be used as long
+  // as this process is a universal binary.
+  if (!(pluginArch & arm64) && (pluginArch & x86)) {
+    bool isWidevine = parentLeafName.Find("widevine") != kNotFound;
+    bool isWidevineAllowed =
+        StaticPrefs::media_gmp_widevinecdm_allow_x64_plugin_on_arm64();
+    bool isH264 = parentLeafName.Find("openh264") != kNotFound;
+    bool isH264Allowed =
+        StaticPrefs::media_gmp_gmpopenh264_allow_x64_plugin_on_arm64();
+
+    // Only allow x64 child GMP processes for Widevine and OpenH264
+    if (!isWidevine && !isH264) {
+      return GenericPromise::CreateAndReject(NS_ERROR_NOT_IMPLEMENTED,
+                                             __func__);
+    }
+    // And only if prefs permit it.
+    if ((isWidevine && !isWidevineAllowed) || (isH264 && !isH264Allowed)) {
+      return GenericPromise::CreateAndReject(NS_ERROR_PLUGIN_DISABLED,
+                                             __func__);
+    }
+
+    // We have an x64 library. Get the bundle architecture to determine
+    // if we are a universal binary and hence if we can launch an x64
+    // child process to host this plugin.
+    uint32_t bundleArch = base::PROCESS_ARCH_INVALID;
+    rv = nsMacUtilsImpl::GetArchitecturesForBundle(&bundleArch);
+    if (NS_FAILED(rv)) {
+      // If we fail here, continue as if this is not a univeral binary.
+      GMP_PARENT_LOG_DEBUG("%s: Bundle arch error: %d", __FUNCTION__, rv);
+    } else {
+      GMP_PARENT_LOG_DEBUG("%s: Bundle arch: 0x%x", __FUNCTION__, bundleArch);
+    }
+
+    bool isUniversalBinary = (bundleArch & base::PROCESS_ARCH_X86_64) &&
+                             (bundleArch & base::PROCESS_ARCH_ARM_64);
+    if (isUniversalBinary) {
+      mChildLaunchArch = base::PROCESS_ARCH_X86_64;
+      PreTranslateBins();
+    } else {
+      return GenericPromise::CreateAndReject(NS_ERROR_NOT_IMPLEMENTED,
+                                             __func__);
+    }
+  }
+#  else
+  // When executing in a non-ARM process, if the library is not x86 or x64,
+  // remove it and return an error. This prevents a child process crash due
+  // to loading an incompatible library and forces a new plugin version to be
+  // downloaded when the check is next performed. This could occur if a profile
+  // is moved from an ARM64 system to an x64 system.
+  if ((pluginArch & x86) == 0) {
+    GMP_PARENT_LOG_DEBUG("%s: Removing plugin directory", __FUNCTION__);
+    aPluginDir->Remove(true);
+    return GenericPromise::CreateAndReject(NS_ERROR_NOT_IMPLEMENTED, __func__);
+  }
+#  endif  // defined(__aarch64__)
+#endif    // defined(XP_MACOSX)
+
   return ReadGMPMetaData();
 }
 
@@ -146,6 +261,11 @@ nsresult GMPParent::LoadProcess() {
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
     mProcess->SetRequiresWindowServer(mAdapter.EqualsLiteral("chromium"));
 #endif
+
+#if defined(XP_MACOSX) && defined(__aarch64__)
+    mProcess->SetLaunchArchitecture(mChildLaunchArch);
+#endif
+
     if (!mProcess->Launch(30 * 1000)) {
       GMP_PARENT_LOG_DEBUG("%s: Failed to launch new child process",
                            __FUNCTION__);
@@ -245,8 +365,8 @@ void GMPParent::CloseIfUnused() {
 }
 
 void GMPParent::CloseActive(bool aDieWhenUnloaded) {
-  GMP_PARENT_LOG_DEBUG("%s: state %d", __FUNCTION__, mState);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+  GMP_PARENT_LOG_DEBUG("%s: state %d", __FUNCTION__, mState);
 
   if (aDieWhenUnloaded) {
     mDeleteProcessOnlyOnUnload = true;  // don't allow this to go back...
@@ -268,8 +388,8 @@ void GMPParent::MarkForDeletion() {
 bool GMPParent::IsMarkedForDeletion() { return mIsBlockingDeletion; }
 
 void GMPParent::Shutdown() {
-  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
 
   if (mAbnormalShutdownInProgress) {
     return;
@@ -330,6 +450,7 @@ void GMPParent::ChildTerminated() {
 }
 
 void GMPParent::DeleteProcess() {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
 
   if (mState != GMPStateClosing) {
@@ -356,7 +477,7 @@ void GMPParent::DeleteProcess() {
         "GMPParent::DeleteProcess",
         [selector =
              java::GeckoProcessManager::Selector::GlobalRef(selector)]() {
-          java::GeckoProcessManager::MarkAsDead(selector);
+          java::GeckoProcessManager::ShutdownProcess(selector);
         }));
   }
 #endif  // defined(MOZ_WIDGET_ANDROID)
@@ -365,7 +486,7 @@ void GMPParent::DeleteProcess() {
 
   nsCOMPtr<nsIRunnable> r =
       new NotifyGMPShutdownTask(NS_ConvertUTF8toUTF16(mNodeId));
-  mWorkerThread->Dispatch(r.forget());
+  mMainThread->Dispatch(r.forget());
 
   if (mHoldingSelfRef) {
     Release();
@@ -481,6 +602,7 @@ static void GMPNotifyObservers(const uint32_t aPluginID,
 }
 
 void GMPParent::ActorDestroy(ActorDestroyReason aWhy) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_PARENT_LOG_DEBUG("%s: (%d)", __FUNCTION__, (int)aWhy);
 
   if (AbnormalShutdown == aWhy) {
@@ -498,7 +620,7 @@ void GMPParent::ActorDestroy(ActorDestroyReason aWhy) {
     // NotifyObservers is mainthread-only
     nsCOMPtr<nsIRunnable> r =
         WrapRunnableNM(&GMPNotifyObservers, mPluginId, mDisplayName, dumpID);
-    mWorkerThread->Dispatch(r.forget());
+    mMainThread->Dispatch(r.forget());
   }
 
   // warn us off trying to close again
@@ -570,6 +692,7 @@ bool ReadInfoField(GMPInfoFileParser& aParser, const nsCString& aKey,
 }
 
 RefPtr<GenericPromise> GMPParent::ReadGMPMetaData() {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   MOZ_ASSERT(mDirectory, "Plugin directory cannot be NULL!");
   MOZ_ASSERT(!mName.IsEmpty(), "Plugin mName cannot be empty!");
 
@@ -595,6 +718,7 @@ RefPtr<GenericPromise> GMPParent::ReadGMPMetaData() {
 }
 
 RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMPInfoFileParser parser;
   if (!parser.Init(aFile)) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
@@ -658,13 +782,14 @@ RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
 }
 
 RefPtr<GenericPromise> GMPParent::ReadChromiumManifestFile(nsIFile* aFile) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   nsAutoCString json;
   if (!ReadIntoString(aFile, json, 5 * 1024)) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
   // DOM JSON parsing needs to run on the main thread.
-  return InvokeAsync(mWorkerThread, this, __func__,
+  return InvokeAsync(mMainThread, this, __func__,
                      &GMPParent::ParseChromiumManifest,
                      NS_ConvertUTF8toUTF16(json));
 }
@@ -685,7 +810,7 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
   GMP_PARENT_LOG_DEBUG("%s: for '%s'", __FUNCTION__,
                        NS_LossyConvertUTF16toASCII(aJSON).get());
 
-  MOZ_ASSERT(mWorkerThread->IsOnCurrentThread());
+  MOZ_ASSERT(NS_IsMainThread());
   mozilla::dom::WidevineCDMManifest m;
   if (!m.Init(aJSON)) {
     GMP_PARENT_LOG_DEBUG("%s: Failed to initialize json parser, failing.",
@@ -698,9 +823,9 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
-  mDisplayName = NS_ConvertUTF16toUTF8(m.mName);
-  mDescription = NS_ConvertUTF16toUTF8(m.mDescription);
-  mVersion = NS_ConvertUTF16toUTF8(m.mVersion);
+  CopyUTF16toUTF8(m.mName, mDisplayName);
+  CopyUTF16toUTF8(m.mDescription, mDescription);
+  CopyUTF16toUTF8(m.mVersion, mVersion);
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   if (!mozilla::SandboxInfo::Get().CanSandboxMedia()) {
@@ -815,8 +940,8 @@ const nsCString& GMPParent::GetVersion() const { return mVersion; }
 uint32_t GMPParent::GetPluginId() const { return mPluginId; }
 
 void GMPParent::ResolveGetContentParentPromises() {
-  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises;
-  promises.SwapElements(mGetContentParentPromises);
+  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises =
+      std::move(mGetContentParentPromises);
   MOZ_ASSERT(mGetContentParentPromises.IsEmpty());
   RefPtr<GMPContentParent::CloseBlocker> blocker(
       new GMPContentParent::CloseBlocker(mGMPContentParent));
@@ -852,8 +977,8 @@ bool GMPParent::OpenPGMPContent() {
 }
 
 void GMPParent::RejectGetContentParentPromises() {
-  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises;
-  promises.SwapElements(mGetContentParentPromises);
+  nsTArray<UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>> promises =
+      std::move(mGetContentParentPromises);
   MOZ_ASSERT(mGetContentParentPromises.IsEmpty());
   for (auto& holder : promises) {
     holder->Reject(NS_ERROR_FAILURE, __func__);
@@ -862,8 +987,8 @@ void GMPParent::RejectGetContentParentPromises() {
 
 void GMPParent::GetGMPContentParent(
     UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>&& aPromiseHolder) {
-  GMP_PARENT_LOG_DEBUG("%s %p", __FUNCTION__, this);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+  GMP_PARENT_LOG_DEBUG("%s %p", __FUNCTION__, this);
 
   if (mGMPContentParent) {
     RefPtr<GMPContentParent::CloseBlocker> blocker(
@@ -907,8 +1032,28 @@ void GMPParent::IncrementGMPContentChildCount() { ++mGMPContentChildCount; }
 
 nsString GMPParent::GetPluginBaseName() const { return u"gmp-"_ns + mName; }
 
-}  // namespace gmp
-}  // namespace mozilla
+#if defined(XP_MACOSX) && defined(__aarch64__)
+void GMPParent::PreTranslateBins() {
+  nsCOMPtr<nsIRunnable> event = mozilla::NewRunnableMethod(
+      "RosettaTranslation", this, &GMPParent::PreTranslateBinsWorker);
+
+  DebugOnly<nsresult> rv =
+      NS_DispatchBackgroundTask(event.forget(), NS_DISPATCH_EVENT_MAY_BLOCK);
+
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+}
+
+void GMPParent::PreTranslateBinsWorker() {
+  int rv = nsMacUtilsImpl::PreTranslateXUL();
+  GMP_PARENT_LOG_DEBUG("%s: XUL translation result: %d", __FUNCTION__, rv);
+
+  rv = nsMacUtilsImpl::PreTranslateBinary(mPluginFilePath);
+  GMP_PARENT_LOG_DEBUG("%s: %s translation result: %d", __FUNCTION__,
+                       mPluginFilePath.get(), rv);
+}
+#endif
+
+}  // namespace mozilla::gmp
 
 #undef GMP_PARENT_LOG_DEBUG
 #undef __CLASS__

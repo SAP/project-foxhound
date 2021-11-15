@@ -53,6 +53,9 @@
   scale: inherit;
   translate: inherit;
   /* When the table wrapper is a Flex/Grid item we need these: */
+  flex-grow: inherit;
+  flex-shrink: inherit;
+  flex-basis: inherit;
   align-self: inherit;
   justify-self: inherit;
   grid-column-start: inherit;
@@ -133,6 +136,7 @@
 /* https://drafts.csswg.org/css-lists-3/#ua-stylesheet */
 *|*::marker {
   text-align: end;
+  text-transform: none;
   unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
 }
@@ -253,9 +257,6 @@
 
 *|*::-moz-viewport-scroll {
   overflow: auto;
-%ifdef XP_WIN
-  resize: both;
-%endif
 }
 
 *|*::-moz-column-set,
@@ -301,9 +302,9 @@
   height: 100%;
 }
 
-*|*::-moz-page {
-  /* Individual page in print/print preview. Visual styles may only appear
-   * in print preview. */
+*|*::-moz-printed-sheet {
+  /* Individual sheet of paper in print/print preview. Visual styles may only
+   * appear in print preview. */
   display: block;
   background: white;
   box-shadow: 5px 5px 8px #202020;
@@ -312,7 +313,7 @@
   margin: 0.125in 0.25in;
 }
 
-@media (monochrome) {
+@media (monochrome) and (-moz-print-preview) {
   *|*::-moz-page {
     filter: grayscale(1);
   }
@@ -411,7 +412,6 @@ parsererror|sourcetext {
 
 div:-moz-native-anonymous.moz-accessiblecaret {
   /* Add transition effect to make caret size changing smoother. */
-  transition-duration: 250ms;
   transition-property: width, height, margin-left;
 
   position: absolute;
@@ -455,6 +455,10 @@ div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
 
 div:-moz-native-anonymous.moz-accessiblecaret.none {
   display: none;
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret.hidden {
+  visibility: hidden;
 }
 
 @media (min-resolution: 1.5dppx) {

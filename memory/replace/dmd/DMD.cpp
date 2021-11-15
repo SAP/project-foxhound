@@ -653,10 +653,14 @@ static uint32_t gGCStackTraceTableWhenSizeExceeds = 4 * 1024;
     // FramePointerStackWalk() on Mac: Registers::SyncPopulate() for the frame
     // pointer, and GetStackTop() for the stack end.
     void** fp;
+#  if defined(__x86_64__)
     asm(
         // Dereference %rbp to get previous %rbp
         "movq (%%rbp), %0\n\t"
         : "=r"(fp));
+#  else
+    asm("ldr %0, [x29]\n\t" : "=r"(fp));
+#  endif
     void* stackEnd = pthread_get_stackaddr_np(pthread_self());
     FramePointerStackWalk(StackWalkCallback, /* skipFrames = */ 0, MaxFrames,
                           &tmp, fp, stackEnd);
@@ -1571,7 +1575,7 @@ static void WriteBlockContents(JSONWriter& aWriter, const LiveBlock& aBlock) {
     const uintptr_t** block = (const uintptr_t**)aBlock.Address();
     ToStringConverter sc;
     for (size_t i = 0; i < numWords; ++i) {
-      aWriter.StringElement(sc.ToPtrString(block[i]));
+      aWriter.StringElement(MakeStringSpan(sc.ToPtrString(block[i])));
     }
   }
   aWriter.EndArray();
@@ -1609,12 +1613,12 @@ static void AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter) {
     {
       const char* var = gOptions->DMDEnvVar();
       if (var) {
-        writer.StringProperty("dmdEnvVar", var);
+        writer.StringProperty("dmdEnvVar", MakeStringSpan(var));
       } else {
         writer.NullProperty("dmdEnvVar");
       }
 
-      writer.StringProperty("mode", gOptions->ModeString());
+      writer.StringProperty("mode", MakeStringSpan(gOptions->ModeString()));
     }
     writer.EndObject();
 
@@ -1634,7 +1638,8 @@ static void AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter) {
         writer.StartObjectElement(writer.SingleLineStyle);
         {
           if (gOptions->IsScanMode()) {
-            writer.StringProperty("addr", sc.ToPtrString(aB.Address()));
+            writer.StringProperty("addr",
+                                  MakeStringSpan(sc.ToPtrString(aB.Address())));
             WriteBlockContents(writer, aB);
           }
           writer.IntProperty("req", aB.ReqSize());
@@ -1643,18 +1648,20 @@ static void AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter) {
           }
 
           if (aB.AllocStackTrace()) {
-            writer.StringProperty("alloc",
-                                  isc.ToIdString(aB.AllocStackTrace()));
+            writer.StringProperty(
+                "alloc", MakeStringSpan(isc.ToIdString(aB.AllocStackTrace())));
           }
 
           if (gOptions->IsDarkMatterMode() && aB.NumReports() > 0) {
             writer.StartArrayProperty("reps");
             {
               if (aB.ReportStackTrace1()) {
-                writer.StringElement(isc.ToIdString(aB.ReportStackTrace1()));
+                writer.StringElement(
+                    MakeStringSpan(isc.ToIdString(aB.ReportStackTrace1())));
               }
               if (aB.ReportStackTrace2()) {
-                writer.StringElement(isc.ToIdString(aB.ReportStackTrace2()));
+                writer.StringElement(
+                    MakeStringSpan(isc.ToIdString(aB.ReportStackTrace2())));
               }
             }
             writer.EndArray();
@@ -1716,7 +1723,8 @@ static void AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter) {
             writer.IntProperty("slop", b.SlopSize());
           }
           if (b.AllocStackTrace()) {
-            writer.StringProperty("alloc", isc.ToIdString(b.AllocStackTrace()));
+            writer.StringProperty(
+                "alloc", MakeStringSpan(isc.ToIdString(b.AllocStackTrace())));
           }
 
           if (num > 1) {
@@ -1734,11 +1742,12 @@ static void AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter) {
     {
       for (auto iter = usedStackTraces.iter(); !iter.done(); iter.next()) {
         const StackTrace* const st = iter.get();
-        writer.StartArrayProperty(isc.ToIdString(st), writer.SingleLineStyle);
+        writer.StartArrayProperty(MakeStringSpan(isc.ToIdString(st)),
+                                  writer.SingleLineStyle);
         {
           for (uint32_t i = 0; i < st->Length(); i++) {
             const void* pc = st->Pc(i);
-            writer.StringElement(isc.ToIdString(pc));
+            writer.StringElement(MakeStringSpan(isc.ToIdString(pc)));
             MOZ_ALWAYS_TRUE(usedPcs.put(pc));
           }
         }
@@ -1760,7 +1769,8 @@ static void AnalyzeImpl(UniquePtr<JSONWriteFunc> aWriter) {
         // Use 0 for the frame number. See the JSON format description comment
         // in DMD.h to understand why.
         locService->GetLocation(0, pc, locBuf, locBufLen);
-        writer.StringProperty(isc.ToIdString(pc), locBuf);
+        writer.StringProperty(MakeStringSpan(isc.ToIdString(pc)),
+                              MakeStringSpan(locBuf));
       }
     }
     writer.EndObject();

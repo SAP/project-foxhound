@@ -59,8 +59,7 @@
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct NotificationStrings {
   const nsString mID;
@@ -772,8 +771,8 @@ already_AddRefed<Notification> Notification::Constructor(
   }
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  RefPtr<Notification> notification = CreateAndShow(
-      aGlobal.Context(), global, aTitle, aOptions, EmptyString(), aRv);
+  RefPtr<Notification> notification =
+      CreateAndShow(aGlobal.Context(), global, aTitle, aOptions, u""_ns, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1287,12 +1286,8 @@ struct StringWriteFunc : public JSONWriteFunc {
   nsAString& mBuffer;  // This struct must not outlive this buffer
   explicit StringWriteFunc(nsAString& buffer) : mBuffer(buffer) {}
 
-  void Write(const char* aStr) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr));
-  }
-
-  void Write(const char* aStr, size_t aLen) override {
-    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr, aLen));
+  void Write(const Span<const char>& aStr) override {
+    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr.data(), aStr.size()));
   }
 };
 }  // namespace
@@ -1408,13 +1403,13 @@ void Notification::ShowInternal() {
 
     nsAutoString origin;
     Notification::GetOrigin(principal, origin);
-    w.StringProperty("origin", NS_ConvertUTF16toUTF8(origin).get());
+    w.StringProperty("origin", NS_ConvertUTF16toUTF8(origin));
 
-    w.StringProperty("id", NS_ConvertUTF16toUTF8(mID).get());
+    w.StringProperty("id", NS_ConvertUTF16toUTF8(mID));
 
     nsAutoCString originSuffix;
     principal->GetOriginSuffix(originSuffix);
-    w.StringProperty("originSuffix", originSuffix.get());
+    w.StringProperty("originSuffix", originSuffix);
 
     w.End();
 
@@ -1598,7 +1593,7 @@ nsresult Notification::ResolveIconAndSoundURL(nsString& iconUrl,
       if (NS_SUCCEEDED(rv)) {
         nsAutoCString src;
         srcUri->GetSpec(src);
-        iconUrl = NS_ConvertUTF8toUTF16(src);
+        CopyUTF8toUTF16(src, iconUrl);
       }
     }
     if (mBehavior.mSoundFile.Length() > 0) {
@@ -1608,7 +1603,7 @@ nsresult Notification::ResolveIconAndSoundURL(nsString& iconUrl,
       if (NS_SUCCEEDED(rv)) {
         nsAutoCString src;
         srcUri->GetSpec(src);
-        soundUrl = NS_ConvertUTF8toUTF16(src);
+        CopyUTF8toUTF16(src, soundUrl);
       }
     }
   }
@@ -1661,7 +1656,7 @@ already_AddRefed<Promise> Notification::Get(
   MOZ_ASSERT(global);
   nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
 
-  return Get(window, aFilter, EmptyString(), aRv);
+  return Get(window, aFilter, u""_ns, aRv);
 }
 
 class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
@@ -2192,7 +2187,7 @@ already_AddRefed<Notification> Notification::CreateAndShow(
   MOZ_ASSERT(aGlobal);
 
   RefPtr<Notification> notification =
-      CreateInternal(aGlobal, EmptyString(), aTitle, aOptions);
+      CreateInternal(aGlobal, u""_ns, aTitle, aOptions);
 
   // Make a structured clone of the aOptions.mData object
   JS::Rooted<JS::Value> data(aCx, aOptions.mData);
@@ -2288,5 +2283,4 @@ nsresult Notification::DispatchToMainThread(
                               nsIEventTarget::DISPATCH_NORMAL);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

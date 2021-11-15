@@ -613,6 +613,7 @@ describe("Top Sites Feed", () => {
   describe("#refresh", () => {
     beforeEach(() => {
       sandbox.stub(feed, "_fetchIcon");
+      feed._startedUp = true;
     });
     it("should wait for tippytop to initialize", async () => {
       feed._tippyTopProvider.initialized = false;
@@ -1011,6 +1012,7 @@ describe("Top Sites Feed", () => {
     });
     it("should still dispatch an action even if there's no target provided", async () => {
       sandbox.stub(feed, "_fetchIcon");
+      feed._startedUp = true;
       await feed.refresh({ broadcast: true });
       assert.calledOnce(feed.store.dispatch);
       assert.propertyVal(
@@ -1354,6 +1356,7 @@ describe("Top Sites Feed", () => {
       feed.store.dispatch = sandbox.stub().callsFake(() => {
         resolvers.shift()();
       });
+      feed._startedUp = true;
       sandbox.stub(feed, "_fetchScreenshot");
     });
     afterEach(() => {
@@ -1479,8 +1482,8 @@ describe("Top Sites Feed", () => {
         "google,amazon";
       feed.store.state.Prefs.values[SEARCH_SHORTCUTS_HAVE_PINNED_PREF] = "";
       const searchEngines = [
-        { wrappedJSObject: { _internalAliases: ["@google"] } },
-        { wrappedJSObject: { _internalAliases: ["@amazon"] } },
+        { aliases: ["@google"] },
+        { aliases: ["@amazon"] },
       ];
       global.Services.search.getDefaultEngines = async () => searchEngines;
       fakeNewTabUtils.pinnedLinks.pin = sinon
@@ -1735,7 +1738,7 @@ describe("Top Sites Feed", () => {
       it("should not pin a shortcut if the corresponding search engine is not available", async () => {
         // Make Amazon search engine unavailable
         global.Services.search.getDefaultEngines = async () => [
-          { wrappedJSObject: { _internalAliases: ["@google"] } },
+          { aliases: ["@google"] },
         ];
         fakeNewTabUtils.pinnedLinks.links.fill(null);
         await feed._maybeInsertSearchShortcuts(

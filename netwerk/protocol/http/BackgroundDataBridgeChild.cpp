@@ -21,7 +21,8 @@ void BackgroundDataBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
-    const uint64_t& offset, const uint32_t& count, const nsCString& data) {
+    const uint64_t& offset, const uint32_t& count,
+    const nsDependentCSubstring& data) {
   if (!mBgChild) {
     return IPC_OK();
   }
@@ -33,6 +34,24 @@ mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
 
   return mBgChild->RecvOnTransportAndData(NS_OK, NS_NET_STATUS_RECEIVING_FROM,
                                           offset, count, data, true);
+}
+
+mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnStopRequest(
+    nsresult aStatus, const ResourceTimingStructArgs& aTiming,
+    const TimeStamp& aLastActiveTabOptHit,
+    const nsHttpHeaderArray& aResponseTrailers) {
+  if (!mBgChild) {
+    return IPC_OK();
+  }
+
+  if (mBgChild->ChannelClosed()) {
+    Unused << Send__delete__(this);
+    return IPC_OK();
+  }
+
+  return mBgChild->RecvOnStopRequest(aStatus, aTiming, aLastActiveTabOptHit,
+                                     aResponseTrailers,
+                                     nsTArray<ConsoleReportCollected>(), true);
 }
 
 }  // namespace net

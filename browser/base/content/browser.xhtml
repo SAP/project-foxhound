@@ -80,6 +80,7 @@
   <link rel="localization" href="browser/sidebarMenu.ftl"/>
   <link rel="localization" href="browser/allTabsMenu.ftl"/>
   <link rel="localization" href="browser/places.ftl"/>
+  <link rel="localization" href="toolkit/printing/printUI.ftl"/>
 
   <title data-l10n-id="browser-main-window-title"></title>
 
@@ -98,7 +99,6 @@
   if (!AppConstants.MOZILLA_OFFICIAL) {
     Services.scriptloader.loadSubScript("chrome://browser/content/browser-development-helpers.js", this);
   }
-  Services.scriptloader.loadSubScript("chrome://browser/content/browser-media.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-pageActions.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-sidebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-tabsintitlebar.js", this);
@@ -273,6 +273,14 @@
         />
     </menulist>
 
+    <html:template id="printPreviewStackTemplate">
+      <stack class="previewStack" rendering="true" flex="1">
+        <vbox class="previewRendering" flex="1">
+          <h1 class="print-pending-label" data-l10n-id="printui-loading"></h1>
+        </vbox>
+      </stack>
+    </html:template>
+
     <html:template id="invalidFormTemplate">
       <!-- for invalid form error message -->
       <panel id="invalid-form-popup" type="arrow" orient="vertical" noautofocus="true" level="parent">
@@ -371,6 +379,18 @@
              consumeoutsideclicks="false">
         <box id="UITourHighlight"></box>
       </panel>
+    </html:template>
+
+    <html:template id="dialogStackTemplate">
+      <stack class="dialogStack tab-dialog-box" hidden="true">
+        <vbox class="dialogTemplate dialogOverlay" align="center" topmost="true" hidden="true">
+          <hbox class="dialogBox">
+            <browser class="dialogFrame"
+                     autoscroll="false"
+                     disablehistory="true"/>
+          </hbox>
+        </vbox>
+      </stack>
     </html:template>
 
     <panel id="sidebarMenu-popup"
@@ -534,33 +554,27 @@
       <hbox id="ctrlTab-showAll-container" pack="center"/>
     </panel>
 
-    <panel id="pageActionPanel"
-           class="cui-widget-panel panel-no-padding"
-           role="group"
-           type="arrow"
-           hidden="true"
-           flip="slide"
-           position="bottomcenter topright"
-           tabspecific="true"
-           noautofocus="true"
-           pinTab-title="&pinTab.label;"
-           unpinTab-title="&unpinTab.label;"
-           pocket-title="&saveToPocketCmd.label;"
-           copyURL-title="&pageAction.copyLink.label;"
-           emailLink-title="&emailPageCmd.label;"
-           sendToDevice-notReadyTitle="&sendToDevice.syncNotReady.label;"
-           shareURL-title="&pageAction.shareUrl.label;"
-           shareMore-label="&pageAction.shareMore.label;">
-      <panelmultiview id="pageActionPanelMultiView"
-                      mainViewId="pageActionPanelMainView"
-                      viewCacheId="appMenu-viewCache">
-        <panelview id="pageActionPanelMainView"
-                   context="pageActionContextMenu"
-                   class="PanelUI-subView">
-          <vbox class="panel-subview-body"/>
-        </panelview>
-      </panelmultiview>
-    </panel>
+    <html:template id="pageActionPanelTemplate">
+      <panel id="pageActionPanel"
+             class="cui-widget-panel panel-no-padding"
+             role="group"
+             type="arrow"
+             hidden="true"
+             flip="slide"
+             position="bottomcenter topright"
+             tabspecific="true"
+             noautofocus="true">
+        <panelmultiview id="pageActionPanelMultiView"
+                        mainViewId="pageActionPanelMainView"
+                        viewCacheId="appMenu-viewCache">
+          <panelview id="pageActionPanelMainView"
+                     context="pageActionContextMenu"
+                     class="PanelUI-subView">
+            <vbox class="panel-subview-body"/>
+          </panelview>
+        </panelmultiview>
+      </panel>
+    </html:template>
 
     <html:template id="confirmation-hint-wrapper">
       <panel id="confirmation-hint"
@@ -725,6 +739,225 @@
   </popupset>
 
   <html:template id="appMenu-viewCache">
+    <panelview id="appMenu-mainView" class="PanelUI-subView"
+               descriptionheightworkaround="true">
+      <vbox class="panel-subview-body">
+        <vbox id="appMenu-addon-banners"/>
+        <toolbarbutton id="appMenu-update-banner" class="panel-banner-item"
+                       data-l10n-id="appmenuitem-update-banner"
+                       data-l10n-attrs="label-update-downloading"
+                       label-update-available="&updateAvailable.panelUI.label;"
+                       label-update-manual="&updateManual.panelUI.label;"
+                       label-update-unsupported="&updateUnsupported.panelUI.label;"
+                       label-update-restart="&updateRestart.panelUI.label2;"
+                       oncommand="PanelUI._onBannerItemSelected(event)"
+                       wrap="true"
+                       hidden="true"/>
+        <toolbaritem id="appMenu-fxa-status"
+                     class="sync-ui-item"
+                     defaultlabel="&fxa.menu.signin.label;"
+                     flex="1">
+          <image id="appMenu-fxa-avatar"/>
+          <toolbarbutton id="appMenu-fxa-label"
+                        class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                        label="&fxa.menu.signin.label;"
+                        closemenu="none"
+                        oncommand="gSync.toggleAccountPanel('PanelUI-fxa', this, event)"/>
+        </toolbaritem>
+        <toolbarseparator class="sync-ui-item"/>
+        <toolbaritem>
+          <toolbarbutton id="appMenu-protection-report-button"
+               class="subviewbutton subviewbutton-iconic"
+               oncommand="gProtectionsHandler.openProtections(); gProtectionsHandler.recordClick('open_full_report', null, 'app_menu');">
+            <image id="appMenu-protection-report-icon" class="toolbarbutton-icon"/>
+            <label id="appMenu-protection-report-text"
+                   class="toolbarbutton-text"
+                   data-l10n-id="appmenuitem-protection-dashboard-title">
+            </label>
+          </toolbarbutton>
+        </toolbaritem>
+        <toolbarseparator id="appMenu-tp-separator"/>
+        <toolbarbutton id="appMenu-new-window-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&newNavigatorCmd.label;"
+                       key="key_newNavigator"
+                       command="cmd_newNavigator"/>
+        <toolbarbutton id="appMenu-private-window-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&newPrivateWindow.label;"
+                       key="key_privatebrowsing"
+                       command="Tools:PrivateBrowsing"/>
+#ifdef NIGHTLY_BUILD
+        <toolbarbutton id="appMenu-fission-window-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="New Fission Window"
+                       accesskey="s"
+                       command="Tools:FissionWindow"/>
+        <toolbarbutton id="appMenu-non-fission-window-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="New Non-Fission Window"
+                       accesskey="s"
+                       command="Tools:NonFissionWindow"/>
+#endif
+        <toolbarbutton id="appMenuRestoreLastSession"
+                       label="&appMenuHistory.restoreSession.label;"
+                       class="subviewbutton subviewbutton-iconic"
+                       command="Browser:RestoreLastSession"/>
+        <toolbarseparator/>
+        <toolbaritem id="appMenu-zoom-controls" class="toolbaritem-combined-buttons" closemenu="none">
+          <!-- Use a spacer, because panel sizing code gets confused when using CSS methods. -->
+          <spacer class="before-label"/>
+          <label value="&fullZoom.label;"/>
+          <!-- This spacer keeps the scrollbar from overlapping the view. -->
+          <spacer class="after-label"/>
+          <toolbarbutton id="appMenu-zoomReduce-button"
+                         class="subviewbutton subviewbutton-iconic"
+                         command="cmd_fullZoomReduce"
+                         data-l10n-id="appmenuitem-zoom-reduce"
+                         tooltip="dynamic-shortcut-tooltip"/>
+          <toolbarbutton id="appMenu-zoomReset-button"
+                         class="subviewbutton"
+                         command="cmd_fullZoomReset"
+                         tooltip="dynamic-shortcut-tooltip"/>
+          <toolbarbutton id="appMenu-zoomEnlarge-button"
+                         class="subviewbutton subviewbutton-iconic"
+                         command="cmd_fullZoomEnlarge"
+                         data-l10n-id="appmenuitem-zoom-enlarge"
+                         tooltip="dynamic-shortcut-tooltip"/>
+          <toolbarseparator orient="vertical"/>
+          <toolbarbutton id="appMenu-fullscreen-button"
+                         class="subviewbutton subviewbutton-iconic"
+                         label="&fullScreenCmd.label;"
+                         observes="View:FullScreen"
+                         type="checkbox"
+                         closemenu="auto"
+                         onclick="if (event.button == 0) this.closest('panel').hidePopup();"
+                         tooltip="dynamic-shortcut-tooltip"/>
+        </toolbaritem>
+        <toolbarseparator/>
+        <toolbaritem id="appMenu-edit-controls" class="toolbaritem-combined-buttons" closemenu="none">
+          <!-- Use a spacer, because panel sizing code gets confused when using CSS methods. -->
+          <spacer class="before-label"/>
+          <label value="&editMenu.label;"/>
+          <!-- This spacer keeps the scrollbar from overlapping the view. -->
+          <spacer class="after-label"/>
+          <toolbarbutton id="appMenu-cut-button"
+                         class="subviewbutton subviewbutton-iconic"
+                         command="cmd_cut"
+                         tooltip="dynamic-shortcut-tooltip"/>
+          <toolbarbutton id="appMenu-copy-button"
+                         class="subviewbutton subviewbutton-iconic"
+                         command="cmd_copy"
+                         tooltip="dynamic-shortcut-tooltip"/>
+          <toolbarbutton id="appMenu-paste-button"
+                         class="subviewbutton subviewbutton-iconic"
+                         command="cmd_paste"
+                         tooltip="dynamic-shortcut-tooltip"/>
+        </toolbaritem>
+        <toolbarseparator/>
+        <toolbarbutton id="appMenu-library-button"
+                       class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                       label="&places.library.title;"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('appMenu-libraryView', this)"/>
+        <toolbarbutton id="appMenu-logins-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&logins.label;"
+                       oncommand="LoginHelper.openPasswordManager(window, { entryPoint: 'mainmenu' })"
+                       />
+        <toolbarbutton id="appMenu-addons-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&addons.label;"
+                       key="key_openAddons"
+                       command="Tools:Addons"
+                       />
+        <toolbarbutton id="appMenu-ssb-button"
+                       class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                       label="Sites in App Mode"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('appMenu-SSBView', this)"
+                       hidden="true" persist="hidden"/>
+        <toolbarbutton id="appMenu-preferences-button"
+                       class="subviewbutton subviewbutton-iconic"
+#ifdef XP_WIN
+                       label="&preferencesCmd2.label;"
+#else
+                       label="&preferencesCmdUnix.label;"
+#ifdef XP_MACOSX
+                       key="key_preferencesCmdMac"
+#endif
+#endif
+                       oncommand="openPreferences()"
+                       />
+        <toolbarbutton id="appMenu-customize-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       data-l10n-id="appmenuitem-customize-mode"
+                       command="cmd_CustomizeToolbars"
+                       />
+        <toolbarseparator/>
+        <toolbarbutton id="appMenu-open-file-button"
+                       class="subviewbutton"
+                       label="&openFileCmd.label;"
+                       key="openFileKb"
+                       command="Browser:OpenFile"
+                       />
+        <toolbarbutton id="appMenu-save-file-button"
+                       class="subviewbutton"
+                       data-l10n-id="toolbar-button-page-save"
+                       key="key_savePage"
+                       command="Browser:SavePage"
+                       />
+        <toolbarbutton id="appMenu-print-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&printCmd.label;"
+                       key="printKb"
+#ifdef XP_MACOSX
+                       command="cmd_print"
+#else
+                       command="cmd_printPreview"
+#endif
+                       />
+        <toolbarseparator/>
+        <toolbarbutton id="appMenu-find-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&findOnCmd.label;"
+                       key="key_find"
+                       command="cmd_find"/>
+        <toolbarbutton id="appMenu-more-button"
+                       class="subviewbutton subviewbutton-nav"
+                       label="&moreMenu.label;"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('appMenu-moreView', this)"/>
+        <toolbarbutton id="appMenu-developer-button"
+                       class="subviewbutton subviewbutton-nav"
+                       label="&webDeveloperMenu.label;"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('PanelUI-developer', this)"/>
+        <toolbarbutton id="appMenu-whatsnew-button"
+                       class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                       hidden="true"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('PanelUI-whatsNew', this)"/>
+        <toolbarbutton id="appMenu-help-button"
+                       class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                       label="&appMenuHelp.label;"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('PanelUI-helpView', this)"/>
+#ifndef XP_MACOSX
+        <toolbarseparator/>
+        <toolbarbutton id="appMenu-quit-button"
+                       class="subviewbutton subviewbutton-iconic"
+#ifdef XP_WIN
+                       label="&quitApplicationCmdWin2.label;"
+                       tooltiptext="&quitApplicationCmdWin2.tooltip;"
+#else
+                       label="&quitApplicationCmd.label;"
+#endif
+                       key="key_quitApplication"
+                       command="cmd_quitApplication"/>
+#endif
+      </vbox>
+    </panelview>
     <panelview id="PanelUI-history" flex="1">
       <vbox class="panel-subview-body">
         <toolbarbutton id="appMenuViewHistorySidebar"
@@ -1307,7 +1540,7 @@
       </vbox>
       <checkbox id="panelMenu-toggleWhatsNew"
                 class="panelMenu-toggleWhatsNew-checkbox"
-                oncommand="ToolbarPanelHub.toggleWhatsNewPref(event)"
+                onclick="ToolbarPanelHub.toggleWhatsNewPref(event)"
                 data-l10n-id="whatsnew-panel-footer-checkbox"/>
     </panelview>
   </html:template>
@@ -1486,8 +1719,6 @@
           <toolbartabstop/>
           <hbox id="urlbar" flex="1"
                 context=""
-                data-l10n-id="urlbar-default-placeholder"
-                data-l10n-attrs="defaultPlaceholder"
                 focused="true"
                 pageproxystate="invalid">
             <hbox id="urlbar-background"/>
@@ -1663,7 +1894,7 @@
                        hidden="true"
                        onclick="AboutReaderParent.buttonClick(event);"/>
                 <toolbarbutton id="urlbar-zoom-button"
-                       onclick="FullZoom.reset();"
+                       onclick="FullZoom.reset(); FullZoom.resetScalingZoom();"
                        tooltip="dynamic-shortcut-tooltip"
                        hidden="true"/>
                 <box id="pageActionSeparator" class="urlbar-page-action"/>
@@ -1767,12 +1998,13 @@
 
       <toolbaritem id="PanelUI-button"
                    removable="false">
-        <toolbarbutton id="pioneer-button"
+        <toolbarbutton id="ion-button"
                        class="toolbarbutton-1"
                        hidden="true"
                        badged="true"
-                       onmousedown="switchToTabHavingURI('about:pioneer', true);"
-                       onkeypress="switchToTabHavingURI('about:pioneer', true);"/>
+                       tooltiptext="Ion"
+                       onmousedown="switchToTabHavingURI('about:ion', true);"
+                       onkeypress="switchToTabHavingURI('about:ion', true);"/>
         <toolbarbutton id="whats-new-menu-button"
                        class="toolbarbutton-1"
                        hidden="true"
@@ -1813,9 +2045,18 @@
              context="toolbar-context-menu"
              toolbarname="&personalbarCmd.label;" accesskey="&personalbarCmd.accesskey;"
              aria-label="&personalbar.accessibleLabel;"
-             collapsed="true"
              customizable="true">
       <toolbartabstop skipintoolbarset="true"/>
+
+      <hbox id="personal-toolbar-empty" skipintoolbarset="true" removable="false" hidden="true">
+        <description id="personal-toolbar-empty-description"
+                     data-l10n-id="bookmarks-toolbar-empty-message"
+                     onclick="BookmarkingUI.openLibraryIfLinkClicked(event);"
+                     onkeydown="BookmarkingUI.openLibraryIfLinkClicked(event);">
+          <html:a data-l10n-name="manage-bookmarks" class="text-link" tabindex="0"/>
+        </description>
+      </hbox>
+
       <toolbaritem id="personal-bookmarks"
                    title="&bookmarksToolbarItem.label;"
                    cui-areatype="toolbar"
@@ -1857,21 +2098,39 @@
                          tooltip="bhTooltip" popupsinherittooltip="true"
                          context="placesContext"/>
             </toolbarbutton>
+            <toolbarbutton type="menu"
+                           id="OtherBookmarks"
+                           class="bookmark-item"
+                           hidden="true"
+                           label="&bookmarksMenuButton.other.label;"
+                           container="true"
+                           onpopupshowing="document.getElementById('PlacesToolbar')
+                                                   ._placesView._onOtherBookmarksPopupShowing(event);">
+              <menupopup id="OtherBookmarksPopup"
+                         is="places-popup"
+                         placespopup="true"
+                         context="placesContext" />
+            </toolbarbutton>
           </hbox>
         </hbox>
       </toolbaritem>
     </toolbar>
 
     <html:template id="BrowserToolbarPalette">
+      <toolbarbutton id="import-button"
+                     class="toolbarbutton-1 chromeclass-toolbar-additional"
+                     oncommand="MigrationUtils.showMigrationWizard(window, [MigrationUtils.MIGRATION_ENTRYPOINT_BOOKMARKS_TOOLBAR]);"
+                     data-l10n-id="browser-import-button2"/>
 
       <toolbarbutton id="print-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
 #ifdef XP_MACOSX
                      command="cmd_print"
-                     tooltip="dynamic-shortcut-tooltip"
 #else
                      command="cmd_printPreview"
-                     tooltiptext="&printButton.tooltip;"
+                     print-button-title="&printButton.tooltip;"
 #endif
+                     keepbroadcastattributeswhencustomizing="true"
+                     tooltip="dynamic-shortcut-tooltip"
                      label="&printButton.label;"/>
 
 
@@ -1901,6 +2160,7 @@
                      ondrop="PlacesMenuDNDHandler.onDrop(event);"
                      oncommand="BookmarkingUI.onCommand(event);">
         <menupopup id="BMB_bookmarksPopup"
+                   type="arrow"
                    is="places-popup-arrow"
                    class="cui-widget-panel cui-widget-panelview cui-widget-panelWithFooter PanelUI-subView"
                    placespopup="true"
@@ -2042,32 +2302,27 @@
   <html:div id="fullscreen-and-pointerlock-wrapper">
     <html:div id="fullscreen-warning" class="pointerlockfswarning" hidden="true">
       <html:div class="pointerlockfswarning-domain-text">
-        &fullscreenWarning.beforeDomain.label;
-        <html:span class="pointerlockfswarning-domain"/>
-        &fullscreenWarning.afterDomain.label;
+        <html:span class="pointerlockfswarning-domain" data-l10n-name="domain"/>
       </html:div>
-      <html:div class="pointerlockfswarning-generic-text">
-        &fullscreenWarning.generic.label;
-      </html:div>
+      <html:div class="pointerlockfswarning-generic-text"
+                data-l10n-id="fullscreen-warning-no-domain"></html:div>
       <html:button id="fullscreen-exit-button"
-                   onclick="FullScreen.exitDomFullScreen();">
+                   onclick="FullScreen.exitDomFullScreen();"
 #ifdef XP_MACOSX
-              &exitDOMFullscreenMac.button;
+                   data-l10n-id="fullscreen-exit-mac-button"
 #else
-              &exitDOMFullscreen.button;
+                   data-l10n-id="fullscreen-exit-button"
 #endif
+              >
       </html:button>
     </html:div>
 
     <html:div id="pointerlock-warning" class="pointerlockfswarning" hidden="true">
       <html:div class="pointerlockfswarning-domain-text">
-        &pointerlockWarning.beforeDomain.label;
-        <html:span class="pointerlockfswarning-domain"/>
-        &pointerlockWarning.afterDomain.label;
+        <html:span class="pointerlockfswarning-domain" data-l10n-name="domain"/>
       </html:div>
-      <html:div class="pointerlockfswarning-generic-text">
-        &pointerlockWarning.generic.label;
-      </html:div>
+      <html:div class="pointerlockfswarning-generic-text"
+                data-l10n-id="pointerlock-warning-no-domain"></html:div>
     </html:div>
   </html:div>
 

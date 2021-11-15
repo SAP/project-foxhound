@@ -92,6 +92,21 @@ bool ModuleLoader::loadRootModule(JSContext* cx, HandleString path) {
   return loadAndExecute(cx, path);
 }
 
+bool ModuleLoader::registerTestModule(JSContext* cx, HandleString specifier,
+                                      HandleModuleObject module) {
+  RootedLinearString path(cx, resolve(cx, specifier, UndefinedHandleValue));
+  if (!path) {
+    return false;
+  }
+
+  path = normalizePath(cx, path);
+  if (!path) {
+    return false;
+  }
+
+  return addModuleToRegistry(cx, path, module);
+}
+
 bool ModuleLoader::loadAndExecute(JSContext* cx, HandleString path) {
   RootedObject module(cx, loadAndParse(cx, path));
   if (!module) {
@@ -211,11 +226,11 @@ bool ModuleLoader::doDynamicImport(JSContext* cx,
                                    JS::HandleObject promise) {
   // Exceptions during dynamic import are handled by calling
   // FinishDynamicModuleImport with a pending exception on the context.
-  mozilla::DebugOnly<bool> ok =
-      tryDynamicImport(cx, referencingPrivate, specifier, promise);
-  MOZ_ASSERT_IF(!ok, JS_IsExceptionPending(cx));
-  return JS::FinishDynamicModuleImport(cx, referencingPrivate, specifier,
-                                       promise);
+  bool ok = tryDynamicImport(cx, referencingPrivate, specifier, promise);
+  JS::DynamicImportStatus status =
+      ok ? JS::DynamicImportStatus::Ok : JS::DynamicImportStatus::Failed;
+  return JS::FinishDynamicModuleImport(cx, status, referencingPrivate,
+                                       specifier, promise);
 }
 
 bool ModuleLoader::tryDynamicImport(JSContext* cx,

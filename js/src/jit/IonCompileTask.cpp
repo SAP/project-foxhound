@@ -7,8 +7,12 @@
 #include "jit/IonCompileTask.h"
 
 #include "jit/CodeGenerator.h"
+#include "jit/CompileInfo.h"
+#include "jit/Ion.h"
+#include "jit/JitRuntime.h"
 #include "jit/JitScript.h"
 #include "jit/WarpSnapshot.h"
+#include "vm/HelperThreadState.h"
 #include "vm/JSScript.h"
 
 #include "vm/JSScript-inl.h"
@@ -16,7 +20,7 @@
 using namespace js;
 using namespace js::jit;
 
-void IonCompileTask::runTaskLocked(AutoLockHelperThreadState& locked) {
+void IonCompileTask::runHelperThreadTask(AutoLockHelperThreadState& locked) {
   // The build is taken by this thread. Unfreeze the LifoAlloc to allow
   // mutations.
   alloc().lifoAlloc()->setReadWrite();
@@ -170,6 +174,15 @@ void jit::FreeIonCompileTask(IonCompileTask* task) {
   js_delete(task->alloc().lifoAlloc());
 }
 
+void IonFreeTask::runHelperThreadTask(AutoLockHelperThreadState& locked) {
+  {
+    AutoUnlockHelperThreadState unlock(locked);
+    jit::FreeIonCompileTask(task_);
+  }
+
+  js_delete(this);
+}
+
 void jit::FinishOffThreadTask(JSRuntime* runtime, IonCompileTask* task,
                               const AutoLockHelperThreadState& locked) {
   MOZ_ASSERT(runtime);
@@ -197,8 +210,8 @@ void jit::FinishOffThreadTask(JSRuntime* runtime, IonCompileTask* task,
   if (script->isIonCompilingOffThread()) {
     script->jitScript()->clearIsIonCompilingOffThread(script);
 
-    AbortReasonOr<Ok> status = task->mirGen().getOffThreadStatus();
-    if (status.isErr() && status.unwrapErr() == AbortReason::Disable) {
+    const AbortReasonOr<Ok>& status = task->mirGen().getOffThreadStatus();
+    if (status.isErr() && status.inspectErr() == AbortReason::Disable) {
       script->disableIon();
     }
   }

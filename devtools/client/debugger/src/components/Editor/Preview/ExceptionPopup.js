@@ -8,7 +8,8 @@ import React, { Component } from "react";
 import { connect } from "../../../utils/connect";
 import classnames from "classnames";
 
-import Reps from "devtools-reps";
+// $FlowIgnore
+import Reps from "devtools/client/shared/components/reps/index";
 const {
   REPS: { StringRep },
 } = Reps;
@@ -18,7 +19,9 @@ import actions from "../../../actions";
 import { getThreadContext } from "../../../selectors";
 
 import AccessibleImage from "../../shared/AccessibleImage";
-import { DevToolsUtils } from "devtools-modules";
+
+// $FlowIgnore
+const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
 import type { ThreadContext, StacktraceFrame, Exception } from "../../../types";
 

@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/PGamepadTestChannelChild.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/WeakPtr.h"
 
 #ifndef mozilla_dom_GamepadTestChannelChild_h_
 #  define mozilla_dom_GamepadTestChannelChild_h_
@@ -13,19 +14,30 @@
 namespace mozilla {
 namespace dom {
 
-class GamepadTestChannelChild final : public PGamepadTestChannelChild {
-  friend class PGamepadTestChannelChild;
+class GamepadServiceTest;
 
+class GamepadTestChannelChild final : public PGamepadTestChannelChild {
  public:
-  GamepadTestChannelChild() = default;
-  ~GamepadTestChannelChild() = default;
-  void AddPromise(const uint32_t& aID, Promise* aPromise);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GamepadTestChannelChild)
+
+  static already_AddRefed<GamepadTestChannelChild> Create(
+      GamepadServiceTest* aGamepadServiceTest);
+
+  GamepadTestChannelChild(const GamepadTestChannelChild&) = delete;
+  GamepadTestChannelChild(GamepadTestChannelChild&&) = delete;
+  GamepadTestChannelChild& operator=(const GamepadTestChannelChild&) = delete;
+  GamepadTestChannelChild& operator=(GamepadTestChannelChild&&) = delete;
 
  private:
+  explicit GamepadTestChannelChild(GamepadServiceTest* aGamepadServiceTest);
+  ~GamepadTestChannelChild() = default;
+
   mozilla::ipc::IPCResult RecvReplyGamepadIndex(const uint32_t& aID,
                                                 const uint32_t& aIndex);
 
-  nsRefPtrHashtable<nsUint32HashKey, dom::Promise> mPromiseList;
+  WeakPtr<GamepadServiceTest> mGamepadServiceTest;
+
+  friend class PGamepadTestChannelChild;
 };
 
 }  // namespace dom

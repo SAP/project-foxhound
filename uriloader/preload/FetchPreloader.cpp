@@ -27,7 +27,7 @@ namespace mozilla {
 NS_IMPL_ISUPPORTS(FetchPreloader, nsIStreamListener, nsIRequestObserver)
 
 FetchPreloader::FetchPreloader()
-    : FetchPreloader(nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST) {}
+    : FetchPreloader(nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD) {}
 
 FetchPreloader::FetchPreloader(nsContentPolicyType aContentPolicyType)
     : mContentPolicyType(aContentPolicyType) {}
@@ -130,9 +130,9 @@ nsresult FetchPreloader::CheckContentPolicy(nsIURI* aURI,
       nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK, mContentPolicyType);
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(aURI, secCheckLoadInfo,
-                                          EmptyCString(), &shouldLoad,
-                                          nsContentUtils::GetContentPolicy());
+  nsresult rv =
+      NS_CheckContentLoadPolicy(aURI, secCheckLoadInfo, ""_ns, &shouldLoad,
+                                nsContentUtils::GetContentPolicy());
   if (NS_SUCCEEDED(rv) && NS_CP_ACCEPTED(shouldLoad)) {
     return NS_OK;
   }

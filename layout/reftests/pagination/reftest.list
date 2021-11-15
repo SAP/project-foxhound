@@ -2,16 +2,16 @@
 #   and layout/reftests/w3c-css/submitted/multicol3/
 # Pagination tests
 # asserts(3) == abspos-breaking-000.xhtml abspos-breaking-000.ref.xhtml # bug 1067755, 1135556
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-001.xhtml abspos-breaking-000.ref.xhtml # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-002.xhtml abspos-breaking-000.ref.xhtml # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-003.html abspos-breaking-003-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-004.html abspos-breaking-004-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-005.html abspos-breaking-005-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-006.html abspos-breaking-006-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-007.html abspos-breaking-007-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-008.html abspos-breaking-008-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-009.html abspos-breaking-009-ref.html # Bug 1392106
-random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-010.html abspos-breaking-010-ref.html # Bug 1392106
+asserts(9) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-001.xhtml abspos-breaking-000.ref.xhtml # Bug 1655630, Bug 1392106
+asserts(9) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-002.xhtml abspos-breaking-000.ref.xhtml # Bug 1655630, Bug 1392106
+asserts(6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-003.html abspos-breaking-003-ref.html # Bug 1655630, Bug 1392106
+asserts(12) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-004.html abspos-breaking-004-ref.html # Bug 1655630, Bug 1392106
+asserts(12) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-005.html abspos-breaking-005-ref.html # Bug 1655630, Bug 1392106
+asserts(12) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-006.html abspos-breaking-006-ref.html # Bug 1655630, Bug 1392106
+asserts(6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-007.html abspos-breaking-007-ref.html # Bug 1655630, Bug 1392106
+asserts(6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-008.html abspos-breaking-008-ref.html # Bug 1655630, Bug 1392106
+asserts(6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-009.html abspos-breaking-009-ref.html # Bug 1655630, Bug 1392106
+asserts(6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == abspos-breaking-010.html abspos-breaking-010-ref.html # Bug 1655630, Bug 1392106
 == abspos-breaking-011.html abspos-breaking-011-ref.html # Bug 1392106
 == abspos-breaking-dynamic-001.html abspos-breaking-dynamic-001-ref.html
 == abspos-breaking-dynamic-002.html abspos-breaking-dynamic-002-ref.html
@@ -95,7 +95,7 @@ fuzzy-if(OSX,23-23,1-1) == table-nested-1308876-1.xhtml table-nested-1308876-1-r
 == 129941-1b.html 129941-1-ref.html
 == 129941-1c.html 129941-1-ref.html
 == 129941-1d.html 129941-1-ref.html
-== 129941-1e.html 129941-1-ref.html
+== 129941-1e.html 129941-1e-ref.html
 == 609227-1.html 609227-1-ref.html
 == 609227-2a.html 609227-2-ref.html
 == 609227-2b.html 609227-2-ref.html
@@ -111,7 +111,7 @@ fuzzy-if(OSX,23-23,1-1) == table-nested-1308876-1.xhtml table-nested-1308876-1-r
 == 115199-2a.html 115199-2-ref.html
 == 115199-2b.html 115199-2-ref.html
 == 652178-1.html 652178-1-ref2.html
-fuzzy-if(cocoaWidget,0-1,0-5000) == 745025-1.html 745025-1-ref.html
+fuzzy-if(cocoaWidget,0-1,0-5000) fuzzy-if(webrender&&swgl,0-1,9-9) == 745025-1.html 745025-1-ref.html
 == 820496-1.html 820496-1-ref.html
 
 # NOTE: These tests don't yet rigorously test what they're
@@ -179,3 +179,9 @@ fails == bfc-004.html bfc-004-ref.html # bug 1602484
 == bfc-006.html bfc-006-ref.html
 == bfc-007.html bfc-006-ref.html
 == bfc-008.html bfc-006-ref.html
+
+asserts(10) pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-simple-1.html inline-block-frag-simple-1-ref.html # Bug 1655630
+asserts(10) pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-simple-2.html inline-block-frag-simple-2-ref.html # Bug 1655630
+asserts(2-3) pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-offset-1.html inline-block-frag-offset-1-ref.html # Bug 1655630
+asserts(2-3) pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-offset-2.html inline-block-frag-offset-2-ref.html # Bug 1655630
+asserts(2) pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-text-1.html inline-block-frag-text-1-ref.html # Bug 1655630

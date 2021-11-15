@@ -9,8 +9,10 @@
 #include "xpcprivate.h"
 #include "nsWrapperCacheInlines.h"
 #include "XPCLog.h"
-#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
+#include "js/Array.h"                   // JS::GetArrayLength, JS::IsArrayObject
+#include "js/experimental/TypedData.h"  // JS_GetTypedArrayLength, JS_IsTypedArrayObject
 #include "js/MemoryFunctions.h"
+#include "js/Object.h"  // JS::GetPrivate, JS::SetPrivate, JS::SetReservedSlot
 #include "js/Printf.h"
 #include "jsfriendapi.h"
 #include "AccessCheck.h"
@@ -225,7 +227,7 @@ nsresult XPCWrappedNative::WrapNewGlobal(JSContext* cx,
   wrapper->SetFlatJSObject(global);
 
   // Set the private to the XPCWrappedNative.
-  JS_SetPrivate(global, wrapper);
+  JS::SetPrivate(global, wrapper);
 
   // There are dire comments elsewhere in the code about how a GC can
   // happen somewhere after wrapper initialization but before the wrapper is
@@ -648,7 +650,7 @@ bool XPCWrappedNative::Init(JSContext* cx, nsIXPCScriptable* aScriptable) {
 
   SetFlatJSObject(object);
 
-  JS_SetPrivate(mFlatJSObject, this);
+  JS::SetPrivate(mFlatJSObject, this);
 
   return FinishInit(cx);
 }
@@ -743,7 +745,7 @@ void XPCWrappedNative::FlatJSObjectFinalized() {
        to = to->GetNextTearOff()) {
     JSObject* jso = to->GetJSObjectPreserveColor();
     if (jso) {
-      JS_SetPrivate(jso, nullptr);
+      JS::SetPrivate(jso, nullptr);
       to->JSObjectFinalized();
     }
 
@@ -806,7 +808,7 @@ void XPCWrappedNative::SystemIsBeingShutDown() {
   // We leak mIdentity (see above).
 
   // Short circuit future finalization.
-  JS_SetPrivate(mFlatJSObject, nullptr);
+  JS::SetPrivate(mFlatJSObject, nullptr);
   UnsetFlatJSObject();
 
   XPCWrappedNativeProto* proto = GetProto();
@@ -821,7 +823,7 @@ void XPCWrappedNative::SystemIsBeingShutDown() {
   for (XPCWrappedNativeTearOff* to = &mFirstTearOff; to;
        to = to->GetNextTearOff()) {
     if (JSObject* jso = to->GetJSObjectPreserveColor()) {
-      JS_SetPrivate(jso, nullptr);
+      JS::SetPrivate(jso, nullptr);
       to->SetJSObject(nullptr);
     }
     // We leak the tearoff mNative
@@ -838,12 +840,12 @@ class MOZ_STACK_CLASS AutoClonePrivateGuard {
  public:
   AutoClonePrivateGuard(JSContext* cx, JSObject* aOld, JSObject* aNew)
       : mOldReflector(cx, aOld), mNewReflector(cx, aNew) {
-    MOZ_ASSERT(JS_GetPrivate(aOld) == JS_GetPrivate(aNew));
+    MOZ_ASSERT(JS::GetPrivate(aOld) == JS::GetPrivate(aNew));
   }
 
   ~AutoClonePrivateGuard() {
-    if (JS_GetPrivate(mOldReflector)) {
-      JS_SetPrivate(mNewReflector, nullptr);
+    if (JS::GetPrivate(mOldReflector)) {
+      JS::SetPrivate(mNewReflector, nullptr);
     }
   }
 
@@ -1032,10 +1034,10 @@ bool XPCWrappedNative::InitTearOffJSObject(JSContext* cx,
     return false;
   }
 
-  JS_SetPrivate(obj, to);
+  JS::SetPrivate(obj, to);
   to->SetJSObject(obj);
 
-  js::SetReservedSlot(obj, XPC_WN_TEAROFF_FLAT_OBJECT_SLOT,
+  JS::SetReservedSlot(obj, XPC_WN_TEAROFF_FLAT_OBJECT_SLOT,
                       JS::ObjectValue(*mFlatJSObject));
   return true;
 }
@@ -1702,7 +1704,7 @@ NS_IMETHODIMP XPCWrappedNative::DebugDump(int16_t depth) {
 /***************************************************************************/
 
 char* XPCWrappedNative::ToString(
-    JSContext* cx, XPCWrappedNativeTearOff* to /* = nullptr */) const {
+    XPCWrappedNativeTearOff* to /* = nullptr */) const {
 #ifdef DEBUG
 #  define FMT_ADDR " @ 0x%p"
 #  define FMT_STR(str) str
@@ -1727,19 +1729,22 @@ char* XPCWrappedNative::ToString(
   } else if (!name) {
     XPCNativeSet* set = GetSet();
     XPCNativeInterface** array = set->GetInterfaceArray();
-    RefPtr<XPCNativeInterface> isupp = XPCNativeInterface::GetISupports(cx);
     uint16_t count = set->GetInterfaceCount();
+    MOZ_RELEASE_ASSERT(count >= 1, "Expected at least one interface");
+    MOZ_ASSERT(*array[0]->GetIID() == NS_GET_IID(nsISupports),
+               "The first interface must be nsISupports");
 
+    // The first interface is always nsISupports, so don't print it, unless
+    // there are no others.
     if (count == 1) {
-      name =
-          JS_sprintf_append(std::move(name), "%s", array[0]->GetNameString());
-    } else if (count == 2 && array[0] == isupp) {
+      name = JS_sprintf_append(std::move(name), "nsISupports");
+    } else if (count == 2) {
       name =
           JS_sprintf_append(std::move(name), "%s", array[1]->GetNameString());
     } else {
-      for (uint16_t i = 0; i < count; i++) {
+      for (uint16_t i = 1; i < count; i++) {
         const char* fmt =
-            (i == 0) ? "(%s" : (i == count - 1) ? ", %s)" : ", %s";
+            (i == 1) ? "(%s" : (i == count - 1) ? ", %s)" : ", %s";
         name =
             JS_sprintf_append(std::move(name), fmt, array[i]->GetNameString());
       }

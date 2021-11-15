@@ -10,6 +10,7 @@
 #include "nsAppShell.h"
 #include "nsJSUtils.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
+#include "js/String.h"    // JS::StringHasLatin1Chars
 #include "js/Warnings.h"  // JS::WarnUTF8
 #include "xpcpublic.h"
 
@@ -46,7 +47,7 @@ nsresult BoxString(JSContext* aCx, JS::HandleValue aData,
 
   JS::RootedString str(aCx, aData.toString());
 
-  if (JS_StringHasLatin1Chars(str)) {
+  if (JS::StringHasLatin1Chars(str)) {
     nsAutoJSString autoStr;
     NS_ENSURE_TRUE(CheckJS(aCx, autoStr.init(aCx, str)), NS_ERROR_FAILURE);
 
@@ -952,6 +953,11 @@ void EventDispatcher::Attach(java::EventDispatcher::Param aDispatcher,
   dispatcher->SetAttachedToGecko(java::EventDispatcher::ATTACHED);
 }
 
+void EventDispatcher::Shutdown() {
+  mDispatcher = nullptr;
+  mDOMWindow = nullptr;
+}
+
 void EventDispatcher::Detach() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDispatcher);
@@ -964,8 +970,7 @@ void EventDispatcher::Detach() {
     dispatcher->SetAttachedToGecko(java::EventDispatcher::DETACHED);
   }
 
-  mDispatcher = nullptr;
-  mDOMWindow = nullptr;
+  Shutdown();
 }
 
 bool EventDispatcher::HasGeckoListener(jni::String::Param aEvent) {

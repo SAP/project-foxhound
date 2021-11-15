@@ -29,6 +29,7 @@ class nsTableColFrame;
 namespace mozilla {
 class ComputedStyle;
 class PresShell;
+class PrintedSheetFrame;
 class ViewportFrame;
 
 namespace dom {
@@ -105,6 +106,10 @@ nsContainerFrame* NS_NewColumnSetFrame(mozilla::PresShell* aPresShell,
 class nsPageSequenceFrame;
 nsPageSequenceFrame* NS_NewPageSequenceFrame(mozilla::PresShell* aPresShell,
                                              mozilla::ComputedStyle* aStyle);
+
+mozilla::PrintedSheetFrame* NS_NewPrintedSheetFrame(
+    mozilla::PresShell* aPresShell, mozilla::ComputedStyle* aStyle);
+
 class nsPageFrame;
 nsPageFrame* NS_NewPageFrame(mozilla::PresShell* aPresShell,
                              mozilla::ComputedStyle* aStyle);
@@ -154,6 +159,8 @@ nsIFrame* NS_NewNumberControlFrame(mozilla::PresShell* aPresShell,
                                    mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewDateTimeControlFrame(mozilla::PresShell* aPresShell,
                                      mozilla::ComputedStyle* aStyle);
+nsIFrame* NS_NewSearchControlFrame(mozilla::PresShell* aPresShell,
+                                   mozilla::ComputedStyle* aStyle);
 nsBlockFrame* NS_NewDetailsFrame(mozilla::PresShell* aPresShell,
                                  mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewBulletFrame(mozilla::PresShell* aPresShell,

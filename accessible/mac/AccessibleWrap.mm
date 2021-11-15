@@ -15,6 +15,7 @@
 #include "TextRange.h"
 #include "gfxPlatform.h"
 
+#import "MOXLandmarkAccessibles.h"
 #import "MOXMathAccessibles.h"
 #import "MOXTextMarkerDelegate.h"
 #import "MOXWebAreaAccessible.h"
@@ -40,16 +41,17 @@ mozAccessible* AccessibleWrap::GetNativeObject() {
     // We don't creat OSX accessibles for xul tooltips, defunct accessibles,
     // <br> (whitespace) elements, or pruned children.
     //
-    // We also don't create a native object if we're child of a "flat" accessible;
-    // for example, on OS X buttons shouldn't have any children, because that
-    // makes the OS confused.
+    // We also don't create a native object if we're child of a "flat"
+    // accessible; for example, on OS X buttons shouldn't have any children,
+    // because that makes the OS confused.
     //
     // To maintain a scripting environment where the XPCOM accessible hierarchy
     // look the same on all platforms, we still let the C++ objects be created
     // though.
     Accessible* parent = Parent();
     bool mustBePruned = parent && nsAccUtils::MustPrune(parent);
-    if (!IsXULTooltip() && !IsDefunct() && !mustBePruned && Role() != roles::WHITESPACE) {
+    if (!IsXULTooltip() && !IsDefunct() && !mustBePruned &&
+        Role() != roles::WHITESPACE) {
       mNativeObject = [[GetNativeType() alloc] initWithAccessible:this];
     }
   }
@@ -65,27 +67,39 @@ void AccessibleWrap::GetNativeInterface(void** aOutInterface) {
   *aOutInterface = static_cast<void*>(GetNativeObject());
 }
 
-// overridden in subclasses to create the right kind of object. by default we create a generic
-// 'mozAccessible' node.
+// overridden in subclasses to create the right kind of object. by default we
+// create a generic 'mozAccessible' node.
 Class AccessibleWrap::GetNativeType() {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
-  if (IsXULTabpanels()) return [mozPaneAccessible class];
+  if (IsXULTabpanels()) {
+    return [mozPaneAccessible class];
+  }
 
-  if (IsTable()) return [mozTableAccessible class];
+  if (IsTable()) {
+    return [mozTableAccessible class];
+  }
 
-  if (IsTableRow()) return [mozTableRowAccessible class];
+  if (IsTableRow()) {
+    return [mozTableRowAccessible class];
+  }
 
-  if (IsTableCell()) return [mozTableCellAccessible class];
+  if (IsTableCell()) {
+    return [mozTableCellAccessible class];
+  }
+
+  if (IsDoc()) {
+    return [MOXWebAreaAccessible class];
+  }
 
   return GetTypeFromRole(Role());
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
 }
 
-// this method is very important. it is fired when an accessible object "dies". after this point
-// the object might still be around (because some 3rd party still has a ref to it), but it is
-// in fact 'dead'.
+// this method is very important. it is fired when an accessible object "dies".
+// after this point the object might still be around (because some 3rd party
+// still has a ref to it), but it is in fact 'dead'.
 void AccessibleWrap::Shutdown() {
   // this ensure we will not try to re-create the native object.
   mNativeInited = true;
@@ -123,6 +137,16 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
       eventTarget = selEvent->Widget();
       break;
     }
+    case nsIAccessibleEvent::EVENT_TEXT_INSERTED:
+    case nsIAccessibleEvent::EVENT_TEXT_REMOVED: {
+      Accessible* acc = aEvent->GetAccessible();
+      // If there is a text input ancestor, use it as the event source.
+      while (acc && GetTypeFromRole(acc->Role()) != [mozTextAccessible class]) {
+        acc = acc->Parent();
+      }
+      eventTarget = acc ? acc : aEvent->GetAccessible();
+      break;
+    }
     default:
       eventTarget = aEvent->GetAccessible();
       break;
@@ -137,7 +161,8 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
   switch (eventType) {
     case nsIAccessibleEvent::EVENT_STATE_CHANGE: {
       AccStateChangeEvent* event = downcast_accEvent(aEvent);
-      [nativeAcc stateChanged:event->GetState() isEnabled:event->IsStateEnabled()];
+      [nativeAcc stateChanged:event->GetState()
+                    isEnabled:event->IsStateEnabled()];
       break;
     }
 
@@ -166,7 +191,11 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
         // If the selection is collapsed, invalidate our text selection cache.
         MOXTextMarkerDelegate* delegate =
             [MOXTextMarkerDelegate getOrCreateForDoc:aEvent->Document()];
-        [delegate invalidateSelection];
+        int32_t caretOffset = event->GetCaretOffset();
+        [delegate setSelectionFrom:eventTarget
+                                at:caretOffset
+                                to:eventTarget
+                                at:caretOffset];
       }
 
       [nativeAcc handleAccessibleEvent:eventType];
@@ -176,8 +205,10 @@ nsresult AccessibleWrap::HandleAccEvent(AccEvent* aEvent) {
     case nsIAccessibleEvent::EVENT_TEXT_INSERTED:
     case nsIAccessibleEvent::EVENT_TEXT_REMOVED: {
       AccTextChangeEvent* tcEvent = downcast_accEvent(aEvent);
-      [nativeAcc handleAccessibleTextChangeEvent:nsCocoaUtils::ToNSString(tcEvent->ModifiedText())
+      [nativeAcc handleAccessibleTextChangeEvent:nsCocoaUtils::ToNSString(
+                                                     tcEvent->ModifiedText())
                                         inserted:tcEvent->IsTextInserted()
+                                     inContainer:aEvent->GetAccessible()
                                               at:tcEvent->GetStartOffset()];
       break;
     }
@@ -213,9 +244,6 @@ Class a11y::GetTypeFromRole(roles::Role aRole) {
     case roles::COMBOBOX:
       return [mozPopupButtonAccessible class];
 
-    case roles::DOCUMENT:
-      return [MOXWebAreaAccessible class];
-
     case roles::PUSHBUTTON:
       return [mozButtonAccessible class];
 
@@ -250,11 +278,17 @@ Class a11y::GetTypeFromRole(roles::Role aRole) {
     case roles::STATICTEXT:
       return [mozTextLeafAccessible class];
 
+    case roles::LANDMARK:
+      return [MOXLandmarkAccessible class];
+
     case roles::LINK:
       return [mozLinkAccessible class];
 
     case roles::LISTBOX:
       return [mozListboxAccessible class];
+
+    case roles::LISTITEM:
+      return [MOXListItemAccessible class];
 
     case roles::OPTION: {
       return [mozOptionAccessible class];
@@ -293,6 +327,13 @@ Class a11y::GetTypeFromRole(roles::Role aRole) {
 
     case roles::SUMMARY:
       return [MOXSummaryAccessible class];
+
+    case roles::OUTLINE:
+    case roles::TREE_TABLE:
+      return [mozOutlineAccessible class];
+
+    case roles::OUTLINEITEM:
+      return [mozOutlineRowAccessible class];
 
     default:
       return [mozAccessible class];

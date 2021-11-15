@@ -16,7 +16,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 #include "mozilla/gfx/MatrixFwd.h"
-#include "mozilla/layers/APZUtils.h"
+#include "mozilla/layers/APZPublicUtils.h"
 #include "mozilla/layers/KeyboardScrollAction.h"
 #include "mozilla/TextEvents.h"
 
@@ -149,6 +149,28 @@ class SingleTouchData {
   // Warning, this class is serialized and sent over IPC. Any change to its
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
 
+  // Historical data of this touch, which  was coalesced into this event.
+  // Touch event coalescing can happen at the system level when the touch
+  // screen's sampling frequency is higher than the vsync rate, or when the
+  // UI thread is busy. When multiple "samples" of touch data are coalesced into
+  // one touch event, the touch event's regular position information is the
+  // information from the last sample. And the previous, "coalesced-away"
+  // samples are stored in mHistoricalData.
+
+  struct HistoricalTouchData {
+    // The timestamp at which the information in this "sample" was originally
+    // sampled.
+    TimeStamp mTimeStamp;
+
+    // The touch data of this historical sample.
+    ScreenIntPoint mScreenPoint;
+    ParentLayerPoint mLocalScreenPoint;
+    ScreenSize mRadius;
+    float mRotationAngle = 0.0f;
+    float mForce = 0.0f;
+  };
+  CopyableTArray<HistoricalTouchData> mHistoricalData;
+
   // A unique number assigned to each SingleTouchData within a MultiTouchInput
   // so that they can be easily distinguished when handling a touch
   // start/move/end.
@@ -200,8 +222,13 @@ class MultiTouchInput : public InputData {
   MultiTouchInput(MultiTouchType aType, uint32_t aTime, TimeStamp aTimeStamp,
                   Modifiers aModifiers);
   MultiTouchInput();
+  MultiTouchInput(MultiTouchInput&&) = default;
   MultiTouchInput(const MultiTouchInput& aOther);
   explicit MultiTouchInput(const WidgetTouchEvent& aTouchEvent);
+
+  MultiTouchInput& operator=(MultiTouchInput&&) = default;
+  MultiTouchInput& operator=(const MultiTouchInput&) = default;
+
   void Translate(const ScreenPoint& aTranslation);
 
   WidgetTouchEvent ToWidgetTouchEvent(nsIWidget* aWidget) const;
@@ -261,7 +288,7 @@ class MouseInput : public InputData {
   bool IsLeftButton() const;
 
   bool TransformToLocal(const ScreenToParentLayerMatrix4x4& aTransform);
-  WidgetMouseEvent ToWidgetMouseEvent(nsIWidget* aWidget) const;
+  WidgetMouseEvent ToWidgetEvent(nsIWidget* aWidget) const;
 
   // Warning, this class is serialized and sent over IPC. Any change to its
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
@@ -351,7 +378,7 @@ class PanGestureInput : public InputData {
 
   bool IsMomentum() const;
 
-  WidgetWheelEvent ToWidgetWheelEvent(nsIWidget* aWidget) const;
+  WidgetWheelEvent ToWidgetEvent(nsIWidget* aWidget) const;
 
   bool TransformToLocal(const ScreenToParentLayerMatrix4x4& aTransform);
 
@@ -473,7 +500,11 @@ class PinchGestureInput : public InputData {
 
   bool TransformToLocal(const ScreenToParentLayerMatrix4x4& aTransform);
 
-  WidgetWheelEvent ToWidgetWheelEvent(nsIWidget* aWidget) const;
+  WidgetWheelEvent ToWidgetEvent(nsIWidget* aWidget) const;
+
+  double ComputeDeltaY(nsIWidget* aWidget) const;
+
+  static gfx::IntPoint GetIntegerDeltaForEvent(bool aIsStart, float x, float y);
 
   // Warning, this class is serialized and sent over IPC. Any change to its
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
@@ -508,6 +539,14 @@ class PinchGestureInput : public InputData {
   // This is only really relevant during a PINCHGESTURE_SCALE because when it is
   // of this type then there must have been a history of spans.
   ScreenCoord mPreviousSpan;
+
+  // We accumulate (via GetIntegerDeltaForEvent) the deltaY that would be
+  // computed by ToWidgetEvent, and then whenever we get a whole integer
+  // value we put it in mLineOrPageDeltaY. Since we only ever use deltaY we
+  // don't need a mLineOrPageDeltaX. This field is used to dispatch legacy mouse
+  // events which are only dispatched when the corresponding field on
+  // WidgetWheelEvent is non-zero.
+  int32_t mLineOrPageDeltaY;
 
   bool mHandledByAPZ;
 };
@@ -604,7 +643,7 @@ class ScrollWheelInput : public InputData {
   static uint32_t DeltaModeForDeltaType(ScrollDeltaType aDeltaType);
   static mozilla::ScrollUnit ScrollUnitForDeltaType(ScrollDeltaType aDeltaType);
 
-  WidgetWheelEvent ToWidgetWheelEvent(nsIWidget* aWidget) const;
+  WidgetWheelEvent ToWidgetEvent(nsIWidget* aWidget) const;
   bool TransformToLocal(const ScreenToParentLayerMatrix4x4& aTransform);
 
   bool IsCustomizedByUserPrefs() const;

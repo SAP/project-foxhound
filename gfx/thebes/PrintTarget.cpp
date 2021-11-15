@@ -85,7 +85,7 @@ already_AddRefed<DrawTarget> PrintTarget::MakeDrawTarget(
   }
 
   if (aRecorder) {
-    dt = CreateWrapAndRecordDrawTarget(aRecorder, dt);
+    dt = CreateRecordingDrawTarget(aRecorder, dt);
     if (!dt || !dt->IsValid()) {
       return nullptr;
     }
@@ -163,7 +163,7 @@ void PrintTarget::AdjustPrintJobNameForIPP(const nsAString& aJobName,
 }
 
 /* static */
-already_AddRefed<DrawTarget> PrintTarget::CreateWrapAndRecordDrawTarget(
+already_AddRefed<DrawTarget> PrintTarget::CreateRecordingDrawTarget(
     DrawEventRecorder* aRecorder, DrawTarget* aDrawTarget) {
   MOZ_ASSERT(aRecorder);
   MOZ_ASSERT(aDrawTarget);
@@ -172,7 +172,8 @@ already_AddRefed<DrawTarget> PrintTarget::CreateWrapAndRecordDrawTarget(
 
   if (aRecorder) {
     // It doesn't really matter what we pass as the DrawTarget here.
-    dt = gfx::Factory::CreateWrapAndRecordDrawTarget(aRecorder, aDrawTarget);
+    dt = gfx::Factory::CreateRecordingDrawTarget(aRecorder, aDrawTarget,
+                                                 aDrawTarget->GetRect());
   }
 
   if (!dt || !dt->IsValid()) {

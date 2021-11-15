@@ -38,15 +38,7 @@ class WebExtension(Perftest):
         self.using_condprof = self.config.get("using_condprof", True)
 
         # set up the results handler
-        self.results_handler = RaptorResultsHandler(
-            gecko_profile=self.config.get("gecko_profile"),
-            power_test=self.config.get("power_test"),
-            cpu_test=self.config.get("cpu_test"),
-            memory_test=self.config.get("memory_test"),
-            no_conditioned_profile=self.config["no_conditioned_profile"],
-            extra_prefs=self.config.get("extra_prefs"),
-            enable_webrender=self.config["enable_webrender"],
-        )
+        self.results_handler = RaptorResultsHandler(**self.config)
         browser_name, browser_version = self.get_browser_meta()
         self.results_handler.add_browser_meta(self.config["app"], browser_version)
 
@@ -136,11 +128,13 @@ class WebExtension(Perftest):
                 )
 
         if self.control_server._runtime_error:
-            raise RuntimeError("Failed to run {}: {}\nStack:\n{}".format(
-                test["name"],
-                self.control_server._runtime_error["error"],
-                self.control_server._runtime_error["stack"],
-            ))
+            raise RuntimeError(
+                "Failed to run {}: {}\nStack:\n{}".format(
+                    test["name"],
+                    self.control_server._runtime_error["error"],
+                    self.control_server._runtime_error["stack"],
+                )
+            )
 
     def run_test_teardown(self, test):
         super(WebExtension, self).run_test_teardown(test)
@@ -151,12 +145,13 @@ class WebExtension(Perftest):
             confidence_values = self.playback.confidence()
             if confidence_values:
                 mozproxy_replay = {
-                    u'summarize-values': False,
-                    u'suite-suffix-type': False,
-                    u'type': u'mozproxy',
-                    u'test': test["name"],
-                    u'unit': u'a.u.',
-                    u'values': confidence_values
+                    u"summarize-values": False,
+                    u"suite-suffix-type": False,
+                    u"type": u"mozproxy",
+                    u"test": test["name"],
+                    u"unit": u"a.u.",
+                    u"values": confidence_values,
+                    u"shouldAlert": False,  # Bug 1655841 temporary disable confidence metrics
                 }
                 self.control_server.submit_supporting_data(mozproxy_replay)
             else:
@@ -180,10 +175,7 @@ class WebExtension(Perftest):
             self.control_server.user_profile = self.profile
 
     def start_control_server(self):
-        self.control_server = RaptorControlServer(
-            self.results_handler,
-            self.debug_mode
-        )
+        self.control_server = RaptorControlServer(self.results_handler, self.debug_mode)
         self.control_server.user_profile = self.profile
         self.control_server.start()
 

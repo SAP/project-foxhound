@@ -13,17 +13,16 @@
 
 #include "nsCOMPtr.h"
 #include "mozilla/dom/AbstractRange.h"
-#include "nsLayoutUtils.h"
 #include "prmon.h"
 #include "nsStubMutationObserver.h"
 #include "nsWrapperCache.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/RangeBoundary.h"
 
 namespace mozilla {
+class RectCallback;
 namespace dom {
 struct ClientRectsAndTexts;
 class DocGroup;
@@ -322,7 +321,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
    * @param aTextList optional where nullptr = don't retrieve text
    */
   static void CollectClientRectsAndText(
-      nsLayoutUtils::RectCallback* aCollector,
+      mozilla::RectCallback* aCollector,
       mozilla::dom::Sequence<nsString>* aTextList, nsRange* aRange,
       nsINode* aStartContainer, uint32_t aStartOffset, nsINode* aEndContainer,
       uint32_t aEndOffset, bool aClampToEdge, bool aFlushLayout);
@@ -399,14 +398,10 @@ class nsRange final : public mozilla::dom::AbstractRange,
    private:
     nsRange& mRange;
     bool mOldValue;
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
    public:
-    explicit AutoCalledByJSRestore(
-        nsRange& aRange MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-        : mRange(aRange), mOldValue(aRange.mCalledByJS) {
-      MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    }
+    explicit AutoCalledByJSRestore(nsRange& aRange)
+        : mRange(aRange), mOldValue(aRange.mCalledByJS) {}
     ~AutoCalledByJSRestore() { mRange.mCalledByJS = mOldValue; }
     bool SavedValue() const { return mOldValue; }
   };

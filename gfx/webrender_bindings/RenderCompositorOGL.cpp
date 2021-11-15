@@ -7,6 +7,7 @@
 #include "RenderCompositorOGL.h"
 
 #include "GLContext.h"
+#include "GLContextEGL.h"
 #include "GLContextProvider.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
@@ -16,7 +17,7 @@ namespace wr {
 
 /* static */
 UniquePtr<RenderCompositor> RenderCompositorOGL::Create(
-    RefPtr<widget::CompositorWidget>&& aWidget) {
+    RefPtr<widget::CompositorWidget>&& aWidget, nsACString& aError) {
   RefPtr<gl::GLContext> gl = RenderThread::Get()->SharedGL();
   if (!gl) {
     gl = gl::GLContextProvider::CreateForCompositorWidget(
@@ -33,12 +34,10 @@ UniquePtr<RenderCompositor> RenderCompositorOGL::Create(
 
 RenderCompositorOGL::RenderCompositorOGL(
     RefPtr<gl::GLContext>&& aGL, RefPtr<widget::CompositorWidget>&& aWidget)
-    : RenderCompositor(std::move(aWidget)),
-      mGL(aGL),
-      mUsePartialPresent(false) {
+    : RenderCompositor(std::move(aWidget)), mGL(aGL) {
   MOZ_ASSERT(mGL);
-  mUsePartialPresent = gfx::gfxVars::WebRenderMaxPartialPresentRects() > 0 &&
-                       mGL->HasCopySubBuffer();
+
+  mIsEGL = aGL->GetContextType() == mozilla::gl::GLContextType::EGL;
 }
 
 RenderCompositorOGL::~RenderCompositorOGL() {
@@ -50,14 +49,6 @@ RenderCompositorOGL::~RenderCompositorOGL() {
   }
 }
 
-uint32_t RenderCompositorOGL::GetMaxPartialPresentRects() {
-  if (mUsePartialPresent) {
-    return 1;
-  } else {
-    return 0;
-  }
-}
-
 bool RenderCompositorOGL::BeginFrame() {
   if (!mGL->MakeCurrent()) {
     gfxCriticalNote << "Failed to make render context current, can't draw.";
@@ -65,29 +56,34 @@ bool RenderCompositorOGL::BeginFrame() {
   }
 
   mGL->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mGL->GetDefaultFramebuffer());
+
   return true;
 }
 
 RenderedFrameId RenderCompositorOGL::EndFrame(
     const nsTArray<DeviceIntRect>& aDirtyRects) {
   RenderedFrameId frameId = GetNextRenderFrameId();
-  if (!mUsePartialPresent || aDirtyRects.IsEmpty()) {
-    mGL->SwapBuffers();
-  } else {
-    gfx::IntRect rect;
-    auto bufferSize = GetBufferSize();
-    for (const DeviceIntRect& r : aDirtyRects) {
-      const auto width = std::min(r.size.width, bufferSize.width);
-      const auto height = std::min(r.size.height, bufferSize.height);
-      const auto left = std::max(0, std::min(r.origin.x, bufferSize.width));
-      const auto bottom =
-          std::max(0, std::min(r.origin.y + height, bufferSize.height));
-      rect.OrWith(
-          gfx::IntRect(left, (bufferSize.height - bottom), width, height));
-    }
+  if (UsePartialPresent() && aDirtyRects.Length() > 0) {
+    gfx::IntRegion bufferInvalid;
+    const auto bufferSize = GetBufferSize();
+    for (const DeviceIntRect& rect : aDirtyRects) {
+      const auto left = std::max(0, std::min(bufferSize.width, rect.origin.x));
+      const auto top = std::max(0, std::min(bufferSize.height, rect.origin.y));
 
-    mGL->CopySubBuffer(rect.x, rect.y, rect.width, rect.height);
+      const auto right = std::min(bufferSize.width,
+                                  std::max(0, rect.origin.x + rect.size.width));
+      const auto bottom = std::min(
+          bufferSize.height, std::max(0, rect.origin.y + rect.size.height));
+
+      const auto width = right - left;
+      const auto height = bottom - top;
+
+      bufferInvalid.OrWith(
+          gfx::IntRect(left, (GetBufferSize().height - bottom), width, height));
+    }
+    gl()->SetDamage(bufferInvalid);
   }
+  mGL->SwapBuffers();
   return frameId;
 }
 
@@ -105,6 +101,27 @@ CompositorCapabilities RenderCompositorOGL::GetCompositorCapabilities() {
   caps.virtual_surface_size = 0;
 
   return caps;
+}
+
+uint32_t RenderCompositorOGL::GetMaxPartialPresentRects() {
+  return mIsEGL ? gfx::gfxVars::WebRenderMaxPartialPresentRects() : 0;
+}
+
+bool RenderCompositorOGL::RequestFullRender() { return false; }
+
+bool RenderCompositorOGL::UsePartialPresent() {
+  return mIsEGL && gfx::gfxVars::WebRenderMaxPartialPresentRects() > 0;
+}
+
+bool RenderCompositorOGL::ShouldDrawPreviousPartialPresentRegions() {
+  return true;
+}
+
+size_t RenderCompositorOGL::GetBufferAge() const {
+  if (mIsEGL) {
+    return gl::GLContextEGL::Cast(gl())->GetBufferAge();
+  }
+  return 0;
 }
 
 }  // namespace wr

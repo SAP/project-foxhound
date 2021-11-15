@@ -26,7 +26,7 @@ class WebExtensionDesktop(PerftestDesktop, WebExtension):
 
         # create the desktop browser runner
         LOG.info("creating browser runner using mozrunner")
-        self.output_handler = OutputHandler()
+        self.output_handler = OutputHandler(verbose=self.config["verbose"])
         process_args = {"processOutputLine": [self.output_handler]}
         firefox_args = ["--allow-downgrade"]
         runner_cls = runners[self.config["app"]]
@@ -46,6 +46,8 @@ class WebExtensionDesktop(PerftestDesktop, WebExtension):
             self.runner.env["MOZ_ACCELERATED"] = "1"
         else:
             self.runner.env["MOZ_WEBRENDER"] = "0"
+
+        self.runner.env.update(self.config.get("environment", {}))
 
     def launch_desktop_browser(self, test):
         raise NotImplementedError

@@ -10,6 +10,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MediaControlKeySource.h"
 #include "mozilla/dom/BrowsingContextWebProgress.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/MozPromise.h"
 #include "nsCycleCollectionParticipant.h"
@@ -20,8 +21,10 @@
 #include "nsISecureBrowserUI.h"
 
 class nsISHistory;
+class nsSHistory;
 class nsBrowserStatusFilter;
 class nsSecureBrowserUI;
+class CallerWillNotifyHistoryIndexAndLengthChanges;
 
 namespace mozilla {
 namespace net {
@@ -33,7 +36,7 @@ namespace dom {
 class BrowserParent;
 struct LoadURIOptions;
 class MediaController;
-class SessionHistoryInfo;
+struct LoadingSessionHistoryInfo;
 class SessionHistoryEntry;
 class WindowGlobalParent;
 
@@ -70,6 +73,13 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void ClearInFlightProcessId(uint64_t aProcessId);
   uint64_t GetInFlightProcessId() const { return mInFlightProcessId; }
 
+  // The ID of the BrowsingContext which caused this BrowsingContext to be
+  // opened, or `0` if this is unknown.
+  // Only set for toplevel content BrowsingContexts, and may be from a different
+  // BrowsingContextGroup.
+  uint64_t GetCrossGroupOpenerId() const { return mCrossGroupOpenerId; }
+  void SetCrossGroupOpenerId(uint64_t aOpenerId);
+
   void GetWindowGlobals(nsTArray<RefPtr<WindowGlobalParent>>& aWindows);
 
   // The current active WindowGlobal.
@@ -95,10 +105,16 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   Nullable<WindowProxyHolder> GetTopChromeWindow();
 
   nsISHistory* GetSessionHistory();
-  UniquePtr<SessionHistoryInfo> CreateSessionHistoryEntryForLoad(
+  SessionHistoryEntry* GetActiveSessionHistoryEntry();
+
+  UniquePtr<LoadingSessionHistoryInfo> CreateLoadingSessionHistoryEntryForLoad(
       nsDocShellLoadState* aLoadState, nsIChannel* aChannel);
-  void SessionHistoryCommit(uint64_t aSessionHistoryEntryId,
-                            const nsID& aChangeID);
+
+  UniquePtr<LoadingSessionHistoryInfo> ReplaceLoadingSessionHistoryEntryForLoad(
+      LoadingSessionHistoryInfo* aInfo, nsIChannel* aChannel);
+
+  void SessionHistoryCommit(uint64_t aLoadId, const nsID& aChangeID,
+                            uint32_t aLoadType);
 
   // Calls the session history listeners' OnHistoryReload, storing the result in
   // aCanReload. If aCanReload is set to true and we have an active or a loading
@@ -106,9 +122,26 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // aReloadActiveEntry will be true if we have an active entry. If aCanReload
   // is true and aLoadState and aReloadActiveEntry are not set then we should
   // attempt to reload based on the current document in the docshell.
-  void NotifyOnHistoryReload(bool& aCanReload,
+  void NotifyOnHistoryReload(bool aForceReload, bool& aCanReload,
                              Maybe<RefPtr<nsDocShellLoadState>>& aLoadState,
                              Maybe<bool>& aReloadActiveEntry);
+
+  // See BrowsingContext::SetActiveSessionHistoryEntry.
+  void SetActiveSessionHistoryEntry(const Maybe<nsPoint>& aPreviousScrollPos,
+                                    SessionHistoryInfo* aInfo,
+                                    uint32_t aLoadType,
+                                    uint32_t aUpdatedCacheKey,
+                                    const nsID& aChangeID);
+
+  void ReplaceActiveSessionHistoryEntry(SessionHistoryInfo* aInfo);
+
+  void RemoveDynEntriesFromActiveSessionHistoryEntry();
+
+  void RemoveFromSessionHistory();
+
+  void HistoryGo(int32_t aIndex, uint64_t aHistoryEpoch,
+                 Maybe<ContentParentId> aContentId,
+                 std::function<void(int32_t&&)>&& aResolver);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -125,7 +158,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // This function is used to mute or unmute all media within a tab. It would
   // set the media mute property for the top level window and propagate it to
   // other top level windows in other processes.
-  void NotifyMediaMutedChanged(bool aMuted);
+  void NotifyMediaMutedChanged(bool aMuted, ErrorResult& aRv);
 
   // Return the number of unique site origins by iterating all given BCs,
   // including their subtrees.
@@ -166,6 +199,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // control all media belonging to this browsing context tree. Return nullptr
   // if the top-level browsing context has been discarded.
   MediaController* GetMediaController();
+  bool HasCreatedMediaController() const;
 
   // Attempts to start loading the given load state in this BrowsingContext,
   // without requiring any communication from a docshell. This will handle
@@ -187,8 +221,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // Called when the current URI changes (from an
   // nsIWebProgressListener::OnLocationChange event, so that we
   // can update our security UI for the new location, or when the
-  // mixed content state for our current window is changed.
-  void UpdateSecurityStateForLocationOrMixedContentChange();
+  // mixed content/https-only state for our current window is changed.
+  void UpdateSecurityState();
 
   void MaybeAddAsProgressListener(nsIWebProgress* aWebProgress);
 
@@ -198,6 +232,21 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // aNewContext is the newly created BrowsingContext that is replacing
   // us.
   void ReplacedBy(CanonicalBrowsingContext* aNewContext);
+
+  bool HasHistoryEntry(nsISHEntry* aEntry);
+
+  void SwapHistoryEntries(nsISHEntry* aOldEntry, nsISHEntry* aNewEntry);
+
+  void AddLoadingSessionHistoryEntry(uint64_t aLoadId,
+                                     SessionHistoryEntry* aEntry);
+
+  void GetLoadingSessionHistoryInfoFromParent(
+      Maybe<LoadingSessionHistoryInfo>& aLoadingInfo, int32_t* aRequestedIndex,
+      int32_t* aLength);
+
+  void HistoryCommitIndexAndLength();
+
+  void ResetScalingZoom();
 
  protected:
   // Called when the browsing context is being discarded.
@@ -223,8 +272,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     PendingRemotenessChange(CanonicalBrowsingContext* aTarget,
                             RemotenessPromise::Private* aPromise,
                             uint64_t aPendingSwitchId,
-                            bool aReplaceBrowsingContext,
-                            uint64_t aSpecificGroupId);
+                            bool aReplaceBrowsingContext);
 
     void Cancel(nsresult aRv);
 
@@ -240,9 +288,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     RefPtr<RemotenessPromise::Private> mPromise;
     RefPtr<GenericPromise> mPrepareToChangePromise;
     RefPtr<ContentParent> mContentParent;
+    RefPtr<BrowsingContextGroup> mSpecificGroup;
 
     uint64_t mPendingSwitchId;
-    uint64_t mSpecificGroupId;
     bool mReplaceBrowsingContext;
   };
 
@@ -259,6 +307,10 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   bool SupportsLoadingInParent(nsDocShellLoadState* aLoadState,
                                uint64_t* aOuterWindowId);
 
+  void HistoryCommitIndexAndLength(
+      const nsID& aChangeID,
+      const CallerWillNotifyHistoryIndexAndLengthChanges& aProofOfCaller);
+
   // XXX(farre): Store a ContentParent pointer here rather than mProcessId?
   // Indicates which process owns the docshell.
   uint64_t mProcessId;
@@ -270,10 +322,12 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // have in-flight messages that assume it is still the owner.
   uint64_t mInFlightProcessId = 0;
 
+  uint64_t mCrossGroupOpenerId = 0;
+
   // The current remoteness change which is in a pending state.
   RefPtr<PendingRemotenessChange> mPendingRemotenessChange;
 
-  nsCOMPtr<nsISHistory> mSessionHistory;
+  RefPtr<nsSHistory> mSessionHistory;
 
   // Tab media controller is used to control all media existing in the same
   // browsing context tree, so it would only exist in the top level browsing
@@ -282,7 +336,11 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   RefPtr<net::DocumentLoadListener> mCurrentLoad;
 
-  nsTArray<RefPtr<SessionHistoryEntry>> mLoadingEntries;
+  struct LoadingSessionHistoryEntry {
+    uint64_t mLoadId = 0;
+    RefPtr<SessionHistoryEntry> mEntry;
+  };
+  nsTArray<LoadingSessionHistoryEntry> mLoadingEntries;
   RefPtr<SessionHistoryEntry> mActiveEntry;
 
   RefPtr<nsSecureBrowserUI> mSecureBrowserUI;

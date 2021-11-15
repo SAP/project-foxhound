@@ -51,8 +51,14 @@
 #include "js/GCAPI.h"
 #include "js/MemoryFunctions.h"
 #include "js/MemoryMetrics.h"
+#include "js/Object.h"  // JS::GetClass
+#include "js/Stream.h"  // JS::AbortSignalIsAborted, JS::InitPipeToHandling
 #include "js/UbiNode.h"
 #include "js/UbiNodeUtils.h"
+#include "js/friend/UsageStatistics.h"  // JS_TELEMETRY_*, JS_SetAccumulateTelemetryCallback
+#include "js/friend/WindowProxy.h"  // js::SetWindowProxyClass
+#include "js/friend/XrayJitInfo.h"  // JS::SetXrayJitInfo
+#include "mozilla/dom/AbortSignalBinding.h"
 #include "mozilla/dom/GeneratedAtomList.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Element.h"
@@ -225,7 +231,7 @@ RealmPrivate::RealmPrivate(JS::Realm* realm) : scriptability(realm) {
 /* static */
 void RealmPrivate::Init(HandleObject aGlobal, const SiteIdentifier& aSite) {
   MOZ_ASSERT(aGlobal);
-  DebugOnly<const JSClass*> clasp = js::GetObjectClass(aGlobal);
+  DebugOnly<const JSClass*> clasp = JS::GetClass(aGlobal);
   MOZ_ASSERT(clasp->flags &
                  (JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_HAS_PRIVATE) ||
              dom::IsDOMClass(clasp));
@@ -238,7 +244,7 @@ void RealmPrivate::Init(HandleObject aGlobal, const SiteIdentifier& aSite) {
   SetRealmPrivate(realm, realmPriv);
 
   nsIPrincipal* principal = GetRealmPrincipal(realm);
-  Compartment* c = js::GetObjectCompartment(aGlobal);
+  Compartment* c = JS::GetCompartment(aGlobal);
 
   // Create the compartment private if needed.
   if (CompartmentPrivate* priv = CompartmentPrivate::Get(c)) {
@@ -509,7 +515,7 @@ bool IsUAWidgetScope(JS::Realm* realm) {
 }
 
 bool IsInUAWidgetScope(JSObject* obj) {
-  return IsUAWidgetCompartment(js::GetObjectCompartment(obj));
+  return IsUAWidgetCompartment(JS::GetCompartment(obj));
 }
 
 bool CompartmentOriginInfo::MightBeWebContent() const {
@@ -1065,7 +1071,9 @@ size_t CompartmentPrivate::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) {
 void XPCJSRuntime::SystemIsBeingShutDown() {
   // We don't want to track wrapped JS roots after this point since we're
   // making them !IsValid anyway through SystemIsBeingShutDown.
-  mWrappedJSRoots = nullptr;
+  while (mWrappedJSRoots) {
+    mWrappedJSRoots->RemoveFromRootSet();
+  }
 }
 
 StaticAutoPtr<HelperThreadPool> gHelperThreads;
@@ -1266,87 +1274,83 @@ NS_IMPL_ISUPPORTS(JSMainRuntimeTemporaryPeakReporter, nsIMemoryReporter)
 
 #define SUNDRIES_THRESHOLD js::MemoryReportingSundriesThreshold()
 
-#define REPORT(_path, _kind, _units, _amount, _desc)                      \
-  handleReport->Callback(EmptyCString(), _path, nsIMemoryReporter::_kind, \
-                         nsIMemoryReporter::_units, _amount,              \
+#define REPORT(_path, _kind, _units, _amount, _desc)             \
+  handleReport->Callback(""_ns, _path, nsIMemoryReporter::_kind, \
+                         nsIMemoryReporter::_units, _amount,     \
                          nsLiteralCString(_desc), data);
 
 #define REPORT_BYTES(_path, _kind, _amount, _desc) \
   REPORT(_path, _kind, UNITS_BYTES, _amount, _desc);
 
-#define REPORT_GC_BYTES(_path, _amount, _desc)                     \
-  do {                                                             \
-    size_t amount = _amount; /* evaluate _amount only once */      \
-    handleReport->Callback(EmptyCString(), _path,                  \
-                           nsIMemoryReporter::KIND_NONHEAP,        \
-                           nsIMemoryReporter::UNITS_BYTES, amount, \
-                           nsLiteralCString(_desc), data);         \
-    gcTotal += amount;                                             \
+#define REPORT_GC_BYTES(_path, _amount, _desc)                            \
+  do {                                                                    \
+    size_t amount = _amount; /* evaluate _amount only once */             \
+    handleReport->Callback(""_ns, _path, nsIMemoryReporter::KIND_NONHEAP, \
+                           nsIMemoryReporter::UNITS_BYTES, amount,        \
+                           nsLiteralCString(_desc), data);                \
+    gcTotal += amount;                                                    \
   } while (0)
 
 // Report realm/zone non-GC (KIND_HEAP) bytes.
-#define ZRREPORT_BYTES(_path, _amount, _desc)                         \
-  do {                                                                \
-    /* Assign _descLiteral plus "" into a char* to prove that it's */ \
-    /* actually a literal. */                                         \
-    size_t amount = _amount; /* evaluate _amount only once */         \
-    if (amount >= SUNDRIES_THRESHOLD) {                               \
-      handleReport->Callback(EmptyCString(), _path,                   \
-                             nsIMemoryReporter::KIND_HEAP,            \
-                             nsIMemoryReporter::UNITS_BYTES, amount,  \
-                             nsLiteralCString(_desc), data);          \
-    } else {                                                          \
-      sundriesMallocHeap += amount;                                   \
-    }                                                                 \
+#define ZRREPORT_BYTES(_path, _amount, _desc)                            \
+  do {                                                                   \
+    /* Assign _descLiteral plus "" into a char* to prove that it's */    \
+    /* actually a literal. */                                            \
+    size_t amount = _amount; /* evaluate _amount only once */            \
+    if (amount >= SUNDRIES_THRESHOLD) {                                  \
+      handleReport->Callback(""_ns, _path, nsIMemoryReporter::KIND_HEAP, \
+                             nsIMemoryReporter::UNITS_BYTES, amount,     \
+                             nsLiteralCString(_desc), data);             \
+    } else {                                                             \
+      sundriesMallocHeap += amount;                                      \
+    }                                                                    \
   } while (0)
 
 // Report realm/zone GC bytes.
-#define ZRREPORT_GC_BYTES(_path, _amount, _desc)                     \
-  do {                                                               \
-    size_t amount = _amount; /* evaluate _amount only once */        \
-    if (amount >= SUNDRIES_THRESHOLD) {                              \
-      handleReport->Callback(EmptyCString(), _path,                  \
-                             nsIMemoryReporter::KIND_NONHEAP,        \
-                             nsIMemoryReporter::UNITS_BYTES, amount, \
-                             nsLiteralCString(_desc), data);         \
-      gcTotal += amount;                                             \
-    } else {                                                         \
-      sundriesGCHeap += amount;                                      \
-    }                                                                \
+#define ZRREPORT_GC_BYTES(_path, _amount, _desc)                            \
+  do {                                                                      \
+    size_t amount = _amount; /* evaluate _amount only once */               \
+    if (amount >= SUNDRIES_THRESHOLD) {                                     \
+      handleReport->Callback(""_ns, _path, nsIMemoryReporter::KIND_NONHEAP, \
+                             nsIMemoryReporter::UNITS_BYTES, amount,        \
+                             nsLiteralCString(_desc), data);                \
+      gcTotal += amount;                                                    \
+    } else {                                                                \
+      sundriesGCHeap += amount;                                             \
+    }                                                                       \
   } while (0)
 
 // Report realm/zone non-heap bytes.
-#define ZRREPORT_NONHEAP_BYTES(_path, _amount, _desc)                \
-  do {                                                               \
-    size_t amount = _amount; /* evaluate _amount only once */        \
-    if (amount >= SUNDRIES_THRESHOLD) {                              \
-      handleReport->Callback(EmptyCString(), _path,                  \
-                             nsIMemoryReporter::KIND_NONHEAP,        \
-                             nsIMemoryReporter::UNITS_BYTES, amount, \
-                             nsLiteralCString(_desc), data);         \
-    } else {                                                         \
-      sundriesNonHeap += amount;                                     \
-    }                                                                \
+#define ZRREPORT_NONHEAP_BYTES(_path, _amount, _desc)                       \
+  do {                                                                      \
+    size_t amount = _amount; /* evaluate _amount only once */               \
+    if (amount >= SUNDRIES_THRESHOLD) {                                     \
+      handleReport->Callback(""_ns, _path, nsIMemoryReporter::KIND_NONHEAP, \
+                             nsIMemoryReporter::UNITS_BYTES, amount,        \
+                             nsLiteralCString(_desc), data);                \
+    } else {                                                                \
+      sundriesNonHeap += amount;                                            \
+    }                                                                       \
   } while (0)
 
 // Report runtime bytes.
-#define RREPORT_BYTES(_path, _kind, _amount, _desc)                         \
-  do {                                                                      \
-    size_t amount = _amount; /* evaluate _amount only once */               \
-    handleReport->Callback(EmptyCString(), _path, nsIMemoryReporter::_kind, \
-                           nsIMemoryReporter::UNITS_BYTES, amount,          \
-                           nsLiteralCString(_desc), data);                  \
-    rtTotal += amount;                                                      \
+#define RREPORT_BYTES(_path, _kind, _amount, _desc)                \
+  do {                                                             \
+    size_t amount = _amount; /* evaluate _amount only once */      \
+    handleReport->Callback(""_ns, _path, nsIMemoryReporter::_kind, \
+                           nsIMemoryReporter::UNITS_BYTES, amount, \
+                           nsLiteralCString(_desc), data);         \
+    rtTotal += amount;                                             \
   } while (0)
 
 // Report GC thing bytes.
-#define MREPORT_BYTES(_path, _kind, _amount, _desc)                         \
-  do {                                                                      \
-    size_t amount = _amount; /* evaluate _amount only once */               \
-    handleReport->Callback(EmptyCString(), _path, nsIMemoryReporter::_kind, \
-                           nsIMemoryReporter::UNITS_BYTES, amount,          \
-                           nsLiteralCString(_desc), data);                  \
-    gcThingTotal += amount;                                                 \
+#define MREPORT_BYTES(_path, _kind, _amount, _desc)                \
+  do {                                                             \
+    size_t amount = _amount; /* evaluate _amount only once */      \
+    handleReport->Callback(""_ns, _path, nsIMemoryReporter::_kind, \
+                           nsIMemoryReporter::UNITS_BYTES, amount, \
+                           nsLiteralCString(_desc), data);         \
+    gcThingTotal += amount;                                        \
   } while (0)
 
 MOZ_DEFINE_MALLOC_SIZE_OF(JSMallocSizeOf)
@@ -2636,16 +2640,24 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_GC_EFFECTIVENESS:
       Telemetry::Accumulate(Telemetry::GC_EFFECTIVENESS, sample);
       break;
-    case JS_TELEMETRY_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS:
-      Telemetry::Accumulate(
-          Telemetry::JS_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS, sample);
+    case JS_TELEMETRY_RUN_TIME_US:
+      Telemetry::ScalarAdd(Telemetry::ScalarID::JS_RUN_TIME_US, sample);
       break;
-    case JS_TELEMETRY_WEB_PARSER_COMPILE_LAZY_AFTER_MS:
-      Telemetry::Accumulate(Telemetry::JS_WEB_PARSER_COMPILE_LAZY_AFTER_MS,
-                            sample);
+    case JS_TELEMETRY_WASM_COMPILE_TIME_BASELINE_US:
+      Telemetry::ScalarAdd(Telemetry::ScalarID::WASM_COMPILE_TIME_BASELINE_US,
+                           sample);
+      break;
+    case JS_TELEMETRY_WASM_COMPILE_TIME_ION_US:
+      Telemetry::ScalarAdd(Telemetry::ScalarID::WASM_COMPILE_TIME_ION_US,
+                           sample);
+      break;
+    case JS_TELEMETRY_WASM_COMPILE_TIME_CRANELIFT_US:
+      Telemetry::ScalarAdd(Telemetry::ScalarID::WASM_COMPILE_TIME_CRANELIFT_US,
+                           sample);
       break;
     default:
-      MOZ_ASSERT_UNREACHABLE("Unexpected JS_TELEMETRY id");
+      // Some telemetry only exists in the JS Shell, and are not reported here.
+      break;
   }
 }
 
@@ -2983,8 +2995,21 @@ void XPCJSRuntime::Initialize(JSContext* cx) {
   JS_InitReadPrincipalsCallback(cx, nsJSPrincipals::ReadPrincipals);
   JS_SetAccumulateTelemetryCallback(cx, AccumulateTelemetryCallback);
   JS_SetSetUseCounterCallback(cx, SetUseCounterCallback);
+
   js::SetWindowProxyClass(cx, &OuterWindowProxyClass);
-  js::SetXrayJitInfo(&gXrayJitInfo);
+
+  {
+    JS::AbortSignalIsAborted isAborted = [](JSObject* obj) {
+      dom::AbortSignal* domObj = dom::UnwrapDOMObject<dom::AbortSignal>(obj);
+      MOZ_ASSERT(domObj);
+      return domObj->Aborted();
+    };
+
+    JS::InitPipeToHandling(dom::AbortSignal_Binding::GetJSClass(), isAborted,
+                           cx);
+  }
+
+  JS::SetXrayJitInfo(&gXrayJitInfo);
   JS::SetProcessLargeAllocationFailureCallback(
       OnLargeAllocationFailureCallback);
   JS::SetProcessBuildIdOp(GetBuildId);
@@ -3202,8 +3227,7 @@ JSObject* XPCJSRuntime::GetUAWidgetScope(JSContext* cx,
 
     // Use an ExpandedPrincipal to create asymmetric security.
     MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(principal));
-    nsTArray<nsCOMPtr<nsIPrincipal>> principalAsArray(1);
-    principalAsArray.AppendElement(principal);
+    nsTArray<nsCOMPtr<nsIPrincipal>> principalAsArray{principal};
     RefPtr<ExpandedPrincipal> ep = ExpandedPrincipal::Create(
         principalAsArray, principal->OriginAttributesRef());
 

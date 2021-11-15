@@ -50,9 +50,7 @@ static IntrinsicSize IntrinsicSizeFromCanvasSize(
  * "GetCanvasSize()" as a parameter, which may help avoid redundant
  * indirect calls to GetCanvasSize().
  *
- * @param aCanvasSizeInPx The canvas's size in CSS pixels, as returned
- *                        by GetCanvasSize().
- * @return The canvas's intrinsic ratio, as a nsSize.
+ * @return The canvas's intrinsic ratio.
  */
 static AspectRatio IntrinsicRatioFromCanvasSize(
     const nsIntSize& aCanvasSizeInPx) {
@@ -165,17 +163,14 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
         aBuilder.PushIFrame(r, !BackfaceIsHidden(), data->GetPipelineId().ref(),
                             /*ignoreMissingPipelines*/ false);
 
-        gfx::Matrix4x4 scTransform;
-        MaybeIntSize scaleToSize;
         LayoutDeviceRect scBounds(LayoutDevicePoint(0, 0), bounds.Size());
         wr::ImageRendering filter = wr::ToImageRendering(
             nsLayoutUtils::GetSamplingFilterForFrame(mFrame));
         wr::MixBlendMode mixBlendMode = wr::MixBlendMode::Normal;
         aManager->WrBridge()->AddWebRenderParentCommand(
-            OpUpdateAsyncImagePipeline(
-                data->GetPipelineId().value(), scBounds, scTransform,
-                scaleToSize, filter, mixBlendMode,
-                LayoutDeviceSize(canvasSizeInPx.width, canvasSizeInPx.height)));
+            OpUpdateAsyncImagePipeline(data->GetPipelineId().value(), scBounds,
+                                       VideoInfo::Rotation::kDegree_0, filter,
+                                       mixBlendMode));
         break;
       }
       case CanvasContextType::WebGPU: {
@@ -331,9 +326,17 @@ void nsHTMLCanvasFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   ActiveLayerTracker::NotifyContentChange(this);
 }
 
+void nsHTMLCanvasFrame::DestroyFrom(nsIFrame* aDestroyRoot,
+                                    PostDestroyData& aPostDestroyData) {
+  if (IsPrimaryFrame()) {
+    HTMLCanvasElement::FromNode(*mContent)->ResetPrintCallback();
+  }
+  nsContainerFrame::DestroyFrom(aDestroyRoot, aPostDestroyData);
+}
+
 nsHTMLCanvasFrame::~nsHTMLCanvasFrame() = default;
 
-nsIntSize nsHTMLCanvasFrame::GetCanvasSize() {
+nsIntSize nsHTMLCanvasFrame::GetCanvasSize() const {
   nsIntSize size(0, 0);
   HTMLCanvasElement* canvas = HTMLCanvasElement::FromNodeOrNull(GetContent());
   if (canvas) {
@@ -389,33 +392,23 @@ IntrinsicSize nsHTMLCanvasFrame::GetIntrinsicSize() {
 }
 
 /* virtual */
-AspectRatio nsHTMLCanvasFrame::GetIntrinsicRatio() {
+AspectRatio nsHTMLCanvasFrame::GetIntrinsicRatio() const {
   if (StyleDisplay()->IsContainSize()) {
     return AspectRatio();
   }
+
   return IntrinsicRatioFromCanvasSize(GetCanvasSize());
 }
 
 /* virtual */
-LogicalSize nsHTMLCanvasFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsHTMLCanvasFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
-    ComputeSizeFlags aFlags) {
-  IntrinsicSize intrinsicSize;
-  AspectRatio intrinsicRatio;
-  if (StyleDisplay()->IsContainSize()) {
-    intrinsicSize = IntrinsicSize(0, 0);
-    // intrinsicRatio is already implicitly zero via default ctor.
-  } else {
-    nsIntSize canvasSizeInPx = GetCanvasSize();
-    intrinsicSize = IntrinsicSizeFromCanvasSize(canvasSizeInPx);
-    intrinsicRatio = IntrinsicRatioFromCanvasSize(canvasSizeInPx);
-  }
-
-  return ComputeSizeWithIntrinsicDimensions(
-      aRenderingContext, aWM, intrinsicSize, intrinsicRatio, aCBSize, aMargin,
-      aBorder, aPadding, aFlags);
+    const LogicalSize& aBorderPadding, ComputeSizeFlags aFlags) {
+  return {ComputeSizeWithIntrinsicDimensions(
+              aRenderingContext, aWM, GetIntrinsicSize(), GetAspectRatio(),
+              aCBSize, aMargin, aBorderPadding, aFlags),
+          AspectRatioUsage::None};
 }
 
 void nsHTMLCanvasFrame::Reflow(nsPresContext* aPresContext,
@@ -437,7 +430,7 @@ void nsHTMLCanvasFrame::Reflow(nsPresContext* aPresContext,
   LogicalSize finalSize = aReflowInput.ComputedSize();
 
   // stash this away so we can compute our inner area later
-  mBorderPadding = aReflowInput.ComputedLogicalBorderPadding();
+  mBorderPadding = aReflowInput.ComputedLogicalBorderPadding(wm);
 
   finalSize.ISize(wm) += mBorderPadding.IStartEnd(wm);
   finalSize.BSize(wm) += mBorderPadding.BStartEnd(wm);

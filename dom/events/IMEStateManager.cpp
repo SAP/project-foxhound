@@ -9,9 +9,11 @@
 #include "mozilla/IMEStateManager.h"
 
 #include "mozilla/Attributes.h"
+#include "mozilla/AutoRestore.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -76,6 +78,7 @@ InputContext::Origin IMEStateManager::sOrigin = InputContext::ORIGIN_MAIN;
 InputContext IMEStateManager::sActiveChildInputContext;
 bool IMEStateManager::sInstalledMenuKeyboardListener = false;
 bool IMEStateManager::sIsGettingNewIMEState = false;
+bool IMEStateManager::sCleaningUpForStoppingIMEStateManagement = false;
 
 // static
 void IMEStateManager::Init() {
@@ -202,6 +205,15 @@ void IMEStateManager::StopIMEStateManagement() {
 
   // NOTE: Don't set input context from here since this has already lost
   //       the rights to change input context.
+
+  // The requestee of this method in the main process must destroy its
+  // active IMEContentObserver for making existing composition end and
+  // make it be possible to start new composition in new focused process.
+  // Therefore, we shouldn't notify the main process of any changes which
+  // occurred after here.
+  AutoRestore<bool> restoreStoppingIMEStateManagementState(
+      sCleaningUpForStoppingIMEStateManagement);
+  sCleaningUpForStoppingIMEStateManagement = true;
 
   if (sTextCompositions && sPresContext) {
     NotifyIME(REQUEST_TO_COMMIT_COMPOSITION, sPresContext, nullptr);
@@ -651,8 +663,8 @@ bool IMEStateManager::OnMouseButtonEventInEditor(
     return false;
   }
 
-  bool consumed =
-      sActiveIMEContentObserver->OnMouseButtonEvent(aPresContext, aMouseEvent);
+  RefPtr<IMEContentObserver> observer = sActiveIMEContentObserver;
+  bool consumed = observer->OnMouseButtonEvent(aPresContext, aMouseEvent);
 
   if (MOZ_LOG_TEST(sISMLog, LogLevel::Info)) {
     nsAutoString eventType;
@@ -796,6 +808,38 @@ void IMEStateManager::OnEditorDestroying(EditorBase& aEditorBase) {
   sActiveIMEContentObserver->SuppressNotifyingIME();
 }
 
+void IMEStateManager::OnReFocus(nsPresContext* aPresContext,
+                                nsIContent& aContent) {
+  MOZ_LOG(
+      sISMLog, LogLevel::Info,
+      ("OnReFocus(aPresContext=0x%p, aContent=0x%p)", aPresContext, &aContent));
+
+  if (NS_WARN_IF(!sWidget) || NS_WARN_IF(sWidget->Destroyed())) {
+    return;
+  }
+
+  if (!UserActivation::IsHandlingUserInput()) {
+    return;
+  }
+
+  nsCOMPtr<nsIWidget> widget(sWidget);
+
+  // Don't update IME state during composition.
+  if (sTextCompositions) {
+    if (TextComposition* composition =
+            sTextCompositions->GetCompositionFor(widget)) {
+      if (composition->IsComposing()) {
+        return;
+      }
+    }
+  }
+
+  InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
+                            InputContextAction::FOCUS_NOT_CHANGED);
+  IMEState newState = GetNewIMEState(aPresContext, &aContent);
+  SetIMEState(newState, aPresContext, &aContent, widget, action, sOrigin);
+}
+
 // static
 void IMEStateManager::UpdateIMEState(const IMEState& aNewIMEState,
                                      nsIContent* aContent,
@@ -877,6 +921,10 @@ void IMEStateManager::UpdateIMEState(const IMEState& aNewIMEState,
   MOZ_ASSERT(!sPresContext->GetTextInputHandlingWidget() ||
              sPresContext->GetTextInputHandlingWidget() == widget);
 
+  // TODO: Investigate if we could put off to initialize IMEContentObserver
+  //       later because a lot of callers need to be marked as
+  //       MOZ_CAN_RUN_SCRIPT otherwise.
+
   // Even if there is active IMEContentObserver, it may not be observing the
   // editor with current editable root content due to reframed.  In such case,
   // We should try to reinitialize the IMEContentObserver.
@@ -885,7 +933,8 @@ void IMEStateManager::UpdateIMEState(const IMEState& aNewIMEState,
             ("  UpdateIMEState(), try to reinitialize the "
              "active IMEContentObserver"));
     RefPtr<IMEContentObserver> contentObserver = sActiveIMEContentObserver;
-    if (!contentObserver->MaybeReinitialize(widget, sPresContext, aContent,
+    RefPtr<nsPresContext> presContext = sPresContext;
+    if (!contentObserver->MaybeReinitialize(widget, presContext, aContent,
                                             aEditorBase)) {
       MOZ_LOG(sISMLog, LogLevel::Error,
               ("  UpdateIMEState(), failed to reinitialize the "
@@ -1171,26 +1220,20 @@ static void GetActionHint(nsIContent& aContent, nsAString& aActionHint) {
   bool willSubmit = false;
   bool isLastElement = false;
   nsCOMPtr<nsIFormControl> control(do_QueryInterface(inputContent));
-  Element* formElement = nullptr;
   if (control) {
-    formElement = control->GetFormElement();
+    HTMLFormElement* formElement = control->GetFormElement();
     // is this a form and does it have a default submit element?
     if (formElement) {
-      HTMLFormElement* htmlForm = nullptr;
-      if (formElement->IsHTMLElement(nsGkAtoms::form)) {
-        htmlForm = HTMLFormElement::FromNodeOrNull(formElement);
-        if (htmlForm->IsLastActiveElement(control)) {
-          isLastElement = true;
-        }
+      if (formElement->IsLastActiveElement(control)) {
+        isLastElement = true;
       }
 
-      nsCOMPtr<nsIForm> form = do_QueryInterface(formElement);
-      if (form && form->GetDefaultSubmitElement()) {
+      if (formElement->GetDefaultSubmitElement()) {
         willSubmit = true;
         // is this an html form...
-      } else if (htmlForm) {
+      } else {
         // ... and does it only have a single text input element ?
-        if (!htmlForm->ImplicitSubmissionIsDisabled() ||
+        if (!formElement->ImplicitSubmissionIsDisabled() ||
             // ... or is this the last non-disabled element?
             isLastElement) {
           willSubmit = true;
@@ -1260,7 +1303,13 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
     }
 
     if (aContent->IsHTMLElement(nsGkAtoms::input)) {
-      HTMLInputElement::FromNode(aContent)->GetType(context.mHTMLInputType);
+      HTMLInputElement* inputElement = HTMLInputElement::FromNode(aContent);
+      if (inputElement->HasBeenTypePassword() && aState.IsEditable()) {
+        context.mHTMLInputType.AssignLiteral("password");
+      } else {
+        inputElement->GetType(context.mHTMLInputType);
+      }
+
       GetActionHint(*aContent, context.mActionHint);
     } else if (aContent->IsHTMLElement(nsGkAtoms::textarea)) {
       context.mHTMLInputType.Assign(nsGkAtoms::textarea->GetUTF16String());
@@ -1282,6 +1331,13 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
         // Except to mozAwesomebar, inputmode should be lower case.
         ToLowerCase(context.mHTMLInputInputmode);
       }
+    }
+
+    if (aContent->IsHTMLElement() && aState.IsEditable() &&
+        StaticPrefs::dom_forms_autocapitalize() &&
+        context.IsAutocapitalizeSupported()) {
+      nsGenericHTMLElement::FromNode(aContent)->GetAutocapitalize(
+          context.mAutocapitalize);
     }
   }
 
@@ -1439,10 +1495,12 @@ nsIContent* IMEStateManager::GetRootContent(nsPresContext* aPresContext) {
 void IMEStateManager::HandleSelectionEvent(
     nsPresContext* aPresContext, nsIContent* aEventTargetContent,
     WidgetSelectionEvent* aSelectionEvent) {
-  nsIContent* eventTargetContent =
-      aEventTargetContent ? aEventTargetContent : GetRootContent(aPresContext);
-  RefPtr<BrowserParent> browserParent =
-      eventTargetContent ? BrowserParent::GetFrom(eventTargetContent) : nullptr;
+  RefPtr<BrowserParent> browserParent = GetActiveBrowserParent();
+  if (!browserParent) {
+    browserParent = BrowserParent::GetFrom(aEventTargetContent
+                                               ? aEventTargetContent
+                                               : GetRootContent(aPresContext));
+  }
 
   MOZ_LOG(
       sISMLog, LogLevel::Info,
@@ -1536,12 +1594,14 @@ nsresult IMEStateManager::NotifyIME(const IMENotification& aNotification,
            "aWidget=0x%p, aBrowserParent=0x%p), sFocusedIMEWidget=0x%p, "
            "BrowserParent::GetFocused()=0x%p, sFocusedIMEBrowserParent=0x%p, "
            "aBrowserParent == BrowserParent::GetFocused()=%s, "
-           "aBrowserParent == sFocusedIMEBrowserParent=%s",
+           "aBrowserParent == sFocusedIMEBrowserParent=%s, "
+           "CanSendNotificationToWidget()=%s",
            ToChar(aNotification.mMessage), aWidget, aBrowserParent,
            sFocusedIMEWidget, BrowserParent::GetFocused(),
            sFocusedIMEBrowserParent.get(),
            GetBoolName(aBrowserParent == BrowserParent::GetFocused()),
-           GetBoolName(aBrowserParent == sFocusedIMEBrowserParent)));
+           GetBoolName(aBrowserParent == sFocusedIMEBrowserParent),
+           GetBoolName(CanSendNotificationToWidget())));
 
   if (NS_WARN_IF(!aWidget)) {
     MOZ_LOG(sISMLog, LogLevel::Error,
@@ -1551,6 +1611,8 @@ nsresult IMEStateManager::NotifyIME(const IMENotification& aNotification,
 
   switch (aNotification.mMessage) {
     case NOTIFY_IME_OF_FOCUS: {
+      MOZ_ASSERT(CanSendNotificationToWidget());
+
       // If focus notification comes from a remote browser which already lost
       // focus, we shouldn't accept the focus notification.  Then, following
       // notifications from the process will be ignored.
@@ -1618,7 +1680,10 @@ nsresult IMEStateManager::NotifyIME(const IMENotification& aNotification,
       nsCOMPtr<nsIWidget> focusedIMEWidget(sFocusedIMEWidget);
       sFocusedIMEWidget = nullptr;
       sFocusedIMEBrowserParent = nullptr;
-      return focusedIMEWidget->NotifyIME(IMENotification(NOTIFY_IME_OF_BLUR));
+      return CanSendNotificationToWidget()
+                 ? focusedIMEWidget->NotifyIME(
+                       IMENotification(NOTIFY_IME_OF_BLUR))
+                 : NS_OK;
     }
     case NOTIFY_IME_OF_SELECTION_CHANGE:
     case NOTIFY_IME_OF_TEXT_CHANGE:
@@ -1644,6 +1709,9 @@ nsresult IMEStateManager::NotifyIME(const IMENotification& aNotification,
             sISMLog, LogLevel::Warning,
             ("  NotifyIME(), WARNING, the received content change notification "
              "is ignored because it's not for current focused IME widget"));
+        return NS_OK;
+      }
+      if (!CanSendNotificationToWidget()) {
         return NS_OK;
       }
       nsCOMPtr<nsIWidget> widget(aWidget);
@@ -1842,7 +1910,9 @@ void IMEStateManager::CreateIMEContentObserver(EditorBase* aEditorBase) {
   // We should hold the current instance here.
   RefPtr<IMEContentObserver> activeIMEContentObserver(
       sActiveIMEContentObserver);
-  activeIMEContentObserver->Init(widget, sPresContext, sContent, aEditorBase);
+  RefPtr<nsPresContext> presContext = sPresContext;
+  RefPtr<nsIContent> content = sContent;
+  activeIMEContentObserver->Init(widget, presContext, content, aEditorBase);
 }
 
 // static

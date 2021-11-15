@@ -69,14 +69,7 @@ class nsDisplayTableBackgroundSet {
 
   nsDisplayList* ColBackgrounds() { return &mColBackgrounds; }
 
-  nsDisplayTableBackgroundSet(nsDisplayListBuilder* aBuilder, nsIFrame* aTable)
-      : mBuilder(aBuilder) {
-    mPrevTableBackgroundSet = mBuilder->SetTableBackgroundSet(this);
-    mozilla::DebugOnly<const nsIFrame*> reference =
-        mBuilder->FindReferenceFrameFor(aTable, &mToReferenceFrame);
-    MOZ_ASSERT(nsLayoutUtils::IsAncestorFrameCrossDoc(reference, aTable));
-    mDirtyRect = mBuilder->GetDirtyRect();
-  }
+  nsDisplayTableBackgroundSet(nsDisplayListBuilder* aBuilder, nsIFrame* aTable);
 
   ~nsDisplayTableBackgroundSet() {
     mozilla::DebugOnly<nsDisplayTableBackgroundSet*> result =
@@ -302,17 +295,20 @@ class nsTableFrame : public nsContainerFrame {
   IntrinsicSizeOffsetData IntrinsicISizeOffsets(
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE) override;
 
-  virtual mozilla::LogicalSize ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
-      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+  SizeComputationResult ComputeSize(gfxContext* aRenderingContext,
+                                    mozilla::WritingMode aWM,
+                                    const mozilla::LogicalSize& aCBSize,
+                                    nscoord aAvailableISize,
+                                    const mozilla::LogicalSize& aMargin,
+                                    const mozilla::LogicalSize& aBorderPadding,
+                                    mozilla::ComputeSizeFlags aFlags) override;
 
   virtual mozilla::LogicalSize ComputeAutoSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin, const mozilla::LogicalSize& aBorder,
-      const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
+      const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorderPadding,
+      mozilla::ComputeSizeFlags aFlags) override;
 
   /**
    * A copy of nsIFrame::ShrinkWidthToFit that calls a different
@@ -574,8 +570,8 @@ class nsTableFrame : public nsContainerFrame {
 
   void InitChildReflowInput(ReflowInput& aReflowInput);
 
-  virtual LogicalSides GetLogicalSkipSides(
-      const ReflowInput* aReflowInput = nullptr) const override;
+  LogicalSides GetLogicalSkipSides(
+      const Maybe<SkipSidesDuringReflow>& = Nothing()) const override;
 
   void IterateBCBorders(BCPaintBorderAction& aAction, const nsRect& aDirtyRect);
 

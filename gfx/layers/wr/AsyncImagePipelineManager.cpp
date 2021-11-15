@@ -20,6 +20,10 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/TextureHostOGL.h"
+#endif
+
 namespace mozilla {
 namespace layers {
 
@@ -45,6 +49,10 @@ AsyncImagePipelineManager::AsyncImagePipelineManager(
       mAsyncImageEpoch{0},
       mWillGenerateFrame(false),
       mDestroyed(false),
+#ifdef XP_WIN
+      mUseWebRenderDCompVideoOverlayWin(
+          gfx::gfxVars::UseWebRenderDCompVideoOverlayWin()),
+#endif
       mRenderSubmittedUpdatesLock("SubmittedUpdatesLock"),
       mLastCompletedFrameId(0) {
   MOZ_COUNT_CTOR(AsyncImagePipelineManager);
@@ -180,9 +188,8 @@ void AsyncImagePipelineManager::RemoveAsyncImagePipeline(
 
 void AsyncImagePipelineManager::UpdateAsyncImagePipeline(
     const wr::PipelineId& aPipelineId, const LayoutDeviceRect& aScBounds,
-    const gfx::Matrix4x4& aScTransform, const gfx::MaybeIntSize& aScaleToSize,
-    const wr::ImageRendering& aFilter, const wr::MixBlendMode& aMixBlendMode,
-    const LayoutDeviceSize& aScaleFromSize) {
+    const VideoInfo::Rotation aRotation, const wr::ImageRendering& aFilter,
+    const wr::MixBlendMode& aMixBlendMode) {
   if (mDestroyed) {
     return;
   }
@@ -192,8 +199,7 @@ void AsyncImagePipelineManager::UpdateAsyncImagePipeline(
     return;
   }
   pipeline->mInitialised = true;
-  pipeline->Update(aScBounds, aScTransform, aScaleToSize, aFilter,
-                   aMixBlendMode, aScaleFromSize);
+  pipeline->Update(aScBounds, aRotation, aFilter, aMixBlendMode);
 }
 
 Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
@@ -266,7 +272,7 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
     return UpdateWithoutExternalImage(texture, aKeys[0], op, aMaybeFastTxn);
   }
 
-  wrTexture->MaybeNofityForUse(aMaybeFastTxn);
+  wrTexture->MaybeNotifyForUse(aMaybeFastTxn);
 
   Range<wr::ImageKey> keys(&aKeys[0], aKeys.Length());
   auto externalImageKey = wrTexture->GetExternalImageKey();
@@ -317,6 +323,18 @@ void AsyncImagePipelineManager::ApplyAsyncImagesOfImageBridge(
     return;
   }
 
+#ifdef XP_WIN
+  // UseWebRenderDCompVideoOverlayWin() could be changed from true to false,
+  // when DCompVideoOverlay task is failed. In this case, DisplayItems need to
+  // be re-pushed to WebRender for disabling video overlay.
+  bool isChanged = mUseWebRenderDCompVideoOverlayWin !=
+                   gfx::gfxVars::UseWebRenderDCompVideoOverlayWin();
+  if (isChanged) {
+    mUseWebRenderDCompVideoOverlayWin =
+        gfx::gfxVars::UseWebRenderDCompVideoOverlayWin();
+  }
+#endif
+
   wr::Epoch epoch = GetNextImageEpoch();
 
   // We use a pipeline with a very small display list for each video element.
@@ -324,6 +342,13 @@ void AsyncImagePipelineManager::ApplyAsyncImagesOfImageBridge(
   for (auto iter = mAsyncImagePipelines.Iter(); !iter.Done(); iter.Next()) {
     wr::PipelineId pipelineId = wr::AsPipelineId(iter.Key());
     AsyncImagePipeline* pipeline = iter.UserData();
+
+#ifdef XP_WIN
+    if (isChanged) {
+      pipeline->mIsChanged = true;
+    }
+#endif
+
     // If aync image pipeline does not use ImageBridge, do not need to apply.
     if (!pipeline->mImageHost->GetAsyncRef()) {
       continue;
@@ -331,6 +356,20 @@ void AsyncImagePipelineManager::ApplyAsyncImagesOfImageBridge(
     ApplyAsyncImageForPipeline(epoch, pipelineId, pipeline, aSceneBuilderTxn,
                                aFastTxn);
   }
+}
+
+wr::WrRotation ToWrRotation(VideoInfo::Rotation aRotation) {
+  switch (aRotation) {
+    case VideoInfo::Rotation::kDegree_0:
+      return wr::WrRotation::Degree0;
+    case VideoInfo::Rotation::kDegree_90:
+      return wr::WrRotation::Degree90;
+    case VideoInfo::Rotation::kDegree_180:
+      return wr::WrRotation::Degree180;
+    case VideoInfo::Rotation::kDegree_270:
+      return wr::WrRotation::Degree270;
+  }
+  return wr::WrRotation::Degree0;
 }
 
 void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
@@ -362,11 +401,7 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
 
   aPipeline->mIsChanged = false;
 
-  gfx::Matrix4x4 scTransform = aPipeline->mScTransform;
-
-  wr::LayoutSize contentSize{aPipeline->mScBounds.Width(),
-                             aPipeline->mScBounds.Height()};
-  wr::DisplayListBuilder builder(aPipelineId, contentSize);
+  wr::DisplayListBuilder builder(aPipelineId);
 
   float opacity = 1.0f;
   wr::StackingContextParams params;
@@ -374,21 +409,13 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
   params.mix_blend_mode = aPipeline->mMixBlendMode;
 
   wr::WrComputedTransformData computedTransform;
-  if (!aPipeline->mScaleFromSize.IsEmpty()) {
-    MOZ_ASSERT(scTransform.IsIdentity());
-    computedTransform.vertical_flip =
-        aPipeline->mCurrentTexture && aPipeline->mCurrentTexture->NeedsYFlip();
-    computedTransform.scale_from = wr::ToLayoutSize(aPipeline->mScaleFromSize);
-    params.computed_transform = &computedTransform;
-  } else {
-    if (aPipeline->mCurrentTexture &&
-        aPipeline->mCurrentTexture->NeedsYFlip()) {
-      scTransform
-          .PreTranslate(0, aPipeline->mCurrentTexture->GetSize().height, 0)
-          .PreScale(1, -1, 1);
-    }
-    params.mTransformPtr = scTransform.IsIdentity() ? nullptr : &scTransform;
-  }
+  computedTransform.vertical_flip =
+      aPipeline->mCurrentTexture && aPipeline->mCurrentTexture->NeedsYFlip();
+  computedTransform.scale_from = {
+      float(aPipeline->mCurrentTexture->GetSize().width),
+      float(aPipeline->mCurrentTexture->GetSize().height)};
+  computedTransform.rotation = ToWrRotation(aPipeline->mRotation);
+  params.computed_transform = &computedTransform;
 
   Maybe<wr::WrSpatialId> referenceFrameId = builder.PushStackingContext(
       params, wr::ToLayoutRect(aPipeline->mScBounds),
@@ -403,22 +430,23 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
   if (aPipeline->mCurrentTexture && !keys.IsEmpty()) {
     LayoutDeviceRect rect(0, 0, aPipeline->mCurrentTexture->GetSize().width,
                           aPipeline->mCurrentTexture->GetSize().height);
-    if (aPipeline->mScaleToSize.isSome()) {
-      rect = LayoutDeviceRect(0, 0, aPipeline->mScaleToSize.value().width,
-                              aPipeline->mScaleToSize.value().height);
-    }
 
     if (aPipeline->mUseExternalImage) {
       MOZ_ASSERT(aPipeline->mCurrentTexture->AsWebRenderTextureHost());
       Range<wr::ImageKey> range_keys(&keys[0], keys.Length());
-      bool prefer_compositor_surface =
-          IsOpaque(aPipeline->mCurrentTexture->GetFormat()) ||
+      TextureHost::PushDisplayItemFlagSet flags;
+      if (IsOpaque(aPipeline->mCurrentTexture->GetFormat()) ||
           bool(aPipeline->mCurrentTexture->GetFlags() &
-               TextureFlags::IS_OPAQUE);
+               TextureFlags::IS_OPAQUE)) {
+        flags += TextureHost::PushDisplayItemFlag::PREFER_COMPOSITOR_SURFACE;
+      }
+      if (mApi->SupportsExternalBufferTextures()) {
+        flags +=
+            TextureHost::PushDisplayItemFlag::SUPPORTS_EXTERNAL_BUFFER_TEXTURES;
+      }
       aPipeline->mCurrentTexture->PushDisplayItems(
           builder, wr::ToLayoutRect(rect), wr::ToLayoutRect(rect),
-          aPipeline->mFilter, range_keys,
-          /* aPreferCompositorSurface */ prefer_compositor_surface);
+          aPipeline->mFilter, range_keys, flags);
       HoldExternalImage(aPipelineId, aEpoch, aPipeline->mCurrentTexture);
     } else {
       MOZ_ASSERT(keys.Length() == 1);
@@ -431,12 +459,10 @@ void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
   builder.PopStackingContext(referenceFrameId.isSome());
 
   wr::BuiltDisplayList dl;
-  wr::LayoutSize builderContentSize;
-  builder.Finalize(builderContentSize, dl);
+  builder.Finalize(dl);
   aSceneBuilderTxn.SetDisplayList(gfx::DeviceColor(0.f, 0.f, 0.f, 0.f), aEpoch,
                                   wr::ToLayoutSize(aPipeline->mScBounds.Size()),
-                                  aPipelineId, builderContentSize, dl.dl_desc,
-                                  dl.dl);
+                                  aPipelineId, dl.dl_desc, dl.dl);
 }
 
 void AsyncImagePipelineManager::ApplyAsyncImageForPipeline(
@@ -484,16 +510,13 @@ void AsyncImagePipelineManager::SetEmptyDisplayList(
   auto& txn = pipeline->mImageHost->GetAsyncRef() ? aTxnForImageBridge : aTxn;
 
   wr::Epoch epoch = GetNextImageEpoch();
-  wr::LayoutSize contentSize{pipeline->mScBounds.Width(),
-                             pipeline->mScBounds.Height()};
-  wr::DisplayListBuilder builder(aPipelineId, contentSize);
+  wr::DisplayListBuilder builder(aPipelineId);
 
   wr::BuiltDisplayList dl;
-  wr::LayoutSize builderContentSize;
-  builder.Finalize(builderContentSize, dl);
+  builder.Finalize(dl);
   txn.SetDisplayList(gfx::DeviceColor(0.f, 0.f, 0.f, 0.f), epoch,
                      wr::ToLayoutSize(pipeline->mScBounds.Size()), aPipelineId,
-                     builderContentSize, dl.dl_desc, dl.dl);
+                     dl.dl_desc, dl.dl);
 }
 
 void AsyncImagePipelineManager::HoldExternalImage(
@@ -543,14 +566,11 @@ void AsyncImagePipelineManager::HoldExternalImage(
 void AsyncImagePipelineManager::NotifyPipelinesUpdated(
     RefPtr<const wr::WebRenderPipelineInfo> aInfo,
     wr::RenderedFrameId aLatestFrameId,
-    wr::RenderedFrameId aLastCompletedFrameId) {
+    wr::RenderedFrameId aLastCompletedFrameId, ipc::FileDescriptor&& aFenceFd) {
   MOZ_ASSERT(wr::RenderThread::IsInRenderThread());
   MOZ_ASSERT(mLastCompletedFrameId <= aLastCompletedFrameId.mId);
   MOZ_ASSERT(aLatestFrameId.IsValid());
 
-  // This is called on the render thread, so we just stash the data into
-  // mPendingUpdates and process it later on the compositor thread.
-  mPendingUpdates.push_back(std::move(aInfo));
   mLastCompletedFrameId = aLastCompletedFrameId.mId;
 
   {
@@ -558,10 +578,10 @@ void AsyncImagePipelineManager::NotifyPipelinesUpdated(
     // on the compositor thread.
     MutexAutoLock lock(mRenderSubmittedUpdatesLock);
 
-    // Move the pending updates into the submitted ones. Note that this clears
-    // mPendingUpdates.
-    mRenderSubmittedUpdates.emplace_back(aLatestFrameId,
-                                         std::move(mPendingUpdates));
+    // Move the pending updates into the submitted ones.
+    mRenderSubmittedUpdates.emplace_back(
+        aLatestFrameId,
+        WebRenderPipelineInfoHolder(std::move(aInfo), std::move(aFenceFd)));
   }
 
   // Queue a runnable on the compositor thread to process the updates.
@@ -578,7 +598,7 @@ void AsyncImagePipelineManager::ProcessPipelineUpdates() {
     return;
   }
 
-  std::vector<std::pair<wr::RenderedFrameId, PipelineInfoVector>>
+  std::vector<std::pair<wr::RenderedFrameId, WebRenderPipelineInfoHolder>>
       submittedUpdates;
   {
     // We need to lock for mRenderSubmittedUpdates because it can be accessed on
@@ -590,15 +610,16 @@ void AsyncImagePipelineManager::ProcessPipelineUpdates() {
   // submittedUpdates is a vector of RenderedFrameIds paired with vectors of
   // WebRenderPipelineInfo.
   for (auto update : submittedUpdates) {
-    for (auto pipelineInfo : update.second) {
-      auto& info = pipelineInfo->Raw();
+    auto& holder = update.second;
+    const auto& info = holder.mInfo->Raw();
 
-      for (auto& epoch : info.epochs) {
-        ProcessPipelineRendered(epoch.pipeline_id, epoch.epoch, update.first);
-      }
-      for (auto& removedPipeline : info.removed_pipelines) {
-        ProcessPipelineRemoved(removedPipeline, update.first);
-      }
+    mReleaseFenceFd = std::move(holder.mFenceFd);
+
+    for (auto& epoch : info.epochs) {
+      ProcessPipelineRendered(epoch.pipeline_id, epoch.epoch, update.first);
+    }
+    for (auto& removedPipeline : info.removed_pipelines) {
+      ProcessPipelineRemoved(removedPipeline, update.first);
     }
   }
   CheckForTextureHostsNotUsedByGPU();
@@ -615,6 +636,20 @@ void AsyncImagePipelineManager::ProcessPipelineRendered(
         holder->mTextureHostsUntilRenderSubmitted.begin(),
         holder->mTextureHostsUntilRenderSubmitted.end(),
         [&aEpoch](const auto& entry) { return aEpoch <= entry.mEpoch; });
+#ifdef MOZ_WIDGET_ANDROID
+    // Set release fence if TextureHost owns AndroidHardwareBuffer.
+    // The TextureHost handled by mTextureHostsUntilRenderSubmitted instead of
+    // mTextureHostsUntilRenderCompleted, since android fence could be used
+    // to wait until its end of usage by GPU.
+    for (auto it = holder->mTextureHostsUntilRenderSubmitted.begin();
+         it != firstSubmittedHostToKeep; ++it) {
+      const auto& entry = it;
+      if (entry->mTexture->GetAndroidHardwareBuffer()) {
+        ipc::FileDescriptor fenceFd = mReleaseFenceFd;
+        entry->mTexture->SetReleaseFence(std::move(fenceFd));
+      }
+    }
+#endif
     holder->mTextureHostsUntilRenderSubmitted.erase(
         holder->mTextureHostsUntilRenderSubmitted.begin(),
         firstSubmittedHostToKeep);

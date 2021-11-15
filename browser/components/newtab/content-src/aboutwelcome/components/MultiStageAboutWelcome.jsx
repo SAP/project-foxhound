@@ -6,7 +6,10 @@ import React, { useState, useCallback, useEffect } from "react";
 import { Localized } from "./MSLocalized";
 import { Zap } from "./Zap";
 import { AboutWelcomeUtils } from "../../lib/aboutwelcome-utils";
-import { addUtmParams } from "../../asrouter/templates/FirstRun/addUtmParams";
+import {
+  BASE_PARAMS,
+  addUtmParams,
+} from "../../asrouter/templates/FirstRun/addUtmParams";
 
 export const MultiStageAboutWelcome = props => {
   const [index, setScreenIndex] = useState(0);
@@ -61,7 +64,19 @@ export const MultiStageAboutWelcome = props => {
   const [region, setRegion] = useState(null);
   useEffect(() => {
     (async () => {
-      setRegion(await window.AWWaitForRegionChange());
+      setRegion(await window.AWGetRegion());
+    })();
+  }, []);
+
+  // Get the active theme so the rendering code can make it selected
+  // by default.
+  const [activeTheme, setActiveTheme] = useState(null);
+  const [initialTheme, setInitialTheme] = useState(null);
+  useEffect(() => {
+    (async () => {
+      let theme = await window.AWGetSelectedTheme();
+      setInitialTheme(theme);
+      setActiveTheme(theme);
     })();
   }, []);
 
@@ -91,10 +106,11 @@ export const MultiStageAboutWelcome = props => {
 
   return (
     <React.Fragment>
-      <div className={`outer-wrapper multistageContainer`}>
+      <div className={`outer-wrapper onboardingContainer`}>
         {props.screens.map(screen => {
           return index === screen.order ? (
             <WelcomeScreen
+              key={screen.id}
               id={screen.id}
               totalNumberOfScreens={props.screens.length}
               order={screen.order}
@@ -104,6 +120,9 @@ export const MultiStageAboutWelcome = props => {
               messageId={`${props.message_id}_${screen.id}`}
               UTMTerm={props.utm_term}
               flowParams={flowParams}
+              activeTheme={activeTheme}
+              initialTheme={initialTheme}
+              setActiveTheme={setActiveTheme}
             />
           ) : null;
         })}
@@ -120,27 +139,29 @@ export class WelcomeScreen extends React.PureComponent {
 
   handleOpenURL(action, flowParams, UTMTerm) {
     let { type, data } = action;
-    let url = new URL(data.args);
-    addUtmParams(url, `aboutwelcome-${UTMTerm}-screen`);
-
-    if (action.addFlowParams && flowParams) {
-      url.searchParams.append("device_id", flowParams.deviceId);
-      url.searchParams.append("flow_id", flowParams.flowId);
-      url.searchParams.append("flow_begin_time", flowParams.flowBeginTime);
-    }
-
-    data = { ...data, args: url.toString() };
-    AboutWelcomeUtils.handleUserAction({ type, data });
-  }
-
-  highlightTheme(theme) {
-    const themes = document.querySelectorAll("label.theme");
-    themes.forEach(function(element) {
-      element.classList.remove("selected");
-      if (element.firstElementChild.value === theme) {
-        element.classList.add("selected");
+    if (type === "SHOW_FIREFOX_ACCOUNTS") {
+      let params = {
+        ...BASE_PARAMS,
+        utm_term: `aboutwelcome-${UTMTerm}-screen`,
+      };
+      if (action.addFlowParams && flowParams) {
+        params = {
+          ...params,
+          ...flowParams,
+        };
       }
-    });
+      data = { ...data, extraParams: params };
+    } else if (type === "OPEN_URL") {
+      let url = new URL(data.args);
+      addUtmParams(url, `aboutwelcome-${UTMTerm}-screen`);
+      if (action.addFlowParams && flowParams) {
+        url.searchParams.append("device_id", flowParams.deviceId);
+        url.searchParams.append("flow_id", flowParams.flowId);
+        url.searchParams.append("flow_begin_time", flowParams.flowBeginTime);
+      }
+      data = { ...data, args: url.toString() };
+    }
+    AboutWelcomeUtils.handleUserAction({ type, data });
   }
 
   async handleAction(event) {
@@ -160,7 +181,7 @@ export class WelcomeScreen extends React.PureComponent {
 
     let { action } = targetContent;
 
-    if (action.type === "OPEN_URL") {
+    if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
       this.handleOpenURL(action, props.flowParams, props.UTMTerm);
     } else if (action.type) {
       AboutWelcomeUtils.handleUserAction(action);
@@ -173,10 +194,13 @@ export class WelcomeScreen extends React.PureComponent {
 
     // A special tiles.action.theme value indicates we should use the event's value vs provided value.
     if (action.theme) {
-      this.highlightTheme(event.currentTarget.value);
-      window.AWSelectTheme(
-        action.theme === "<event>" ? event.currentTarget.value : action.theme
-      );
+      let themeToUse =
+        action.theme === "<event>"
+          ? event.currentTarget.value
+          : this.props.initialTheme || action.theme;
+
+      this.props.setActiveTheme(themeToUse);
+      window.AWSelectTheme(themeToUse);
     }
 
     if (action.navigate) {
@@ -186,7 +210,9 @@ export class WelcomeScreen extends React.PureComponent {
 
   renderSecondaryCTA(className) {
     return (
-      <div className={`secondary-cta ${className}`}>
+      <div
+        className={className ? `secondary-cta ${className}` : `secondary-cta`}
+      >
         <Localized text={this.props.content.secondary_button.text}>
           <span />
         </Localized>
@@ -239,7 +265,9 @@ export class WelcomeScreen extends React.PureComponent {
                     >
                       {icon ? "" : label && label[0].toUpperCase()}
                     </div>
-                    {label && <div className="host">{label}</div>}
+                    {this.props.content.tiles.showTitles && (
+                      <div className="host">{title || label}</div>
+                    )}
                   </div>
                 ))}
             </div>
@@ -259,23 +287,31 @@ export class WelcomeScreen extends React.PureComponent {
                       key={theme + label}
                       text={typeof tooltip === "object" ? tooltip : {}}
                     >
-                      <label className="theme" title={theme + label}>
-                        <input
-                          type="radio"
-                          value={theme}
-                          name="theme"
-                          className="sr-only input"
-                          onClick={this.handleAction}
-                        />
+                      <label
+                        className={`theme${
+                          theme === this.props.activeTheme ? " selected" : ""
+                        }`}
+                        title={theme + label}
+                      >
+                        <Localized
+                          text={
+                            typeof description === "object" ? description : {}
+                          }
+                        >
+                          <input
+                            type="radio"
+                            value={theme}
+                            name="theme"
+                            checked={theme === this.props.activeTheme}
+                            className="sr-only input"
+                            onClick={this.handleAction}
+                            data-l10n-attrs="aria-description"
+                          />
+                        </Localized>
                         <div className={`icon ${theme}`} />
                         {label && (
                           <Localized text={label}>
                             <div className="text" />
-                          </Localized>
-                        )}
-                        {description && (
-                          <Localized text={description}>
-                            <div className="theme-desc" />
                           </Localized>
                         )}
                       </label>
@@ -376,6 +412,9 @@ export class WelcomeScreen extends React.PureComponent {
           data-l10n-args={`{"current": ${parseInt(this.props.order, 10) +
             1}, "total": ${this.props.totalNumberOfScreens}}`}
         >
+          {/* These empty elements are here to help trigger the nav for screen readers. */}
+          <br />
+          <p />
           {this.renderStepsIndicator()}
         </nav>
         {this.renderDisclaimer()}

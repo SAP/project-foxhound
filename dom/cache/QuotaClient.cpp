@@ -33,7 +33,7 @@ using mozilla::dom::cache::QuotaInfo;
 using mozilla::dom::quota::AssertIsOnIOThread;
 using mozilla::dom::quota::Client;
 using mozilla::dom::quota::DatabaseUsageType;
-using mozilla::dom::quota::FileUsageType;
+using mozilla::dom::quota::GroupAndOrigin;
 using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
 using mozilla::dom::quota::PersistenceType;
 using mozilla::dom::quota::QuotaManager;
@@ -85,7 +85,22 @@ static nsresult GetBodyUsage(nsIFile* aMorgueDir, const Atomic<bool>& aCanceled,
         return rv;
       }
       MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
-      *aUsageInfo += FileUsageType(Some(fileSize));
+      // FIXME: Separate file usage and database usage in OriginInfo so that the
+      // workaround for treating body file size as database usage can be
+      // removed.
+      //
+      // This is needed because we want to remove the mutex lock for padding
+      // files. The lock is needed because the padding file is accessed on the
+      // QM IO thread while getting origin usage and is accessed on the Cache IO
+      // thread in normal Cache operations.
+      // Using the cached usage in QM while getting origin usage can remove the
+      // access on the QM IO thread and thus we can remove the mutex lock.
+      // However, QM only separates usage types in initialization, and the
+      // separation is gone after that. So, before extending the separation of
+      // usage types in QM, this is a workaround to avoid the file usage
+      // mismatching in our tests. Note that file usage hasn't been exposed to
+      // users yet.
+      *aUsageInfo += DatabaseUsageType(Some(fileSize));
 
       fileDeleted = false;
 
@@ -106,18 +121,16 @@ static nsresult GetBodyUsage(nsIFile* aMorgueDir, const Atomic<bool>& aCanceled,
   return NS_OK;
 }
 
-static nsresult LockedGetPaddingSizeFromDB(nsIFile* aDir,
-                                           const nsACString& aGroup,
-                                           const nsACString& aOrigin,
-                                           int64_t* aPaddingSizeOut) {
+static nsresult LockedGetPaddingSizeFromDB(
+    nsIFile* aDir, const GroupAndOrigin& aGroupAndOrigin,
+    int64_t* aPaddingSizeOut) {
   MOZ_DIAGNOSTIC_ASSERT(aDir);
   MOZ_DIAGNOSTIC_ASSERT(aPaddingSizeOut);
 
   *aPaddingSizeOut = 0;
 
   QuotaInfo quotaInfo;
-  quotaInfo.mGroup = aGroup;
-  quotaInfo.mOrigin = aOrigin;
+  static_cast<GroupAndOrigin&>(quotaInfo) = aGroupAndOrigin;
   // quotaInfo.mDirectoryLockId must be -1 (which is default for new QuotaInfo)
   // because this method should only be called from QuotaClient::InitOrigin
   // (via QuotaClient::GetUsageForOriginInternal) when the temporary storage
@@ -165,7 +178,7 @@ static nsresult LockedGetPaddingSizeFromDB(nsIFile* aDir,
   // by QuotaClient::GetUsageForOrigin which may run at any time (there's no
   // guarantee that SetupAction::RunSyncWithDBOnTarget already checked the
   // schema for the given origin).
-  rv = mozilla::dom::cache::db::CreateOrMigrateSchema(conn);
+  rv = mozilla::dom::cache::db::CreateOrMigrateSchema(*conn);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -184,9 +197,7 @@ static nsresult LockedGetPaddingSizeFromDB(nsIFile* aDir,
 
 }  // namespace
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 const nsLiteralString kCachesSQLiteFilename = u"caches.sqlite"_ns;
 
@@ -206,17 +217,17 @@ CacheQuotaClient* CacheQuotaClient::Get() {
 CacheQuotaClient::Type CacheQuotaClient::GetType() { return DOMCACHE; }
 
 Result<UsageInfo, nsresult> CacheQuotaClient::InitOrigin(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, const AtomicBool& aCanceled) {
+    PersistenceType aPersistenceType, const GroupAndOrigin& aGroupAndOrigin,
+    const AtomicBool& aCanceled) {
   AssertIsOnIOThread();
 
-  return GetUsageForOriginInternal(aPersistenceType, aGroup, aOrigin, aCanceled,
+  return GetUsageForOriginInternal(aPersistenceType, aGroupAndOrigin, aCanceled,
                                    /* aInitializing*/ true);
 }
 
 nsresult CacheQuotaClient::InitOriginWithoutTracking(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, const AtomicBool& aCanceled) {
+    PersistenceType aPersistenceType, const GroupAndOrigin& aGroupAndOrigin,
+    const AtomicBool& aCanceled) {
   AssertIsOnIOThread();
 
   // This is called when a storage/permanent/chrome/cache directory exists. Even
@@ -228,11 +239,11 @@ nsresult CacheQuotaClient::InitOriginWithoutTracking(
 }
 
 Result<UsageInfo, nsresult> CacheQuotaClient::GetUsageForOrigin(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, const AtomicBool& aCanceled) {
+    PersistenceType aPersistenceType, const GroupAndOrigin& aGroupAndOrigin,
+    const AtomicBool& aCanceled) {
   AssertIsOnIOThread();
 
-  return GetUsageForOriginInternal(aPersistenceType, aGroup, aOrigin, aCanceled,
+  return GetUsageForOriginInternal(aPersistenceType, aGroupAndOrigin, aCanceled,
                                    /* aInitializing*/ false);
 }
 
@@ -363,9 +374,8 @@ CacheQuotaClient::~CacheQuotaClient() {
 }
 
 Result<UsageInfo, nsresult> CacheQuotaClient::GetUsageForOriginInternal(
-    PersistenceType aPersistenceType, const nsACString& aGroup,
-    const nsACString& aOrigin, const AtomicBool& aCanceled,
-    const bool aInitializing) {
+    PersistenceType aPersistenceType, const GroupAndOrigin& aGroupAndOrigin,
+    const AtomicBool& aCanceled, const bool aInitializing) {
   AssertIsOnIOThread();
 #ifndef NIGHTLY_BUILD
   Unused << aInitializing;
@@ -374,16 +384,11 @@ Result<UsageInfo, nsresult> CacheQuotaClient::GetUsageForOriginInternal(
   QuotaManager* qm = QuotaManager::Get();
   MOZ_DIAGNOSTIC_ASSERT(qm);
 
-  nsCOMPtr<nsIFile> dir;
-  nsresult rv =
-      qm->GetDirectoryForOrigin(aPersistenceType, aOrigin, getter_AddRefs(dir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
-                                 Cache_GetDirForOri);
-    return Err(rv);
-  }
+  CACHE_TRY_UNWRAP(auto dir, qm->GetDirectoryForOrigin(
+                                 aPersistenceType, aGroupAndOrigin.mOrigin));
 
-  rv = dir->Append(NS_LITERAL_STRING_FROM_CSTRING(DOMCACHE_DIRECTORY_NAME));
+  nsresult rv =
+      dir->Append(NS_LITERAL_STRING_FROM_CSTRING(DOMCACHE_DIRECTORY_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                  Cache_Append);
@@ -403,7 +408,7 @@ Result<UsageInfo, nsresult> CacheQuotaClient::GetUsageForOriginInternal(
         NS_WARN_IF(NS_FAILED(mozilla::dom::cache::LockedDirectoryPaddingGet(
             dir, &paddingSize)))) {
       if (aInitializing) {
-        rv = LockedGetPaddingSizeFromDB(dir, aGroup, aOrigin, &paddingSize);
+        rv = LockedGetPaddingSizeFromDB(dir, aGroupAndOrigin, &paddingSize);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaInternalError,
                                        Cache_GetPaddingSize);
@@ -424,7 +429,7 @@ Result<UsageInfo, nsresult> CacheQuotaClient::GetUsageForOriginInternal(
 
   if (useCachedValue) {
     uint64_t usage;
-    if (qm->GetUsageForClient(PERSISTENCE_TYPE_DEFAULT, aGroup, aOrigin,
+    if (qm->GetUsageForClient(PERSISTENCE_TYPE_DEFAULT, aGroupAndOrigin,
                               Client::DOMCACHE, usage)) {
       usageInfo += DatabaseUsageType(Some(usage));
     }
@@ -432,7 +437,9 @@ Result<UsageInfo, nsresult> CacheQuotaClient::GetUsageForOriginInternal(
     return usageInfo;
   }
 
-  usageInfo += FileUsageType(Some(paddingSize));
+  // FIXME: Separate file usage and database usage in OriginInfo so that the
+  // workaround for treating padding file size as database usage can be removed.
+  usageInfo += DatabaseUsageType(Some(paddingSize));
 
   nsCOMPtr<nsIDirectoryEnumerator> entries;
   rv = dir->GetDirectoryEntries(getter_AddRefs(entries));
@@ -559,6 +566,4 @@ nsresult WipePaddingFile(const QuotaInfo& aQuotaInfo, nsIFile* aBaseDir) {
 
   return rv;
 }
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

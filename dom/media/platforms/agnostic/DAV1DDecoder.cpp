@@ -6,8 +6,11 @@
 
 #include "DAV1DDecoder.h"
 
+#include "ImageContainer.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsThreadUtils.h"
+#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -18,8 +21,11 @@ namespace mozilla {
 
 DAV1DDecoder::DAV1DDecoder(const CreateDecoderParams& aParams)
     : mInfo(aParams.VideoConfig()),
-      mTaskQueue(aParams.mTaskQueue),
-      mImageContainer(aParams.mImageContainer) {}
+      mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "Dav1dDecoder")),
+      mImageContainer(aParams.mImageContainer),
+      mImageAllocator(aParams.mKnowsCompositor) {}
 
 RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
   Dav1dSettings settings;
@@ -186,9 +192,9 @@ already_AddRefed<VideoData> DAV1DDecoder::ConstructImage(
     const Dav1dPicture& aPicture) {
   VideoData::YCbCrBuffer b;
   if (aPicture.p.bpc == 10) {
-    b.mColorDepth = ColorDepth::COLOR_10;
+    b.mColorDepth = gfx::ColorDepth::COLOR_10;
   } else if (aPicture.p.bpc == 12) {
-    b.mColorDepth = ColorDepth::COLOR_12;
+    b.mColorDepth = gfx::ColorDepth::COLOR_12;
   }
 
   // On every other case use the default (BT601).
@@ -196,19 +202,41 @@ already_AddRefed<VideoData> DAV1DDecoder::ConstructImage(
     switch (aPicture.seq_hdr->mtrx) {
       case DAV1D_MC_BT2020_NCL:
       case DAV1D_MC_BT2020_CL:
-        b.mYUVColorSpace = YUVColorSpace::BT2020;
+        b.mYUVColorSpace = gfx::YUVColorSpace::BT2020;
         break;
       case DAV1D_MC_BT601:
-        b.mYUVColorSpace = YUVColorSpace::BT601;
+        b.mYUVColorSpace = gfx::YUVColorSpace::BT601;
         break;
       case DAV1D_MC_BT709:
-        b.mYUVColorSpace = YUVColorSpace::BT709;
+        b.mYUVColorSpace = gfx::YUVColorSpace::BT709;
+        break;
+      case DAV1D_MC_IDENTITY:
+        b.mYUVColorSpace = gfx::YUVColorSpace::Identity;
+        break;
+      case DAV1D_MC_CHROMAT_NCL:
+      case DAV1D_MC_CHROMAT_CL:
+      case DAV1D_MC_UNKNOWN:  // MIAF specific
+        switch (aPicture.seq_hdr->pri) {
+          case DAV1D_COLOR_PRI_BT601:
+            b.mYUVColorSpace = gfx::YUVColorSpace::BT601;
+            break;
+          case DAV1D_COLOR_PRI_BT709:
+            b.mYUVColorSpace = gfx::YUVColorSpace::BT709;
+            break;
+          case DAV1D_COLOR_PRI_BT2020:
+            b.mYUVColorSpace = gfx::YUVColorSpace::BT2020;
+            break;
+          default:
+            b.mYUVColorSpace = gfx::YUVColorSpace::UNKNOWN;
+            break;
+        }
         break;
       default:
-        break;
+        LOG("Unsupported color matrix value: %u", aPicture.seq_hdr->mtrx);
+        b.mYUVColorSpace = gfx::YUVColorSpace::UNKNOWN;
     }
   }
-  if (b.mYUVColorSpace == YUVColorSpace::UNKNOWN) {
+  if (b.mYUVColorSpace == gfx::YUVColorSpace::UNKNOWN) {
     b.mYUVColorSpace = DefaultColorSpace({aPicture.p.w, aPicture.p.h});
   }
   b.mColorRange = aPicture.seq_hdr->color_range ? gfx::ColorRange::FULL
@@ -250,7 +278,7 @@ already_AddRefed<VideoData> DAV1DDecoder::ConstructImage(
 
   return VideoData::CreateAndCopyData(
       mInfo, mImageContainer, offset, timecode, duration, b, keyframe, timecode,
-      mInfo.ScaledImageRect(aPicture.p.w, aPicture.p.h));
+      mInfo.ScaledImageRect(aPicture.p.w, aPicture.p.h), mImageAllocator);
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
@@ -281,7 +309,7 @@ RefPtr<ShutdownPromise> DAV1DDecoder::Shutdown() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
     dav1d_close(&self->mContext);
-    return ShutdownPromise::CreateAndResolve(true, __func__);
+    return self->mTaskQueue->BeginShutdown();
   });
 }
 

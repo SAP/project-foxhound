@@ -18,10 +18,9 @@
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 #include "mozilla/dom/WebCryptoTask.h"
-#include "mtransport/dtlsidentity.h"
+#include "transport/dtlsidentity.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define RTCCERTIFICATE_SC_VERSION 0x00000001
 
@@ -72,7 +71,7 @@ class GenerateRTCCertificateTask : public GenerateAsymmetricKeyTask {
     }
 
     char buf[sizeof(randomName) * 2 + 4];
-    PL_strncpy(buf, "CN=", 3);
+    strncpy(buf, "CN=", 4);
     for (size_t i = 0; i < sizeof(randomName); ++i) {
       snprintf(&buf[i * 2 + 3], 3, "%.2x", randomName[i]);
     }
@@ -393,5 +392,4 @@ already_AddRefed<RTCCertificate> RTCCertificate::ReadStructuredClone(
   return cert.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -32,6 +32,7 @@ Services.scriptloader.loadSubScript(
 var {
   BrowserConsoleManager,
 } = require("devtools/client/webconsole/browser-console-manager");
+
 var WCUL10n = require("devtools/client/webconsole/utils/l10n");
 const DOCS_GA_PARAMS = `?${new URLSearchParams({
   utm_source: "mozilla",
@@ -55,11 +56,6 @@ registerCleanupFunction(async function() {
   Services.prefs.getChildList("devtools.webconsole.filter").forEach(pref => {
     Services.prefs.clearUserPref(pref);
   });
-  const browserConsole = BrowserConsoleManager.getBrowserConsole();
-  if (browserConsole) {
-    await clearOutput(browserConsole);
-    await BrowserConsoleManager.toggleBrowserConsole();
-  }
 });
 
 /**
@@ -307,6 +303,7 @@ function keyboardExecuteAndWaitForMessage(
   matchingText,
   selector = ".message"
 ) {
+  hud.jsterm.focus();
   setInputValue(hud, input);
   const onMessage = waitForMessage(hud, matchingText, selector);
   if (isEditorModeEnabled(hud)) {
@@ -317,35 +314,6 @@ function keyboardExecuteAndWaitForMessage(
     EventUtils.synthesizeKey("VK_RETURN");
   }
   return onMessage;
-}
-
-/**
- * Wait for a predicate to return a result.
- *
- * @param function condition
- *        Invoked once in a while until it returns a truthy value. This should be an
- *        idempotent function, since we have to run it a second time after it returns
- *        true in order to return the value.
- * @param string message [optional]
- *        A message to output if the condition fails.
- * @param number interval [optional]
- *        How often the predicate is invoked, in milliseconds.
- * @return object
- *         A promise that is resolved with the result of the condition.
- */
-async function waitFor(
-  condition,
-  message = "waitFor",
-  interval = 10,
-  maxTries = 500
-) {
-  await BrowserTestUtils.waitForCondition(
-    condition,
-    message,
-    interval,
-    maxTries
-  );
-  return condition();
 }
 
 /**
@@ -1030,7 +998,7 @@ async function openMessageInNetmonitor(toolbox, hud, url, urlInConsole) {
   await waitFor(() => {
     const selected = getSelectedRequest(store.getState());
     return selected && selected.url === url;
-  }, "network entry for the URL wasn't found");
+  }, `network entry for the URL "${url}" wasn't found`);
 
   ok(true, "The attached url is correct.");
 
@@ -1736,7 +1704,12 @@ function toggleLayout(hud) {
 async function waitForLazyRequests(toolbox) {
   const { wrapper } = toolbox.getCurrentPanel().hud.ui;
   return waitUntil(() => {
-    return !wrapper.networkDataProvider.lazyRequestData.size;
+    return (
+      !wrapper.networkDataProvider.lazyRequestData.size &&
+      // Make sure that batched request updates are all complete
+      // as they trigger late lazy data requests.
+      !wrapper.queuedRequestUpdates.length
+    );
   });
 }
 
@@ -1772,7 +1745,7 @@ function getContextSelectorItems(hud) {
   const list = doc.getElementById(
     "webconsole-console-evaluation-context-selector-menu-list"
   );
-  return Array.from(list.querySelectorAll("li.menuitem button"));
+  return Array.from(list.querySelectorAll("li.menuitem button, hr"));
 }
 
 /**
@@ -1830,7 +1803,7 @@ function checkContextSelectorMenu(hud, expected) {
 function selectTargetInContextSelector(hud, targetLabel) {
   const items = getContextSelectorItems(hud);
   const itemToSelect = items.find(
-    item => item.querySelector(".label").innerText === targetLabel
+    item => item.querySelector(".label")?.innerText === targetLabel
   );
   if (!itemToSelect) {
     ok(false, `Couldn't find target with "${targetLabel}" label`);

@@ -1,8 +1,21 @@
+export interface FeatureConfig {
+  featureId: "cfr" | "aboutwelcome";
+  enabled: boolean;
+  value: { [key: string]: any } | null;
+}
+
 export interface Branch {
   slug: string;
   ratio: number;
-  groups: string[];
-  value: any;
+  feature: FeatureConfig;
+}
+
+interface BucketConfig {
+  namespace: string;
+  randomizationUnit: string;
+  start: number;
+  count: number;
+  total: number;
 }
 
 export interface RecipeArgs {
@@ -10,6 +23,7 @@ export interface RecipeArgs {
   isEnrollmentPaused: boolean;
   experimentType?: string;
   branches: Branch[];
+  bucketConfig: BucketConfig;
 }
 
 export interface Recipe {

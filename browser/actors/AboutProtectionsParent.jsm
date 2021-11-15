@@ -49,6 +49,16 @@ const SCOPE_MONITOR = [
   "https://identity.mozilla.com/apps/monitor",
 ];
 
+const SCOPE_VPN = "profile https://identity.mozilla.com/account/subscriptions";
+const VPN_ENDPOINT = `${Services.prefs.getStringPref(
+  "identity.fxaccounts.auth.uri"
+)}oauth/subscriptions/active`;
+
+// The ID of the vpn subscription, if we see this ID attached to a user's account then they have subscribed to vpn.
+const VPN_SUB_ID = Services.prefs.getStringPref(
+  "browser.contentblocking.report.vpn_sub_id"
+);
+
 // Error messages
 const INVALID_OAUTH_TOKEN = "Invalid OAuth token";
 const USER_UNSUBSCRIBED_TO_MONITOR = "User is not subscribed to Monitor";
@@ -67,6 +77,7 @@ const MONITOR_RESPONSE_PROPS = [
 
 let gTestOverride = null;
 let monitorResponse = null;
+let entrypoint = "direct";
 
 class AboutProtectionsParent extends JSWindowActorParent {
   constructor() {
@@ -149,6 +160,7 @@ class AboutProtectionsParent extends JSWindowActorParent {
    *
    * @return {{
    *            numLogins: Number,
+   *            potentiallyBreachedLogins: Number,
    *            mobileDeviceConnected: Boolean }}
    */
   async getLoginData() {
@@ -168,6 +180,16 @@ class AboutProtectionsParent extends JSWindowActorParent {
       Services.logins.countLogins("", "", "") -
       Services.logins.countLogins(FXA_PWDMGR_HOST, null, FXA_PWDMGR_REALM);
 
+    let potentiallyBreachedLogins = null;
+    // Get the stats for number of potentially breached Lockwise passwords
+    // if the Primary Password isn't locked.
+    if (userFacingLogins && Services.logins.isLoggedIn) {
+      const logins = await LoginHelper.getAllUserFacingLogins();
+      potentiallyBreachedLogins = await LoginBreaches.getPotentialBreachesByLoginGUID(
+        logins
+      );
+    }
+
     let mobileDeviceConnected =
       fxAccounts.device.recentDeviceList &&
       fxAccounts.device.recentDeviceList.filter(
@@ -176,6 +198,9 @@ class AboutProtectionsParent extends JSWindowActorParent {
 
     return {
       numLogins: userFacingLogins,
+      potentiallyBreachedLogins: potentiallyBreachedLogins
+        ? potentiallyBreachedLogins.size
+        : 0,
       mobileDeviceConnected,
     };
   }
@@ -187,7 +212,6 @@ class AboutProtectionsParent extends JSWindowActorParent {
    *            numBreaches: Number,
    *            passwords: Number,
    *            userEmail: String|null,
-   *            potentiallyBreachedLogins: Number,
    *            error: Boolean }}
    *         Monitor data.
    */
@@ -201,7 +225,6 @@ class AboutProtectionsParent extends JSWindowActorParent {
     }
 
     let monitorData = {};
-    let potentiallyBreachedLogins = null;
     let userEmail = null;
     let token = await this.getMonitorScopedOAuthToken();
 
@@ -209,14 +232,6 @@ class AboutProtectionsParent extends JSWindowActorParent {
       if (token) {
         monitorData = await this.fetchUserBreachStats(token);
 
-        // Get the stats for number of potentially breached Lockwise passwords if no master
-        // password is set.
-        if (!LoginHelper.isMasterPasswordSet()) {
-          const logins = await LoginHelper.getAllUserFacingLogins();
-          potentiallyBreachedLogins = await LoginBreaches.getPotentialBreachesByLoginGUID(
-            logins
-          );
-        }
         // Send back user's email so the protections report can direct them to the proper
         // OAuth flow on Monitor.
         const { email } = await fxAccounts.getSignedInUser();
@@ -256,9 +271,6 @@ class AboutProtectionsParent extends JSWindowActorParent {
     return {
       ...monitorData,
       userEmail,
-      potentiallyBreachedLogins: potentiallyBreachedLogins
-        ? potentiallyBreachedLogins.size
-        : 0,
       error: !!monitorData.errorMessage,
     };
   }
@@ -296,6 +308,57 @@ class AboutProtectionsParent extends JSWindowActorParent {
       region.toLowerCase() === "us" &&
       !alreadyInstalled &&
       languages.data.toLowerCase().includes("en-us")
+    );
+  }
+
+  async VPNSubStatus() {
+    // For testing, set vpn sub status manually
+    if (gTestOverride && "vpnOverrides" in gTestOverride) {
+      return gTestOverride.vpnOverrides().hasSubscription;
+    }
+
+    const vpnToken = await fxAccounts.getOAuthToken({ scope: SCOPE_VPN });
+    let headers = new Headers();
+    headers.append("Authorization", `Bearer ${vpnToken}`);
+    const request = new Request(VPN_ENDPOINT, { headers });
+    const res = await fetch(request);
+    if (res.ok) {
+      const result = await res.json();
+      for (let sub of result) {
+        if (sub.subscriptionId == VPN_SUB_ID) {
+          return true;
+        }
+      }
+      return false;
+    }
+    // there was an error, assume user is not subscribed to VPN
+    return false;
+  }
+
+  // VPN shows if we are in a supported region and supported languages
+  // VPN does not show in China - VPNs are illegal there, this is a requirement to hardcode, and not use in a pref.
+  VPNShouldShow() {
+    let currentRegion = "";
+    if (gTestOverride && "vpnOverrides" in gTestOverride) {
+      currentRegion = gTestOverride.vpnOverrides().location;
+    } else {
+      // The region we have detected the user to be in
+      // We cannot run this in tests due to it using a request
+      currentRegion = Region.current ? Region.current.toLowerCase() : "";
+    }
+
+    // The region that the user has set as their home region
+    const homeRegion = Region.home.toLowerCase() || "";
+    const regionsWithVPN = Services.prefs.getStringPref(
+      "browser.contentblocking.report.vpn_regions"
+    );
+    const language = Services.locale.appLocaleAsBCP47;
+
+    return (
+      currentRegion != "cn" &&
+      homeRegion != "cn" &&
+      regionsWithVPN.includes(currentRegion) &&
+      language.includes("en-")
     );
   }
 
@@ -368,9 +431,7 @@ class AboutProtectionsParent extends JSWindowActorParent {
         return this.getMonitorData();
 
       case "FetchUserLoginsData":
-        let { potentiallyBreachedLogins } = await this.getMonitorData();
-        let loginsData = await this.getLoginData();
-        return { ...loginsData, potentiallyBreachedLogins };
+        return this.getLoginData();
 
       case "ClearMonitorCache":
         monitorResponse = null;
@@ -379,6 +440,19 @@ class AboutProtectionsParent extends JSWindowActorParent {
       case "GetShowProxyCard":
         let card = await this.shouldShowProxyCard();
         return card;
+
+      case "RecordEntryPoint":
+        entrypoint = aMessage.data.entrypoint;
+        break;
+
+      case "FetchEntryPoint":
+        return entrypoint;
+
+      case "FetchVPNSubStatus":
+        return this.VPNSubStatus();
+
+      case "FetchShowVPNCard":
+        return this.VPNShouldShow();
     }
 
     return undefined;

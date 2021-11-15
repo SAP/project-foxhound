@@ -12,8 +12,7 @@
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Legend)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 HTMLLegendElement::~HTMLLegendElement() = default;
 
@@ -83,7 +82,7 @@ void HTMLLegendElement::Focus(const FocusOptions& aOptions,
 
   // If the legend isn't focusable, focus whatever is focusable following
   // the legend instead, bug 81481.
-  nsIFocusManager* fm = nsFocusManager::GetFocusManager();
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (!fm) {
     return;
   }
@@ -106,10 +105,7 @@ bool HTMLLegendElement::PerformAccesskey(bool aKeyCausesActivation,
 }
 
 already_AddRefed<HTMLFormElement> HTMLLegendElement::GetForm() {
-  Element* form = GetFormElement();
-  MOZ_ASSERT_IF(form, form->IsHTMLElement(nsGkAtoms::form));
-  RefPtr<HTMLFormElement> ret = static_cast<HTMLFormElement*>(form);
-  return ret.forget();
+  return do_AddRef(GetFormElement());
 }
 
 JSObject* HTMLLegendElement::WrapNode(JSContext* aCx,
@@ -117,5 +113,4 @@ JSObject* HTMLLegendElement::WrapNode(JSContext* aCx,
   return HTMLLegendElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

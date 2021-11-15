@@ -24,7 +24,7 @@ using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using refcounted class nsIPropertyBag2 from "mozilla/dom/PropertyBagUtils.h";
 using refcounted class nsDOMNavigationTiming from "nsDOMNavigationTiming.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
-using moveonly mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
+using class mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 
 namespace mozilla {
 namespace net {
@@ -83,16 +83,19 @@ struct LoadInfoArgs
   URIParams?                  resultPrincipalURI;
   uint32_t                    securityFlags;
   uint32_t                    sandboxFlags;
+  uint32_t                    triggeringSandboxFlags;
   uint32_t                    contentPolicyType;
   uint32_t                    tainting;
   bool                        blockAllMixedContent;
   bool                        upgradeInsecureRequests;
   bool                        browserUpgradeInsecureRequests;
+  bool                        browserDidUpgradeInsecureRequests;
   bool                        browserWouldUpgradeInsecureRequests;
   bool                        forceAllowDataURI;
   bool                        allowInsecureRedirectToDataURI;
   bool                        bypassCORSChecks;
   bool                        skipContentPolicyCheckForWebRequest;
+  bool                        originalFrameSrcLoad;
   bool                        forceInheritPrincipalDropped;
   uint64_t                    innerWindowID;
   uint64_t                    browsingContextID;
@@ -135,7 +138,6 @@ struct LoadInfoArgs
   bool                        loadTriggeredFromExternal;
   bool                        serviceWorkerTaintingSynthesized;
   bool                        documentHasUserInteracted;
-  bool                        documentHasLoaded;
   bool allowListFutureDocumentsCreatedFromThisRedirectChain;
   nsString                    cspNonce;
   bool                        skipContentSniffing;
@@ -203,12 +205,14 @@ struct ParentLoadInfoForwarderArgs
   // the script was created by the HTML parser.
   bool parserCreatedScript;
 
+  // Sandbox Flags of the Document that triggered the load
+  uint32_t triggeringSandboxFlags;
+
   // We must also note that the tainting value was explicitly set
   // by the service worker.
   bool serviceWorkerTaintingSynthesized;
 
   bool documentHasUserInteracted;
-  bool documentHasLoaded;
   bool allowListFutureDocumentsCreatedFromThisRedirectChain;
 
   CookieJarSettingsArgs? cookieJarSettings;
@@ -283,18 +287,16 @@ struct HttpChannelOpenArgs
   bool                        chooseApplicationCache;
   nsCString                   appCacheClientID;
   bool                        allowSpdy;
+  bool                        allowHttp3;
   bool                        allowAltSvc;
   bool                        beConservative;
   uint32_t                    tlsFlags;
   LoadInfoArgs?               loadInfo;
-  nsHttpResponseHead?         synthesizedResponseHead;
-  nsCString                   synthesizedSecurityInfoSerialization;
   uint32_t                    cacheKey;
   uint64_t                    requestContextID;
   CorsPreflightArgs?          preflightArgs;
   uint32_t                    initialRwin;
   bool                        blockAuthPrompt;
-  bool                        suspendAfterSynthesizeResponse;
   bool                        allowStaleCacheContent;
   bool                        preferCacheLoadOverBypass;
   nsCString                   contentTypeHint;
@@ -319,7 +321,6 @@ struct HttpChannelOpenArgs
 struct HttpChannelConnectArgs
 {
   uint32_t registrarId;
-  bool shouldIntercept;
 };
 
 union HttpChannelCreationArgs
@@ -365,6 +366,8 @@ struct HttpConnectionInfoCloneArgs
   bool isIPv6Disabled;
   nsCString topWindowOrigin;
   bool isHttp3;
+  bool hasIPHintAddress;
+  nsCString echConfig;
   ProxyInfoCloneArgs[] proxyInfo;
 };
 
@@ -402,18 +405,6 @@ union FTPChannelCreationArgs
 {
   FTPChannelOpenArgs;      // For AsyncOpen: the common case.
   FTPChannelConnectArgs;   // Used for redirected-to channels
-};
-
-struct HttpChannelDiverterArgs
-{
-  PHttpChannel mChannel;
-  bool mApplyConversion;
-};
-
-union ChannelDiverterArgs
-{
-  HttpChannelDiverterArgs;
-  PFTPChannel;
 };
 
 struct CookieStruct
@@ -457,7 +448,6 @@ struct DocumentChannelCreationArgs {
   uint32_t cacheKey;
   nsDOMNavigationTiming? timing;
   IPCClientInfo? initialClientInfo;
-  bool hasValidTransientUserAction;
   DocumentChannelElementCreationArgs elementCreationArgs;
 };
 
@@ -479,7 +469,7 @@ struct RedirectToRealChannelArgs {
   nsDOMNavigationTiming? timing;
   nsString srcdocData;
   nsIURI baseUri;
-  SessionHistoryInfo? sessionHistoryInfo;
+  LoadingSessionHistoryInfo? loadingSessionHistoryInfo;
   uint64_t loadIdentifier;
   nsCString? originalUriString;
 };

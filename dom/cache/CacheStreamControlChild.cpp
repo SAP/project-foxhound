@@ -17,9 +17,7 @@
 #include "mozilla/ipc/PFileDescriptorSetChild.h"
 #include "nsISupportsImpl.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::dom::OptionalFileDescriptorSet;
 using mozilla::ipc::AutoIPCStream;
@@ -144,18 +142,10 @@ void CacheStreamControlChild::ActorDestroy(ActorDestroyReason aReason) {
   RemoveWorkerRef();
 }
 
-mozilla::ipc::IPCResult CacheStreamControlChild::RecvClose(const nsID& aId) {
-  NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
-  CloseReadStreams(aId);
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult CacheStreamControlChild::RecvCloseAll() {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
   CloseAllReadStreams();
   return IPC_OK();
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

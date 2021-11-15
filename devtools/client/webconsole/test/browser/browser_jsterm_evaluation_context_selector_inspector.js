@@ -14,7 +14,6 @@ const IFRAME_PATH = `${FILE_FOLDER}/test-console-evaluation-context-selector-chi
 requestLongerTimeout(2);
 
 add_task(async function() {
-  await pushPref("devtools.contenttoolbox.fission", true);
   await pushPref("devtools.contenttoolbox.webconsole.input.context", true);
 
   const hud = await openNewTabWithIframesAndConsole(TEST_URI, [
@@ -149,6 +148,14 @@ async function testUseInConsole(
     iframeContentSelector
   );
   const container = inspector.markup.getContainer(nodeFront);
+
+  // Clear the input before clicking on "Use in Console" to workaround an bug
+  // with eager-evaluation, which will be skipped if the console input didn't
+  // change. See https://bugzilla.mozilla.org/show_bug.cgi?id=1668916#c1.
+  // TODO: Should be removed when Bug 1669151 is fixed.
+  setInputValue(hud, "");
+  // Also need to wait in order to avoid batching.
+  await wait(100);
 
   const onConsoleReady = inspector.once("console-var-ready");
   const menu = inspector.markup.contextMenu._openMenu({

@@ -15,8 +15,7 @@
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(DocumentTimeline)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DocumentTimeline,
@@ -71,6 +70,11 @@ already_AddRefed<DocumentTimeline> DocumentTimeline::Constructor(
 
 Nullable<TimeDuration> DocumentTimeline::GetCurrentTimeAsDuration() const {
   return ToTimelineTime(GetCurrentTimeStamp());
+}
+
+bool DocumentTimeline::TracksWallclockTime() const {
+  nsRefreshDriver* refreshDriver = GetRefreshDriver();
+  return !refreshDriver || !refreshDriver->IsTestControllingRefreshesEnabled();
 }
 
 TimeStamp DocumentTimeline::GetCurrentTimeStamp() const {
@@ -202,7 +206,8 @@ void DocumentTimeline::ObserveRefreshDriver(nsRefreshDriver* aDriver) {
   // MostRecentRefreshTimeUpdated which has an assertion for
   // mIsObserveingRefreshDriver check.
   mIsObservingRefreshDriver = true;
-  aDriver->AddRefreshObserver(this, FlushType::Style);
+  aDriver->AddRefreshObserver(this, FlushType::Style,
+                              "DocumentTimeline animations");
   aDriver->AddTimerAdjustmentObserver(this);
 }
 
@@ -282,5 +287,4 @@ void DocumentTimeline::UnregisterFromRefreshDriver() {
   DisconnectRefreshDriver(refreshDriver);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

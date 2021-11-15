@@ -9,18 +9,26 @@
 
 #include "EncryptingOutputStream.h"
 
+#include <algorithm>
+#include <utility>
 #include "CipherStrategy.h"
-
-#include "nsStreamUtils.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Span.h"
+#include "mozilla/fallible.h"
+#include "nsDebug.h"
+#include "nsError.h"
 
 namespace mozilla::dom::quota {
 template <typename CipherStrategy>
 EncryptingOutputStream<CipherStrategy>::EncryptingOutputStream(
     nsCOMPtr<nsIOutputStream> aBaseStream, size_t aBlockSize,
-    CipherStrategy aCipherStrategy, typename CipherStrategy::KeyType aKey)
-    : EncryptingOutputStreamBase(std::move(aBaseStream), aBlockSize),
-      mCipherStrategy(std::move(aCipherStrategy)),
-      mKey(aKey) {
+    typename CipherStrategy::KeyType aKey)
+    : EncryptingOutputStreamBase(std::move(aBaseStream), aBlockSize) {
+  // XXX Move this to a fallible init function.
+  MOZ_ALWAYS_SUCCEEDS(mCipherStrategy.Init(CipherMode::Encrypt,
+                                           CipherStrategy::SerializeKey(aKey),
+                                           CipherStrategy::MakeBlockPrefix()));
+
   MOZ_ASSERT(mBlockSize > 0);
   MOZ_ASSERT(mBlockSize % CipherStrategy::BasicBlockSize == 0);
   static_assert(
@@ -197,7 +205,7 @@ nsresult EncryptingOutputStream<CipherStrategy>::FlushToBaseStream() {
   // Encrypt the data to our internal encrypted buffer.
   // XXX Do we need to know the actual encrypted size?
   nsresult rv = mCipherStrategy.Cipher(
-      CipherMode::Encrypt, mKey, mEncryptedBlock->MutableCipherPrefix(),
+      mEncryptedBlock->MutableCipherPrefix(),
       mozilla::Span(reinterpret_cast<uint8_t*>(mBuffer.Elements()),
                     ((mNextByte + (CipherStrategy::BasicBlockSize - 1)) /
                      CipherStrategy::BasicBlockSize) *

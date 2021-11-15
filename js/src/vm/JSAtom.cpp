@@ -26,6 +26,7 @@
 #include "gc/Marking.h"
 #include "gc/MaybeRooted.h"
 #include "js/CharacterEncoding.h"
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Symbol.h"
 #include "util/Text.h"
 #include "vm/JSContext.h"
@@ -97,6 +98,26 @@ struct js::AtomHasher::Lookup {
         length(length),
         atom(nullptr),
         hash(mozilla::HashString(chars, length)) {}
+
+  MOZ_ALWAYS_INLINE Lookup(HashNumber hash, const char16_t* chars,
+                           size_t length)
+      : twoByteChars(chars),
+        type(TwoByteChar),
+        length(length),
+        atom(nullptr),
+        hash(hash) {
+    MOZ_ASSERT(hash == mozilla::HashString(chars, length));
+  }
+
+  MOZ_ALWAYS_INLINE Lookup(HashNumber hash, const JS::Latin1Char* chars,
+                           size_t length)
+      : latin1Chars(chars),
+        type(Latin1),
+        length(length),
+        atom(nullptr),
+        hash(hash) {
+    MOZ_ASSERT(hash == mozilla::HashString(chars, length));
+  }
 
   inline explicit Lookup(const JSAtom* atom)
       : type(atom->hasLatin1Chars() ? Latin1 : TwoByteChar),
@@ -187,7 +208,7 @@ MOZ_ALWAYS_INLINE bool js::AtomHasher::match(const AtomStateEntry& entry,
 inline JSAtom* js::AtomStateEntry::asPtr(JSContext* cx) const {
   JSAtom* atom = asPtrUnbarriered();
   if (!cx->isHelperThreadContext()) {
-    JSString::readBarrier(atom);
+    gc::ReadBarrier(atom);
   }
   return atom;
 }
@@ -977,17 +998,32 @@ JSAtom* js::AtomizeString(JSContext* cx, JSString* str,
     return nullptr;
   }
 
+  if (cx->isMainThreadContext() && pin == DoNotPinAtom) {
+    if (JSAtom* atom = cx->caches().stringToAtomCache.lookup(linear)) {
+      return atom;
+    }
+  }
+
   Maybe<uint32_t> indexValue;
   if (str->hasIndexValue()) {
     indexValue.emplace(str->getIndexValue());
   }
 
   JS::AutoCheckCannotGC nogc;
-  return linear->hasLatin1Chars()
-             ? AtomizeAndCopyChars(cx, linear->latin1Chars(nogc),
-                                   linear->length(), pin, indexValue)
-             : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc),
-                                   linear->length(), pin, indexValue);
+  JSAtom* atom = linear->hasLatin1Chars()
+                     ? AtomizeAndCopyChars(cx, linear->latin1Chars(nogc),
+                                           linear->length(), pin, indexValue)
+                     : AtomizeAndCopyChars(cx, linear->twoByteChars(nogc),
+                                           linear->length(), pin, indexValue);
+  if (!atom) {
+    return nullptr;
+  }
+
+  if (cx->isMainThreadContext() && pin == DoNotPinAtom) {
+    cx->caches().stringToAtomCache.maybePut(linear, atom);
+  }
+
+  return atom;
 }
 
 JSLinearString*
@@ -1049,8 +1085,6 @@ void AtomsTable::maybePinExistingAtom(JSContext* cx, JSAtom* atom) {
 
 JSAtom* js::Atomize(JSContext* cx, const char* bytes, size_t length,
                     PinningBehavior pin, const Maybe<uint32_t>& indexValue) {
-  CHECK_THREAD(cx);
-
   const Latin1Char* chars = reinterpret_cast<const Latin1Char*>(bytes);
   return AtomizeAndCopyChars(cx, chars, length, pin, indexValue);
 }
@@ -1058,7 +1092,6 @@ JSAtom* js::Atomize(JSContext* cx, const char* bytes, size_t length,
 template <typename CharT>
 JSAtom* js::AtomizeChars(JSContext* cx, const CharT* chars, size_t length,
                          PinningBehavior pin) {
-  CHECK_THREAD(cx);
   return AtomizeAndCopyChars(cx, chars, length, pin, Nothing());
 }
 
@@ -1093,6 +1126,25 @@ js::AtomizeCharsIfUntainted(JSContext* cx, const Latin1Char* chars, size_t lengt
 template JSLinearString*
 js::AtomizeCharsIfUntainted(JSContext* cx, const char16_t* chars, size_t length, const StringTaint& taint, js::PinningBehavior pin);
 
+
+/* |chars| must not point into an inline or short string. */
+template <typename CharT>
+JSAtom* js::AtomizeChars(JSContext* cx, HashNumber hash, const CharT* chars,
+                         size_t length) {
+  if (JSAtom* s = cx->staticStrings().lookup(chars, length)) {
+    return s;
+  }
+
+  AtomHasher::Lookup lookup(hash, chars, length);
+  return AtomizeAndCopyCharsFromLookup(
+      cx, chars, length, lookup, PinningBehavior::DoNotPinAtom, Nothing());
+}
+
+template JSAtom* js::AtomizeChars(JSContext* cx, HashNumber hash,
+                                  const Latin1Char* chars, size_t length);
+
+template JSAtom* js::AtomizeChars(JSContext* cx, HashNumber hash,
+                                  const char16_t* chars, size_t length);
 
 template <typename CharsT>
 JSAtom* AtomizeUTF8OrWTF8Chars(JSContext* cx, const char* utf8Chars,
@@ -1144,7 +1196,7 @@ JSAtom* AtomizeUTF8OrWTF8Chars(JSContext* cx, const char* utf8Chars,
 
   AtomizeUTF8OrWTF8CharsWrapper<CharsT> chars(utf8, forCopy);
   AtomHasher::Lookup lookup(utf8Chars, utf8ByteLength, length, hash);
-  if (std::is_same_v<CharsT, WTF8Chars>) {
+  if (std::is_same_v<CharsT, JS::WTF8Chars>) {
     lookup.type = AtomHasher::Lookup::WTF8;
   }
   return AtomizeAndCopyCharsFromLookup(cx, &chars, length, lookup, DoNotPinAtom,
@@ -1153,12 +1205,12 @@ JSAtom* AtomizeUTF8OrWTF8Chars(JSContext* cx, const char* utf8Chars,
 
 JSAtom* js::AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars,
                              size_t utf8ByteLength) {
-  return AtomizeUTF8OrWTF8Chars<UTF8Chars>(cx, utf8Chars, utf8ByteLength);
+  return AtomizeUTF8OrWTF8Chars<JS::UTF8Chars>(cx, utf8Chars, utf8ByteLength);
 }
 
 JSAtom* js::AtomizeWTF8Chars(JSContext* cx, const char* wtf8Chars,
                              size_t wtf8ByteLength) {
-  return AtomizeUTF8OrWTF8Chars<WTF8Chars>(cx, wtf8Chars, wtf8ByteLength);
+  return AtomizeUTF8OrWTF8Chars<JS::WTF8Chars>(cx, wtf8Chars, wtf8ByteLength);
 }
 
 bool js::IndexToIdSlow(JSContext* cx, uint32_t index, MutableHandleId idp) {
@@ -1269,8 +1321,6 @@ template JSAtom* js::ToAtom<NoGC>(JSContext* cx, const Value& v);
 static JSAtom* AtomizeLittleEndianTwoByteChars(JSContext* cx,
                                                const uint8_t* leTwoByte,
                                                size_t length) {
-  CHECK_THREAD(cx);
-
   LittleEndianChars chars(leTwoByte);
 
   if (JSAtom* s = cx->staticStrings().lookup(chars, length)) {

@@ -56,6 +56,9 @@ class HashableValue {
   Value get() const { return value.get(); }
 
   void trace(JSTracer* trc) { TraceEdge(trc, &value, "HashableValue"); }
+
+  // Clear the value without invoking the pre-barrier.
+  void unbarrieredClear() { value.unbarrieredSet(UndefinedValue()); }
 };
 
 template <typename Wrapper>
@@ -210,8 +213,8 @@ class MapIteratorObject : public NativeObject {
     initFixedSlot(KindSlot, JS::Int32Value(int32_t(kind)));
   }
 
-  static MOZ_MUST_USE bool next(Handle<MapIteratorObject*> mapIterator,
-                                HandleArrayObject resultPairObj, JSContext* cx);
+  static MOZ_MUST_USE bool next(MapIteratorObject* mapIterator,
+                                ArrayObject* resultPairObj);
 
   static JSObject* createResultPair(JSContext* cx);
 
@@ -331,8 +334,8 @@ class SetIteratorObject : public NativeObject {
     initFixedSlot(KindSlot, JS::Int32Value(int32_t(kind)));
   }
 
-  static MOZ_MUST_USE bool next(Handle<SetIteratorObject*> setIterator,
-                                HandleArrayObject resultObj, JSContext* cx);
+  static MOZ_MUST_USE bool next(SetIteratorObject* setIterator,
+                                ArrayObject* resultObj);
 
   static JSObject* createResult(JSContext* cx);
 

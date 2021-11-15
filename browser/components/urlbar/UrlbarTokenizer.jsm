@@ -27,6 +27,7 @@ XPCOMUtils.defineLazyGetter(this, "logger", () =>
 var UrlbarTokenizer = {
   // Regex matching on whitespaces.
   REGEXP_SPACES: /\s+/,
+  REGEXP_SPACES_START: /^\s+/,
 
   // Regex used to guess url-like strings.
   // These are not expected to be 100% correct, we accept some user mistypes
@@ -74,6 +75,16 @@ var UrlbarTokenizer = {
     SEARCH: "?",
     TITLE: "#",
     URL: "$",
+  },
+
+  // The keys of characters in RESTRICT that will enter search mode.
+  get SEARCH_MODE_RESTRICT() {
+    return new Set([
+      this.RESTRICT.HISTORY,
+      this.RESTRICT.BOOKMARK,
+      this.RESTRICT.OPENPAGE,
+      this.RESTRICT.SEARCH,
+    ]);
   },
 
   /**
@@ -226,13 +237,11 @@ var UrlbarTokenizer = {
    */
   tokenize(queryContext) {
     logger.info("Tokenizing", queryContext);
-    let searchString = queryContext.searchString;
-    if (!searchString.trim()) {
+    if (!queryContext.trimmedSearchString) {
       queryContext.tokens = [];
       return queryContext;
     }
-
-    let unfiltered = splitString(searchString);
+    let unfiltered = splitString(queryContext.searchString);
     let tokens = filterTokens(unfiltered);
     queryContext.tokens = tokens;
     return queryContext;
@@ -245,6 +254,7 @@ var UrlbarTokenizer = {
    */
   isRestrictionToken(token) {
     return (
+      token &&
       token.type >= this.TYPE.RESTRICT_HISTORY &&
       token.type <= this.TYPE.RESTRICT_URL
     );

@@ -91,7 +91,7 @@ function defaultQuery(conditions = "") {
                               0, t.open_count,
                               :matchBehavior, :searchBehavior)
          END
-       ${conditions}
+       ${conditions ? "AND" : ""} ${conditions}
      ORDER BY h.frecency DESC, h.id DESC
      LIMIT :maxResults`;
   return query;
@@ -396,22 +396,6 @@ function makeKeyForMatch(match) {
 }
 
 /**
- * Returns the portion of a string starting at the index where another string
- * ends.
- *
- * @param   {string} sourceStr
- *          The string to search within.
- * @param   {string} targetStr
- *          The string to search for.
- * @returns {string} The substring within sourceStr where targetStr ends, or the
- *          empty string if targetStr does not occur in sourceStr.
- */
-function substringAfter(sourceStr, targetStr) {
-  let index = sourceStr.indexOf(targetStr);
-  return index < 0 ? "" : sourceStr.substr(index + targetStr.length);
-}
-
-/**
  * Makes a moz-action url for the given action and set of parameters.
  *
  * @param   type
@@ -492,6 +476,13 @@ function Search(
     this._maxResults = queryContext.maxResults;
     this._userContextId = queryContext.userContextId;
     this._currentPage = queryContext.currentPage;
+    this._searchModeEngine = queryContext.searchMode?.engineName;
+    this._searchMode = queryContext.searchMode;
+    if (this._searchModeEngine) {
+      // Filter Places results on host.
+      let engine = Services.search.getEngineByName(this._searchModeEngine);
+      this._filterOnHost = engine.getResultDomain();
+    }
   } else {
     let params = new Set(searchParam.split(" "));
     this._enableActions = params.has("enable-actions");
@@ -514,6 +505,7 @@ function Search(
   // properly recognize token types.
   let { tokens } = UrlbarTokenizer.tokenize({
     searchString: unescapedSearchString,
+    trimmedSearchString: unescapedSearchString.trim(),
   });
 
   // This allows to handle leading or trailing restriction characters specially.
@@ -534,6 +526,14 @@ function Search(
     }
   }
 
+  // Eventually filter restriction tokens. In general it's a good idea, but if
+  // the consumer requested search mode, we should use the full string to avoid
+  // ignoring valid tokens.
+  this._searchTokens =
+    !queryContext || queryContext.restrictToken
+      ? this.filterTokens(tokens)
+      : tokens;
+
   // The behavior can be set through:
   // 1. a specific restrictSource in the QueryContext
   // 2. typed restriction tokens
@@ -542,21 +542,15 @@ function Search(
     queryContext.restrictSource &&
     sourceToBehaviorMap.has(queryContext.restrictSource)
   ) {
-    this._searchTokens = tokens;
     this._behavior = 0;
     this.setBehavior("restrict");
     let behavior = sourceToBehaviorMap.get(queryContext.restrictSource);
     this.setBehavior(behavior);
 
-    if (behavior == "search" && queryContext.engineName) {
-      this._engineName = queryContext.engineName;
-    }
-
     // When we are in restrict mode, all the tokens are valid for searching, so
     // there is no _heuristicToken.
     this._heuristicToken = null;
   } else {
-    this._searchTokens = this.filterTokens(tokens);
     // The heuristic token is the first filtered search token, but only when it's
     // actually the first thing in the search string.  If a prefix or restriction
     // character occurs first, then the heurstic token is null.  We use the
@@ -577,8 +571,6 @@ function Search(
   if (!UrlbarPrefs.get("filter.javascript")) {
     this.setBehavior("javascript");
   }
-
-  this._keywordSubstitute = null;
 
   this._listener = autocompleteListener;
   this._autocompleteSearch = autocompleteSearch;
@@ -849,8 +841,7 @@ Search.prototype = {
       }
     }
 
-    // Get the final query, based on the tokens found in the search string and
-    // the keyword substitution, if any.
+    // Finally run all the remaining queries.
     let queries = [];
     // "openpage" behavior is supported by the default query.
     // _switchToTabQuery instead returns only pages not supported by history.
@@ -858,8 +849,6 @@ Search.prototype = {
       queries.push(this._switchToTabQuery);
     }
     queries.push(this._searchQuery);
-
-    // Finally run all the remaining queries.
     for (let [query, params] of queries) {
       await conn.executeCached(query, params, this._onResultRow.bind(this));
       if (!this.pending) {
@@ -1001,6 +990,11 @@ Search.prototype = {
   },
 
   async _matchFirstHeuristicResult(conn) {
+    if (this._searchMode) {
+      // Use UrlbarProviderHeuristicFallback.
+      return false;
+    }
+
     // We always try to make the first result a special "heuristic" result.  The
     // heuristics below determine what type of result it will be, if any.
 
@@ -1039,7 +1033,7 @@ Search.prototype = {
       return false;
     }
 
-    let searchString = substringAfter(
+    let searchString = UrlbarUtils.substringAfter(
       this._originalSearchString,
       keyword
     ).trim();
@@ -1082,10 +1076,9 @@ Search.prototype = {
       match.comment = entry.url.host;
     }
 
+    this._firstTokenIsKeyword = true;
+    this._filterOnHost = entry.url.host;
     this._addMatch(match);
-    if (!this._keywordSubstitute) {
-      this._keywordSubstitute = entry.url.host;
-    }
     return true;
   },
 
@@ -1095,16 +1088,25 @@ Search.prototype = {
       return false;
     }
 
+    let query = UrlbarUtils.substringAfter(this._originalSearchString, alias);
+
+    // Match an alias only when it has a space after it.  If there's no trailing
+    // space, then continue to treat it as part of the search string.
+    if (
+      UrlbarPrefs.get("update2") &&
+      !UrlbarTokenizer.REGEXP_SPACES_START.test(query)
+    ) {
+      return false;
+    }
+
     this._searchEngineAliasMatch = {
       engine,
       alias,
-      query: substringAfter(this._originalSearchString, alias).trim(),
-      isTokenAlias: alias.startsWith("@"),
+      query: query.trimStart(),
     };
+    this._firstTokenIsKeyword = true;
+    this._filterOnHost = engine.getResultDomain();
     this._addSearchEngineMatch(this._searchEngineAliasMatch);
-    if (!this._keywordSubstitute) {
-      this._keywordSubstitute = engine.getResultDomain();
-    }
     return true;
   },
 
@@ -1227,11 +1229,29 @@ Search.prototype = {
     }
   },
 
+  /**
+   * Maybe restyle a SERP in history as a search-type result. To do this,
+   * we extract the search term from the SERP in history then generate a search
+   * URL with that search term. We restyle the SERP in history if its query
+   * parameters are a subset of those of the generated SERP. We check for a
+   * subset instead of exact equivalence since the generated URL may contain
+   * attribution parameters while a SERP in history from an organic search would
+   * not. We don't allow extra params in the history URL since they might
+   * indicate the search is not a first-page web SERP (as opposed to a image or
+   * other non-web SERP).
+   *
+   * @note We will mistakenly dedupe SERPs for engines that have the same
+   *   hostname as another engine. One example is if the user installed a
+   *   Google Image Search engine. That engine's search URLs might only be
+   *   distinguished by query params from search URLs from the default Google
+   *   engine.
+   */
   _maybeRestyleSearchMatch(match) {
     // Return if the URL does not represent a search result.
-    let parseResult = Services.search.parseSubmissionURL(match.value);
-    if (!parseResult) {
-      return;
+    let historyUrl = match.value;
+    let parseResult = Services.search.parseSubmissionURL(historyUrl);
+    if (!parseResult?.engine) {
+      return false;
     }
 
     // Here we check that the user typed all or part of the search string in the
@@ -1241,36 +1261,26 @@ Search.prototype = {
       this._searchTokens.length &&
       this._searchTokens.every(token => !terms.includes(token.value))
     ) {
-      return;
+      return false;
     }
 
     // The URL for the search suggestion formed by the user's typed query.
-    let [typedSuggestionUrl] = UrlbarUtils.getSearchQueryUrl(
+    let [generatedSuggestionUrl] = UrlbarUtils.getSearchQueryUrl(
       parseResult.engine,
       this._searchTokens.map(t => t.value).join(" ")
     );
 
-    let historyParams = new URL(match.value).searchParams;
-    let typedParams = new URL(typedSuggestionUrl).searchParams;
-
-    // Checking the two URLs have the same query parameters with the same
-    // values, or a subset value in the case of the query parameter.
-    // Parameter order doesn't matter.
+    // We ignore termsParameterName when checking for a subset because we
+    // already checked that the typed query is a subset of the search history
+    // query above with this._searchTokens.every(...).
     if (
-      Array.from(historyParams).length != Array.from(typedParams).length ||
-      !Array.from(historyParams.entries()).every(
-        ([key, value]) =>
-          // We want to match all non-search-string GET parameters exactly, to avoid
-          // restyling non-first pages of search results, or image results as web
-          // results.
-          // We let termsParameterName through because we already checked that the
-          // typed query is a subset of the search history query above with
-          // this._searchTokens.every(...).
-          key == parseResult.termsParameterName ||
-          value === typedParams.get(key)
+      !UrlbarSearchUtils.serpsAreEquivalent(
+        historyUrl,
+        generatedSuggestionUrl,
+        [parseResult.termsParameterName]
       )
     ) {
-      return;
+      return false;
     }
 
     // Turn the match into a searchengine action with a favicon.
@@ -1284,6 +1294,7 @@ Search.prototype = {
     match.comment = parseResult.engine.name;
     match.icon = match.icon || match.iconUrl;
     match.style = "action searchengine favicon suggestion";
+    return true;
   },
 
   _addMatch(match) {
@@ -1306,8 +1317,17 @@ Search.prototype = {
     match.style = match.style || "favicon";
 
     // Restyle past searches, unless they are bookmarks or special results.
-    if (UrlbarPrefs.get("restyleSearches") && match.style == "favicon") {
-      this._maybeRestyleSearchMatch(match);
+    if (
+      match.style == "favicon" &&
+      (UrlbarPrefs.get("restyleSearches") ||
+        (this._searchModeEngine &&
+          UrlbarPrefs.get("update2.restyleBrowsingHistoryAsSearch")))
+    ) {
+      let restyled = this._maybeRestyleSearchMatch(match);
+      if (restyled && UrlbarPrefs.get("maxHistoricalSearchSuggestions") == 0) {
+        // The user doesn't want search history.
+        return;
+      }
     }
 
     if (this._addingHeuristicResult) {
@@ -1573,6 +1593,10 @@ Search.prototype = {
   // results, caching the others. If at the end we don't find other results, we
   // can add these.
   _addAdaptiveQueryMatch(row) {
+    // We should only show filtered results in search mode.
+    if (this._searchModeEngine) {
+      return;
+    }
     // Allow one quarter of the results to be adaptive results.
     // Note: ideally adaptive results should have their own provider and the
     // results muxer should decide what to show.  But that's too complex to
@@ -1642,30 +1666,79 @@ Search.prototype = {
    * previously set urlbar suggestion preferences.
    */
   get _suggestionPrefQuery() {
-    if (
-      !this.hasBehavior("restrict") &&
-      this.hasBehavior("history") &&
-      this.hasBehavior("bookmark")
-    ) {
-      return defaultQuery();
-    }
     let conditions = [];
-    if (this.hasBehavior("history")) {
-      // Enforce ignoring the visit_count index, since the frecency one is much
-      // faster in this case.  ANALYZE helps the query planner to figure out the
-      // faster path, but it may not have up-to-date information yet.
-      conditions.push("+h.visit_count > 0");
-    }
-    if (this.hasBehavior("bookmark")) {
-      conditions.push("bookmarked");
-    }
-    if (this.hasBehavior("tag")) {
-      conditions.push("tags NOTNULL");
+    if (this._filterOnHost) {
+      conditions.push("h.rev_host = get_unreversed_host(:host || '.') || '.'");
+      // When filtering on a host we are in some sort of site specific search,
+      // thus we want a cleaner set of results, compared to a general search.
+      // This means removing less interesting urls, like redirects or
+      // non-bookmarked title-less pages.
+
+      if (
+        UrlbarPrefs.get("restyleSearches") ||
+        (this._searchModeEngine &&
+          UrlbarPrefs.get("update2.restyleBrowsingHistoryAsSearch"))
+      ) {
+        // If restyle is enabled, we want to filter out redirect targets,
+        // because sources are urls built using search engines definitions that
+        // we can reverse-parse.
+        // In this case we can't filter on title-less pages because redirect
+        // sources likely don't have a title and recognizing sources is costly.
+        // Bug 468710 may help with this.
+        conditions.push(`NOT EXISTS (
+          WITH visits(type) AS (
+            SELECT visit_type
+            FROM moz_historyvisits
+            WHERE place_id = h.id
+            ORDER BY visit_date DESC
+            LIMIT 10 /* limit to the last 10 visits */
+          )
+          SELECT 1 FROM visits
+          WHERE type IN (5,6)
+        )`);
+      } else {
+        // If instead restyle is disabled, we want to keep redirect targets,
+        // because sources are often unreadable title-less urls.
+        conditions.push(`NOT EXISTS (
+          WITH visits(id) AS (
+            SELECT id
+            FROM moz_historyvisits
+            WHERE place_id = h.id
+            ORDER BY visit_date DESC
+            LIMIT 10 /* limit to the last 10 visits */
+            )
+           SELECT 1
+           FROM visits src
+           JOIN moz_historyvisits dest ON src.id = dest.from_visit
+           WHERE dest.visit_type IN (5,6)
+        )`);
+        // Filter out empty-titled pages, they could be redirect sources that
+        // we can't recognize anymore because their target was wrongly expired
+        // due to Bug 1664252.
+        conditions.push("(h.foreign_count > 0 OR h.title NOTNULL)");
+      }
     }
 
-    return conditions.length
-      ? defaultQuery("AND " + conditions.join(" AND "))
-      : defaultQuery();
+    if (
+      this.hasBehavior("restrict") ||
+      !this.hasBehavior("history") ||
+      !this.hasBehavior("bookmark")
+    ) {
+      if (this.hasBehavior("history")) {
+        // Enforce ignoring the visit_count index, since the frecency one is much
+        // faster in this case.  ANALYZE helps the query planner to figure out the
+        // faster path, but it may not have up-to-date information yet.
+        conditions.push("+h.visit_count > 0");
+      }
+      if (this.hasBehavior("bookmark")) {
+        conditions.push("bookmarked");
+      }
+      if (this.hasBehavior("tag")) {
+        conditions.push("tags NOTNULL");
+      }
+    }
+
+    return defaultQuery(conditions.join(" AND "));
   },
 
   get _emptySearchDefaultBehavior() {
@@ -1685,16 +1758,14 @@ Search.prototype = {
   },
 
   /**
-   * Get the search string with the keyword substitution applied.
    * If the user-provided string starts with a keyword that gave a heuristic
-   * result, it can provide a substitute string (e.g. the domain that keyword
-   * will search) so that the history/bookmark results we show will correspond
-   * to the keyword search rather than searching for the literal keyword.
+   * result, this will strip it.
+   * @returns {string} The filtered search string.
    */
-  get _keywordSubstitutedSearchString() {
+  get _keywordFilteredSearchString() {
     let tokens = this._searchTokens.map(t => t.value);
-    if (this._keywordSubstitute) {
-      tokens = [this._keywordSubstitute, ...tokens.slice(1)];
+    if (this._firstTokenIsKeyword) {
+      tokens = tokens.slice(1);
     }
     return tokens.join(" ");
   },
@@ -1707,24 +1778,23 @@ Search.prototype = {
    *         database with and an object containing the params to bound.
    */
   get _searchQuery() {
-    let query = this._suggestionPrefQuery;
-
-    return [
-      query,
-      {
-        parent: PlacesUtils.tagsFolderId,
-        query_type: QUERYTYPE_FILTERED,
-        matchBehavior: this._matchBehavior,
-        searchBehavior: this._behavior,
-        // We only want to search the tokens that we are left with - not the
-        // original search string.
-        searchString: this._keywordSubstitutedSearchString,
-        userContextId: this._userContextId,
-        // Limit the query to the the maximum number of desired results.
-        // This way we can avoid doing more work than needed.
-        maxResults: this._maxResults,
-      },
-    ];
+    let params = {
+      parent: PlacesUtils.tagsFolderId,
+      query_type: QUERYTYPE_FILTERED,
+      matchBehavior: this._matchBehavior,
+      searchBehavior: this._behavior,
+      // We only want to search the tokens that we are left with - not the
+      // original search string.
+      searchString: this._keywordFilteredSearchString,
+      userContextId: this._userContextId,
+      // Limit the query to the the maximum number of desired results.
+      // This way we can avoid doing more work than needed.
+      maxResults: this._maxResults,
+    };
+    if (this._filterOnHost) {
+      params.host = this._filterOnHost;
+    }
+    return [this._suggestionPrefQuery, params];
   },
 
   /**
@@ -1742,7 +1812,7 @@ Search.prototype = {
         searchBehavior: this._behavior,
         // We only want to search the tokens that we are left with - not the
         // original search string.
-        searchString: this._keywordSubstitutedSearchString,
+        searchString: this._keywordFilteredSearchString,
         userContextId: this._userContextId,
         maxResults: this._maxResults,
       },

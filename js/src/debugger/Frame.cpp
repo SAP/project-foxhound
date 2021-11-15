@@ -21,9 +21,8 @@
 #include <string.h>  // for strlen
 #include <utility>   // for std::move
 
-#include "jsapi.h"        // for CallArgs, Handle
-#include "jsfriendapi.h"  // for GetErrorMessage
-#include "jsnum.h"        // for Int32ToString
+#include "jsapi.h"  // for CallArgs, Handle
+#include "jsnum.h"  // for Int32ToString
 
 #include "builtin/Array.h"      // for NewDenseCopiedArray
 #include "debugger/Debugger.h"  // for Completion, Debugger
@@ -33,44 +32,47 @@
 #include "debugger/Object.h"               // for DebuggerObject
 #include "debugger/Script.h"               // for DebuggerScript
 #include "frontend/BytecodeCompilation.h"  // for CompileEvalScript
-#include "frontend/SharedContext.h"        // for GlobalScharedContext
-#include "gc/Barrier.h"                    // for HeapPtr
-#include "gc/FreeOp.h"                     // for JSFreeOp
-#include "gc/GC.h"                         // for MemoryUse
-#include "gc/Marking.h"                    // for IsAboutToBeFinalized
-#include "gc/Rooting.h"                    // for RootedDebuggerFrame
-#include "gc/Tracer.h"                     // for TraceCrossCompartmentEdge
-#include "gc/ZoneAllocator.h"              // for AddCellMemory
-#include "jit/JSJitFrameIter.h"            // for InlineFrameIterator
-#include "jit/RematerializedFrame.h"       // for RematerializedFrame
-#include "js/Proxy.h"                      // for PrivateValue
-#include "js/SourceText.h"                 // for SourceText, SourceOwnership
-#include "js/StableStringChars.h"          // for AutoStableStringChars
-#include "vm/ArgumentsObject.h"            // for ArgumentsObject
-#include "vm/ArrayObject.h"                // for ArrayObject
-#include "vm/AsyncFunction.h"              // for AsyncFunctionGeneratorObject
-#include "vm/AsyncIteration.h"             // for AsyncGeneratorObject
-#include "vm/BytecodeUtil.h"               // for JSDVG_SEARCH_STACK
-#include "vm/Compartment.h"                // for Compartment
-#include "vm/EnvironmentObject.h"          // for IsGlobalLexicalEnvironment
-#include "vm/GeneratorObject.h"            // for AbstractGeneratorObject
-#include "vm/GlobalObject.h"               // for GlobalObject
-#include "vm/Interpreter.h"                // for Call, ExecuteKernel
-#include "vm/JSAtom.h"                     // for Atomize
-#include "vm/JSContext.h"                  // for JSContext, ReportValueError
-#include "vm/JSFunction.h"                 // for JSFunction, NewNativeFunction
-#include "vm/JSObject.h"                   // for JSObject, RequireObject
-#include "vm/JSScript.h"                   // for JSScript
-#include "vm/NativeObject.h"               // for NativeDefineDataProperty
-#include "vm/Realm.h"                      // for AutoRealm
-#include "vm/Runtime.h"                    // for JSAtomState
-#include "vm/Scope.h"                      // for PositionalFormalParameterIter
-#include "vm/Stack.h"                      // for AbstractFramePtr, FrameIter
-#include "vm/StringType.h"                 // for PropertyName, JSString
-#include "wasm/WasmDebug.h"                // for DebugState
-#include "wasm/WasmInstance.h"             // for Instance
-#include "wasm/WasmJS.h"                   // for WasmInstanceObject
-#include "wasm/WasmTypes.h"                // for DebugFrame
+#include "frontend/CompilationInfo.h"  // for CompilationInfo, CompilationGCOutput
+#include "frontend/SharedContext.h"    // for GlobalScharedContext
+#include "gc/Barrier.h"                // for HeapPtr
+#include "gc/FreeOp.h"                 // for JSFreeOp
+#include "gc/GC.h"                     // for MemoryUse
+#include "gc/Marking.h"                // for IsAboutToBeFinalized
+#include "gc/Rooting.h"                // for RootedDebuggerFrame
+#include "gc/Tracer.h"                 // for TraceCrossCompartmentEdge
+#include "gc/ZoneAllocator.h"          // for AddCellMemory
+#include "jit/JSJitFrameIter.h"        // for InlineFrameIterator
+#include "jit/RematerializedFrame.h"  // for RematerializedFrame
+#include "js/friend/ErrorMessages.h"  // for GetErrorMessage, JSMSG_*
+#include "js/Object.h"                // for SetReservedSlot
+#include "js/Proxy.h"                 // for PrivateValue
+#include "js/SourceText.h"            // for SourceText, SourceOwnership
+#include "js/StableStringChars.h"     // for AutoStableStringChars
+#include "vm/ArgumentsObject.h"       // for ArgumentsObject
+#include "vm/ArrayObject.h"           // for ArrayObject
+#include "vm/AsyncFunction.h"         // for AsyncFunctionGeneratorObject
+#include "vm/AsyncIteration.h"        // for AsyncGeneratorObject
+#include "vm/BytecodeUtil.h"          // for JSDVG_SEARCH_STACK
+#include "vm/Compartment.h"           // for Compartment
+#include "vm/EnvironmentObject.h"     // for IsGlobalLexicalEnvironment
+#include "vm/GeneratorObject.h"       // for AbstractGeneratorObject
+#include "vm/GlobalObject.h"          // for GlobalObject
+#include "vm/Interpreter.h"           // for Call, ExecuteKernel
+#include "vm/JSAtom.h"                // for Atomize
+#include "vm/JSContext.h"             // for JSContext, ReportValueError
+#include "vm/JSFunction.h"            // for JSFunction, NewNativeFunction
+#include "vm/JSObject.h"              // for JSObject, RequireObject
+#include "vm/JSScript.h"              // for JSScript
+#include "vm/NativeObject.h"          // for NativeDefineDataProperty
+#include "vm/Realm.h"                 // for AutoRealm
+#include "vm/Runtime.h"               // for JSAtomState
+#include "vm/Scope.h"                 // for PositionalFormalParameterIter
+#include "vm/Stack.h"                 // for AbstractFramePtr, FrameIter
+#include "vm/StringType.h"            // for PropertyName, JSString
+#include "wasm/WasmDebug.h"           // for DebugState
+#include "wasm/WasmInstance.h"        // for Instance
+#include "wasm/WasmJS.h"              // for WasmInstanceObject
+#include "wasm/WasmTypes.h"           // for DebugFrame
 
 #include "debugger/Debugger-inl.h"  // for Debugger::fromJSObject
 #include "gc/WeakMap-inl.h"         // for WeakMap::remove
@@ -925,8 +927,6 @@ static bool EvaluateInEnv(JSContext* cx, Handle<Env*> env,
     options.setForceStrictMode();
   }
 
-  SourceExtent extent = SourceExtent::makeGlobalExtent(chars.length(), options);
-
   SourceText<char16_t> srcBuf;
   if (!srcBuf.init(cx, chars.begin().get(), chars.length(),
                    SourceOwnership::Borrowed)) {
@@ -953,17 +953,7 @@ static bool EvaluateInEnv(JSContext* cx, Handle<Env*> env,
       return false;
     }
 
-    LifoAllocScope allocScope(&cx->tempLifoAlloc());
-    frontend::CompilationInfo compilationInfo(cx, allocScope, options, scope,
-                                              env);
-    if (!compilationInfo.init(cx)) {
-      return false;
-    }
-    compilationInfo.setEnclosingScope(scope);
-
-    frontend::EvalSharedContext evalsc(cx, compilationInfo,
-                                       compilationInfo.directives, extent);
-    script = frontend::CompileEvalScript(compilationInfo, evalsc, srcBuf);
+    script = frontend::CompileEvalScript(cx, options, srcBuf, scope, env);
     if (!script) {
       return false;
     }
@@ -974,17 +964,10 @@ static bool EvaluateInEnv(JSContext* cx, Handle<Env*> env,
     // users of executeInGlobal, like the web console, may add new bindings to
     // the global scope.
 
-    LifoAllocScope allocScope(&cx->tempLifoAlloc());
-    frontend::CompilationInfo compilationInfo(cx, allocScope, options);
-    if (!compilationInfo.init(cx)) {
-      return false;
-    }
     MOZ_ASSERT(scopeKind == ScopeKind::Global ||
                scopeKind == ScopeKind::NonSyntactic);
 
-    frontend::GlobalSharedContext globalsc(cx, scopeKind, compilationInfo,
-                                           compilationInfo.directives, extent);
-    script = frontend::CompileGlobalScript(compilationInfo, globalsc, srcBuf);
+    script = frontend::CompileGlobalScript(cx, options, srcBuf, scopeKind);
     if (!script) {
       return false;
     }
@@ -1107,7 +1090,7 @@ Result<Completion> DebuggerFrame::eval(JSContext* cx, HandleDebuggerFrame frame,
 bool DebuggerFrame::isOnStack() const { return !!getPrivate(); }
 
 bool DebuggerFrame::isOnStackMaybeForwarded() const {
-  return !!getPrivate(numFixedSlotsMaybeForwarded());
+  return !!getPrivateMaybeForwarded();
 }
 
 OnStepHandler* DebuggerFrame::onStepHandler() const {
@@ -1659,7 +1642,7 @@ DebuggerArguments* DebuggerArguments::create(JSContext* cx, HandleObject proto,
     return nullptr;
   }
 
-  SetReservedSlot(obj, FRAME_SLOT, ObjectValue(*frame));
+  JS::SetReservedSlot(obj, FRAME_SLOT, ObjectValue(*frame));
 
   MOZ_ASSERT(referent.numActualArgs() <= 0x7fffffff);
   unsigned fargc = referent.numActualArgs();

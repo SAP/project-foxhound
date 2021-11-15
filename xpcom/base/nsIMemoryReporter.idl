@@ -426,8 +426,9 @@ interface nsIMemoryReporterManager : nsISupports
 
   /*
    * Run a series of GC/CC's in an attempt to minimize the application's memory
-   * usage.  When we're finished, we invoke the given runnable if it's not
-   * null.
+   * usage.  When we're finished doing this for the current process, we invoke
+   * the given runnable if it's not null.  We do not wait for any child processes
+   * that might be doing their own minimization via child-mmu-request to finish.
    */
   [must_use] void minimizeMemoryUsage(in nsIRunnable callback);
 
@@ -611,7 +612,7 @@ nsresult RegisterNonJSSizeOfTab(NonJSSizeOfTabFn aSizeOfTabFn);
 // variables. The (void) is there because we should always ignore the return
 // value of the callback, because callback failures aren't fatal.
 #define MOZ_COLLECT_REPORT(path, kind, units, amount, description)            \
-  (void)aHandleReport->Callback(EmptyCString(), nsLiteralCString(path),     \
+  (void)aHandleReport->Callback(""_ns, nsLiteralCString(path),     \
                                 kind, units, amount,                          \
                                 nsLiteralCString(description), aData)
 

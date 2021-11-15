@@ -11,7 +11,8 @@
             <menu id="file-menu" data-l10n-id="menu-file">
               <menupopup id="menu_FilePopup"
                          onpopupshowing="updateFileMenuUserContextUIVisibility('menu_newUserContext');
-                                         updateImportCommandEnabledState();">
+                                         updateImportCommandEnabledState();
+                                         PrintUtils.updatePrintPreviewMenuHiddenState();">
                 <menuitem id="menu_newNavigatorTab"
                           command="cmd_newNavigatorTab"
                           key="key_newNavigatorTab" data-l10n-id="menu-file-new-tab"/>
@@ -58,11 +59,11 @@
                 <menuseparator/>
 #if !defined(MOZ_WIDGET_GTK)
                 <menuitem id="menu_printSetup"
-                          command="cmd_pageSetup" data-l10n-id="menu-file-print-setup"/>
+                          command="cmd_pageSetup" data-l10n-id="menu-file-print-setup" hidden="true"/>
 #endif
 #ifndef XP_MACOSX
                 <menuitem id="menu_printPreview"
-                          command="cmd_printPreview" data-l10n-id="menu-file-print-preview"/>
+                          command="cmd_printPreview" data-l10n-id="menu-file-print-preview" hidden="true"/>
 #endif
                 <menuitem id="menu_print"
                           key="printKb"
@@ -252,9 +253,7 @@
                          tooltip="bhTooltip"
                          popupsinherittooltip="true">
                 <menuitem id="menu_showAllHistory"
-#ifndef XP_MACOSX
                           key="showAllHistoryKb"
-#endif
                           command="Browser:ShowAllHistory" data-l10n-id="menu-history-show-all-history"/>
                 <menuitem id="sanitizeItem"
                           key="key_sanitize"
@@ -284,7 +283,18 @@
                              placespopup="true"
                              is="places-popup"
 #endif
-                             onpopupshowing="document.getElementById('history-menu')._placesView.populateUndoWindowSubmenu();"/>
+                             onpopupshowing="document.getElementById('history-menu')._placesView.populateUndoWindowSubmenu();">
+#ifdef HIDDEN_WINDOW
+# This entry is never visible. It's here to make the cmd-shift-n
+# shortcut work in the hidden window when the last window is closed.
+# If the menu is actually opened, we'll clear this out and replace
+# it with a "real" entry.
+# See bug 492320 for the nasty details.
+                    <menuitem key="key_undoCloseWindow"
+                              oncommand="undoCloseWindow(0)"
+                              />
+#endif
+                  </menupopup>
                 </menu>
                 <menuseparator id="startHistorySeparator"
                                class="hide-if-empty-places-result"/>

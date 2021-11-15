@@ -28,7 +28,7 @@ class VendorPython(MozbuildObject):
                 "--with-windows-wheel is only supported for a single package!"
             )
 
-        self._activate_virtualenv()
+        self.activate_virtualenv()
         pip_compile = os.path.join(self.virtualenv_manager.bin_path, "pip-compile")
         if not os.path.exists(pip_compile):
             path = os.path.normpath(
@@ -139,10 +139,10 @@ class VendorPython(MozbuildObject):
         ignore = ()
         if not keep_extra_files:
             ignore = (
-                '*/doc',
-                '*/docs',
-                '*/test',
-                '*/tests',
+                "*/doc",
+                "*/docs",
+                "*/test",
+                "*/tests",
             )
         finder = FileFinder(src)
         for path, _ in finder.find("*"):
@@ -162,7 +162,9 @@ class VendorPython(MozbuildObject):
                 mozfile.extract(os.path.join(finder.base, path), target, ignore=ignore)
             else:
                 # packages extract into package-version directory name and we strip the version
-                tld = mozfile.extract(os.path.join(finder.base, path), dest, ignore=ignore)[0]
+                tld = mozfile.extract(
+                    os.path.join(finder.base, path), dest, ignore=ignore
+                )[0]
                 target = os.path.join(dest, tld.rpartition("-")[0])
                 mozfile.remove(target)  # remove existing version of vendored package
                 mozfile.move(tld, target)

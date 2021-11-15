@@ -19,10 +19,10 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDocShell.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 UIEvent::UIEvent(EventTarget* aOwner, nsPresContext* aPresContext,
                  WidgetGUIEvent* aEvent)
@@ -320,8 +320,7 @@ void UIEvent::InitModifiers(const EventModifierInit& aParam) {
 #undef SET_MODIFIER
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 using namespace mozilla;
 using namespace mozilla::dom;

@@ -11,15 +11,16 @@
 
 #include <utility>
 
+#include "jit/InlineScriptTree.h"
 #include "jit/JitcodeMap.h"
-#include "jit/JitFrames.h"
 #include "jit/LIR.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
+#include "jit/SafepointIndex.h"
 #include "jit/Safepoints.h"
 #include "jit/Snapshots.h"
-#include "jit/VMFunctions.h"
+#include "vm/TraceLoggingTypes.h"
 
 namespace js {
 namespace jit {
@@ -279,11 +280,10 @@ class CodeGeneratorShared : public LElementVisitor {
 
   OutOfLineCode* oolTruncateDouble(
       FloatRegister src, Register dest, MInstruction* mir,
-      wasm::BytecodeOffset callOffset = wasm::BytecodeOffset());
-  void emitTruncateDouble(FloatRegister src, Register dest,
-                          MTruncateToInt32* mir);
-  void emitTruncateFloat32(FloatRegister src, Register dest,
-                           MTruncateToInt32* mir);
+      wasm::BytecodeOffset callOffset = wasm::BytecodeOffset(),
+      bool preserveTls = false);
+  void emitTruncateDouble(FloatRegister src, Register dest, MInstruction* mir);
+  void emitTruncateFloat32(FloatRegister src, Register dest, MInstruction* mir);
 
   void emitPreBarrier(Register elements, const LAllocation* index);
   void emitPreBarrier(Address address);
@@ -377,6 +377,13 @@ class CodeGeneratorShared : public LElementVisitor {
   template <typename T>
   void pushArg(const T& t) {
     masm.Push(t);
+#ifdef DEBUG
+    pushedArgs_++;
+#endif
+  }
+
+  void pushArg(jsid id, Register temp) {
+    masm.Push(id, temp);
 #ifdef DEBUG
     pushedArgs_++;
 #endif
@@ -541,6 +548,16 @@ class OutOfLineWasmTruncateCheckBase : public OutOfLineCodeBase<CodeGen> {
         input_(input),
         output_(output),
         output64_(Register64::Invalid()),
+        flags_(mir->flags()),
+        bytecodeOffset_(mir->bytecodeOffset()) {}
+
+  OutOfLineWasmTruncateCheckBase(MWasmBuiltinTruncateToInt64* mir,
+                                 FloatRegister input, Register64 output)
+      : fromType_(mir->input()->type()),
+        toType_(MIRType::Int64),
+        input_(input),
+        output_(Register::Invalid()),
+        output64_(output),
         flags_(mir->flags()),
         bytecodeOffset_(mir->bytecodeOffset()) {}
 

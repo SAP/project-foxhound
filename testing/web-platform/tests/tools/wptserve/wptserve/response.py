@@ -413,9 +413,9 @@ class H2Response(Response):
             item = None
             item_iter = self.iter_content()
             try:
-                item = item_iter.next()
+                item = next(item_iter)
                 while True:
-                    check_last = item_iter.next()
+                    check_last = next(item_iter)
                     self.writer.write_data(item, last=False)
                     item = check_last
             except StopIteration:
@@ -451,6 +451,13 @@ class H2ResponseWriter(object):
         secondary_headers = []  # Non ':' prefixed headers are to be added afterwards
 
         for header, value in headers:
+            # h2_headers are native strings
+            # header field names are strings of ASCII
+            if isinstance(header, binary_type):
+                header = header.decode('ascii')
+            # value in headers can be either string or integer
+            if isinstance(value, binary_type):
+                value = self.decode(value)
             if header in h2_headers:
                 header = ':' + header
                 formatted_headers.append((header, str(value)))
@@ -635,6 +642,15 @@ class H2ResponseWriter(object):
         self.content_written = True
         self.socket.sendall(raw_data)
 
+    def decode(self, data):
+        """Convert bytes to unicode according to response.encoding."""
+        if isinstance(data, binary_type):
+            return data.decode(self._response.encoding)
+        elif isinstance(data, text_type):
+            return data
+        else:
+            raise ValueError(type(data))
+
     def encode(self, data):
         """Convert unicode to bytes according to response.encoding."""
         if isinstance(data, binary_type):
@@ -742,7 +758,7 @@ class ResponseWriter(object):
         if not self._headers_complete:
             self._response.content = data
             self.end_headers()
-        self.write_raw_content(data)
+        return self.write_raw_content(data)
 
     def write_raw_content(self, data):
         """Writes the data 'as is'"""
@@ -750,11 +766,9 @@ class ResponseWriter(object):
             raise ValueError('data cannot be None')
         if isinstance(data, (text_type, binary_type)):
             # Deliberately allows both text and binary types. See `self.encode`.
-            self.write(data)
+            return self.write(data)
         else:
-            self.write_content_file(data)
-        if not self._response.explicit_flush:
-            self.flush()
+            return self.write_content_file(data)
 
     def write(self, data):
         """Write directly to the response, converting unicode to bytes
@@ -771,15 +785,19 @@ class ResponseWriter(object):
         """Write a file-like object directly to the response in chunks.
         Does not flush."""
         self.content_written = True
+        success = True
         while True:
             buf = data.read(self.file_chunk_size)
             if not buf:
+                success = False
                 break
             try:
                 self._wfile.write(buf)
             except socket.error:
+                success = False
                 break
         data.close()
+        return success
 
     def encode(self, data):
         """Convert unicode to bytes according to response.encoding."""

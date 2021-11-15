@@ -16,7 +16,7 @@
 #include "util/Text.h"
 #include "vm/ArrayObject.h"
 #include "vm/BigIntType.h"
-#include "vm/HelperThreads.h"
+#include "vm/HelperThreadState.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/Realm.h"
@@ -622,12 +622,17 @@ static bool FindNotableScriptSources(JS::RuntimeSizes& runtime) {
 static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
                                       ObjectPrivateVisitor* opv, bool anonymize,
                                       IterateCellCallback statsCellCallback) {
+  // Wait for any off-thread parsing to finish, as that currently allocates GC
+  // things.
+  JSRuntime* rt = cx->runtime();
+  WaitForOffThreadParses(rt);
+
   // Finish any ongoing incremental GC that may change the data we're gathering
   // and ensure that we don't do anything that could start another one.
   gc::FinishGC(cx);
+  gc::WaitForBackgroundTasks(cx);
   JS::AutoAssertNoGC nogc(cx);
 
-  JSRuntime* rt = cx->runtime();
   if (!rtStats->realmStatsVector.reserve(rt->numRealms)) {
     return false;
   }

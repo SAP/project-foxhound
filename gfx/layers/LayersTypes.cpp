@@ -6,6 +6,9 @@
 
 #include "LayersTypes.h"
 
+#include <cinttypes>
+#include "nsPrintfCString.h"
+
 namespace mozilla {
 namespace layers {
 
@@ -36,6 +39,15 @@ const char* GetLayersBackendName(LayersBackend aBackend) {
   }
 }
 
+std::ostream& operator<<(std::ostream& aStream, const LayersId& aId) {
+  return aStream << nsPrintfCString("0x%" PRIx64, aId.mId).get();
+}
+
+EventRegions::EventRegions() : mDTCRequiresTargetConfirmation(false) {}
+
+EventRegions::EventRegions(nsIntRegion aHitRegion)
+    : mHitRegion(aHitRegion), mDTCRequiresTargetConfirmation(false) {}
+
 EventRegions::EventRegions(const nsIntRegion& aHitRegion,
                            const nsIntRegion& aMaybeHitRegion,
                            const nsIntRegion& aDispatchToContentRegion,
@@ -55,6 +67,98 @@ EventRegions::EventRegions(const nsIntRegion& aHitRegion,
   mDispatchToContentHitRegion.OrWith(aDispatchToContentRegion);
   mHitRegion.OrWith(aMaybeHitRegion);
   mDTCRequiresTargetConfirmation = aDTCRequiresTargetConfirmation;
+}
+
+bool EventRegions::operator==(const EventRegions& aRegions) const {
+  return mHitRegion == aRegions.mHitRegion &&
+         mDispatchToContentHitRegion == aRegions.mDispatchToContentHitRegion &&
+         mNoActionRegion == aRegions.mNoActionRegion &&
+         mHorizontalPanRegion == aRegions.mHorizontalPanRegion &&
+         mVerticalPanRegion == aRegions.mVerticalPanRegion &&
+         mDTCRequiresTargetConfirmation ==
+             aRegions.mDTCRequiresTargetConfirmation;
+}
+
+bool EventRegions::operator!=(const EventRegions& aRegions) const {
+  return !(*this == aRegions);
+}
+
+std::ostream& operator<<(std::ostream& aStream, const EventRegions& e) {
+  aStream << "{";
+  if (!e.mHitRegion.IsEmpty()) {
+    aStream << " Hit=" << e.mHitRegion;
+  }
+  if (!e.mDispatchToContentHitRegion.IsEmpty()) {
+    aStream << " DispatchToContent=" << e.mDispatchToContentHitRegion;
+  }
+  if (!e.mNoActionRegion.IsEmpty()) {
+    aStream << " NoAction=" << e.mNoActionRegion;
+  }
+  if (!e.mHorizontalPanRegion.IsEmpty()) {
+    aStream << " HorizontalPan=" << e.mHorizontalPanRegion;
+  }
+  if (!e.mVerticalPanRegion.IsEmpty()) {
+    aStream << " VerticalPan=" << e.mVerticalPanRegion;
+  }
+  aStream << " }";
+  return aStream;
+}
+
+void EventRegions::ApplyTranslationAndScale(float aXTrans, float aYTrans,
+                                            float aXScale, float aYScale) {
+  mHitRegion.ScaleRoundOut(aXScale, aYScale);
+  mDispatchToContentHitRegion.ScaleRoundOut(aXScale, aYScale);
+  mNoActionRegion.ScaleRoundOut(aXScale, aYScale);
+  mHorizontalPanRegion.ScaleRoundOut(aXScale, aYScale);
+  mVerticalPanRegion.ScaleRoundOut(aXScale, aYScale);
+
+  mHitRegion.MoveBy(aXTrans, aYTrans);
+  mDispatchToContentHitRegion.MoveBy(aXTrans, aYTrans);
+  mNoActionRegion.MoveBy(aXTrans, aYTrans);
+  mHorizontalPanRegion.MoveBy(aXTrans, aYTrans);
+  mVerticalPanRegion.MoveBy(aXTrans, aYTrans);
+}
+
+void EventRegions::Transform(const gfx::Matrix4x4& aTransform) {
+  mHitRegion.Transform(aTransform);
+  mDispatchToContentHitRegion.Transform(aTransform);
+  mNoActionRegion.Transform(aTransform);
+  mHorizontalPanRegion.Transform(aTransform);
+  mVerticalPanRegion.Transform(aTransform);
+}
+
+void EventRegions::OrWith(const EventRegions& aOther) {
+  mHitRegion.OrWith(aOther.mHitRegion);
+  mDispatchToContentHitRegion.OrWith(aOther.mDispatchToContentHitRegion);
+  // See the comment in nsDisplayList::AddFrame, where the touch action
+  // regions are handled. The same thing applies here.
+  bool alreadyHadRegions = !mNoActionRegion.IsEmpty() ||
+                           !mHorizontalPanRegion.IsEmpty() ||
+                           !mVerticalPanRegion.IsEmpty();
+  mNoActionRegion.OrWith(aOther.mNoActionRegion);
+  mHorizontalPanRegion.OrWith(aOther.mHorizontalPanRegion);
+  mVerticalPanRegion.OrWith(aOther.mVerticalPanRegion);
+  if (alreadyHadRegions) {
+    nsIntRegion combinedActionRegions;
+    combinedActionRegions.Or(mHorizontalPanRegion, mVerticalPanRegion);
+    combinedActionRegions.OrWith(mNoActionRegion);
+    mDispatchToContentHitRegion.OrWith(combinedActionRegions);
+  }
+  mDTCRequiresTargetConfirmation |= aOther.mDTCRequiresTargetConfirmation;
+}
+
+bool EventRegions::IsEmpty() const {
+  return mHitRegion.IsEmpty() && mDispatchToContentHitRegion.IsEmpty() &&
+         mNoActionRegion.IsEmpty() && mHorizontalPanRegion.IsEmpty() &&
+         mVerticalPanRegion.IsEmpty();
+}
+
+void EventRegions::SetEmpty() {
+  mHitRegion.SetEmpty();
+  mDispatchToContentHitRegion.SetEmpty();
+  mNoActionRegion.SetEmpty();
+  mHorizontalPanRegion.SetEmpty();
+  mVerticalPanRegion.SetEmpty();
 }
 
 }  // namespace layers

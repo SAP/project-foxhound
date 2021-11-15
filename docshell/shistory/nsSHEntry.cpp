@@ -28,8 +28,6 @@
 
 extern mozilla::LazyLogModule gPageCacheLog;
 
-namespace dom = mozilla::dom;
-
 static uint32_t gEntryID = 0;
 
 nsSHEntry::nsSHEntry()
@@ -205,6 +203,18 @@ nsSHEntry::GetTitle(nsAString& aTitle) {
 NS_IMETHODIMP
 nsSHEntry::SetTitle(const nsAString& aTitle) {
   mTitle = aTitle;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::GetName(nsAString& aName) {
+  aName = mName;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetName(const nsAString& aName) {
+  mName = aName;
   return NS_OK;
 }
 
@@ -917,6 +927,9 @@ NS_IMETHODIMP_(void)
 nsSHEntry::SyncTreesForSubframeNavigation(
     nsISHEntry* aEntry, mozilla::dom::BrowsingContext* aTopBC,
     mozilla::dom::BrowsingContext* aIgnoreBC) {
+  // XXX Keep this in sync with
+  // SessionHistoryEntry::SyncTreesForSubframeNavigation
+  //
   // We need to sync up the browsing context and session history trees for
   // subframe navigation.  If the load was in a subframe, we forward up to
   // the top browsing context, which will then recursively sync up all browsing
@@ -1057,6 +1070,6 @@ nsSHEntry::AbandonBFCacheEntry() {
 
 NS_IMETHODIMP
 nsSHEntry::GetBfcacheID(uint64_t* aBFCacheID) {
-  *aBFCacheID = mShared->GetID();
+  *aBFCacheID = mShared->GetId();
   return NS_OK;
 }

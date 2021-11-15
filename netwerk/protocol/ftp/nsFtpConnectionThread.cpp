@@ -665,7 +665,7 @@ nsresult nsFtpState::S_user() {
       if (!prompter) return NS_ERROR_NOT_INITIALIZED;
 
       RefPtr<nsAuthInformationHolder> info = new nsAuthInformationHolder(
-          nsIAuthInformation::AUTH_HOST, EmptyString(), EmptyCString());
+          nsIAuthInformation::AUTH_HOST, u""_ns, ""_ns);
 
       bool retval;
       rv = prompter->PromptAuth(mChannel, nsIAuthPrompt2::LEVEL_NONE, info,
@@ -748,7 +748,7 @@ nsresult nsFtpState::S_pass() {
 
       RefPtr<nsAuthInformationHolder> info = new nsAuthInformationHolder(
           nsIAuthInformation::AUTH_HOST | nsIAuthInformation::ONLY_PASSWORD,
-          EmptyString(), EmptyCString());
+          u""_ns, ""_ns);
 
       info->SetUserInternal(mUsername);
 
@@ -1044,7 +1044,7 @@ nsresult nsFtpState::S_list() {
   // dir listings aren't resumable
   NS_ENSURE_TRUE(!mChannel->ResumeRequested(), NS_ERROR_NOT_RESUMABLE);
 
-  mChannel->SetEntityID(EmptyCString());
+  mChannel->SetEntityID(""_ns);
 
   const char* listString;
   if (mServerType == FTP_VMS_TYPE) {
@@ -1139,7 +1139,7 @@ FTP_STATE
 nsFtpState::R_rest() {
   if (mResponseCode / 100 == 4) {
     // If REST fails, then we can't resume
-    mChannel->SetEntityID(EmptyCString());
+    mChannel->SetEntityID(""_ns);
 
     mInternalError = NS_ERROR_NOT_RESUMABLE;
     mResponseMsg.Truncate();
@@ -1219,9 +1219,9 @@ nsresult nsFtpState::S_pasv() {
     if (sTrans) {
       nsresult rv = sTrans->GetPeerAddr(&mServerAddress);
       if (NS_SUCCEEDED(rv)) {
-        if (!IsIPAddrAny(&mServerAddress))
+        if (!mServerAddress.IsIPAddrAny())
           mServerIsIPv6 = (mServerAddress.raw.family == AF_INET6) &&
-                          !IsIPAddrV4Mapped(&mServerAddress);
+                          !mServerAddress.IsIPAddrV4Mapped();
         else {
           /*
            * In case of SOCKS5 remote DNS resolution, we do
@@ -1234,7 +1234,7 @@ nsresult nsFtpState::S_pasv() {
           rv = sTrans->GetSelfAddr(&selfAddress);
           if (NS_SUCCEEDED(rv))
             mServerIsIPv6 = (selfAddress.raw.family == AF_INET6) &&
-                            !IsIPAddrV4Mapped(&selfAddress);
+                            !selfAddress.IsIPAddrV4Mapped();
         }
       }
     }
@@ -1351,9 +1351,9 @@ nsFtpState::R_pasv() {
     nsCOMPtr<nsISocketTransport> strans;
 
     nsAutoCString host;
-    if (!IsIPAddrAny(&mServerAddress)) {
+    if (!mServerAddress.IsIPAddrAny()) {
       char buf[kIPv6CStrBufSize];
-      NetAddrToString(&mServerAddress, buf, sizeof(buf));
+      mServerAddress.ToStringBuffer(buf, sizeof(buf));
       host.Assign(buf);
     } else {
       /*

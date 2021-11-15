@@ -1,17 +1,18 @@
 #!/usr/bin/env python
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 import json
 import os
 import re
 import signal
 import threading
+import time
 
 import mozunit
 import pytest
 from mozbuild.base import MozbuildObject
 from mozprocess import ProcessHandler
 
-here = os.path.abspath(os.path.dirname(__file__))
+here = os.path.dirname(__file__)
 
 
 # This is copied from <python/mozperftest/mozperftest/utils.py>. It's copied
@@ -48,6 +49,8 @@ class OutputHandler(object):
         if not line.strip():
             return
         line = line.decode("utf-8", errors="replace")
+        # Print the output we received so we have useful logs if a test fails.
+        print(line)
 
         try:
             data = json.loads(line)
@@ -57,8 +60,7 @@ class OutputHandler(object):
         if isinstance(data, dict) and "action" in data:
             # Retrieve the port number for the proxy server from the logs of
             # our subprocess.
-            m = re.match(r"Proxy running on port (\d+)",
-                         data.get("message", ""))
+            m = re.match(r"Proxy running on port (\d+)", data.get("message", ""))
             if m:
                 self.port = m.group(1)
                 self.port_event.set()
@@ -69,7 +71,7 @@ class OutputHandler(object):
 
 @pytest.fixture(scope="module")
 def install_mozproxy():
-    build = MozbuildObject.from_environment(cwd=here)
+    build = MozbuildObject.from_environment(cwd=here, virtualenv_name="python-test")
     build.virtualenv_manager.activate()
 
     mozbase = os.path.join(build.topsrcdir, "testing", "mozbase")
@@ -89,11 +91,14 @@ def test_run(install_mozproxy):
     build = install_mozproxy
     output_handler = OutputHandler()
     p = ProcessHandler(
-        ["mozproxy",
-         "--local",
-         "--binary=firefox",
-         "--topsrcdir=" + build.topsrcdir,
-         "--objdir=" + build.topobjdir],
+        [
+            "mozproxy",
+            "--local",
+            "--binary=firefox",
+            "--topsrcdir=" + build.topsrcdir,
+            "--objdir=" + build.topobjdir,
+            os.path.join(here, "files", "mitm5-linux-firefox-amazon.zip"),
+        ],
         processOutputLine=output_handler,
         onFinish=output_handler.finished,
     )
@@ -101,6 +106,9 @@ def test_run(install_mozproxy):
     # The first time we run mozproxy, we need to fetch mitmproxy, which can
     # take a while...
     assert output_handler.port_event.wait(120) is True
+    # Give mitmproxy a bit of time to start up so we can verify that it's
+    # actually running before we kill mozproxy.
+    time.sleep(5)
     _kill_mozproxy(p.pid)
 
     assert p.wait(10) == 0
@@ -110,10 +118,12 @@ def test_run(install_mozproxy):
 def test_failure(install_mozproxy):
     output_handler = OutputHandler()
     p = ProcessHandler(
-        ["mozproxy",
-         "--local",
-         # Exclude some options here to trigger a command-line error.
-         os.path.join(here, "example.dump")],
+        [
+            "mozproxy",
+            "--local",
+            # Exclude some options here to trigger a command-line error.
+            os.path.join(here, "files", "mitm5-linux-firefox-amazon.zip"),
+        ],
         processOutputLine=output_handler,
         onFinish=output_handler.finished,
     )

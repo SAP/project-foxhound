@@ -270,6 +270,11 @@ add_task(async function testSidebarDOMNodeHighlighting() {
   const sidebar = inspector.getPanel(SIDEBAR_ID);
   const sidebarPanelContent = inspector.sidebar.getTabPanel(SIDEBAR_ID);
 
+  const {
+    waitForHighlighterTypeShown,
+    waitForHighlighterTypeHidden,
+  } = getHighlighterTestHelpers(inspector);
+
   const expression = "({ body: document.body })";
 
   const consoleFront = await toolbox.target.getFront("console");
@@ -304,21 +309,25 @@ add_task(async function testSidebarDOMNodeHighlighting() {
   // Test highlight DOMNode on mouseover.
   info("Highlight the node by moving the cursor on it");
 
-  const onNodeHighlight = inspector.highlighter.once("node-highlight");
+  const onNodeHighlight = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
 
   moveMouseOnObjectInspectorDOMNode(sidebarPanelContent);
 
-  const nodeFront = await onNodeHighlight;
+  const { nodeFront } = await onNodeHighlight;
   is(nodeFront.displayName, "body", "The correct node was highlighted");
 
   // Test unhighlight DOMNode on mousemove.
   info("Unhighlight the node by moving away from the node");
-  const onNodeUnhighlight = inspector.highlighter.once("node-unhighlight");
+  const onNodeUnhighlight = waitForHighlighterTypeHidden(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
 
   moveMouseOnPanelCenter(sidebarPanelContent);
 
   await onNodeUnhighlight;
-  info("node-unhighlight event was fired when moving away from the node");
+  info("The node is no longer highlighted");
 
   inspectedWindowFront.destroy();
 });
@@ -337,18 +346,41 @@ add_task(async function testSidebarDOMNodeOpenInspector() {
     "Select the ObjectInspector DOMNode in the inspector panel by clicking on it"
   );
 
+  // In test mode, shown highlighters are not automatically hidden after a delay to
+  // prevent intermittent test failures from race conditions.
+  // Restore this behavior just for this test because it is explicitly checked.
+  const HIGHLIGHTER_AUTOHIDE_TIMER = inspector.HIGHLIGHTER_AUTOHIDE_TIMER;
+  inspector.HIGHLIGHTER_AUTOHIDE_TIMER = 1000;
+  registerCleanupFunction(() => {
+    // Restore the value to disable autohiding to not impact other tests.
+    inspector.HIGHLIGHTER_AUTOHIDE_TIMER = HIGHLIGHTER_AUTOHIDE_TIMER;
+  });
+
+  const {
+    waitForHighlighterTypeShown,
+    waitForHighlighterTypeHidden,
+  } = getHighlighterTestHelpers(inspector);
+
   // Once we click the open-inspector icon we expect a new node front to be selected
   // and the node to have been highlighted and unhighlighted.
-  const onNodeHighlight = inspector.highlighter.once("node-highlight");
-  const onNodeUnhighlight = inspector.highlighter.once("node-unhighlight");
+  const onNodeHighlight = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
+  const onNodeUnhighlight = waitForHighlighterTypeHidden(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
   onceNewNodeFront = inspector.selection.once("new-node-front");
 
   clickOpenInspectorIcon(sidebarPanelContent);
 
   nodeFront = await onceNewNodeFront;
   is(nodeFront.displayName, "body", "The correct node has been selected");
-  nodeFront = await onNodeHighlight;
-  is(nodeFront.displayName, "body", "The correct node was highlighted");
+  const { nodeFront: highlightedNodeFront } = await onNodeHighlight;
+  is(
+    highlightedNodeFront.displayName,
+    "body",
+    "The correct node was highlighted"
+  );
 
   await onNodeUnhighlight;
 });

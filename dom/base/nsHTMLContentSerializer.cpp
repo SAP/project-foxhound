@@ -231,8 +231,8 @@ nsHTMLContentSerializer::AppendElementStart(Element* aElement,
   // for serializing attributes other than "value".
   nsAutoString dummyPrefix;
   NS_ENSURE_TRUE(
-      SerializeHTMLAttributes(aElement, aOriginalElement, dummyPrefix,
-                              EmptyString(), name, ns, *mOutput),
+      SerializeHTMLAttributes(aElement, aOriginalElement, dummyPrefix, u""_ns,
+                              name, ns, *mOutput),
       NS_ERROR_OUT_OF_MEMORY);
 
   NS_ENSURE_TRUE(AppendToString(kGreaterThan, *mOutput),

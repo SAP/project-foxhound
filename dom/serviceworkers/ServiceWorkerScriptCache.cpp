@@ -302,7 +302,7 @@ class CompareManager final : public PromiseNativeHandler {
     if (mAreScriptsEqual) {
       MOZ_ASSERT(mCallback);
       mCallback->ComparisonResult(aStatus, true /* aSameScripts */, mOnFailure,
-                                  EmptyString(), mMaxScope, mLoadFlags);
+                                  u""_ns, mMaxScope, mLoadFlags);
       Cleanup();
       return;
     }
@@ -1178,7 +1178,7 @@ void CompareCache::ManageValueResult(JSContext* aCx,
     return;
   }
 
-  rv = mPump->AsyncRead(loader, nullptr);
+  rv = mPump->AsyncRead(loader);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     mPump = nullptr;
     Finish(rv, false);
@@ -1312,8 +1312,8 @@ void CompareManager::RejectedCallback(JSContext* aCx,
 
 void CompareManager::Fail(nsresult aStatus) {
   MOZ_ASSERT(NS_IsMainThread());
-  mCallback->ComparisonResult(aStatus, false /* aIsEqual */, mOnFailure,
-                              EmptyString(), EmptyCString(), mLoadFlags);
+  mCallback->ComparisonResult(aStatus, false /* aIsEqual */, mOnFailure, u""_ns,
+                              ""_ns, mLoadFlags);
   Cleanup();
 }
 

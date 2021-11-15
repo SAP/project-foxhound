@@ -17,7 +17,7 @@
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "SVGAnimatedViewBox.h"
 #include "SVGGraphicsElement.h"
-#include "nsISVGPoint.h"
+#include "SVGPoint.h"
 #include "SVGPreserveAspectRatio.h"
 
 namespace mozilla {
@@ -51,6 +51,8 @@ class SVGViewportElement : public SVGGraphicsElement {
   ~SVGViewportElement() = default;
 
  public:
+  bool IsNodeOfType(uint32_t aFlags) const override;
+
   // nsIContent interface
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
@@ -126,7 +128,7 @@ class SVGViewportElement : public SVGGraphicsElement {
   /**
    * Returns true if either this is an SVG <svg> element that is the child of
    * another non-foreignObject SVG element, or this is a SVG <symbol> element
-   * this is the root of a use-element shadow tree.
+   * that is the root of a use-element shadow tree.
    */
   bool IsInner() const {
     const nsIContent* parent = GetFlattenedTreeParent();
@@ -142,11 +144,11 @@ class SVGViewportElement : public SVGGraphicsElement {
  protected:
   // implementation helpers:
 
-  bool IsRoot() const {
+  bool IsRootSVGSVGElement() const {
     NS_ASSERTION((IsInUncomposedDoc() && !GetParent()) ==
                      (OwnerDoc()->GetRootElement() == this),
                  "Can't determine if we're root");
-    return IsInUncomposedDoc() && !GetParent();
+    return !GetParent() && IsInUncomposedDoc() && IsSVGElement(nsGkAtoms::svg);
   }
 
   /**
@@ -164,12 +166,6 @@ class SVGViewportElement : public SVGGraphicsElement {
    */
   SVGViewBox GetViewBoxWithSynthesis(float aViewportWidth,
                                      float aViewportHeight) const;
-
-  /**
-   * Retrieve the value of currentScale and currentTranslate.
-   */
-  virtual SVGPoint GetCurrentTranslate() const { return SVGPoint(0.0f, 0.0f); }
-  virtual float GetCurrentScale() const { return 1.0f; }
 
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
   SVGAnimatedLength mLengthAttributes[4];

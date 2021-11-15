@@ -132,11 +132,8 @@ void PerformanceObserver::QueueEntry(PerformanceEntry* aEntry) {
  * Keep this list in alphabetical order.
  * https://w3c.github.io/performance-timeline/#supportedentrytypes-attribute
  */
-static const char16_t* const sValidTypeNames[4] = {
-    u"mark",
-    u"measure",
-    u"navigation",
-    u"resource",
+static const char16_t* const sValidTypeNames[5] = {
+    u"mark", u"measure", u"navigation", u"paint", u"resource",
 };
 
 void PerformanceObserver::ReportUnsupportedTypesErrorToConsole(
@@ -285,7 +282,7 @@ void PerformanceObserver::Observe(const PerformanceObserverInit& aOptions,
     if (!didUpdateOptionsList) {
       updatedOptionsList.AppendElement(aOptions);
     }
-    mOptions.SwapElements(updatedOptionsList);
+    mOptions = std::move(updatedOptionsList);
 
     /* 3.3.1.6.5 */
     if (maybeBuffered.WasPassed() && maybeBuffered.Value()) {
@@ -354,5 +351,5 @@ void PerformanceObserver::Disconnect() {
 void PerformanceObserver::TakeRecords(
     nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
   MOZ_ASSERT(aRetval.IsEmpty());
-  aRetval.SwapElements(mQueuedEntries);
+  aRetval = std::move(mQueuedEntries);
 }

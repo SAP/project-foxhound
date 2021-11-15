@@ -5,6 +5,7 @@ from unittest import mock
 import shutil
 import string
 import random
+import pathlib
 
 import pytest
 
@@ -26,6 +27,23 @@ def fetch(self, url):
     return os.path.join(HERE, "fetched_artifact.zip")
 
 
+def mocked_jsonload(val):
+    return val.__iter__.return_value
+
+
+def build_mock_open(files_data):
+    mocked_opens = []
+
+    for data in files_data:
+        mocked_file = mock.MagicMock()
+        mocked_file.__enter__.return_value.__iter__.return_value = data
+        mocked_opens.append(mocked_file)
+
+    m = mock.mock_open()
+    m.side_effect = mocked_opens
+    return m
+
+
 @mock.patch("mozperftest.test.browsertime.runner.install_package")
 @mock.patch(
     "mozperftest.test.noderunner.NodeRunner.verify_node_install", new=lambda x: True
@@ -42,12 +60,13 @@ def test_browser(*mocked):
         browsertime_geckodriver="GECKODRIVER",
         browsertime_iterations=1,
         browsertime_extra_options="one=1,two=2",
+        tests=[EXAMPLE_TEST],
+        browsertime_no_window_recorder=False,
+        browsertime_viewport_size="1234x567",
     )
 
     sys = env.layers[SYSTEM]
     browser = env.layers[TEST]
-    env.set_arg("tests", [EXAMPLE_TEST])
-
     try:
         with sys as s, browser as b, silence():
             b(s(metadata))
@@ -71,6 +90,100 @@ def test_browser(*mocked):
     assert results[0]["name"] == "Example"
 
 
+@mock.patch(
+    "mozperftest.test.browsertime.runner.BrowsertimeRunner.browsertime_js",
+    new=pathlib.Path("doesn't-exist"),
+)
+@mock.patch(
+    "mozperftest.test.browsertime.runner.BrowsertimeRunner.visualmetrics_py",
+    new=pathlib.Path("doesn't-exist-either"),
+)
+def test_browsertime_not_existing():
+    _, _, env = get_running_env(
+        android=True,
+        android_app_name="something",
+        browsertime_geckodriver="GECKODRIVER",
+        browsertime_iterations=1,
+        browsertime_extra_options="one=1,two=2",
+        tests=[EXAMPLE_TEST],
+    )
+    browser = env.layers[TEST]
+    btime_layer = browser.layers[0]
+    assert btime_layer._should_install()
+
+
+@mock.patch(
+    "mozperftest.test.browsertime.runner.pathlib.Path.exists", new=lambda x: True
+)
+def test_browsertime_no_reinstall():
+    _, _, env = get_running_env(
+        android=True,
+        android_app_name="something",
+        browsertime_geckodriver="GECKODRIVER",
+        browsertime_iterations=1,
+        browsertime_extra_options="one=1,two=2",
+        tests=[EXAMPLE_TEST],
+    )
+
+    with mock.patch(
+        "mozperftest.test.browsertime.runner.pathlib.Path.open",
+        build_mock_open(
+            [
+                {
+                    "devDependencies": {
+                        "browsertime": "89771a1d6be54114db190427dbc281582cba3d47"
+                    }
+                },
+                {
+                    "_from": (
+                        "browsertime@https://github.com/sitespeedio/browsertime"
+                        "/tarball/89771a1d6be54114db190427dbc281582cba3d47"
+                    )
+                },
+            ]
+        ),
+    ), mock.patch("mozperftest.test.browsertime.runner.json.load", new=mocked_jsonload):
+        browser = env.layers[TEST]
+        btime_layer = browser.layers[0]
+        assert not btime_layer._should_install()
+
+
+@mock.patch(
+    "mozperftest.test.browsertime.runner.pathlib.Path.exists", new=lambda x: True
+)
+def test_browsertime_should_reinstall():
+    _, _, env = get_running_env(
+        android=True,
+        android_app_name="something",
+        browsertime_geckodriver="GECKODRIVER",
+        browsertime_iterations=1,
+        browsertime_extra_options="one=1,two=2",
+        tests=[EXAMPLE_TEST],
+    )
+
+    with mock.patch(
+        "mozperftest.test.browsertime.runner.pathlib.Path.open",
+        build_mock_open(
+            [
+                {
+                    "devDependencies": {
+                        "browsertime": "89771a1d6be54114db190427dbc281582cba3d47"
+                    }
+                },
+                {
+                    "_from": (
+                        "browsertime@https://github.com/sitespeedio/browsertime"
+                        "/tarball/98747854be54114db190427dbc281582cba3d47"
+                    )
+                },
+            ]
+        ),
+    ), mock.patch("mozperftest.test.browsertime.runner.json.load", new=mocked_jsonload):
+        browser = env.layers[TEST]
+        btime_layer = browser.layers[0]
+        assert btime_layer._should_install()
+
+
 @mock.patch("mozperftest.test.browsertime.runner.install_package")
 @mock.patch(
     "mozperftest.test.noderunner.NodeRunner.verify_node_install", new=lambda x: True
@@ -87,11 +200,13 @@ def test_browser_failed(*mocked):
         browsertime_geckodriver="GECKODRIVER",
         browsertime_iterations=1,
         browsertime_extra_options="one=1,two=2",
+        tests=[EXAMPLE_TEST],
+        browsertime_no_window_recorder=False,
+        browsertime_viewport_size="1234x567",
     )
     # set the return value to 1 to simulate a node failure
     mach_cmd.run_process.return_value = 1
     browser = env.layers[TEST]
-    env.set_arg("tests", [EXAMPLE_TEST])
     sys = env.layers[SYSTEM]
 
     with sys as s, browser as b, silence(), pytest.raises(NodeException):
@@ -109,10 +224,13 @@ def test_browser_failed(*mocked):
 )
 def test_browser_desktop(*mocked):
     mach_cmd, metadata, env = get_running_env(
-        browsertime_iterations=1, browsertime_extra_options="one=1,two=2",
+        browsertime_iterations=1,
+        browsertime_extra_options="one=1,two=2",
+        tests=[EXAMPLE_TEST],
+        browsertime_no_window_recorder=False,
+        browsertime_viewport_size="1234x567",
     )
     browser = env.layers[TEST]
-    env.set_arg("tests", [EXAMPLE_TEST])
     sys = env.layers[SYSTEM]
 
     try:
@@ -153,9 +271,13 @@ def test_install_url(*mocked):
     url = "https://here/tarball/" + "".join(
         [random.choice(string.hexdigits[:-6]) for c in range(40)]
     )
-    mach, metadata, env = get_running_env(browsertime_install_url=url)
+    mach, metadata, env = get_running_env(
+        browsertime_install_url=url,
+        tests=[EXAMPLE_TEST],
+        browsertime_no_window_recorder=False,
+        browsertime_viewport_size="1234x567",
+    )
     browser = env.layers[TEST]
-    env.set_arg("tests", [EXAMPLE_TEST])
     sys = env.layers[SYSTEM]
 
     try:
@@ -177,9 +299,11 @@ def test_install_url(*mocked):
     new=lambda x, y: None,
 )
 def test_install_url_bad(*mocked):
-    mach, metadata, env = get_running_env(browsertime_install_url="meh")
+    mach, metadata, env = get_running_env(
+        browsertime_install_url="meh",
+        tests=[EXAMPLE_TEST],
+    )
     browser = env.layers[TEST]
-    env.set_arg("tests", [EXAMPLE_TEST])
     sys = env.layers[SYSTEM]
 
     with pytest.raises(ValueError):

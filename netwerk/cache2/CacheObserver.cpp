@@ -35,18 +35,8 @@ int32_t CacheObserver::sAutoMemoryCacheCapacity = -1;
 // GetDiskSpaceAvailable() always fails.
 Atomic<uint32_t, Relaxed> CacheObserver::sSmartDiskCacheCapacity(1024 * 1024);
 
-static bool kDefaultCacheFSReported = false;
-bool CacheObserver::sCacheFSReported = kDefaultCacheFSReported;
-
-static bool kDefaultHashStatsReported = false;
-bool CacheObserver::sHashStatsReported = kDefaultHashStatsReported;
-
 Atomic<PRIntervalTime> CacheObserver::sShutdownDemandedTime(
     PR_INTERVAL_NO_TIMEOUT);
-
-static uint32_t const kDefaultCacheAmountWritten = 0;
-Atomic<uint32_t, Relaxed> CacheObserver::sCacheAmountWritten(
-    kDefaultCacheAmountWritten);
 
 NS_IMPL_ISUPPORTS(CacheObserver, nsIObserver, nsISupportsWeakReference)
 
@@ -97,10 +87,6 @@ void CacheObserver::AttachToPreferences() {
       0.01F, std::min(1440.0F, mozilla::Preferences::GetFloat(
                                    "browser.cache.frecency_half_life_hours",
                                    kDefaultHalfLifeHours)));
-
-  mozilla::Preferences::AddAtomicUintVarCache(
-      &sCacheAmountWritten, "browser.cache.disk.amount_written",
-      kDefaultCacheAmountWritten);
 }
 
 // static
@@ -146,75 +132,6 @@ void CacheObserver::SetSmartDiskCacheCapacity(uint32_t aCapacity) {
 uint32_t CacheObserver::DiskCacheCapacity() {
   return SmartCacheSizeEnabled() ? sSmartDiskCacheCapacity
                                  : StaticPrefs::browser_cache_disk_capacity();
-}
-
-// static
-void CacheObserver::SetCacheFSReported() {
-  sCacheFSReported = true;
-
-  if (!sSelf) {
-    return;
-  }
-
-  if (NS_IsMainThread()) {
-    sSelf->StoreCacheFSReported();
-  } else {
-    nsCOMPtr<nsIRunnable> event =
-        NewRunnableMethod("net::CacheObserver::StoreCacheFSReported",
-                          sSelf.get(), &CacheObserver::StoreCacheFSReported);
-    NS_DispatchToMainThread(event);
-  }
-}
-
-void CacheObserver::StoreCacheFSReported() {
-  mozilla::Preferences::SetInt("browser.cache.disk.filesystem_reported",
-                               sCacheFSReported);
-}
-
-// static
-void CacheObserver::SetHashStatsReported() {
-  sHashStatsReported = true;
-
-  if (!sSelf) {
-    return;
-  }
-
-  if (NS_IsMainThread()) {
-    sSelf->StoreHashStatsReported();
-  } else {
-    nsCOMPtr<nsIRunnable> event =
-        NewRunnableMethod("net::CacheObserver::StoreHashStatsReported",
-                          sSelf.get(), &CacheObserver::StoreHashStatsReported);
-    NS_DispatchToMainThread(event);
-  }
-}
-
-void CacheObserver::StoreHashStatsReported() {
-  mozilla::Preferences::SetInt("browser.cache.disk.hashstats_reported",
-                               sHashStatsReported);
-}
-
-// static
-void CacheObserver::SetCacheAmountWritten(uint32_t aCacheAmountWritten) {
-  sCacheAmountWritten = aCacheAmountWritten;
-
-  if (!sSelf) {
-    return;
-  }
-
-  if (NS_IsMainThread()) {
-    sSelf->StoreCacheAmountWritten();
-  } else {
-    nsCOMPtr<nsIRunnable> event =
-        NewRunnableMethod("net::CacheObserver::StoreCacheAmountWritten",
-                          sSelf.get(), &CacheObserver::StoreCacheAmountWritten);
-    NS_DispatchToMainThread(event);
-  }
-}
-
-void CacheObserver::StoreCacheAmountWritten() {
-  mozilla::Preferences::SetInt("browser.cache.disk.amount_written",
-                               sCacheAmountWritten);
 }
 
 // static

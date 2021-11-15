@@ -108,7 +108,7 @@ impl<'a> Decoder<'a> {
     pub fn decode_varint(&mut self) -> Option<u64> {
         let b1 = match self.decode_byte() {
             Some(b) => b,
-            _ => return None,
+            None => return None,
         };
         match b1 >> 6 {
             0 => Some(u64::from(b1 & 0x3f)),
@@ -129,7 +129,7 @@ impl<'a> Decoder<'a> {
     fn decode_checked(&mut self, n: Option<u64>) -> Option<&'a [u8]> {
         let len = match n {
             Some(l) => l,
-            _ => return None,
+            None => return None,
         };
         if let Ok(l) = usize::try_from(len) {
             self.decode(l)
@@ -165,7 +165,7 @@ impl<'a> Deref for Decoder<'a> {
 
 impl<'a> Debug for Decoder<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(&hex_with_len(self))
+        f.write_str(&hex_with_len(&self[..]))
     }
 }
 
@@ -173,6 +173,16 @@ impl<'a> From<&'a [u8]> for Decoder<'a> {
     #[must_use]
     fn from(buf: &'a [u8]) -> Decoder<'a> {
         Decoder::new(buf)
+    }
+}
+
+impl<'a, T> From<&'a T> for Decoder<'a>
+where
+    T: AsRef<[u8]>,
+{
+    #[must_use]
+    fn from(buf: &'a T) -> Decoder<'a> {
+        Decoder::new(buf.as_ref())
     }
 }
 
@@ -202,6 +212,12 @@ impl Encoder {
         }
     }
 
+    /// Static helper to determine how long a varint-prefixed array encodes to.
+    #[must_use]
+    pub fn vvec_len(len: usize) -> usize {
+        Self::varint_len(u64::try_from(len).unwrap()) + len
+    }
+
     /// Default construction of an empty buffer.
     #[must_use]
     pub fn new() -> Self {
@@ -216,6 +232,13 @@ impl Encoder {
         }
     }
 
+    /// Get the capacity of the underlying buffer: the number of bytes that can be
+    /// written without causing an allocation to occur.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.buf.capacity()
+    }
+
     /// Create a view of the current contents of the buffer.
     /// Note: for a view of a slice, use `Decoder::new(&enc[s..e])`
     #[must_use]
@@ -225,7 +248,8 @@ impl Encoder {
 
     /// Don't use this except in testing.
     #[must_use]
-    pub fn from_hex(s: &str) -> Self {
+    pub fn from_hex(s: impl AsRef<str>) -> Self {
+        let s = s.as_ref();
         if s.len() % 2 != 0 {
             panic!("Needs to be even length");
         }
@@ -352,6 +376,12 @@ impl Debug for Encoder {
     }
 }
 
+impl AsRef<[u8]> for Encoder {
+    fn as_ref(&self) -> &[u8] {
+        self.buf.as_ref()
+    }
+}
+
 impl<'a> From<Decoder<'a>> for Encoder {
     #[must_use]
     fn from(dec: Decoder<'a>) -> Self {
@@ -425,7 +455,7 @@ mod tests {
         assert_eq!(dec.decode_remainder(), &[0x01, 0x23, 0x45]);
         assert!(dec.decode(2).is_none());
 
-        let mut dec = Decoder::from(&enc[0..0]);
+        let mut dec = Decoder::from(&[]);
         assert_eq!(dec.decode_remainder().len(), 0);
     }
 
@@ -541,6 +571,40 @@ mod tests {
         let enc = Encoder::from_hex("ff");
         let mut dec = enc.as_decoder();
         dec.skip_vvec();
+    }
+
+    #[test]
+    fn encoded_lengths() {
+        assert_eq!(Encoder::varint_len(0), 1);
+        assert_eq!(Encoder::varint_len(0x3f), 1);
+        assert_eq!(Encoder::varint_len(0x40), 2);
+        assert_eq!(Encoder::varint_len(0x3fff), 2);
+        assert_eq!(Encoder::varint_len(0x4000), 4);
+        assert_eq!(Encoder::varint_len(0x3fff_ffff), 4);
+        assert_eq!(Encoder::varint_len(0x4000_0000), 8);
+    }
+
+    #[test]
+    #[should_panic]
+    fn encoded_length_oob() {
+        let _ = Encoder::varint_len(1 << 62);
+    }
+
+    #[test]
+    fn encoded_vvec_lengths() {
+        assert_eq!(Encoder::vvec_len(0), 1);
+        assert_eq!(Encoder::vvec_len(0x3f), 0x40);
+        assert_eq!(Encoder::vvec_len(0x40), 0x42);
+        assert_eq!(Encoder::vvec_len(0x3fff), 0x4001);
+        assert_eq!(Encoder::vvec_len(0x4000), 0x4004);
+        assert_eq!(Encoder::vvec_len(0x3fff_ffff), 0x4000_0003);
+        assert_eq!(Encoder::vvec_len(0x4000_0000), 0x4000_0008);
+    }
+
+    #[test]
+    #[should_panic]
+    fn encoded_vvec_length_oob() {
+        let _ = Encoder::vvec_len(1 << 62);
     }
 
     #[test]

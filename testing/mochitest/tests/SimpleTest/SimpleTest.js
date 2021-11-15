@@ -110,7 +110,12 @@ let xOriginRunner = {
       "*"
     );
   },
+  _lastAssertionCount: 0,
   testFinished(tests) {
+    var newAssertionCount = SpecialPowers.assertionCount();
+    var numAsserts = newAssertionCount - this._lastAssertionCount;
+    this._lastAssertionCount = newAssertionCount;
+    this.callHarnessMethod("runner", "addAssertionCount", numAsserts);
     this.callHarnessMethod("runner", "testFinished", tests);
   },
   structuredLogger: {
@@ -420,7 +425,7 @@ SimpleTest.record = function(condition, name, diag, stack, expected) {
   if (SimpleTest.expected == "fail") {
     if (!test.result) {
       SimpleTest.num_failed++;
-      test.result = !test.result;
+      test.todo = true;
     }
     successInfo = {
       status: "PASS",
@@ -1212,6 +1217,9 @@ SimpleTest.waitForFocus = function(callback, targetWindow, expectBlankPage) {
  *        interval defined by aTimeout.  When aExpectFailure is true, the argument
  *        aExpectedStringOrValidatorFn must be null, as it won't be used.
  *        Defaults to false.
+ * @param aDontInitializeClipboardIfExpectFailure [optional]
+ *        If aExpectFailure and this is set to true, this does NOT initialize
+ *        clipboard with random data before running aSetupFn.
  */
 SimpleTest.waitForClipboard = function(
   aExpectedStringOrValidatorFn,
@@ -1220,14 +1228,16 @@ SimpleTest.waitForClipboard = function(
   aFailureFn,
   aFlavor,
   aTimeout,
-  aExpectFailure
+  aExpectFailure,
+  aDontInitializeClipboardIfExpectFailure
 ) {
   let promise = SimpleTest.promiseClipboardChange(
     aExpectedStringOrValidatorFn,
     aSetupFn,
     aFlavor,
     aTimeout,
-    aExpectFailure
+    aExpectFailure,
+    aDontInitializeClipboardIfExpectFailure
   );
   promise.then(aSuccessFn).catch(aFailureFn);
 };
@@ -1240,7 +1250,8 @@ SimpleTest.promiseClipboardChange = async function(
   aSetupFn,
   aFlavor,
   aTimeout,
-  aExpectFailure
+  aExpectFailure,
+  aDontInitializeClipboardIfExpectFailure
 ) {
   let requestedFlavor = aFlavor || "text/unicode";
 
@@ -1286,7 +1297,7 @@ SimpleTest.promiseClipboardChange = async function(
 
   let maxPolls = aTimeout ? aTimeout / 100 : 50;
 
-  async function putAndVerify(operationFn, validatorFn, flavor) {
+  async function putAndVerify(operationFn, validatorFn, flavor, expectFailure) {
     await operationFn();
 
     let data;
@@ -1298,7 +1309,7 @@ SimpleTest.promiseClipboardChange = async function(
           preExpectedVal = null;
         } else {
           SimpleTest.ok(
-            !aExpectFailure,
+            !expectFailure,
             "Clipboard has the given value: '" + data + "'"
           );
         }
@@ -1312,28 +1323,43 @@ SimpleTest.promiseClipboardChange = async function(
       });
     }
 
-    SimpleTest.ok(
-      aExpectFailure,
-      "Timed out while polling clipboard for pasted data, got: " + data
-    );
-    if (!aExpectFailure) {
-      throw new Error("failed");
+    let errorMsg = `Timed out while polling clipboard for ${
+      preExpectedVal ? "initialized" : "requested"
+    } data, got: ${data}`;
+    SimpleTest.ok(expectFailure, errorMsg);
+    if (!expectFailure) {
+      throw new Error(errorMsg);
     }
     return data;
   }
 
-  // First we wait for a known value different from the expected one.
-  await putAndVerify(
-    function() {
-      SpecialPowers.clipboardCopyString(preExpectedVal);
-    },
-    function(aData) {
-      return aData == preExpectedVal;
-    },
-    "text/unicode"
-  );
+  if (!aExpectFailure || !aDontInitializeClipboardIfExpectFailure) {
+    // First we wait for a known value different from the expected one.
+    SimpleTest.info(`Initializing clipboard with "${preExpectedVal}"...`);
+    await putAndVerify(
+      function() {
+        SpecialPowers.clipboardCopyString(preExpectedVal);
+      },
+      function(aData) {
+        return aData == preExpectedVal;
+      },
+      "text/unicode",
+      false
+    );
 
-  return putAndVerify(aSetupFn, inputValidatorFn, requestedFlavor);
+    SimpleTest.info(
+      "Succeeded initializing clipboard, start requested things..."
+    );
+  } else {
+    preExpectedVal = null;
+  }
+
+  return putAndVerify(
+    aSetupFn,
+    inputValidatorFn,
+    requestedFlavor,
+    aExpectFailure
+  );
 };
 
 /**
@@ -1414,13 +1440,19 @@ SimpleTest.timeout = async function() {
   SimpleTest._timeoutFunctions = [];
 };
 
+SimpleTest.finishWithFailure = function(msg) {
+  SimpleTest.ok(false, msg);
+  SimpleTest.finish();
+};
+
 /**
  * Finishes the tests. This is automatically called, except when
  * SimpleTest.waitForExplicitFinish() has been invoked.
  **/
 SimpleTest.finish = function() {
   if (SimpleTest._alreadyFinished) {
-    var err = "[SimpleTest.finish()] this test already called finish!";
+    var err =
+      "TEST-UNEXPECTED-FAIL | SimpleTest | this test already called finish!";
     if (parentRunner) {
       parentRunner.structuredLogger.error(err);
     } else {
@@ -2109,9 +2141,7 @@ function getAndroidSdk() {
       var versionString = nav.userAgent.includes("Android")
         ? "version"
         : "sdk_version";
-      gAndroidSdk = SpecialPowers.Cc["@mozilla.org/system-info;1"]
-        .getService(SpecialPowers.Ci.nsIPropertyBag2)
-        .getProperty(versionString);
+      gAndroidSdk = SpecialPowers.Services.sysinfo.getProperty(versionString);
     }
     document.documentElement.removeChild(iframe);
   }

@@ -8,11 +8,13 @@
 #define mozilla_dom_GamepadManager_h_
 
 #include "nsIObserver.h"
+#include "nsRefPtrHashtable.h"
 // Needed for GamepadMappingType
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadServiceType.h"
 
 class nsGlobalWindowInner;
+class nsIGlobalObject;
 
 namespace mozilla {
 namespace gfx {
@@ -119,11 +121,7 @@ class GamepadManager final : public nsIObserver {
   // true when shutdown has begun
   bool mShuttingDown;
 
-  // Gamepad IPDL child
-  // This pointer is only used by this singleton instance and
-  // will be destroyed during the IPDL shutdown chain, so we
-  // don't need to refcount it here.
-  nsTArray<GamepadEventChannelChild*> mChannelChildren;
+  RefPtr<GamepadEventChannelChild> mChannelChild;
 
  private:
   nsresult Init();
@@ -133,7 +131,11 @@ class GamepadManager final : public nsIObserver {
 
   bool SetGamepadByEvent(const GamepadChangeEvent& aEvent,
                          nsGlobalWindowInner* aWindow = nullptr);
-
+  // To avoid unintentionally causing the gamepad be activated.
+  // Returns false if this gamepad hasn't been seen by this window
+  // and the axis move data is less than AXIS_FIRST_INTENT_THRESHOLD_VALUE.
+  bool AxisMoveIsFirstIntent(nsGlobalWindowInner* aWindow, uint32_t aIndex,
+                             const GamepadChangeEvent& aEvent);
   bool MaybeWindowHasSeenGamepad(nsGlobalWindowInner* aWindow, uint32_t aIndex);
   // Returns true if we have already sent data from this gamepad
   // to this window. This should only return true if the user

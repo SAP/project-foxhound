@@ -25,7 +25,10 @@
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/CharacterEncoding.h"
+#include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType, JS_GetArrayBufferViewData, JS_GetTypedArrayLength, JS_IsTypedArrayObject
 #include "js/MemoryFunctions.h"
+#include "js/Object.h"  // JS::GetClass
+#include "js/String.h"  // JS::StringHasLatin1Chars
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
@@ -50,7 +53,7 @@ using namespace JS;
 
 // static
 bool XPCConvert::GetISupportsFromJSObject(JSObject* obj, nsISupports** iface) {
-  const JSClass* jsclass = js::GetObjectClass(obj);
+  const JSClass* jsclass = JS::GetClass(obj);
   MOZ_ASSERT(jsclass, "obj has no class");
   if (jsclass && (jsclass->flags & JSCLASS_HAS_PRIVATE) &&
       (jsclass->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS)) {
@@ -260,7 +263,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
         }
 
         size_t written = LossyConvertUtf8toLatin1(
-            *utf8String, MakeSpan(reinterpret_cast<char*>(buffer.get()), len));
+            *utf8String, Span(reinterpret_cast<char*>(buffer.get()), len));
         buffer[written] = 0;
 
         // written can never exceed len, so the truncation is OK.
@@ -298,8 +301,8 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       // code units in the source. That's why it's OK to claim the
       // output buffer has len + 1 space but then still expect to
       // have space for the zero terminator.
-      size_t written = ConvertUtf8toUtf16(
-          *utf8String, MakeSpan(buffer.get(), allocLen.value()));
+      size_t written =
+          ConvertUtf8toUtf16(*utf8String, Span(buffer.get(), allocLen.value()));
       MOZ_RELEASE_ASSERT(written <= len);
       buffer[written] = 0;
 
@@ -566,7 +569,7 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
       }
 
 #ifdef DEBUG
-      if (JS_StringHasLatin1Chars(str)) {
+      if (JS::StringHasLatin1Chars(str)) {
         size_t len;
         AutoCheckCannotGC nogc;
         const Latin1Char* chars =
@@ -685,7 +688,7 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
       }
 
       mozilla::DebugOnly<size_t> written = JS::DeflateStringToUTF8Buffer(
-          linear, mozilla::MakeSpan(rs->BeginWriting(), utf8Length));
+          linear, mozilla::Span(rs->BeginWriting(), utf8Length));
       MOZ_ASSERT(written == utf8Length);
 
       return true;
@@ -1109,8 +1112,7 @@ nsresult XPCConvert::ConstructException(nsresult rv, const char* message,
     msgStr.AppendPrintf(format, msg, ifaceName, methodName);
   }
 
-  RefPtr<Exception> e =
-      new Exception(msgStr, rv, EmptyCString(), nullptr, data);
+  RefPtr<Exception> e = new Exception(msgStr, rv, ""_ns, nullptr, data);
 
   if (cx && jsExceptionPtr) {
     e->StowJSVal(*jsExceptionPtr);

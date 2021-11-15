@@ -13,6 +13,7 @@
 #include "nsArray.h"
 #include "nsString.h"
 #include "nsIContentInlines.h"
+#include "nsIScrollableFrame.h"
 #include "mozilla/dom/Document.h"
 #include "ChildIterator.h"
 #include "nsComputedDOMStyle.h"
@@ -442,6 +443,12 @@ static uint8_t ToServoCssType(InspectorPropertyType aType) {
   }
 }
 
+bool InspectorUtils::Supports(GlobalObject&, const nsACString& aDeclaration,
+                              const SupportsOptions& aOptions) {
+  return Servo_CSSSupports(&aDeclaration, aOptions.mUserAgent, aOptions.mChrome,
+                           aOptions.mQuirks);
+}
+
 bool InspectorUtils::CssPropertySupportsType(GlobalObject& aGlobalObject,
                                              const nsACString& aProperty,
                                              InspectorPropertyType aType,
@@ -483,12 +490,19 @@ void InspectorUtils::RgbToColorName(GlobalObject& aGlobalObject, uint8_t aR,
 }
 
 /* static */
-void InspectorUtils::ColorToRGBA(GlobalObject& aGlobalObject,
-                                 const nsACString& aColorString,
+void InspectorUtils::ColorToRGBA(GlobalObject&, const nsACString& aColorString,
+                                 const Document* aDoc,
                                  Nullable<InspectorRGBATuple>& aResult) {
   nscolor color = NS_RGB(0, 0, 0);
 
-  if (!ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0), aColorString,
+  ServoStyleSet* styleSet = nullptr;
+  if (aDoc) {
+    if (PresShell* ps = aDoc->GetPresShell()) {
+      styleSet = ps->StyleSet();
+    }
+  }
+
+  if (!ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorString,
                                     &color)) {
     aResult.SetNull();
     return;
@@ -775,17 +789,17 @@ static void AddOverflowingChildrenOfElement(const nsIFrame* aFrame,
 already_AddRefed<nsINodeList> InspectorUtils::GetOverflowingChildrenOfElement(
     GlobalObject& aGlobal, Element& aElement) {
   RefPtr<nsSimpleContentList> list = new nsSimpleContentList(&aElement);
-  nsIFrame* primaryFrame = aElement.GetPrimaryFrame(FlushType::Frames);
-
-  const nsIScrollableFrame* scrollFrame = do_QueryFrame(primaryFrame);
-  // primaryFrame must be nsIScrollableFrame
+  const nsIScrollableFrame* scrollFrame = aElement.GetScrollFrame();
+  // Element must have a nsIScrollableFrame
   if (!scrollFrame) {
     return list.forget();
   }
 
   auto scrollPortRect = scrollFrame->GetScrollPortRect();
-  AddOverflowingChildrenOfElement(scrollFrame->GetScrolledFrame(), primaryFrame,
-                                  scrollPortRect, *list);
+  const nsIFrame* outerFrame = do_QueryFrame(scrollFrame);
+  const nsIFrame* scrolledFrame = scrollFrame->GetScrolledFrame();
+  AddOverflowingChildrenOfElement(scrolledFrame, outerFrame, scrollPortRect,
+                                  *list);
   return list.forget();
 }
 

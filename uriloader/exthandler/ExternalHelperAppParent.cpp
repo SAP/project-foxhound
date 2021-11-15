@@ -17,9 +17,9 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "nsNetUtil.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/net/ChannelDiverterParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "nsQueryObject.h"
 
 #include "mozilla/Unused.h"
 
@@ -39,12 +39,7 @@ ExternalHelperAppParent::ExternalHelperAppParent(
     const uint32_t& aContentDispositionHint,
     const nsString& aContentDispositionFilename)
     : mURI(uri),
-      mPending(false)
-#ifdef DEBUG
-      ,
-      mDiverted(false)
-#endif
-      ,
+      mPending(false),
       mIPCClosed(false),
       mLoadFlags(0),
       mStatus(NS_OK),
@@ -95,9 +90,11 @@ void ExternalHelperAppParent::Init(
 
   helperAppService->CreateListener(aMimeContentType, this, aContext, aForceSave,
                                    nullptr, getter_AddRefs(mListener));
-
-  if (mListener && aShouldCloseWindow) {
-    mListener->SetShouldCloseWindow();
+  if (aShouldCloseWindow) {
+    RefPtr<nsExternalAppHandler> handler = do_QueryObject(mListener);
+    if (handler) {
+      handler->SetShouldCloseWindow();
+    }
   }
 }
 
@@ -113,9 +110,6 @@ void ExternalHelperAppParent::Delete() {
 
 mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnStartRequest(
     const nsCString& entityID) {
-  MOZ_ASSERT(!mDiverted,
-             "child forwarding callbacks after request was diverted");
-
   mEntityID = entityID;
   mPending = true;
   mStatus = mListener->OnStartRequest(this);
@@ -128,14 +122,11 @@ mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnDataAvailable(
     return IPC_OK();
   }
 
-  MOZ_ASSERT(!mDiverted,
-             "child forwarding callbacks after request was diverted");
   MOZ_ASSERT(mPending, "must be pending!");
 
   nsCOMPtr<nsIInputStream> stringStream;
-  DebugOnly<nsresult> rv =
-      NS_NewByteInputStream(getter_AddRefs(stringStream),
-                            MakeSpan(data).To(count), NS_ASSIGNMENT_DEPEND);
+  DebugOnly<nsresult> rv = NS_NewByteInputStream(
+      getter_AddRefs(stringStream), Span(data).To(count), NS_ASSIGNMENT_DEPEND);
   NS_ASSERTION(NS_SUCCEEDED(rv), "failed to create dependent string!");
   mStatus = mListener->OnDataAvailable(this, stringStream, offset, count);
 
@@ -144,25 +135,10 @@ mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnDataAvailable(
 
 mozilla::ipc::IPCResult ExternalHelperAppParent::RecvOnStopRequest(
     const nsresult& code) {
-  MOZ_ASSERT(!mDiverted,
-             "child forwarding callbacks after request was diverted");
-
   mPending = false;
   mListener->OnStopRequest(
       this, (NS_SUCCEEDED(code) && NS_FAILED(mStatus)) ? mStatus : code);
   Delete();
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult ExternalHelperAppParent::RecvDivertToParentUsing(
-    PChannelDiverterParent* diverter) {
-  MOZ_ASSERT(diverter);
-  auto p = static_cast<mozilla::net::ChannelDiverterParent*>(diverter);
-  p->DivertTo(this);
-#ifdef DEBUG
-  mDiverted = true;
-#endif
-  Unused << mozilla::net::ChannelDiverterParent::Send__delete__(p);
   return IPC_OK();
 }
 
@@ -174,19 +150,16 @@ NS_IMETHODIMP
 ExternalHelperAppParent::OnDataAvailable(nsIRequest* request,
                                          nsIInputStream* input, uint64_t offset,
                                          uint32_t count) {
-  MOZ_ASSERT(mDiverted);
   return mListener->OnDataAvailable(request, input, offset, count);
 }
 
 NS_IMETHODIMP
 ExternalHelperAppParent::OnStartRequest(nsIRequest* request) {
-  MOZ_ASSERT(mDiverted);
   return mListener->OnStartRequest(request);
 }
 
 NS_IMETHODIMP
 ExternalHelperAppParent::OnStopRequest(nsIRequest* request, nsresult status) {
-  MOZ_ASSERT(mDiverted);
   nsresult rv = mListener->OnStopRequest(request, status);
   Delete();
   return rv;

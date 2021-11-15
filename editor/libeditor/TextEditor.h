@@ -87,6 +87,11 @@ class TextEditor : public EditorBase, public nsITimerCallback, public nsINamed {
   MOZ_CAN_RUN_SCRIPT nsresult CutAsAction(nsIPrincipal* aPrincipal = nullptr);
 
   /**
+   * See Document::AreClipboardCommandsUnconditionallyEnabled.
+   */
+  bool AreClipboardCommandsUnconditionallyEnabled() const;
+
+  /**
    * IsCutCommandEnabled() returns whether cut command can be enabled or
    * disabled.  This always returns true if we're in non-chrome HTML/XHTML
    * document.  Otherwise, same as the result of `IsCopyToClipboardAllowed()`.
@@ -211,17 +216,27 @@ class TextEditor : public EditorBase, public nsITimerCallback, public nsINamed {
   int32_t MaxTextLength() const { return mMaxTextLength; }
   void SetMaxTextLength(int32_t aLength) { mMaxTextLength = aLength; }
 
+  enum class AllowBeforeInputEventCancelable {
+    No,
+    Yes,
+  };
+
   /**
    * Replace existed string with a string.
    * This is fast path to replace all string when using single line control.
    *
    * @param aString             The string to be set
+   * @param aAllowBeforeInputEventCancelable
+   *                            Whether `beforeinput` event which will be
+   *                            dispatched for this can be cancelable or not.
    * @param aPrincipal          Set subject principal if it may be called by
    *                            JS.  If set to nullptr, will be treated as
    *                            called by system.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  SetTextAsAction(const nsAString& aString, nsIPrincipal* aPrincipal = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult SetTextAsAction(
+      const nsAString& aString,
+      AllowBeforeInputEventCancelable aAllowBeforeInputEventCancelable,
+      nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * Replace text in aReplaceRange or all text in this editor with aString and
@@ -230,13 +245,17 @@ class TextEditor : public EditorBase, public nsITimerCallback, public nsINamed {
    * @param aString             The string to set.
    * @param aReplaceRange       The range to be replaced.
    *                            If nullptr, all contents will be replaced.
+   * @param aAllowBeforeInputEventCancelable
+   *                            Whether `beforeinput` event which will be
+   *                            dispatched for this can be cancelable or not.
    * @param aPrincipal          Set subject principal if it may be called by
    *                            JS.  If set to nullptr, will be treated as
    *                            called by system.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  ReplaceTextAsAction(const nsAString& aString, nsRange* aReplaceRange,
-                      nsIPrincipal* aPrincipal = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult ReplaceTextAsAction(
+      const nsAString& aString, nsRange* aReplaceRange,
+      AllowBeforeInputEventCancelable aAllowBeforeInputEventCancelable,
+      nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * InsertLineBreakAsAction() is called when user inputs a line break with
@@ -687,7 +706,7 @@ class TextEditor : public EditorBase, public nsITimerCallback, public nsINamed {
    * principals match, or we are in a editor context where this doesn't matter.
    * Otherwise, the data must be sanitized first.
    */
-  bool IsSafeToInsertData(Document* aSourceDoc);
+  bool IsSafeToInsertData(const Document* aSourceDoc) const;
 
   /**
    * GetAndInitDocEncoder() returns a document encoder instance for aFormatType

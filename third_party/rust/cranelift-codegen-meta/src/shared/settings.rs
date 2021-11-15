@@ -157,7 +157,7 @@ pub(crate) fn define() -> SettingGroup {
         r#"
             Enable safepoint instruction insertions.
 
-            This will allow the emit_stackmaps() function to insert the safepoint
+            This will allow the emit_stack_maps() function to insert the safepoint
             instruction on top of calls and interrupt traps in order to display the
             live reference values at that point in the program.
             "#,
@@ -194,6 +194,7 @@ pub(crate) fn define() -> SettingGroup {
             "windows_fastcall",
             "baldrdash_system_v",
             "baldrdash_windows",
+            "baldrdash_2020",
             "probestack",
         ],
     );
@@ -270,7 +271,7 @@ pub(crate) fn define() -> SettingGroup {
         "enable_heap_access_spectre_mitigation",
         r#"
         Enable Spectre mitigation on heap bounds checks.
-        
+
         This is a no-op for any heap that needs no bounds checks; e.g.,
         if the limit is static and the guard region is large enough that
         the index cannot reach past it.

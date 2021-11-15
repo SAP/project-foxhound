@@ -31,8 +31,8 @@
 #include "UnitTransforms.h"
 #include "gfxEnv.h"
 #include "nsDisplayListInvalidation.h"
+#include "nsLayoutUtils.h"
 #include "WebRenderCanvasRenderer.h"
-#include "LayersLogging.h"
 #include "LayerTreeInvalidation.h"
 
 namespace mozilla {
@@ -758,11 +758,12 @@ struct DIGroup {
     // cf. Bug 1455422.
     // wr::LayoutRect clip = wr::ToLayoutRect(bounds.Intersect(mVisibleRect));
 
-    aBuilder.SetHitTestInfo(mScrollId, hitInfo, SideBits::eNone);
+    aBuilder.PushHitTest(dest, dest, !backfaceHidden, mScrollId, hitInfo,
+                         SideBits::eNone);
+
     aBuilder.PushImage(dest, dest, !backfaceHidden,
                        wr::ToImageRendering(sampleFilter),
                        wr::AsImageKey(*mKey));
-    aBuilder.ClearHitTestInfo();
   }
 
   void PaintItemRange(Grouper* aGrouper, nsDisplayItem* aStartItem,
@@ -1691,6 +1692,24 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
 
     DisplayItemType itemType = item->GetType();
 
+    // If this is an unscrolled background color item, in the root display list
+    // for the parent process, consider doing opaque checks.
+    if (XRE_IsParentProcess() && !aWrappingItem &&
+        itemType == DisplayItemType::TYPE_BACKGROUND_COLOR &&
+        !item->GetActiveScrolledRoot() &&
+        item->GetClip().GetRoundedRectCount() == 0) {
+      bool snap;
+      nsRegion opaque = item->GetOpaqueRegion(aDisplayListBuilder, &snap);
+      if (opaque.GetNumRects() == 1) {
+        nsRect clippedOpaque =
+            item->GetClip().ApplyNonRoundedIntersection(opaque.GetBounds());
+        if (!clippedOpaque.IsEmpty()) {
+          aDisplayListBuilder->AddWindowOpaqueRegion(item->Frame(),
+                                                     clippedOpaque);
+        }
+      }
+    }
+
     bool forceNewLayerData = false;
     size_t layerCountBeforeRecursing = mLayerScrollData.size();
     if (apzEnabled) {
@@ -1856,17 +1875,11 @@ Maybe<wr::ImageKey> WebRenderCommandBuilder::CreateImageKey(
 
     LayoutDeviceRect rect = aAsyncImageBounds.value();
     LayoutDeviceRect scBounds(LayoutDevicePoint(0, 0), rect.Size());
-    gfx::MaybeIntSize scaleToSize;
-    if (!aContainer->GetScaleHint().IsEmpty()) {
-      scaleToSize = Some(aContainer->GetScaleHint());
-    }
-    gfx::Matrix4x4 transform =
-        gfx::Matrix4x4::From2D(aContainer->GetTransformHint());
     // TODO!
     // We appear to be using the image bridge for a lot (most/all?) of
     // layers-free image handling and that breaks frame consistency.
     imageData->CreateAsyncImageWebRenderCommands(
-        aBuilder, aContainer, aSc, rect, scBounds, transform, scaleToSize,
+        aBuilder, aContainer, aSc, rect, scBounds, aContainer->GetRotation(),
         aRendering, wr::MixBlendMode::Normal, !aItem->BackfaceIsHidden());
     return Nothing();
   }
@@ -1932,6 +1945,8 @@ bool BuildLayer(nsDisplayItem* aItem, BlobItemData* aData,
   RefPtr<Layer> root = aItem->AsPaintedDisplayItem()->BuildLayer(
       aDisplayListBuilder, blm, param);
 
+  aDisplayListBuilder->NotifyAndClearScrollFrames();
+
   if (root) {
     blm->SetRoot(root);
     layerBuilder->WillEndTransaction();
@@ -1974,6 +1989,8 @@ static bool PaintByLayer(nsDisplayItem* aItem,
   RefPtr<Layer> root = aItem->AsPaintedDisplayItem()->BuildLayer(
       aDisplayListBuilder, aManager, param);
 
+  aDisplayListBuilder->NotifyAndClearScrollFrames();
+
   if (root) {
     aManager->SetRoot(root);
     layerBuilder->WillEndTransaction();
@@ -2000,9 +2017,8 @@ static bool PaintByLayer(nsDisplayItem* aItem,
         aItem->Name(), aItem->Frame());
     std::stringstream stream;
     aManager->Dump(stream, "", gfxEnv::DumpPaintToFile());
-    fprint_stderr(
-        gfxUtils::sDumpPaintFile,
-        stream);  // not a typo, fprint_stderr declared in LayersLogging.h
+    fprint_stderr(gfxUtils::sDumpPaintFile,
+                  stream);  // not a typo, fprint_stderr declared in nsDebug.h
   }
 #endif
 

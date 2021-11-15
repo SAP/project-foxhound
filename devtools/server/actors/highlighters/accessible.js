@@ -9,25 +9,20 @@ const {
 } = require("devtools/server/actors/highlighters/auto-refresh");
 const {
   CanvasFrameAnonymousContentHelper,
-  createNode,
-  createSVGNode,
   isNodeValid,
 } = require("devtools/server/actors/highlighters/utils/markup");
 const {
   TEXT_NODE,
   DOCUMENT_NODE,
 } = require("devtools/shared/dom-node-constants");
-const { setIgnoreLayoutChanges } = require("devtools/shared/layout/utils");
+const {
+  getCurrentZoom,
+  setIgnoreLayoutChanges,
+} = require("devtools/shared/layout/utils");
 
 loader.lazyRequireGetter(
   this,
-  "getBounds",
-  "devtools/server/actors/highlighters/utils/accessibility",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "Infobar",
+  ["getBounds", "getBoundsXUL", "Infobar"],
   "devtools/server/actors/highlighters/utils/accessibility",
   true
 );
@@ -84,6 +79,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
       this.highlighterEnv,
       this._buildMarkup.bind(this)
     );
+    this.isReady = this.markup.initialize();
 
     this.onPageHide = this.onPageHide.bind(this);
     this.onWillNavigate = this.onWillNavigate.bind(this);
@@ -95,19 +91,27 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
   }
 
   /**
+   * Static getter that indicates that AccessibleHighlighter supports
+   * highlighting in XUL windows.
+   */
+  static get XULSupported() {
+    return true;
+  }
+
+  /**
    * Build highlighter markup.
    *
    * @return {Object} Container element for the highlighter markup.
    */
   _buildMarkup() {
-    const container = createNode(this.win, {
+    const container = this.markup.createNode({
       attributes: {
         class: "highlighter-container",
         "aria-hidden": "true",
       },
     });
 
-    const root = createNode(this.win, {
+    const root = this.markup.createNode({
       parent: container,
       attributes: {
         id: "root",
@@ -117,7 +121,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
     });
 
     // Build the SVG element.
-    const svg = createSVGNode(this.win, {
+    const svg = this.markup.createSVGNode({
       nodeType: "svg",
       parent: root,
       attributes: {
@@ -129,7 +133,7 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
       prefix: this.ID_CLASS_PREFIX,
     });
 
-    createSVGNode(this.win, {
+    this.markup.createSVGNode({
       nodeType: "path",
       parent: svg,
       attributes: {
@@ -318,7 +322,20 @@ class AccessibleHighlighter extends AutoRefreshHighlighter {
    *                       information for the accessible object.
    */
   get _bounds() {
-    return getBounds(this.win, this.options);
+    let { win, options } = this;
+    let getBoundsFn = getBounds;
+    if (this.options.isXUL) {
+      // Zoom level for the top level browser window does not change and only
+      // inner frames do. So we need to get the zoom level of the current node's
+      // parent window.
+      let zoom = getCurrentZoom(this.currentNode);
+      zoom *= zoom;
+      options = { ...options, zoom };
+      getBoundsFn = getBoundsXUL;
+      win = this.win.parent.ownerGlobal;
+    }
+
+    return getBoundsFn(win, options);
   }
 
   /**

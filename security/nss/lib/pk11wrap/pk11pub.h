@@ -9,6 +9,7 @@
 #include "secdert.h"
 #include "keythi.h"
 #include "certt.h"
+#include "pk11hpke.h"
 #include "pkcs11t.h"
 #include "secmodt.h"
 #include "seccomon.h"
@@ -267,6 +268,8 @@ CK_MECHANISM_TYPE PK11_MapSignKeyType(KeyType keyType);
  **********************************************************************/
 void PK11_FreeSymKey(PK11SymKey *key);
 PK11SymKey *PK11_ReferenceSymKey(PK11SymKey *symKey);
+PK11SymKey *PK11_ImportDataKey(PK11SlotInfo *slot, CK_MECHANISM_TYPE type, PK11Origin origin,
+                               CK_ATTRIBUTE_TYPE operation, SECItem *key, void *wincx);
 PK11SymKey *PK11_ImportSymKey(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                               PK11Origin origin, CK_ATTRIBUTE_TYPE operation, SECItem *key, void *wincx);
 PK11SymKey *PK11_ImportSymKeyWithFlags(PK11SlotInfo *slot,
@@ -354,6 +357,11 @@ void *PK11_GetSymKeyUserData(PK11SymKey *symKey);
 
 SECStatus PK11_PubWrapSymKey(CK_MECHANISM_TYPE type, SECKEYPublicKey *pubKey,
                              PK11SymKey *symKey, SECItem *wrappedKey);
+SECStatus PK11_PubWrapSymKeyWithMechanism(SECKEYPublicKey *pubKey,
+                                          CK_MECHANISM_TYPE mechType,
+                                          SECItem *param,
+                                          PK11SymKey *symKey,
+                                          SECItem *wrappedKey);
 SECStatus PK11_WrapSymKey(CK_MECHANISM_TYPE type, SECItem *params,
                           PK11SymKey *wrappingKey, PK11SymKey *symKey, SECItem *wrappedKey);
 /* move a key to 'slot' optionally set the key attributes according to either
@@ -448,6 +456,13 @@ PK11SymKey *PK11_UnwrapSymKeyWithFlagsPerm(PK11SymKey *wrappingKey,
  */
 PK11SymKey *PK11_PubUnwrapSymKey(SECKEYPrivateKey *key, SECItem *wrapppedKey,
                                  CK_MECHANISM_TYPE target, CK_ATTRIBUTE_TYPE operation, int keySize);
+PK11SymKey *PK11_PubUnwrapSymKeyWithMechanism(SECKEYPrivateKey *key,
+                                              CK_MECHANISM_TYPE mechType,
+                                              SECItem *param,
+                                              SECItem *wrapppedKey,
+                                              CK_MECHANISM_TYPE target,
+                                              CK_ATTRIBUTE_TYPE operation,
+                                              int keySize);
 PK11SymKey *PK11_PubUnwrapSymKeyWithFlagsPerm(SECKEYPrivateKey *wrappingKey,
                                               SECItem *wrappedKey, CK_MECHANISM_TYPE target,
                                               CK_ATTRIBUTE_TYPE operation, int keySize,
@@ -711,6 +726,36 @@ CK_BBOOL PK11_HasAttributeSet(PK11SlotInfo *slot,
                               CK_OBJECT_HANDLE id,
                               CK_ATTRIBUTE_TYPE type,
                               PRBool haslock /* must be set to PR_FALSE */);
+
+/**********************************************************************
+ *                   Hybrid Public Key Encryption  (draft-05)
+ **********************************************************************/
+/*
+ * NOTE: All HPKE functions will fail with SEC_ERROR_INVALID_ALGORITHM
+ * unless NSS is compiled with NSS_ENABLE_DRAFT_HPKE while spec (and
+ * implementation) is in draft. The eventual RFC number is an input to
+ * the key schedule, so applications opting into this MUST be prepared for
+ * outputs to change when the implementation is updated or finalized. */
+
+/* Some of the various HPKE arguments would ideally be const, but the
+ * underlying PK11 functions take them as non-const. To avoid lying to
+ * the application with a cast, this idiosyncrasy is exposed. */
+SECStatus PK11_HPKE_ValidateParameters(HpkeKemId kemId, HpkeKdfId kdfId, HpkeAeadId aeadId);
+HpkeContext *PK11_HPKE_NewContext(HpkeKemId kemId, HpkeKdfId kdfId, HpkeAeadId aeadId,
+                                  PK11SymKey *psk, const SECItem *pskId);
+SECStatus PK11_HPKE_Deserialize(const HpkeContext *cx, const PRUint8 *enc,
+                                unsigned int encLen, SECKEYPublicKey **outPubKey);
+void PK11_HPKE_DestroyContext(HpkeContext *cx, PRBool freeit);
+const SECItem *PK11_HPKE_GetEncapPubKey(const HpkeContext *cx);
+SECStatus PK11_HPKE_ExportSecret(const HpkeContext *cx, const SECItem *info, unsigned int L,
+                                 PK11SymKey **outKey);
+SECStatus PK11_HPKE_Open(HpkeContext *cx, const SECItem *aad, const SECItem *ct, SECItem **outPt);
+SECStatus PK11_HPKE_Seal(HpkeContext *cx, const SECItem *aad, const SECItem *pt, SECItem **outCt);
+SECStatus PK11_HPKE_Serialize(const SECKEYPublicKey *pk, PRUint8 *buf, unsigned int *len, unsigned int maxLen);
+SECStatus PK11_HPKE_SetupS(HpkeContext *cx, const SECKEYPublicKey *pkE, SECKEYPrivateKey *skE,
+                           SECKEYPublicKey *pkR, const SECItem *info);
+SECStatus PK11_HPKE_SetupR(HpkeContext *cx, const SECKEYPublicKey *pkR, SECKEYPrivateKey *skR,
+                           const SECItem *enc, const SECItem *info);
 
 /**********************************************************************
  *                   Sign/Verify

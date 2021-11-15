@@ -20,6 +20,7 @@
 use crate::ir::{self, types, SourceLoc};
 use crate::machinst::*;
 use crate::settings;
+use crate::timing;
 
 use regalloc::Function as RegallocFunction;
 use regalloc::Set as RegallocSet;
@@ -85,7 +86,7 @@ pub struct VCode<I: VCodeInst> {
     block_order: BlockLoweringOrder,
 
     /// ABI object.
-    abi: Box<dyn ABIBody<I = I>>,
+    abi: Box<dyn ABICallee<I = I>>,
 
     /// Safepoint instruction indices. Filled in post-regalloc. (Prior to
     /// regalloc, the safepoint instructions are listed in the separate
@@ -93,7 +94,7 @@ pub struct VCode<I: VCodeInst> {
     safepoint_insns: Vec<InsnIndex>,
 
     /// For each safepoint entry in `safepoint_insns`, a list of `SpillSlot`s.
-    /// These are used to generate actual stackmaps at emission. Filled in
+    /// These are used to generate actual stack maps at emission. Filled in
     /// post-regalloc.
     safepoint_slots: Vec<Vec<SpillSlot>>,
 }
@@ -116,8 +117,8 @@ pub struct VCodeBuilder<I: VCodeInst> {
     /// In-progress VCode.
     vcode: VCode<I>,
 
-    /// In-progress stackmap-request info.
-    stackmap_info: StackmapRequestInfo,
+    /// In-progress stack map-request info.
+    stack_map_info: StackmapRequestInfo,
 
     /// Index of the last block-start in the vcode.
     block_start: InsnIndex,
@@ -131,10 +132,10 @@ pub struct VCodeBuilder<I: VCodeInst> {
 
 impl<I: VCodeInst> VCodeBuilder<I> {
     /// Create a new VCodeBuilder.
-    pub fn new(abi: Box<dyn ABIBody<I = I>>, block_order: BlockLoweringOrder) -> VCodeBuilder<I> {
+    pub fn new(abi: Box<dyn ABICallee<I = I>>, block_order: BlockLoweringOrder) -> VCodeBuilder<I> {
         let reftype_class = I::ref_type_regclass(abi.flags());
         let vcode = VCode::new(abi, block_order);
-        let stackmap_info = StackmapRequestInfo {
+        let stack_map_info = StackmapRequestInfo {
             reftype_class,
             reftyped_vregs: vec![],
             safepoint_insns: vec![],
@@ -142,7 +143,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
 
         VCodeBuilder {
             vcode,
-            stackmap_info,
+            stack_map_info,
             block_start: 0,
             succ_start: 0,
             cur_srcloc: SourceLoc::default(),
@@ -150,7 +151,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
     }
 
     /// Access the ABI object.
-    pub fn abi(&mut self) -> &mut dyn ABIBody<I = I> {
+    pub fn abi(&mut self) -> &mut dyn ABICallee<I = I> {
         &mut *self.vcode.abi
     }
 
@@ -168,7 +169,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
         }
         self.vcode.vreg_types[vreg.get_index()] = ty;
         if is_reftype(ty) {
-            self.stackmap_info.reftyped_vregs.push(vreg);
+            self.stack_map_info.reftyped_vregs.push(vreg);
             self.vcode.have_ref_values = true;
         }
     }
@@ -221,7 +222,7 @@ impl<I: VCodeInst> VCodeBuilder<I> {
         self.vcode.insts.push(insn);
         self.vcode.srclocs.push(self.cur_srcloc);
         if is_safepoint {
-            self.stackmap_info
+            self.stack_map_info
                 .safepoint_insns
                 .push(InstIx::new((self.vcode.insts.len() - 1) as u32));
         }
@@ -238,12 +239,12 @@ impl<I: VCodeInst> VCodeBuilder<I> {
     }
 
     /// Build the final VCode, returning the vcode itself as well as auxiliary
-    /// information, such as the stackmap request information.
+    /// information, such as the stack map request information.
     pub fn build(self) -> (VCode<I>, StackmapRequestInfo) {
         // TODO: come up with an abstraction for "vcode and auxiliary data". The
         // auxiliary data needs to be separate from the vcode so that it can be
         // referenced as the vcode is mutated (e.g. by the register allocator).
-        (self.vcode, self.stackmap_info)
+        (self.vcode, self.stack_map_info)
     }
 }
 
@@ -262,7 +263,7 @@ fn is_reftype(ty: Type) -> bool {
 
 impl<I: VCodeInst> VCode<I> {
     /// New empty VCode.
-    fn new(abi: Box<dyn ABIBody<I = I>>, block_order: BlockLoweringOrder) -> VCode<I> {
+    fn new(abi: Box<dyn ABICallee<I = I>>, block_order: BlockLoweringOrder) -> VCode<I> {
         VCode {
             liveins: abi.liveins(),
             liveouts: abi.liveouts(),
@@ -424,6 +425,7 @@ impl<I: VCodeInst> VCode<I> {
     where
         I: MachInstEmit,
     {
+        let _tt = timing::vcode_emit();
         let mut buffer = MachBuffer::new();
         let mut state = I::State::new(&*self.abi);
 
@@ -458,11 +460,11 @@ impl<I: VCodeInst> VCode<I> {
                     && self.safepoint_insns[safepoint_idx] == iix
                 {
                     if self.safepoint_slots[safepoint_idx].len() > 0 {
-                        let stackmap = self.abi.spillslots_to_stackmap(
+                        let stack_map = self.abi.spillslots_to_stack_map(
                             &self.safepoint_slots[safepoint_idx][..],
                             &state,
                         );
-                        state.pre_safepoint(stackmap);
+                        state.pre_safepoint(stack_map);
                     }
                     safepoint_idx += 1;
                 }

@@ -20,6 +20,7 @@
 #include "mozilla/dom/LocationBase.h"
 #include "mozilla/dom/MaybeDiscarded.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/ScreenOrientationBinding.h"
 #include "mozilla/dom/SyncedContext.h"
 #include "nsCOMPtr.h"
@@ -36,6 +37,7 @@ class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
 class nsIPrincipal;
 class nsOuterWindowProxy;
+struct nsPoint;
 class PickleIterator;
 
 namespace IPC {
@@ -63,6 +65,9 @@ class ContentParent;
 class Element;
 template <typename>
 struct Nullable;
+template <typename T>
+class Sequence;
+class SessionHistoryInfo;
 class SessionStorageManager;
 class StructuredCloneHolder;
 class WindowContext;
@@ -85,6 +90,12 @@ class WindowProxyHolder;
   FIELD(Name, nsString)                                                      \
   FIELD(Closed, bool)                                                        \
   FIELD(IsActive, bool)                                                      \
+  /* Top()-only. If true, new-playing media will be suspended when in an     \
+   * inactive browsing context. */                                           \
+  FIELD(SuspendMediaWhenInactive, bool)                                      \
+  /* If true, we're within the nested event loop in window.open, and this    \
+   * context may not be used as the target of a load */                      \
+  FIELD(PendingInitialization, bool)                                         \
   FIELD(OpenerPolicy, nsILoadInfo::CrossOriginOpenerPolicy)                  \
   /* Current opener for the BrowsingContext. Weak reference */               \
   FIELD(OpenerId, uint64_t)                                                  \
@@ -114,6 +125,16 @@ class WindowProxyHolder;
   FIELD(HistoryID, nsID)                                                     \
   FIELD(InRDMPane, bool)                                                     \
   FIELD(Loading, bool)                                                       \
+  /* A field only set on top browsing contexts, which indicates that either: \
+   *                                                                         \
+   *  * This is a browsing context created explicitly for printing or print  \
+   *    preview (thus hosting static documents).                             \
+   *                                                                         \
+   *  * This is a browsing context where something in this tree is calling   \
+   *    window.print() (and thus showing a modal dialog).                    \
+   *                                                                         \
+   * We use it exclusively to block navigation for both of these cases. */   \
+  FIELD(IsPrinting, bool)                                                    \
   FIELD(AncestorLoading, bool)                                               \
   FIELD(AllowPlugins, bool)                                                  \
   FIELD(AllowContentRetargeting, bool)                                       \
@@ -131,6 +152,7 @@ class WindowProxyHolder;
   FIELD(CurrentOrientationType, mozilla::dom::OrientationType)               \
   FIELD(OrientationLock, mozilla::hal::ScreenOrientation)                    \
   FIELD(UserAgentOverride, nsString)                                         \
+  FIELD(TouchEventsOverrideInternal, mozilla::dom::TouchEventsOverride)      \
   FIELD(EmbedderElementType, Maybe<nsString>)                                \
   FIELD(MessageManagerGroup, nsString)                                       \
   FIELD(MaxTouchPointsOverride, uint8_t)                                     \
@@ -145,8 +167,20 @@ class WindowProxyHolder;
    * This is only ever set to true on the top BC, so consumers need to get   \
    * the value from the top BC! */                                           \
   FIELD(HasSessionHistory, bool)                                             \
+  /* Tracks if this context is the only top-level document in the session    \
+   * history of the context. */                                              \
+  FIELD(IsSingleToplevelInHistory, bool)                                     \
   FIELD(UseErrorPages, bool)                                                 \
-  FIELD(PlatformOverride, nsString)
+  FIELD(PlatformOverride, nsString)                                          \
+  FIELD(HasLoadedNonInitialDocument, bool)                                   \
+  FIELD(CreatedDynamically, bool)                                            \
+  /* Default value for nsIContentViewer::authorStyleDisabled in any new      \
+   * browsing contexts created as a descendant of this one.  Valid only for  \
+   * top BCs. */                                                             \
+  FIELD(AuthorStyleDisabledDefault, bool)                                    \
+  FIELD(DisplayMode, mozilla::dom::DisplayMode)                              \
+  /* True if the top level browsing context owns a main media controller */  \
+  FIELD(HasMainMediaController, bool)
 
 // BrowsingContext, in this context, is the cross process replicated
 // environment in which information about documents is stored. In
@@ -172,7 +206,6 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   static void Init();
   static LogModule* GetLog();
-  static void CleanupContexts(uint64_t aProcessId);
 
   // Look up a BrowsingContext in the current process by ID.
   static already_AddRefed<BrowsingContext> Get(uint64_t aId);
@@ -189,6 +222,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
       GlobalObject&, WindowProxyHolder& aProxy) {
     return GetFromWindow(aProxy);
   }
+
+  static void DiscardFromContentParent(ContentParent* aCP);
 
   // Create a brand-new toplevel BrowsingContext with no relationships to other
   // BrowsingContexts, and which is not embedded within any <browser> or frame
@@ -209,7 +244,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // DocShell, BrowserParent, or BrowserBridgeChild.
   static already_AddRefed<BrowsingContext> CreateDetached(
       nsGlobalWindowInner* aParent, BrowsingContext* aOpener,
-      BrowsingContextGroup* aSpecificGroup, const nsAString& aName, Type aType);
+      BrowsingContextGroup* aSpecificGroup, const nsAString& aName, Type aType,
+      bool aCreatedDynamically = false);
 
   void EnsureAttached();
 
@@ -223,6 +259,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // closed.
   bool IsInProcess() const { return mIsInProcess; }
 
+  bool IsOwnedByProcess() const;
+
   bool CanHaveRemoteOuterProxies() const {
     return !mIsInProcess || mDanglingRemoteOuterProxies;
   }
@@ -231,6 +269,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // been destroyed, and may not be available on the other side of an IPC
   // message.
   bool IsDiscarded() const { return mIsDiscarded; }
+
+  // Returns true if none of the BrowsingContext's ancestor BrowsingContexts or
+  // WindowContexts are discarded or cached.
+  bool AncestorsAreCurrent() const;
 
   bool Windowless() const { return mWindowless; }
 
@@ -286,6 +328,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   nsresult InternalLoad(nsDocShellLoadState* aLoadState);
 
+  // Removes the root document for this BrowsingContext tree from the BFCache,
+  // if it is cached, and returns true if it was.
+  bool RemoveRootFromBFCacheSync();
+
   // If the load state includes a source BrowsingContext has been passed, check
   // to see if we are sandboxed from it as the result of an iframe or CSP
   // sandbox.
@@ -299,6 +345,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // Check that this browsing context is targetable for navigations (i.e. that
   // it is neither closed, cached, nor discarded).
   bool IsTargetable();
+
+  // True if this browsing context is inactive and is able to be suspended.
+  bool InactiveForSuspend() const;
 
   const nsString& Name() const { return GetName(); }
   void GetName(nsAString& aName) { aName = GetName(); }
@@ -321,6 +370,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   BrowsingContext* GetParent() const;
   BrowsingContext* Top();
+  int32_t IndexOf(BrowsingContext* aChild);
 
   // NOTE: Unlike `GetEmbedderWindowGlobal`, `GetParentWindowContext` does not
   // cross toplevel content browser boundaries.
@@ -338,7 +388,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   void SetOpener(BrowsingContext* aOpener) {
     MOZ_DIAGNOSTIC_ASSERT(!aOpener || aOpener->Group() == Group());
     MOZ_DIAGNOSTIC_ASSERT(!aOpener || aOpener->mType == mType);
-    SetOpenerId(aOpener ? aOpener->Id() : 0);
+
+    MOZ_ALWAYS_SUCCEEDS(SetOpenerId(aOpener ? aOpener->Id() : 0));
   }
 
   bool HasOpener() const;
@@ -356,12 +407,15 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   already_AddRefed<BrowsingContext> GetOnePermittedSandboxedNavigator() const {
     return Get(GetOnePermittedSandboxedNavigatorId());
   }
-  void SetOnePermittedSandboxedNavigator(BrowsingContext* aNavigator) {
+  [[nodiscard]] nsresult SetOnePermittedSandboxedNavigator(
+      BrowsingContext* aNavigator) {
     if (GetOnePermittedSandboxedNavigatorId()) {
       MOZ_ASSERT(false,
                  "One Permitted Sandboxed Navigator should only be set once.");
+      return NS_ERROR_FAILURE;
     } else {
-      SetOnePermittedSandboxedNavigatorId(aNavigator ? aNavigator->Id() : 0);
+      return SetOnePermittedSandboxedNavigatorId(aNavigator ? aNavigator->Id()
+                                                            : 0);
     }
   }
 
@@ -381,6 +435,13 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return mCurrentWindowContext;
   }
 
+  // Helpers to traverse this BrowsingContext subtree. Note that these will only
+  // traverse active contexts, and will ignore ones in the BFCache.
+  void PreOrderWalk(const std::function<void(BrowsingContext*)>& aCallback);
+  void PostOrderWalk(const std::function<void(BrowsingContext*)>& aCallback);
+  void GetAllBrowsingContextsInSubtree(
+      nsTArray<RefPtr<BrowsingContext>>& aBrowsingContexts);
+
   BrowsingContextGroup* Group() { return mGroup; }
 
   // WebIDL bindings for nsILoadContext
@@ -391,7 +452,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   void SetUsePrivateBrowsing(bool aUsePrivateBrowsing, ErrorResult& aError);
   // Needs a different name to disambiguate from the xpidl method with
   // the same signature but different return value.
-  void SetUseTrackingProtectionWebIDL(bool aUseTrackingProtection);
+  void SetUseTrackingProtectionWebIDL(bool aUseTrackingProtection,
+                                      ErrorResult& aRv);
   bool UseTrackingProtectionWebIDL() { return UseTrackingProtection(); }
   void GetOriginAttributes(JSContext* aCx, JS::MutableHandle<JS::Value> aVal,
                            ErrorResult& aError);
@@ -401,10 +463,24 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   bool WatchedByDevTools();
   void SetWatchedByDevTools(bool aWatchedByDevTools, ErrorResult& aRv);
 
+  mozilla::dom::TouchEventsOverride TouchEventsOverride();
+  void SetTouchEventsOverride(
+      const enum TouchEventsOverride aTouchEventsOverride, ErrorResult& aRv);
+  MOZ_MUST_USE nsresult
+  SetTouchEventsOverride(const enum TouchEventsOverride aTouchEventsOverride);
+
   bool FullscreenAllowed() const;
 
   float FullZoom() const { return GetFullZoom(); }
   float TextZoom() const { return GetTextZoom(); }
+
+  bool SuspendMediaWhenInactive() const {
+    return GetSuspendMediaWhenInactive();
+  }
+
+  bool AuthorStyleDisabledDefault() const {
+    return GetAuthorStyleDisabledDefault();
+  }
 
   bool UseGlobalHistory() const { return GetUseGlobalHistory(); }
 
@@ -427,24 +503,28 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   }
 
   // ScreenOrientation related APIs
-  void SetCurrentOrientation(OrientationType aType, float aAngle) {
-    SetCurrentOrientationType(aType);
-    SetCurrentOrientationAngle(aAngle);
+  [[nodiscard]] nsresult SetCurrentOrientation(OrientationType aType,
+                                               float aAngle) {
+    Transaction txn;
+    txn.SetCurrentOrientationType(aType);
+    txn.SetCurrentOrientationAngle(aAngle);
+    return txn.Commit(this);
   }
 
-  void SetRDMPaneOrientation(OrientationType aType, float aAngle) {
+  void SetRDMPaneOrientation(OrientationType aType, float aAngle,
+                             ErrorResult& aRv) {
     if (InRDMPane()) {
-      SetCurrentOrientation(aType, aAngle);
+      if (NS_FAILED(SetCurrentOrientation(aType, aAngle))) {
+        aRv.ThrowInvalidStateError("Browsing context is discarded");
+      }
     }
   }
 
-  void SetRDMPaneMaxTouchPoints(uint8_t aMaxTouchPoints) {
+  void SetRDMPaneMaxTouchPoints(uint8_t aMaxTouchPoints, ErrorResult& aRv) {
     if (InRDMPane()) {
-      SetMaxTouchPointsOverride(aMaxTouchPoints);
+      SetMaxTouchPointsOverride(aMaxTouchPoints, aRv);
     }
   }
-
-  void SetAllowContentRetargeting(bool aAllowContentRetargeting);
 
   // Using the rules for choosing a browsing context we try to find
   // the browsing context with the given name in the set of
@@ -477,29 +557,6 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  // This function would be called when its corresponding document is activated
-  // by user gesture, and we would set the flag in the top level browsing
-  // context.
-  void NotifyUserGestureActivation();
-
-  // This function would be called when we want to reset the user gesture
-  // activation flag of the top level browsing context.
-  void NotifyResetUserGestureActivation();
-
-  // Return true if its corresponding document has been activated by user
-  // gesture.
-  bool HasBeenUserGestureActivated();
-
-  // Return true if its corresponding document has transient user gesture
-  // activation and the transient user gesture activation haven't yet timed
-  // out.
-  bool HasValidTransientUserGestureActivation();
-
-  // Return true if the corresponding document has valid transient user gesture
-  // activation and the transient user gesture activation had been consumed
-  // successfully.
-  bool ConsumeTransientUserGestureActivation();
-
   // Return the window proxy object that corresponds to this browsing context.
   inline JSObject* GetWindowProxy() const { return mWindowProxy; }
   inline JSObject* GetUnbarrieredWindowProxy() const {
@@ -516,23 +573,6 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(BrowsingContext)
   NS_DECL_NSILOADCONTEXT
-
-  // Perform a pre-order walk of this BrowsingContext subtree.
-  void PreOrderWalk(const std::function<void(BrowsingContext*)>& aCallback) {
-    aCallback(this);
-    for (auto& child : Children()) {
-      child->PreOrderWalk(aCallback);
-    }
-  }
-
-  // Perform an post-order walk of this BrowsingContext subtree.
-  void PostOrderWalk(const std::function<void(BrowsingContext*)>& aCallback) {
-    for (auto& child : Children()) {
-      child->PostOrderWalk(aCallback);
-    }
-
-    aCallback(this);
-  }
 
   // Window APIs that are cross-origin-accessible (from the HTML spec).
   WindowProxyHolder Window();
@@ -561,12 +601,13 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   void GetCustomUserAgent(nsAString& aUserAgent) {
     aUserAgent = Top()->GetUserAgentOverride();
   }
-  void SetCustomUserAgent(const nsAString& aUserAgent);
+  nsresult SetCustomUserAgent(const nsAString& aUserAgent);
+  void SetCustomUserAgent(const nsAString& aUserAgent, ErrorResult& aRv);
 
   void GetCustomPlatform(nsAString& aPlatform) {
     aPlatform = Top()->GetPlatformOverride();
   }
-  void SetCustomPlatform(const nsAString& aPlatform);
+  void SetCustomPlatform(const nsAString& aPlatform, ErrorResult& aRv);
 
   JSObject* WrapObject(JSContext* aCx);
 
@@ -578,7 +619,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void StartDelayedAutoplayMediaComponents();
 
-  void ResetGVAutoplayRequestStatus();
+  [[nodiscard]] nsresult ResetGVAutoplayRequestStatus();
 
   /**
    * Information required to initialize a BrowsingContext in another process.
@@ -599,7 +640,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     bool mWindowless = false;
     bool mUseRemoteTabs = false;
     bool mUseRemoteSubframes = false;
-    bool mHasSessionHistory = false;
+    bool mCreatedDynamically = false;
+    int32_t mSessionHistoryIndex = -1;
+    int32_t mSessionHistoryCount = 0;
     OriginAttributes mOriginAttributes;
     uint64_t mRequestContextId = 0;
 
@@ -626,11 +669,21 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   RefPtr<SessionStorageManager> GetSessionStorageManager();
 
-  bool PendingInitialization() const { return mPendingInitialization; };
-  void SetPendingInitialization(bool aVal) { mPendingInitialization = aVal; };
+  // Set PendingInitialization on this BrowsingContext before the context has
+  // been attached.
+  void InitPendingInitialization(bool aPendingInitialization) {
+    MOZ_ASSERT(!EverAttached());
+    mFields.SetWithoutSyncing<IDX_PendingInitialization>(
+        aPendingInitialization);
+  }
+
+  bool CreatedDynamically() const { return mCreatedDynamically; }
 
   const OriginAttributes& OriginAttributesRef() { return mOriginAttributes; }
   nsresult SetOriginAttributes(const OriginAttributes& aAttrs);
+
+  void GetHistoryID(JSContext* aCx, JS::MutableHandle<JS::Value> aVal,
+                    ErrorResult& aError);
 
   // This should only be called on the top browsing context.
   void InitSessionHistory();
@@ -643,10 +696,69 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void SessionHistoryChanged(int32_t aIndexDelta, int32_t aLengthDelta);
 
+  // Check if it is allowed to open a popup from the current browsing
+  // context or any of its ancestors.
+  bool IsPopupAllowed();
+
+  // Set a new active entry on this browsing context. This is used for
+  // implementing history.pushState/replaceState and same document navigations.
+  // The new active entry will be linked to the current active entry through
+  // its shared state.
+  // aPreviousScrollPos is the scroll position that needs to be saved on the
+  // previous active entry.
+  // aUpdatedCacheKey is the cache key to set on the new active entry. If
+  // aUpdatedCacheKey is 0 then it will be ignored.
+  void SetActiveSessionHistoryEntry(const Maybe<nsPoint>& aPreviousScrollPos,
+                                    SessionHistoryInfo* aInfo,
+                                    uint32_t aLoadType,
+                                    uint32_t aUpdatedCacheKey);
+
+  // Replace the active entry for this browsing context. This is used for
+  // implementing history.replaceState and same document navigations.
+  void ReplaceActiveSessionHistoryEntry(SessionHistoryInfo* aInfo);
+
+  // Removes dynamic child entries of the active entry.
+  void RemoveDynEntriesFromActiveSessionHistoryEntry();
+
+  // Removes entries corresponding to this BrowsingContext from session history.
+  void RemoveFromSessionHistory();
+
+  void SetTriggeringAndInheritPrincipals(nsIPrincipal* aTriggeringPrincipal,
+                                         nsIPrincipal* aPrincipalToInherit,
+                                         uint64_t aLoadIdentifier);
+
+  // Return mTriggeringPrincipal and mPrincipalToInherit if the load id
+  // saved with the principal matches the current load identifier of this BC.
+  Tuple<nsCOMPtr<nsIPrincipal>, nsCOMPtr<nsIPrincipal>>
+  GetTriggeringAndInheritPrincipalsForCurrentLoad();
+
+  void HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
+                 std::function<void(int32_t&&)>&& aResolver);
+
+  bool ShouldUpdateSessionHistory(uint32_t aLoadType);
+
+  // Checks if we reached the rate limit for calls to Location and History API.
+  // The rate limit is controlled by the
+  // "dom.navigation.locationChangeRateLimit" prefs.
+  // Rate limit applies per BrowsingContext.
+  // Returns NS_OK if we are below the rate limit and increments the counter.
+  // Returns NS_ERROR_DOM_SECURITY_ERR if limit is reached.
+  nsresult CheckLocationChangeRateLimit(CallerType aCallerType);
+
+  void ResetLocationChangeRateLimit();
+
+  mozilla::dom::DisplayMode DisplayMode() { return Top()->GetDisplayMode(); }
+
  protected:
   virtual ~BrowsingContext();
   BrowsingContext(WindowContext* aParentWindow, BrowsingContextGroup* aGroup,
                   uint64_t aBrowsingContextId, Type aType, FieldValues&& aInit);
+
+  void SetChildSHistory(ChildSHistory* aChildSHistory);
+  already_AddRefed<ChildSHistory> ForgetChildSHistory() {
+    // FIXME Do we need to unset mHasSessionHistory?
+    return mChildSessionHistory.forget();
+  }
 
  private:
   void Attach(bool aFromIPC, ContentParent* aOriginProcess);
@@ -725,7 +837,18 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return true;
   }
 
-  void DidSet(FieldIndex<IDX_UserActivationState>);
+  bool CanSet(FieldIndex<IDX_SuspendMediaWhenInactive>, bool, ContentParent*) {
+    return IsTop();
+  }
+
+  bool CanSet(FieldIndex<IDX_TouchEventsOverrideInternal>,
+              const enum TouchEventsOverride& aTouchEventsOverride,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_DisplayMode>, const enum DisplayMode& aDisplayMode,
+              ContentParent* aSource);
+  void DidSet(FieldIndex<IDX_DisplayMode>, enum DisplayMode aOldValue);
+
   void DidSet(FieldIndex<IDX_IsActive>, bool aOldValue);
 
   // Ensure that we only set the flag on the top level browsingContext.
@@ -797,6 +920,13 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_UseErrorPages>, const bool& aUseErrorPages,
               ContentParent* aSource);
 
+  bool CanSet(FieldIndex<IDX_PendingInitialization>, bool aNewValue,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_HasMainMediaController>, bool aNewValue,
+              ContentParent* aSource);
+  void DidSet(FieldIndex<IDX_HasMainMediaController>, bool aOldValue);
+
   template <size_t I, typename T>
   bool CanSet(FieldIndex<I>, const T&, ContentParent*) {
     return true;
@@ -812,6 +942,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void DidSet(FieldIndex<IDX_FullZoom>, float aOldValue);
   void DidSet(FieldIndex<IDX_TextZoom>, float aOldValue);
+  void DidSet(FieldIndex<IDX_AuthorStyleDisabledDefault>);
 
   // True if the process attemping to set field is the same as the owning
   // process.
@@ -822,6 +953,12 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   bool CheckOnlyEmbedderCanSet(ContentParent* aSource);
 
   void CreateChildSHistory();
+
+  using PrincipalWithLoadIdentifierTuple =
+      Tuple<nsCOMPtr<nsIPrincipal>, uint64_t>;
+
+  nsIPrincipal* GetSavedPrincipal(
+      Maybe<PrincipalWithLoadIdentifierTuple> aPrincipalTuple);
 
   // Type of BrowsingContent
   const Type mType;
@@ -879,10 +1016,6 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // process, and might have remote window proxies that need to be cleaned up.
   bool mDanglingRemoteOuterProxies : 1;
 
-  // If true, the docShell has not been fully initialized, and may not be used
-  // as the target of a load.
-  bool mPendingInitialization : 1;
-
   // True if this BrowsingContext has been embedded in a element in this
   // process.
   bool mEmbeddedByThisProcess : 1;
@@ -895,9 +1028,21 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   // after this BrowsingContext is attached.
   bool mUseRemoteSubframes : 1;
 
+  // True if this BrowsingContext is for a frame that was added dynamically.
+  bool mCreatedDynamically : 1;
+
   // The start time of user gesture, this is only available if the browsing
   // context is in process.
   TimeStamp mUserGestureStart;
+
+  // Triggering principal and principal to inherit need to point to original
+  // principal instances if the document is loaded in the same process as the
+  // process that initiated the load. When the load starts we save the
+  // principals along with the current load id.
+  // These principals correspond to the most recent load that took place within
+  // the process of this browsing context.
+  Maybe<PrincipalWithLoadIdentifierTuple> mTriggeringPrincipal;
+  Maybe<PrincipalWithLoadIdentifierTuple> mPrincipalToInherit;
 
   class DeprioritizedLoadRunner
       : public mozilla::Runnable,
@@ -923,6 +1068,11 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   RefPtr<SessionStorageManager> mSessionStorageManager;
   RefPtr<ChildSHistory> mChildSessionHistory;
+
+  // Counter and time span for rate limiting Location and History API calls.
+  // Used by CheckLocationChangeRateLimit. Do not apply cross-process.
+  uint32_t mLocationChangeRateLimitCount;
+  mozilla::TimeStamp mLocationChangeRateLimitSpanStart;
 };
 
 /**

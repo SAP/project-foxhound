@@ -262,12 +262,12 @@ interface nsIPrincipal : nsISerializable
      * follows the format scheme:
      * "scheme://username:password@hostname:portnumber/"
      */
-    [noscript] readonly attribute ACString prepath;
+    readonly attribute ACString prepath;
 
     /**
      * Returns the filePath of the principals uri. See nsIURI.
      */
-    [noscript] readonly attribute ACString filePath;
+    readonly attribute ACString filePath;
 
     /**
       * Returns the ASCII Spec from the Principals URI.
@@ -278,6 +278,15 @@ interface nsIPrincipal : nsISerializable
       * just for logging purposes!
      */
     readonly attribute ACString asciiSpec;
+
+    /**
+      * Returns the Spec from the Principals URI.
+      * Might return the empty string, e.g. for the case of
+      * a SystemPrincipal or an EpxandedPrincipal.
+      *
+      * WARNING: Do not land new Code using, as this will be removed soon
+     */
+    readonly attribute ACString spec;
 
     /* Returns the Pre Path of the Principals URI with
     * user:pass stripped for privacy and spoof prevention
@@ -332,7 +341,9 @@ interface nsIPrincipal : nsISerializable
     /*
     *  Generates a Cache-Key for the Cors-Preflight Cache
     */
-    ACString getPrefLightCacheKey(in nsIURI aURI ,in bool aWithCredentials);
+    [noscript]
+    ACString getPrefLightCacheKey(in nsIURI aURI ,in bool aWithCredentials,
+                                  in const_OriginAttributes aOriginAttributes);
 
 
     /*
@@ -524,6 +535,12 @@ interface nsIPrincipal : nsISerializable
      * Returns if the principal is for an IP address.
      */
     [infallible] readonly attribute boolean isIpAddress;
+
+    /**
+     * Returns if the principal is for a local IP address.
+     */
+    [infallible] readonly attribute boolean isLocalIpAddress;
+
 };
 
 /**

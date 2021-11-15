@@ -6,7 +6,6 @@
 #include "nsNavBookmarks.h"
 
 #include "nsNavHistory.h"
-#include "nsAnnotationService.h"
 #include "nsPlacesMacros.h"
 #include "Helpers.h"
 
@@ -538,10 +537,10 @@ nsNavBookmarks::InsertBookmark(int64_t aFolder, nsIURI* aURI, int32_t aIndex,
 
       NOTIFY_BOOKMARKS_OBSERVERS(
           mCanNotify, mObservers, DontSkip,
-          OnItemChanged(bookmarks[i].id, "tags"_ns, false, EmptyCString(),
+          OnItemChanged(bookmarks[i].id, "tags"_ns, false, ""_ns,
                         bookmarks[i].lastModified, TYPE_BOOKMARK,
                         bookmarks[i].parentId, bookmarks[i].guid,
-                        bookmarks[i].parentGuid, EmptyCString(), aSource));
+                        bookmarks[i].parentGuid, ""_ns, aSource));
     }
   }
 
@@ -559,16 +558,6 @@ nsNavBookmarks::RemoveItem(int64_t aItemId, uint16_t aSource) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   mozStorageTransaction transaction(mDB->MainConn(), false);
-
-  // First, if not a tag, remove item annotations.
-  int64_t tagsRootId = TagsRootId();
-  bool isUntagging = bookmark.grandParentId == tagsRootId;
-  if (bookmark.parentId != tagsRootId && !isUntagging) {
-    nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationService();
-    NS_ENSURE_TRUE(annosvc, NS_ERROR_OUT_OF_MEMORY);
-    rv = annosvc->RemoveItemAnnotations(bookmark.id);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
 
   if (bookmark.type == TYPE_FOLDER) {
     // Remove all of the folder's children.
@@ -610,7 +599,8 @@ nsNavBookmarks::RemoveItem(int64_t aItemId, uint16_t aSource) {
                                    syncChangeDelta);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (isUntagging) {
+  int64_t tagsRootId = TagsRootId();
+  if (bookmark.grandParentId == tagsRootId) {
     // If we're removing a tag, increment the change counter for all bookmarks
     // with the URI.
     rv = AddSyncChangesForBookmarksWithURL(bookmark.url, syncChangeDelta);
@@ -667,10 +657,10 @@ nsNavBookmarks::RemoveItem(int64_t aItemId, uint16_t aSource) {
     for (uint32_t i = 0; i < bookmarks.Length(); ++i) {
       NOTIFY_BOOKMARKS_OBSERVERS(
           mCanNotify, mObservers, DontSkip,
-          OnItemChanged(bookmarks[i].id, "tags"_ns, false, EmptyCString(),
+          OnItemChanged(bookmarks[i].id, "tags"_ns, false, ""_ns,
                         bookmarks[i].lastModified, TYPE_BOOKMARK,
                         bookmarks[i].parentId, bookmarks[i].guid,
-                        bookmarks[i].parentGuid, EmptyCString(), aSource));
+                        bookmarks[i].parentGuid, ""_ns, aSource));
     }
   }
 
@@ -964,10 +954,10 @@ nsresult nsNavBookmarks::RemoveFolderChildren(int64_t aFolderId,
       for (uint32_t i = 0; i < bookmarks.Length(); ++i) {
         NOTIFY_BOOKMARKS_OBSERVERS(
             mCanNotify, mObservers, DontSkip,
-            OnItemChanged(bookmarks[i].id, "tags"_ns, false, EmptyCString(),
+            OnItemChanged(bookmarks[i].id, "tags"_ns, false, ""_ns,
                           bookmarks[i].lastModified, TYPE_BOOKMARK,
                           bookmarks[i].parentId, bookmarks[i].guid,
-                          bookmarks[i].parentGuid, EmptyCString(), aSource));
+                          bookmarks[i].parentGuid, ""_ns, aSource));
       }
     }
   }
@@ -1181,8 +1171,7 @@ nsNavBookmarks::SetItemLastModified(int64_t aItemId, PRTime aLastModified,
       OnItemChanged(bookmark.id, "lastModified"_ns, false,
                     nsPrintfCString("%" PRId64, bookmark.lastModified),
                     bookmark.lastModified, bookmark.type, bookmark.parentId,
-                    bookmark.guid, bookmark.parentGuid, EmptyCString(),
-                    aSource));
+                    bookmark.guid, bookmark.parentGuid, ""_ns, aSource));
   return NS_OK;
 }
 
@@ -1381,8 +1370,7 @@ nsNavBookmarks::SetItemTitle(int64_t aItemId, const nsACString& aTitle,
       mCanNotify, mObservers, SKIP_TAGS(isChangingTagFolder),
       OnItemChanged(bookmark.id, "title"_ns, false, title,
                     bookmark.lastModified, bookmark.type, bookmark.parentId,
-                    bookmark.guid, bookmark.parentGuid, EmptyCString(),
-                    aSource));
+                    bookmark.guid, bookmark.parentGuid, ""_ns, aSource));
   return NS_OK;
 }
 
@@ -1870,7 +1858,7 @@ void nsNavBookmarks::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
 
     ItemVisitData visitData;
     visitData.visitId = visit->mVisitId;
-    visitData.bookmark.url = NS_ConvertUTF16toUTF8(visit->mUrl);
+    CopyUTF16toUTF8(visit->mUrl, visitData.bookmark.url);
     visitData.time = visit->mVisitTime * 1000;
     visitData.transitionType = visit->mTransitionType;
     RefPtr<AsyncGetBookmarksForURI<ItemVisitMethod, ItemVisitData>> notifier =
@@ -1923,7 +1911,7 @@ nsNavBookmarks::OnPageChanged(nsIURI* aURI, uint32_t aChangedAttribute,
     NS_ENSURE_SUCCESS(rv, rv);
     changeData.property = "favicon"_ns;
     changeData.isAnnotation = false;
-    changeData.newValue = NS_ConvertUTF16toUTF8(aNewValue);
+    CopyUTF16toUTF8(aNewValue, changeData.newValue);
     changeData.bookmark.lastModified = 0;
     changeData.bookmark.type = TYPE_BOOKMARK;
 

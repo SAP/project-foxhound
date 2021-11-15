@@ -43,9 +43,10 @@ add_task(async function() {
 
   let failed = false;
   for (const [key, packet] of generatedStubs) {
-    const packetStr = getSerializedPacket(packet);
+    const packetStr = getSerializedPacket(packet, { sortKeys: true });
     const existingPacketStr = getSerializedPacket(
-      existingStubs.rawPackets.get(key)
+      existingStubs.rawPackets.get(key),
+      { sortKeys: true }
     );
     is(packetStr, existingPacketStr, `"${key}" packet has expected value`);
     failed = failed || packetStr !== existingPacketStr;
@@ -71,8 +72,10 @@ async function generatePageErrorStubs() {
   // resource to `handleErrorMessage`, dynamically updated for each command.
   let handleErrorMessage = function() {};
 
-  const onErrorMessageAvailable = ({ resource }) => {
-    handleErrorMessage(resource);
+  const onErrorMessageAvailable = resources => {
+    for (const resource of resources) {
+      handleErrorMessage(resource);
+    }
   };
   await resourceWatcher.watchResources([resourceWatcher.TYPES.ERROR_MESSAGE], {
     onAvailable: onErrorMessageAvailable,

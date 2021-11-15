@@ -49,6 +49,7 @@ class nsIRequest;
 class nsISerialEventTarget;
 class nsIWebProgress;
 class nsWebBrowser;
+class nsDocShellLoadState;
 
 template <typename T>
 class nsTHashtable;
@@ -105,7 +106,6 @@ class BrowserChildMessageManager : public ContentFrameMessageManager,
   virtual already_AddRefed<nsIDocShell> GetDocShell(
       ErrorResult& aError) override;
   virtual already_AddRefed<nsIEventTarget> GetTabEventTarget() override;
-  virtual uint64_t ChromeOuterWindowID() override;
 
   NS_FORWARD_SAFE_NSIMESSAGESENDER(mMessageManager)
 
@@ -189,8 +189,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                dom::BrowsingContext* aBrowsingContext, uint32_t aChromeFlags,
                bool aIsTopLevel);
 
-  nsresult Init(mozIDOMWindowProxy* aParent,
-                WindowGlobalChild* aInitialWindowChild);
+  MOZ_CAN_RUN_SCRIPT nsresult Init(mozIDOMWindowProxy* aParent,
+                                   WindowGlobalChild* aInitialWindowChild);
 
   /** Return a BrowserChild with the given attributes. */
   static already_AddRefed<BrowserChild> Create(
@@ -253,12 +253,14 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                const ViewID& aViewId,
                                const Maybe<ZoomConstraints>& aConstraints);
 
-  mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aURI,
-                                      nsIPrincipal* aTriggeringPrincipal,
-                                      const ParentShowInfo&);
+  mozilla::ipc::IPCResult RecvLoadURL(nsDocShellLoadState* aLoadState,
+                                      const ParentShowInfo& aInfo);
 
   mozilla::ipc::IPCResult RecvResumeLoad(const uint64_t& aPendingSwitchID,
                                          const ParentShowInfo&);
+
+  mozilla::ipc::IPCResult RecvCloneDocumentTreeIntoSelf(
+      const MaybeDiscarded<BrowsingContext>& aSourceBC);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvShow(const ParentShowInfo&, const OwnerShowInfo&);
@@ -447,8 +449,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   void SetBackgroundColor(const nscolor& aColor);
 
-  void NotifyPainted();
-
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual mozilla::ipc::IPCResult RecvUpdateEffects(
       const EffectsInfo& aEffects);
 
@@ -527,6 +527,13 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvHandledWindowedPluginKeyEvent(
       const mozilla::NativeEventData& aKeyEventData, const bool& aIsConsumed);
 
+  mozilla::ipc::IPCResult RecvPrintPreview(
+      const PrintData& aPrintData,
+      const mozilla::Maybe<uint64_t>& aSourceOuterWindowID,
+      PrintPreviewResolver&& aCallback);
+
+  mozilla::ipc::IPCResult RecvExitPrintPreview();
+
   mozilla::ipc::IPCResult RecvPrint(const uint64_t& aOuterWindowID,
                                     const PrintData& aPrintData);
 
@@ -566,7 +573,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   ScreenIntSize GetInnerSize();
   CSSSize GetUnscaledInnerSize() { return mUnscaledInnerSize; }
 
-  Maybe<LayoutDeviceIntRect> GetVisibleRect() const;
+  Maybe<nsRect> GetVisibleRect() const;
 
   // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
   void DoFakeShow(const ParentShowInfo&);
@@ -664,20 +671,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
     mCancelContentJSEpoch = aEpoch;
   }
 
-  static bool HasVisibleTabs() {
-    return sVisibleTabs && !sVisibleTabs->IsEmpty();
-  }
-
-  // Returns the set of BrowserChilds that are currently rendering layers. There
-  // can be multiple BrowserChilds in this state if Firefox has multiple windows
-  // open or is warming tabs up. There can also be zero BrowserChilds in this
-  // state. Note that this function should only be called if HasVisibleTabs()
-  // returns true.
-  static const nsTHashtable<nsPtrHashKey<BrowserChild>>& GetVisibleTabs() {
-    MOZ_ASSERT(HasVisibleTabs());
-    return *sVisibleTabs;
-  }
-
   bool UpdateSessionStore(uint32_t aFlushId, bool aIsFinal = false);
 
 #ifdef XP_WIN
@@ -710,9 +703,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvSetDocShellIsActive(const bool& aIsActive);
 
-  mozilla::ipc::IPCResult RecvSetSuspendMediaWhenInactive(
-      const bool& aSuspendMediaWhenInactive);
-
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvRenderLayers(
       const bool& aEnabled, const layers::LayersObserverEpoch& aEpoch);
@@ -737,6 +727,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvSetWidgetNativeData(
       const WindowsHandle& aWidgetNativeData);
+
+  mozilla::ipc::IPCResult RecvReleaseAllPointerCapture();
 
  private:
   void HandleDoubleTap(const CSSPoint& aPoint, const Modifiers& aModifiers,
@@ -794,8 +786,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   void InternalSetDocShellIsActive(bool aIsActive);
 
-  void InternalSetSuspendMediaWhenInactive(bool aSuspendMediaWhenInactive);
-
   bool CreateRemoteLayerManager(
       mozilla::layers::PCompositorBridgeChild* aCompositorChild);
 
@@ -824,7 +814,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   Maybe<bool> mLayersConnected;
   EffectsInfo mEffectsInfo;
   bool mDidFakeShow;
-  bool mNotified;
   bool mTriedBrowserInit;
   hal::ScreenOrientation mOrientation;
 
@@ -914,7 +903,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   // states temporarily as "pending", and only apply them once the DocShell
   // is no longer blocked.
   bool mPendingDocShellIsActive;
-  bool mPendingSuspendMediaWhenInactive;
   bool mPendingDocShellReceivedMessage;
   bool mPendingRenderLayers;
   bool mPendingRenderLayersReceivedMessage;
@@ -933,12 +921,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   // Should only be accessed on main thread.
   Maybe<bool> mWindowSupportsProtectedMedia;
 #endif
-
-  // This state is used to keep track of the current visible tabs (the ones
-  // rendering layers). There may be more than one if there are multiple browser
-  // windows open, or tabs are being warmed up. There may be none if this
-  // process does not host any visible or warming tabs.
-  static nsTHashtable<nsPtrHashKey<BrowserChild>>* sVisibleTabs;
 
   DISALLOW_EVIL_CONSTRUCTORS(BrowserChild);
 };

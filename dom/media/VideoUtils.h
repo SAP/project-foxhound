@@ -155,6 +155,10 @@ void DownmixStereoToMono(mozilla::AudioDataValue* aBuffer, uint32_t aFrames);
 // given AudioInfo and the prefs that are being set.
 uint32_t DecideAudioPlaybackChannels(const AudioInfo& info);
 
+// Decide the sample-rate to use for audio output according to the
+// given AudioInfo and the prefs that are being set.
+uint32_t DecideAudioPlaybackSampleRate(const AudioInfo& info);
+
 bool IsDefaultPlaybackDeviceMono();
 
 bool IsVideoContentType(const nsCString& aContentType);
@@ -181,7 +185,7 @@ class AutoSetOnScopeExit {
 };
 
 enum class MediaThreadType {
-  CONTROLLER,  // MediaFormatReader, RemoteDecoderManager, MediaDecodeTask and
+  SUPERVISOR,  // MediaFormatReader, RemoteDecoderManager, MediaDecodeTask and
                // others
   PLATFORM_DECODER,  // MediaDataDecoder
   PLATFORM_ENCODER,  // MediaDataEncoder

@@ -20,9 +20,10 @@
 #include "js/CompileOptions.h"            // JS::CompileOptions
 #include "js/ErrorReport.h"               // JS::PrintError
 #include "js/Exception.h"                 // JS::StealPendingExceptionStack
-#include "js/RootingAPI.h"                // JS::Rooted
-#include "js/SourceText.h"                // JS::Source{Ownership,Text}
-#include "js/Value.h"                     // JS::Value
+#include "js/experimental/TypedData.h"  // JS_GetUint8ClampedArrayData, JS_NewUint8ClampedArray
+#include "js/RootingAPI.h"  // JS::Rooted
+#include "js/SourceText.h"  // JS::Source{Ownership,Text}
+#include "js/Value.h"       // JS::Value
 #include "shell/jsshell.h"  // js::shell::{reportWarnings,PrintStackTrace,sArg{c,v}}
 #include "vm/Interpreter.h"
 #include "vm/TypedArrayObject.h"

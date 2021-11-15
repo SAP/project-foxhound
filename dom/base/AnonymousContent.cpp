@@ -16,8 +16,7 @@
 #include "nsStyledElement.h"
 #include "HTMLCanvasElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Ref counting and cycle collection
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AnonymousContent, AddRef)
@@ -216,8 +215,7 @@ void AnonymousContent::SetStyle(const nsACString& aProperty,
 
   nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(mContentNode);
   nsCOMPtr<nsICSSDeclaration> declaration = element->Style();
-  declaration->SetProperty(aProperty, aValue, EmptyString(), IgnoreErrors());
+  declaration->SetProperty(aProperty, aValue, u""_ns, IgnoreErrors());
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

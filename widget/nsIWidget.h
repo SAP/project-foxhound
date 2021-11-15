@@ -147,9 +147,6 @@ typedef void* nsNativeWidget;
 #if defined(MOZ_WIDGET_GTK)
 // set/get nsPluginNativeWindowGtk, e10s specific
 #  define NS_NATIVE_PLUGIN_OBJECT_PTR 104
-#  ifdef MOZ_X11
-#    define NS_NATIVE_COMPOSITOR_DISPLAY 105
-#  endif  // MOZ_X11
 #  define NS_NATIVE_EGL_WINDOW 106
 #endif
 #ifdef MOZ_WIDGET_ANDROID
@@ -157,6 +154,8 @@ typedef void* nsNativeWidget;
 #  define NS_PRESENTATION_WINDOW 101
 #  define NS_PRESENTATION_SURFACE 102
 #endif
+
+#define MOZ_WIDGET_MAX_SIZE 16384
 
 // Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
 #define NS_IWIDGET_IID                               \
@@ -278,11 +277,18 @@ namespace widget {
  * Values are in device pixels.
  */
 struct SizeConstraints {
-  SizeConstraints() : mMaxSize(NS_MAXSIZE, NS_MAXSIZE) {}
+  SizeConstraints() : mMaxSize(MOZ_WIDGET_MAX_SIZE, MOZ_WIDGET_MAX_SIZE) {}
 
   SizeConstraints(mozilla::LayoutDeviceIntSize aMinSize,
                   mozilla::LayoutDeviceIntSize aMaxSize)
-      : mMinSize(aMinSize), mMaxSize(aMaxSize) {}
+      : mMinSize(aMinSize), mMaxSize(aMaxSize) {
+    if (mMaxSize.width > MOZ_WIDGET_MAX_SIZE) {
+      mMaxSize.width = MOZ_WIDGET_MAX_SIZE;
+    }
+    if (mMaxSize.height > MOZ_WIDGET_MAX_SIZE) {
+      mMaxSize.height = MOZ_WIDGET_MAX_SIZE;
+    }
+  }
 
   mozilla::LayoutDeviceIntSize mMinSize;
   mozilla::LayoutDeviceIntSize mMaxSize;
@@ -1860,6 +1866,15 @@ class nsIWidget : public nsISupports {
    */
   virtual void EnableIMEForPlugin(bool aEnable) {}
 
+  /**
+   * MaybeDispatchInitialFocusEvent will dispatch a focus event after creation
+   * of the widget, in the event that we were not able to observe and respond to
+   * the initial focus event. This is necessary for the early skeleton UI
+   * window, which is displayed and receives its initial focus event before we
+   * can actually respond to it.
+   */
+  virtual void MaybeDispatchInitialFocusEvent() {}
+
   /*
    * Notifies the input context changes.
    */
@@ -2130,7 +2145,8 @@ class nsIWidget : public nsISupports {
    * @param aSize size of the buffer in screen pixels.
    */
   virtual void RecvScreenPixels(mozilla::ipc::Shmem&& aMem,
-                                const ScreenIntSize& aSize) = 0;
+                                const ScreenIntSize& aSize,
+                                bool aNeedsYFlip) = 0;
 
   virtual void UpdateDynamicToolbarMaxHeight(mozilla::ScreenIntCoord aHeight) {}
   virtual mozilla::ScreenIntCoord GetDynamicToolbarMaxHeight() const {

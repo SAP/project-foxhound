@@ -14,7 +14,7 @@ use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::values::serialize_atom_identifier;
 use cssparser::{BasicParseError, BasicParseErrorKind, Parser};
 use cssparser::{CowRcStr, SourceLocation, ToCss, Token};
-use selectors::parser::SelectorParseErrorKind;
+use selectors::parser::{SelectorParseErrorKind, ParseErrorRecovery};
 use selectors::parser::{self as selector_parser, Selector};
 use selectors::visitor::SelectorVisitor;
 use selectors::SelectorList;
@@ -215,7 +215,6 @@ impl NonTSPseudoClass {
                       NonTSPseudoClass::MozIsHTML |
                       // We prevent style sharing for NAC.
                       NonTSPseudoClass::MozNativeAnonymous |
-                      NonTSPseudoClass::MozNativeAnonymousNoSpecificity |
                       // :-moz-placeholder is parsed but never matches.
                       NonTSPseudoClass::MozPlaceholder |
                       // :-moz-locale-dir and :-moz-window-inactive depend only on
@@ -246,11 +245,6 @@ impl ::selectors::parser::NonTSPseudoClass for NonTSPseudoClass {
             *self,
             NonTSPseudoClass::Hover | NonTSPseudoClass::Active | NonTSPseudoClass::Focus
         )
-    }
-
-    #[inline]
-    fn has_zero_specificity(&self) -> bool {
-        matches!(*self, NonTSPseudoClass::MozNativeAnonymousNoSpecificity)
     }
 
     fn visit<V>(&self, visitor: &mut V) -> bool
@@ -343,13 +337,27 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
 
     #[inline]
     fn parse_is_and_where(&self) -> bool {
-        self.in_user_agent_stylesheet() ||
-            static_prefs::pref!("layout.css.is-where-selectors.enabled")
+        true
+    }
+
+    #[inline]
+    fn is_and_where_error_recovery(&self) -> ParseErrorRecovery {
+        if static_prefs::pref!("layout.css.is-and-where-better-error-recovery.enabled") {
+            ParseErrorRecovery::IgnoreInvalidSelector
+        } else {
+            ParseErrorRecovery::DiscardList
+        }
     }
 
     #[inline]
     fn parse_part(&self) -> bool {
-        self.chrome_rules_enabled() || static_prefs::pref!("layout.css.shadow-parts.enabled")
+        true
+    }
+
+    #[inline]
+    fn is_is_alias(&self, function: &str) -> bool {
+        static_prefs::pref!("layout.css.moz-any-is-is.enabled") &&
+            function.eq_ignore_ascii_case("-moz-any")
     }
 
     fn parse_non_ts_pseudo_class(
@@ -463,7 +471,7 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
     }
 
     fn default_namespace(&self) -> Option<Namespace> {
-        self.namespaces.default.as_ref().map(|ns| ns.clone())
+        self.namespaces.default.clone()
     }
 
     fn namespace_for_prefix(&self, prefix: &Atom) -> Option<Namespace> {

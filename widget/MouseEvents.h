@@ -190,14 +190,18 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
     eControlClick
   };
 
-  typedef bool ExitFromType;
-  enum ExitFrom : ExitFromType { eChild, eTopLevel };
+  typedef uint8_t ExitFromType;
+  enum ExitFrom : ExitFromType {
+    eChild,
+    eTopLevel,
+    ePuppet,
+    ePuppetParentToPuppetChild
+  };
 
  protected:
   WidgetMouseEvent()
       : mReason(eReal),
         mContextMenuTrigger(eNormal),
-        mExitFrom(eChild),
         mIgnoreRootScrollFrame(false),
         mClickCount(0),
         mUseLegacyNonPrimaryDispatch(false) {}
@@ -207,7 +211,6 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
       : WidgetMouseEventBase(aIsTrusted, aMessage, aWidget, aEventClassID),
         mReason(aReason),
         mContextMenuTrigger(eNormal),
-        mExitFrom(eChild),
         mIgnoreRootScrollFrame(false),
         mClickCount(0),
         mUseLegacyNonPrimaryDispatch(false) {}
@@ -221,7 +224,6 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
       : WidgetMouseEventBase(aIsTrusted, aMessage, aWidget, eMouseEventClass),
         mReason(aReason),
         mContextMenuTrigger(aContextMenuTrigger),
-        mExitFrom(eChild),
         mIgnoreRootScrollFrame(false),
         mClickCount(0),
         mUseLegacyNonPrimaryDispatch(false) {
@@ -269,10 +271,10 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
   // other reasons (typically, a click of right mouse button).
   ContextMenuTrigger mContextMenuTrigger;
 
-  // mExitFrom is valid only when mMessage is eMouseExitFromWidget.
-  // This indicates if the mouse cursor exits from a top level widget or
-  // a child widget.
-  ExitFrom mExitFrom;
+  // mExitFrom contains a value only when mMessage is eMouseExitFromWidget.
+  // This indicates if the mouse cursor exits from a top level platform widget,
+  // a child widget or a puppet widget.
+  Maybe<ExitFrom> mExitFrom;
 
   // Whether the event should ignore scroll frame bounds during dispatch.
   bool mIgnoreRootScrollFrame;
@@ -290,6 +292,7 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
     AssignMouseEventBaseData(aEvent, aCopyTargets);
     AssignPointerHelperData(aEvent, /* aCopyCoalescedEvents */ true);
 
+    mExitFrom = aEvent.mExitFrom;
     mIgnoreRootScrollFrame = aEvent.mIgnoreRootScrollFrame;
     mClickCount = aEvent.mClickCount;
     mUseLegacyNonPrimaryDispatch = aEvent.mUseLegacyNonPrimaryDispatch;

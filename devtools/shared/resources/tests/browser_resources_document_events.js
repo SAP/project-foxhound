@@ -11,6 +11,11 @@ const {
 } = require("devtools/shared/resources/resource-watcher");
 
 add_task(async function() {
+  await testDocumentEventResources();
+  await testDocumentEventResourcesWithIgnoreExistingResources();
+});
+
+async function testDocumentEventResources() {
   info("Test ResourceWatcher for DOCUMENT_EVENT");
 
   // Open a test tab
@@ -54,25 +59,23 @@ add_task(async function() {
   );
   ok(true, "Document events are fired after reloading");
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
-});
+}
 
-add_task(async function() {
+async function testDocumentEventResourcesWithIgnoreExistingResources() {
   info("Test ignoreExistingResources option for DOCUMENT_EVENT");
 
   const tab = await addTab("data:text/html,Document Events");
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   info("Check whether the existing document events will not be fired");
   const documentEvents = [];
   await resourceWatcher.watchResources([ResourceWatcher.TYPES.DOCUMENT_EVENT], {
-    onAvailable: ({ resource }) => documentEvents.push(resource),
+    onAvailable: resources => documentEvents.push(...resources),
     ignoreExistingResources: true,
   });
   is(documentEvents.length, 0, "Existing document events are not fired");
@@ -83,9 +86,9 @@ add_task(async function() {
   await waitUntil(() => documentEvents.length === 3);
   assertEvents(...documentEvents);
 
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
-});
+}
 
 async function assertPromises(onLoading, onInteractive, onComplete) {
   const loadingEvent = await onLoading;
@@ -124,11 +127,13 @@ function assertEvents(loadingEvent, interactiveEvent, completeEvent) {
 class ResourceListener {
   _listeners = new Map();
 
-  dispatch({ resourceType, targetFront, resource }) {
-    const resolve = this._listeners.get(resource.name);
-    if (resolve) {
-      resolve(resource);
-      this._listeners.delete(resource.name);
+  dispatch(resources) {
+    for (const resource of resources) {
+      const resolve = this._listeners.get(resource.name);
+      if (resolve) {
+        resolve(resource);
+        this._listeners.delete(resource.name);
+      }
     }
   }
 

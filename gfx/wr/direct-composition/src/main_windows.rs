@@ -12,6 +12,7 @@ use euclid::size2;
 use direct_composition::DirectComposition;
 use std::sync::mpsc;
 use webrender::api;
+use webrender::render_api::*;
 use winit::os::windows::{WindowExt, WindowBuilderExt};
 use winit::dpi::LogicalSize;
 
@@ -93,7 +94,7 @@ fn direct_composition_from_window(window: &winit::Window) -> DirectComposition {
 struct Rectangle {
     visual: direct_composition::AngleVisual,
     renderer: Option<webrender::Renderer>,
-    api: api::RenderApi,
+    api: RenderApi,
     document_id: api::DocumentId,
     size: api::units::DeviceIntSize,
     color: api::ColorF,
@@ -115,14 +116,13 @@ impl Rectangle {
                 ..webrender::RendererOptions::default()
             },
             None,
-            size,
         ).unwrap();
         let api = sender.create_api();
 
        Rectangle {
             visual,
             renderer: Some(renderer),
-            document_id: api.add_document(size, 0),
+            document_id: api.add_document(size),
             api,
             size,
             color: api::ColorF { r, g, b, a },
@@ -134,7 +134,7 @@ impl Rectangle {
 
         let pipeline_id = api::PipelineId(0, 0);
         let layout_size = self.size.to_f32() / euclid::Scale::new(device_pixel_ratio);
-        let mut builder = api::DisplayListBuilder::new(pipeline_id, layout_size);
+        let mut builder = api::DisplayListBuilder::new(pipeline_id);
 
         let rect = euclid::Rect::new(euclid::Point2D::zero(), layout_size);
 
@@ -160,7 +160,7 @@ impl Rectangle {
             self.color,
         );
 
-        let mut transaction = api::Transaction::new();
+        let mut transaction = Transaction::new();
         transaction.set_display_list(
             api::Epoch(0),
             None,
@@ -174,7 +174,7 @@ impl Rectangle {
         rx.recv().unwrap();
         let renderer = self.renderer.as_mut().unwrap();
         renderer.update();
-        renderer.render(self.size).unwrap();
+        renderer.render(self.size, 0).unwrap();
         let _ = renderer.flush_pipeline_info();
         self.visual.present();
     }

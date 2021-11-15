@@ -11,6 +11,7 @@
 #include "nsWindow.h"
 #include "nsSystemInfo.h"
 #include "nsXPCOM.h"
+#include "nsICookieJarSettings.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIIOService.h"
 #include "nsIFileURL.h"
@@ -28,6 +29,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/PresShell.h"
+#include "GRefPtr.h"
 
 #include "gfxXlibSurface.h"
 #include "gfxContext.h"
@@ -298,7 +300,8 @@ static GtkWindow* GetGtkWindow(dom::Document* aDocument) {
 NS_IMETHODIMP
 nsDragService::InvokeDragSession(
     nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
-    nsIArray* aArrayTransferables, uint32_t aActionType,
+    nsICookieJarSettings* aCookieJarSettings, nsIArray* aArrayTransferables,
+    uint32_t aActionType,
     nsContentPolicyType aContentPolicyType = nsIContentPolicy::TYPE_OTHER) {
   MOZ_LOG(sDragLm, LogLevel::Debug, ("nsDragService::InvokeDragSession"));
 
@@ -308,9 +311,9 @@ nsDragService::InvokeDragSession(
   // know whether or not the drag succeeded.
   if (mSourceNode) return NS_ERROR_NOT_AVAILABLE;
 
-  return nsBaseDragService::InvokeDragSession(aDOMNode, aPrincipal, aCsp,
-                                              aArrayTransferables, aActionType,
-                                              aContentPolicyType);
+  return nsBaseDragService::InvokeDragSession(
+      aDOMNode, aPrincipal, aCsp, aCookieJarSettings, aArrayTransferables,
+      aActionType, aContentPolicyType);
 }
 
 // nsBaseDragService
@@ -1897,7 +1900,7 @@ gboolean nsDragService::RunScheduledTask() {
   // We still reply appropriately to indicate that the drop will or didn't
   // succeeed.
   mTargetWidget = mTargetWindow->GetMozContainerWidget();
-  mTargetDragContext.steal(mPendingDragContext);
+  mTargetDragContext = std::move(mPendingDragContext);
 #ifdef MOZ_WAYLAND
   mTargetWaylandDragContext = std::move(mPendingWaylandDragContext);
 #endif

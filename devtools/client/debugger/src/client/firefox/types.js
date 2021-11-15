@@ -202,6 +202,8 @@ export type Target = {
   isBrowsingContext: boolean,
   isContentProcess: boolean,
   isWorkerTarget: boolean,
+  targetType: string,
+  isTopLevel: boolean,
   traits: Object,
   chrome: boolean,
   url: URL,
@@ -212,6 +214,7 @@ export type Target = {
 
   // Property installed by the debugger itself.
   debuggerServiceWorkerStatus: string,
+  attachAndInitThread: TargetList => Promise<*>,
 };
 
 /**
@@ -286,6 +289,7 @@ export type Grip = {|
   class: string,
   displayClass: string,
   displayName?: string,
+  isError?: boolean,
   parameterNames?: string[],
   userDisplayName?: string,
   name: string,

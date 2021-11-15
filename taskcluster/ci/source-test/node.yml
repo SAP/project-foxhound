@@ -15,6 +15,8 @@ newtab-unit-tests:
         max-run-time: 1800
     require-build:
         by-project:
+            autoland:
+                linux1804-64/opt: build-linux64/opt
             try:
                 linux1804-64/opt: build-linux64/opt
             default:
@@ -83,6 +85,8 @@ devtools-tests:
             node devtools-node-test-runner.js --suite=compatibility &&
             node devtools-node-test-runner.js --suite=framework &&
             node devtools-node-test-runner.js --suite=netmonitor &&
+            node devtools-node-test-runner.js --suite=performance &&
+            node devtools-node-test-runner.js --suite=shared_components &&
             node devtools-node-test-runner.js --suite=webconsole
     when:
         files-changed:

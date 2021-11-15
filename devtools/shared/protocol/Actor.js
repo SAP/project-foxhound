@@ -54,7 +54,7 @@ class Actor extends Pool {
   }
 
   _sendEvent(name, request, ...args) {
-    if (!this.actorID) {
+    if (this.isDestroyed()) {
       console.error(
         `Tried to send a '${name}' event on an already destroyed actor` +
           ` '${this.typeName}'`
@@ -77,6 +77,10 @@ class Actor extends Pool {
     this.actorID = null;
   }
 
+  isDestroyed() {
+    return this.actorID === null;
+  }
+
   /**
    * Override this method in subclasses to serialize the actor.
    * @param [optional] string hint
@@ -94,6 +98,12 @@ class Actor extends Pool {
     );
     if (error.stack) {
       console.error(error.stack);
+    }
+
+    // Do not try to send the error if the actor is destroyed
+    // as the connection is probably also destroyed and may throw.
+    if (this.isDestroyed()) {
+      return;
     }
 
     this.conn.send({
@@ -164,6 +174,19 @@ var generateRequestHandlers = function(actorSpec, actorProto) {
         const sendReturn = retToSend => {
           if (spec.oneway) {
             // No need to send a response.
+            return;
+          }
+          // `ThreadActor.attach` manually send the response in middle of its processing
+          // using `DevToolsServerConnection.send` manually. So that it isn't a oneway method,
+          // but we shouldn't try to emit a response here, or it would be duplicated.
+          if (spec.name == "attach" && actorProto.typeName == "thread") {
+            return;
+          }
+          if (this.isDestroyed()) {
+            console.error(
+              `Tried to send a '${spec.name}' method reply on an already destroyed actor` +
+                ` '${this.typeName}'`
+            );
             return;
           }
 

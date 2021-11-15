@@ -33,7 +33,7 @@ AndroidAlerts::ShowAlertNotification(
 NS_IMETHODIMP
 AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
                          nsIObserver* aAlertListener) {
-  return ShowPersistentNotification(EmptyString(), aAlert, aAlertListener);
+  return ShowPersistentNotification(u""_ns, aAlert, aAlertListener);
 }
 
 NS_IMETHODIMP
@@ -80,11 +80,12 @@ AndroidAlerts::ShowPersistentNotification(const nsAString& aPersistentData,
   nsCOMPtr<nsIURI> uri;
   rv = aAlert->GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, NS_OK);
-  MOZ_ASSERT(uri);
 
   nsCString spec;
-  rv = uri->GetDisplaySpec(spec);
-  NS_ENSURE_SUCCESS(rv, NS_OK);
+  if (uri) {
+    rv = uri->GetDisplaySpec(spec);
+    NS_ENSURE_SUCCESS(rv, NS_OK);
+  }
 
   if (aPersistentData.IsEmpty() && aAlertListener) {
     if (!sListenerMap) {

@@ -49,6 +49,7 @@ const PREF_APP_UPDATE_STAGING_ENABLED = "app.update.staging.enabled";
 const PREF_APP_UPDATE_UNSUPPORTED_URL = "app.update.unsupported.url";
 const PREF_APP_UPDATE_URL_DETAILS = "app.update.url.details";
 const PREF_APP_UPDATE_URL_MANUAL = "app.update.url.manual";
+const PREF_APP_UPDATE_LANGPACK_ENABLED = "app.update.langpack.enabled";
 
 const PREFBRANCH_APP_PARTNER = "app.partner.";
 const PREF_DISTRIBUTION_ID = "distribution.id";
@@ -261,49 +262,16 @@ function setUpdateURL(aURL) {
     Services.appinfo = origAppInfo;
   });
 
-  let mockAppInfo = {
-    // nsIXULAppInfo
-    vendor: origAppInfo.vendor,
-    name: origAppInfo.name,
-    ID: origAppInfo.ID,
-    version: origAppInfo.version,
-    appBuildID: origAppInfo.appBuildID,
-    updateURL: url,
-
-    // nsIPlatformInfo
-    platformVersion: origAppInfo.platformVersion,
-    platformBuildID: origAppInfo.platformBuildID,
-
-    // nsIXULRuntime
-    inSafeMode: origAppInfo.inSafeMode,
-    logConsoleErrors: origAppInfo.logConsoleErrors,
-    OS: origAppInfo.OS,
-    XPCOMABI: origAppInfo.XPCOMABI,
-    invalidateCachesOnRestart() {},
-    shouldBlockIncompatJaws: origAppInfo.shouldBlockIncompatJaws,
-    processType: origAppInfo.processType,
-    processID: origAppInfo.processID,
-    uniqueProcessID: origAppInfo.uniqueProcessID,
-
-    // nsIWinAppHelper
-    get userCanElevate() {
-      return origAppInfo.userCanElevate;
+  // Override the appinfo object with an object that exposes all of the same
+  // properties overriding just the updateURL.
+  let mockAppInfo = Object.create(origAppInfo, {
+    updateURL: {
+      configurable: true,
+      enumerable: true,
+      writable: false,
+      value: url,
     },
-  };
-  let interfaces = [Ci.nsIXULAppInfo, Ci.nsIPlatformInfo, Ci.nsIXULRuntime];
-  if ("nsIWinAppHelper" in Ci) {
-    interfaces.push(Ci.nsIWinAppHelper);
-  }
-  if ("crashReporter" in origAppInfo && origAppInfo.crashReporter) {
-    // nsICrashReporter
-    mockAppInfo.crashReporter = {};
-    mockAppInfo.annotations = {};
-    mockAppInfo.annotateCrashReport = function(key, data) {
-      this.annotations[key] = data;
-    };
-    interfaces.push(Ci.nsICrashReporter);
-  }
-  mockAppInfo.QueryInterface = ChromeUtils.generateQI(interfaces);
+  });
 
   Services.appinfo = mockAppInfo;
 }

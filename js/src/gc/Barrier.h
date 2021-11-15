@@ -7,6 +7,8 @@
 #ifndef gc_Barrier_h
 #define gc_Barrier_h
 
+#include "mozilla/DebugOnly.h"
+
 #include <type_traits>  // std::true_type
 
 #include "NamespaceImports.h"
@@ -181,7 +183,7 @@
  * extra branch.
  *
  * In practice, we implement the pre-barrier differently based on the type of
- * value0. E.g., see JSObject::writeBarrierPre, which is used if obj->field is
+ * value0. E.g., see JSObject::preWriteBarrier, which is used if obj->field is
  * a JSObject*. It takes value0 as a parameter.
  *
  * Post-write barrier
@@ -261,20 +263,20 @@
  * WeakHeapPtr               provides read barriers only
  *
  *
- * The implementation of the barrier logic is implemented on T::writeBarrier.*,
- * via:
+ * The implementation of the barrier logic is implemented in the
+ * Cell/TenuredCell base classes, which are called via:
  *
  * WriteBarriered<T>::pre
  *  -> InternalBarrierMethods<T*>::preBarrier
- *      -> T::writeBarrierPre
+ *      -> Cell::preWriteBarrier
  *  -> InternalBarrierMethods<Value>::preBarrier
  *  -> InternalBarrierMethods<jsid>::preBarrier
  *      -> InternalBarrierMethods<T*>::preBarrier
- *          -> T::writeBarrierPre
+ *          -> Cell::preWriteBarrier
  *
  * GCPtr<T>::post and HeapPtr<T>::post
  *  -> InternalBarrierMethods<T*>::postBarrier
- *      -> T::writeBarrierPost
+ *      -> gc::PostWriteBarrierImpl
  *  -> InternalBarrierMethods<Value>::postBarrier
  *      -> StoreBuffer::put
  *
@@ -292,6 +294,15 @@ namespace js {
 
 class NativeObject;
 
+namespace gc {
+
+void ValueReadBarrier(const Value& v);
+void ValuePreWriteBarrier(const Value& v);
+void IdPreWriteBarrier(jsid id);
+void CellPtrPreWriteBarrier(JS::GCCellPtr thing);
+
+}  // namespace gc
+
 #ifdef DEBUG
 
 // Barriers can't be triggered during backend Ion compilation, which may run on
@@ -299,14 +310,11 @@ class NativeObject;
 bool CurrentThreadIsIonCompiling();
 
 bool CurrentThreadIsIonCompilingSafeForMinorGC();
-
 bool CurrentThreadIsGCSweeping();
-
 bool CurrentThreadIsGCFinalizing();
+bool CurrentThreadIsTouchingGrayThings();
 
 bool IsMarkedBlack(JSObject* obj);
-
-bool CurrentThreadIsTouchingGrayThings();
 
 #endif
 
@@ -324,15 +332,15 @@ struct InternalBarrierMethods {};
 
 template <typename T>
 struct InternalBarrierMethods<T*> {
-  static bool isMarkable(T* v) { return v != nullptr; }
+  static bool isMarkable(const T* v) { return v != nullptr; }
 
-  static void preBarrier(T* v) { T::writeBarrierPre(v); }
+  static void preBarrier(T* v) { gc::PreWriteBarrier(v); }
 
   static void postBarrier(T** vp, T* prev, T* next) {
-    T::writeBarrierPost(vp, prev, next);
+    gc::PostWriteBarrier(vp, prev, next);
   }
 
-  static void readBarrier(T* v) { T::readBarrier(v); }
+  static void readBarrier(T* v) { gc::ReadBarrier(v); }
 
 #ifdef DEBUG
   static void assertThingIsNotGray(T* v) { return T::assertThingIsNotGray(v); }
@@ -343,7 +351,11 @@ template <>
 struct InternalBarrierMethods<Value> {
   static bool isMarkable(const Value& v) { return v.isGCThing(); }
 
-  static void preBarrier(const Value& v);
+  static void preBarrier(const Value& v) {
+    if (v.isGCThing()) {
+      gc::ValuePreWriteBarrier(v);
+    }
+  }
 
   static MOZ_ALWAYS_INLINE void postBarrier(Value* vp, const Value& prev,
                                             const Value& next) {
@@ -372,7 +384,11 @@ struct InternalBarrierMethods<Value> {
     }
   }
 
-  static void readBarrier(const Value& v);
+  static void readBarrier(const Value& v) {
+    if (v.isGCThing()) {
+      gc::ValueReadBarrier(v);
+    }
+  }
 
 #ifdef DEBUG
   static void assertThingIsNotGray(const Value& v) {
@@ -384,7 +400,11 @@ struct InternalBarrierMethods<Value> {
 template <>
 struct InternalBarrierMethods<jsid> {
   static bool isMarkable(jsid id) { return id.isGCThing(); }
-  static void preBarrier(jsid id);
+  static void preBarrier(jsid id) {
+    if (id.isGCThing()) {
+      gc::IdPreWriteBarrier(id);
+    }
+  }
   static void postBarrier(jsid* idp, jsid prev, jsid next) {}
 #ifdef DEBUG
   static void assertThingIsNotGray(jsid id) { JS::AssertIdIsNotGray(id); }
@@ -426,7 +446,7 @@ class MOZ_NON_MEMMOVABLE BarrieredBase {
   // instantiation. Friending to the generic template leads to a number of
   // unintended consequences, including template resolution ambiguity and a
   // circular dependency with Tracing.h.
-  T* unsafeUnbarrieredForTracing() const { return const_cast<T*>(&value); }
+  T* unbarrieredAddress() const { return const_cast<T*>(&value); }
 };
 
 // Base class for barriered pointer types that intercept only writes.
@@ -447,10 +467,10 @@ class WriteBarriered : public BarrieredBase<T>,
 
   // Use this if you want to change the value without invoking barriers.
   // Obviously this is dangerous unless you know the barrier is not needed.
-  void unsafeSet(const T& v) { this->value = v; }
+  void unbarrieredSet(const T& v) { this->value = v; }
 
   // For users who need to manually barrier the raw types.
-  static void writeBarrierPre(const T& v) {
+  static void preWriteBarrier(const T& v) {
     InternalBarrierMethods<T>::preBarrier(v);
   }
 
@@ -562,18 +582,12 @@ class GCPtr : public WriteBarriered<T> {
 
 #ifdef DEBUG
   ~GCPtr() {
-    // No barriers are necessary as this only happens when we are sweeping
-    // or when after GCManagedDeletePolicy has triggered the barriers for us
-    // and cleared the pointer.
+    // No barriers are necessary as this only happens when the GC is sweeping.
     //
-    // If you get a crash here, you may need to make the containing object
-    // use GCManagedDeletePolicy and use JS::DeletePolicy to destroy it.
-    //
-    // Note that when sweeping the wrapped pointer may already have been
-    // freed by this point.
-    MOZ_ASSERT_IF(
-        !CurrentThreadIsGCSweeping() && !CurrentThreadIsGCFinalizing(),
-        this->value == JS::SafelyInitialized<T>());
+    // If this assertion fails you may need to make the containing object use a
+    // HeapPtr instead, as this can be deleted from outside of GC.
+    MOZ_ASSERT(CurrentThreadIsGCSweeping() || CurrentThreadIsGCFinalizing());
+
     Poison(this, JS_FREED_HEAP_PTR_PATTERN, sizeof(*this),
            MemCheckKind::MakeNoAccess);
   }
@@ -798,12 +812,14 @@ class WeakHeapPtr : public ReadBarriered<T>,
 
   const T& operator->() const { return get(); }
 
-  T* unsafeGet() { return &this->value; }
-  T const* unsafeGet() const { return &this->value; }
-
   void set(const T& v) {
     AssertTargetIsNotGray(v);
     setUnchecked(v);
+  }
+
+  void unbarrieredSet(const T& v) {
+    AssertTargetIsNotGray(v);
+    this->value = v;
   }
 
  private:
@@ -839,11 +855,6 @@ struct DefineComparisonOps<js::WeakHeapPtr<T>> : std::true_type {
 
 namespace js {
 
-// A WeakRef pointer does not hold its target live and is automatically nulled
-// out when the GC discovers that it is not reachable from any other path.
-template <typename T>
-using WeakRef = WeakHeapPtr<T>;
-
 // A pre- and post-barriered Value that is specialized to be aware that it
 // resides in a slots or elements vector. This allows it to be relocated in
 // memory, but with substantially less overhead than a HeapPtr.
@@ -860,7 +871,7 @@ class HeapSlot : public WriteBarriered<Value> {
 
 #ifdef DEBUG
   bool preconditionForSet(NativeObject* owner, Kind kind, uint32_t slot) const;
-  void assertPreconditionForWriteBarrierPost(NativeObject* obj, Kind kind,
+  void assertPreconditionForPostWriteBarrier(NativeObject* obj, Kind kind,
                                              uint32_t slot,
                                              const Value& target) const;
 #endif
@@ -877,7 +888,7 @@ class HeapSlot : public WriteBarriered<Value> {
   void post(NativeObject* owner, Kind kind, uint32_t slot,
             const Value& target) {
 #ifdef DEBUG
-    assertPreconditionForWriteBarrierPost(owner, kind, slot, target);
+    assertPreconditionForPostWriteBarrier(owner, kind, slot, target);
 #endif
     if (this->value.isObject() || this->value.isString() ||
         this->value.isBigInt()) {
@@ -925,15 +936,17 @@ class HeapSlotArray {
   {
   }
 
+  HeapSlot* begin() const {
+    MOZ_ASSERT(allowWrite());
+    return array;
+  }
+
   operator const Value*() const {
     static_assert(sizeof(GCPtr<Value>) == sizeof(Value));
     static_assert(sizeof(HeapSlot) == sizeof(Value));
     return reinterpret_cast<const Value*>(array);
   }
-  operator HeapSlot*() const {
-    MOZ_ASSERT(allowWrite());
-    return array;
-  }
+  operator HeapSlot*() const { return begin(); }
 
   HeapSlotArray operator+(int offset) const {
     return HeapSlotArray(array + offset, allowWrite());
@@ -961,7 +974,7 @@ static inline void BarrieredSetPair(Zone* zone, HeapPtr<T1*>& v1, T1* val1,
                                     HeapPtr<T2*>& v2, T2* val2) {
   AssertTargetIsNotGray(val1);
   AssertTargetIsNotGray(val2);
-  if (T1::needWriteBarrierPre(zone)) {
+  if (T1::needPreWriteBarrier(zone)) {
     v1.pre();
     v2.pre();
   }
@@ -1076,7 +1089,7 @@ struct HeapPtrHasher {
 
   static HashNumber hash(Lookup obj) { return DefaultHasher<T>::hash(obj); }
   static bool match(const Key& k, Lookup l) { return k.get() == l; }
-  static void rekey(Key& k, const Key& newKey) { k.unsafeSet(newKey); }
+  static void rekey(Key& k, const Key& newKey) { k.unbarrieredSet(newKey); }
 };
 
 template <class T>
@@ -1086,7 +1099,7 @@ struct PreBarrieredHasher {
 
   static HashNumber hash(Lookup obj) { return DefaultHasher<T>::hash(obj); }
   static bool match(const Key& k, Lookup l) { return k.get() == l; }
-  static void rekey(Key& k, const Key& newKey) { k.unsafeSet(newKey); }
+  static void rekey(Key& k, const Key& newKey) { k.unbarrieredSet(newKey); }
 };
 
 /* Useful for hashtables with a WeakHeapPtr as key. */
@@ -1148,7 +1161,6 @@ using PreBarrieredValue = PreBarriered<Value>;
 
 using GCPtrNativeObject = GCPtr<NativeObject*>;
 using GCPtrArrayObject = GCPtr<ArrayObject*>;
-using GCPtrBaseShape = GCPtr<BaseShape*>;
 using GCPtrAtom = GCPtr<JSAtom*>;
 using GCPtrBigInt = GCPtr<BigInt*>;
 using GCPtrFunction = GCPtr<JSFunction*>;
@@ -1159,7 +1171,6 @@ using GCPtrString = GCPtr<JSString*>;
 using GCPtrShape = GCPtr<Shape*>;
 using GCPtrUnownedBaseShape = GCPtr<UnownedBaseShape*>;
 using GCPtrObjectGroup = GCPtr<ObjectGroup*>;
-using GCPtrScope = GCPtr<Scope*>;
 using GCPtrValue = GCPtr<Value>;
 using GCPtrId = GCPtr<jsid>;
 
@@ -1179,6 +1190,7 @@ using WeakHeapPtrWasmInstanceObject = WeakHeapPtr<WasmInstanceObject*>;
 using WeakHeapPtrWasmTableObject = WeakHeapPtr<WasmTableObject*>;
 
 using HeapPtrJitCode = HeapPtr<jit::JitCode*>;
+using HeapPtrNativeObject = HeapPtr<NativeObject*>;
 using HeapPtrObject = HeapPtr<JSObject*>;
 using HeapPtrRegExpShared = HeapPtr<RegExpShared*>;
 using HeapPtrValue = HeapPtr<Value>;

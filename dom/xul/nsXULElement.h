@@ -12,6 +12,7 @@
 #ifndef nsXULElement_h__
 #define nsXULElement_h__
 
+#include "js/CompileOptions.h"  // JS::CompileOptions
 #include "js/SourceText.h"
 #include "js/TracingAPI.h"
 #include "mozilla/Attributes.h"
@@ -184,6 +185,8 @@ class nsXULPrototypeScript : public nsXULPrototypeNode {
 
  private:
   virtual ~nsXULPrototypeScript();
+
+  void FillCompileOptions(JS::CompileOptions& options);
 
  public:
   virtual nsresult Serialize(
@@ -447,14 +450,6 @@ class nsXULElement : public nsStyledElement {
   }
   void SetMaxHeight(const nsAString& aValue, mozilla::ErrorResult& rv) {
     SetXULAttr(nsGkAtoms::maxheight, aValue, rv);
-  }
-  void GetLeft(DOMString& aValue) const { GetXULAttr(nsGkAtoms::left, aValue); }
-  void SetLeft(const nsAString& aValue, mozilla::ErrorResult& rv) {
-    SetXULAttr(nsGkAtoms::left, aValue, rv);
-  }
-  void GetTop(DOMString& aValue) const { GetXULAttr(nsGkAtoms::top, aValue); }
-  void SetTop(const nsAString& aValue, mozilla::ErrorResult& rv) {
-    SetXULAttr(nsGkAtoms::top, aValue, rv);
   }
   void GetTooltipText(DOMString& aValue) const {
     GetXULAttr(nsGkAtoms::tooltiptext, aValue);

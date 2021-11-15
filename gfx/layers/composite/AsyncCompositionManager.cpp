@@ -27,6 +27,7 @@
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayerAnimationUtils.h"  // for TimingFunctionToComputedTimingFunction
 #include "mozilla/layers/LayerMetricsWrapper.h"  // for LayerMetricsWrapper
+#include "mozilla/layers/SampleTime.h"
 #include "nsCoord.h"                 // for NSAppUnitsToFloatPixels, etc
 #include "nsDebug.h"                 // for NS_ASSERTION, etc
 #include "nsDeviceContext.h"         // for nsDeviceContext
@@ -391,6 +392,17 @@ void AsyncCompositionManager::AlignFixedAndStickyLayers(
                            aClipPartsCache, aGeckoFixedLayerMargins);
 }
 
+// Determine the amount of overlap between the 1D vector |aTranslation|
+// and the interval [aMin, aMax].
+static gfxFloat IntervalOverlap(gfxFloat aTranslation, gfxFloat aMin,
+                                gfxFloat aMax) {
+  if (aTranslation > 0) {
+    return std::max(0.0, std::min(aMax, aTranslation) - std::max(aMin, 0.0));
+  }
+
+  return std::min(0.0, std::max(aMin, aTranslation) - std::min(aMax, 0.0));
+}
+
 void AsyncCompositionManager::AdjustFixedOrStickyLayer(
     Layer* aTransformedSubtreeRoot, Layer* aFixedOrSticky, SideBits aStuckSides,
     ScrollableLayerGuid::ViewID aTransformScrollId,
@@ -460,7 +472,7 @@ void AsyncCompositionManager::AdjustFixedOrStickyLayer(
 
   // Offset the layer's anchor point to make sure fixed position content
   // respects content document fixed position margins.
-  ScreenPoint offset = ComputeFixedMarginsOffset(
+  ScreenPoint offset = apz::ComputeFixedMarginsOffset(
       aFixedLayerMargins, sideBits,
       // For sticky layers, we don't need to factor aGeckoFixedLayerMargins
       // because Gecko doesn't shift the position of sticky elements for dynamic
@@ -505,14 +517,12 @@ void AsyncCompositionManager::AdjustFixedOrStickyLayer(
     const LayerRectAbsolute& stickyInner = layer->GetStickyScrollRangeInner();
 
     LayerPoint originalTranslation = translation;
-    translation.y = apz::IntervalOverlap(translation.y, stickyOuter.Y(),
-                                         stickyOuter.YMost()) -
-                    apz::IntervalOverlap(translation.y, stickyInner.Y(),
-                                         stickyInner.YMost());
-    translation.x = apz::IntervalOverlap(translation.x, stickyOuter.X(),
-                                         stickyOuter.XMost()) -
-                    apz::IntervalOverlap(translation.x, stickyInner.X(),
-                                         stickyInner.XMost());
+    translation.y =
+        IntervalOverlap(translation.y, stickyOuter.Y(), stickyOuter.YMost()) -
+        IntervalOverlap(translation.y, stickyInner.Y(), stickyInner.YMost());
+    translation.x =
+        IntervalOverlap(translation.x, stickyOuter.X(), stickyOuter.XMost()) -
+        IntervalOverlap(translation.x, stickyInner.X(), stickyInner.XMost());
     unconsumedTranslation = translation - originalTranslation;
   }
 
@@ -855,13 +865,15 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
                 if (CompositorBridgeParent* bridge =
                         compositor->GetCompositorBridgeParent()) {
                   LayersId rootLayerTreeId = bridge->RootLayerTreeId();
-                  if (mIsFirstPaint || FrameMetricsHaveUpdated(metrics)) {
+                  GeckoViewMetrics gvMetrics =
+                      sampler->GetGeckoViewMetrics(wrapper);
+                  if (mIsFirstPaint || GeckoViewMetricsHaveUpdated(gvMetrics)) {
                     if (RefPtr<UiCompositorControllerParent> uiController =
                             UiCompositorControllerParent::
                                 GetFromRootLayerTreeId(rootLayerTreeId)) {
-                      uiController->NotifyUpdateScreenMetrics(metrics);
+                      uiController->NotifyUpdateScreenMetrics(gvMetrics);
                     }
-                    mLastMetrics = metrics;
+                    mLastMetrics = gvMetrics;
                   }
                   if (mIsFirstPaint) {
                     if (RefPtr<UiCompositorControllerParent> uiController =
@@ -1111,12 +1123,11 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
 }
 
 #if defined(MOZ_WIDGET_ANDROID)
-bool AsyncCompositionManager::FrameMetricsHaveUpdated(
-    const FrameMetrics& aMetrics) {
-  return RoundedToInt(mLastMetrics.GetScrollOffset()) !=
-             RoundedToInt(aMetrics.GetScrollOffset()) ||
-         mLastMetrics.GetZoom() != aMetrics.GetZoom();
-  ;
+bool AsyncCompositionManager::GeckoViewMetricsHaveUpdated(
+    const GeckoViewMetrics& aMetrics) {
+  return RoundedToInt(mLastMetrics.mVisualScrollOffset) !=
+             RoundedToInt(aMetrics.mVisualScrollOffset) ||
+         mLastMetrics.mZoom != aMetrics.mZoom;
 }
 #endif
 
@@ -1223,7 +1234,7 @@ void AsyncCompositionManager::GetFrameUniformity(
 }
 
 bool AsyncCompositionManager::TransformShadowTree(
-    TimeStamp aCurrentFrame, TimeDuration aVsyncRate,
+    const SampleTime& aCurrentFrame, TimeDuration aVsyncRate,
     CompositorBridgeParentBase::TransformsToSkip aSkip) {
   AUTO_PROFILER_LABEL("AsyncCompositionManager::TransformShadowTree", GRAPHICS);
 
@@ -1235,21 +1246,21 @@ bool AsyncCompositionManager::TransformShadowTree(
   // First, compute and set the shadow transforms from OMT animations.
   // NB: we must sample animations *before* sampling pan/zoom
   // transforms.
-  bool wantNextFrame = SampleAnimations(root, aCurrentFrame);
+  bool wantNextFrame = SampleAnimations(root, aCurrentFrame.Time());
 
   // Advance animations to the next expected vsync timestamp, if we can
   // get it.
-  TimeStamp nextFrame = aCurrentFrame;
+  SampleTime nextFrame = aCurrentFrame;
 
   MOZ_ASSERT(aVsyncRate != TimeDuration::Forever());
   if (aVsyncRate != TimeDuration::Forever()) {
-    nextFrame += aVsyncRate;
+    nextFrame = nextFrame + aVsyncRate;
   }
 
   // Reset the previous time stamp if we don't already have any running
   // animations to avoid using the time which is far behind for newly
   // started animations.
-  mPreviousFrameTimeStamp = wantNextFrame ? aCurrentFrame : TimeStamp();
+  mPreviousFrameTimeStamp = wantNextFrame ? aCurrentFrame.Time() : TimeStamp();
 
   if (!(aSkip & CompositorBridgeParentBase::TransformsToSkip::APZ)) {
     bool apzAnimating = false;
@@ -1297,34 +1308,6 @@ ScreenMargin AsyncCompositionManager::GetFixedLayerMargins() const {
     result.bottom = StaticPrefs::apz_fixed_margin_override_bottom();
   }
   return result;
-}
-
-/*static*/
-ScreenPoint AsyncCompositionManager::ComputeFixedMarginsOffset(
-    const ScreenMargin& aCompositorFixedLayerMargins, SideBits aFixedSides,
-    const ScreenMargin& aGeckoFixedLayerMargins) {
-  // Work out the necessary translation, in screen space.
-  ScreenPoint translation;
-
-  ScreenMargin effectiveMargin =
-      aCompositorFixedLayerMargins - aGeckoFixedLayerMargins;
-  if ((aFixedSides & SideBits::eLeftRight) == SideBits::eLeftRight) {
-    translation.x += (effectiveMargin.left - effectiveMargin.right) / 2;
-  } else if (aFixedSides & SideBits::eRight) {
-    translation.x -= effectiveMargin.right;
-  } else if (aFixedSides & SideBits::eLeft) {
-    translation.x += effectiveMargin.left;
-  }
-
-  if ((aFixedSides & SideBits::eTopBottom) == SideBits::eTopBottom) {
-    translation.y += (effectiveMargin.top - effectiveMargin.bottom) / 2;
-  } else if (aFixedSides & SideBits::eBottom) {
-    translation.y -= effectiveMargin.bottom;
-  } else if (aFixedSides & SideBits::eTop) {
-    translation.y += effectiveMargin.top;
-  }
-
-  return translation;
 }
 
 }  // namespace layers

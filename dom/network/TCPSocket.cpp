@@ -9,6 +9,7 @@
 #include "TCPSocket.h"
 #include "TCPServerSocket.h"
 #include "TCPSocketChild.h"
+#include "TCPSocketParent.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TCPSocketBinding.h"
 #include "mozilla/dom/TCPSocketErrorEvent.h"
@@ -272,7 +273,7 @@ nsresult TCPSocket::InitWithTransport(nsISocketTransport* aTransport) {
 
   nsAutoCString host;
   mTransport->GetHost(host);
-  mHost = NS_ConvertUTF8toUTF16(host);
+  CopyUTF8toUTF16(host, mHost);
   int32_t port;
   mTransport->GetPort(&port);
   mPort = port;
@@ -413,7 +414,7 @@ void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
     // If we have pending data, we should send them, or fire
     // a drain event if we are waiting for it.
     if (!mPendingDataAfterStartTLS.IsEmpty()) {
-      mPendingData.SwapElements(mPendingDataAfterStartTLS);
+      mPendingData = std::move(mPendingDataAfterStartTLS);
       EnsureCopying();
       return;
     }
@@ -831,7 +832,7 @@ already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
     nsIGlobalObject* aGlobal, nsISocketTransport* aTransport,
     bool aUseArrayBuffers) {
   RefPtr<TCPSocket> socket =
-      new TCPSocket(aGlobal, EmptyString(), 0, false, aUseArrayBuffers);
+      new TCPSocket(aGlobal, u""_ns, 0, false, aUseArrayBuffers);
   nsresult rv = socket->InitWithTransport(aTransport);
   NS_ENSURE_SUCCESS(rv, nullptr);
   return socket.forget();
@@ -840,7 +841,7 @@ already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
 already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
     nsIGlobalObject* aGlobal, TCPSocketChild* aBridge, bool aUseArrayBuffers) {
   RefPtr<TCPSocket> socket =
-      new TCPSocket(aGlobal, EmptyString(), 0, false, aUseArrayBuffers);
+      new TCPSocket(aGlobal, u""_ns, 0, false, aUseArrayBuffers);
   socket->InitWithSocketChild(aBridge);
   return socket.forget();
 }
@@ -878,7 +879,7 @@ nsresult TCPSocket::CreateInputStreamPump() {
     mInputStreamPump->Suspend();
   }
 
-  rv = mInputStreamPump->AsyncRead(this, nullptr);
+  rv = mInputStreamPump->AsyncRead(this);
   NS_ENSURE_SUCCESS(rv, rv);
   return NS_OK;
 }

@@ -12,16 +12,19 @@
 
 #include "jit/CodeGenerator.h"
 #include "jit/CompactBuffer.h"
+#include "jit/CompileInfo.h"
+#include "jit/InlineScriptTree.h"
 #include "jit/JitcodeMap.h"
+#include "jit/JitFrames.h"
 #include "jit/JitSpewer.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
+#include "jit/SafepointIndex.h"
 #include "js/Conversions.h"
 #include "util/Memory.h"
 #include "vm/TraceLogging.h"
 
-#include "jit/JitFrames-inl.h"
 #include "jit/MacroAssembler-inl.h"
 #include "vm/JSScript-inl.h"
 
@@ -84,8 +87,9 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
     frameDepth_ += gen->wasmMaxStackArgBytes();
 
 #ifdef ENABLE_WASM_SIMD
-#  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
-    // On X64 and x86, we don't need alignment for Wasm SIMD at this time.
+#  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) || \
+      defined(JS_CODEGEN_ARM64)
+    // On X64/x86 and ARM64, we don't need alignment for Wasm SIMD at this time.
 #  else
 #    error \
         "we may need padding so that local slots are SIMD-aligned and the stack must be kept SIMD-aligned too."
@@ -886,15 +890,18 @@ class OutOfLineTruncateSlow : public OutOfLineCodeBase<CodeGeneratorShared> {
   Register dest_;
   bool widenFloatToDouble_;
   wasm::BytecodeOffset bytecodeOffset_;
+  bool preserveTls_;
 
  public:
   OutOfLineTruncateSlow(
       FloatRegister src, Register dest, bool widenFloatToDouble = false,
-      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset())
+      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset(),
+      bool preserveTls = false)
       : src_(src),
         dest_(dest),
         widenFloatToDouble_(widenFloatToDouble),
-        bytecodeOffset_(bytecodeOffset) {}
+        bytecodeOffset_(bytecodeOffset),
+        preserveTls_(preserveTls) {}
 
   void accept(CodeGeneratorShared* codegen) override {
     codegen->visitOutOfLineTruncateSlow(this);
@@ -902,32 +909,43 @@ class OutOfLineTruncateSlow : public OutOfLineCodeBase<CodeGeneratorShared> {
   FloatRegister src() const { return src_; }
   Register dest() const { return dest_; }
   bool widenFloatToDouble() const { return widenFloatToDouble_; }
+  bool preserveTls() const { return preserveTls_; }
   wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }
 };
 
 OutOfLineCode* CodeGeneratorShared::oolTruncateDouble(
     FloatRegister src, Register dest, MInstruction* mir,
-    wasm::BytecodeOffset bytecodeOffset) {
+    wasm::BytecodeOffset bytecodeOffset, bool preserveTls) {
   MOZ_ASSERT_IF(IsCompilingWasm(), bytecodeOffset.isValid());
 
-  OutOfLineTruncateSlow* ool = new (alloc())
-      OutOfLineTruncateSlow(src, dest, /* float32 */ false, bytecodeOffset);
+  OutOfLineTruncateSlow* ool = new (alloc()) OutOfLineTruncateSlow(
+      src, dest, /* float32 */ false, bytecodeOffset, preserveTls);
   addOutOfLineCode(ool, mir);
   return ool;
 }
 
 void CodeGeneratorShared::emitTruncateDouble(FloatRegister src, Register dest,
-                                             MTruncateToInt32* mir) {
-  OutOfLineCode* ool = oolTruncateDouble(src, dest, mir, mir->bytecodeOffset());
+                                             MInstruction* mir) {
+  MOZ_ASSERT(mir->isTruncateToInt32() || mir->isWasmBuiltinTruncateToInt32());
+  wasm::BytecodeOffset bytecodeOffset =
+      mir->isTruncateToInt32()
+          ? mir->toTruncateToInt32()->bytecodeOffset()
+          : mir->toWasmBuiltinTruncateToInt32()->bytecodeOffset();
+  OutOfLineCode* ool = oolTruncateDouble(src, dest, mir, bytecodeOffset);
 
   masm.branchTruncateDoubleMaybeModUint32(src, dest, ool->entry());
   masm.bind(ool->rejoin());
 }
 
 void CodeGeneratorShared::emitTruncateFloat32(FloatRegister src, Register dest,
-                                              MTruncateToInt32* mir) {
-  OutOfLineTruncateSlow* ool = new (alloc()) OutOfLineTruncateSlow(
-      src, dest, /* float32 */ true, mir->bytecodeOffset());
+                                              MInstruction* mir) {
+  MOZ_ASSERT(mir->isTruncateToInt32() || mir->isWasmBuiltinTruncateToInt32());
+  wasm::BytecodeOffset bytecodeOffset =
+      mir->isTruncateToInt32()
+          ? mir->toTruncateToInt32()->bytecodeOffset()
+          : mir->toWasmBuiltinTruncateToInt32()->bytecodeOffset();
+  OutOfLineTruncateSlow* ool = new (alloc())
+      OutOfLineTruncateSlow(src, dest, /* float32 */ true, bytecodeOffset);
   addOutOfLineCode(ool, mir);
 
   masm.branchTruncateFloat32MaybeModUint32(src, dest, ool->entry());

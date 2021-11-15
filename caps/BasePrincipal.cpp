@@ -671,6 +671,7 @@ BasePrincipal::AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI, bool* aRes) {
 
 NS_IMETHODIMP
 BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
+                                    const OriginAttributes& aOriginAttributes,
                                     nsACString& _retval) {
   _retval.Truncate();
   constexpr auto space = " "_ns;
@@ -696,7 +697,11 @@ BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
   rv = aURI->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  _retval.Append(space + scheme + space + host + space + port + space + spec);
+  nsAutoCString originAttributesSuffix;
+  aOriginAttributes.CreateSuffix(originAttributesSuffix);
+
+  _retval.Append(space + scheme + space + host + space + port + space + spec +
+                 space + originAttributesSuffix);
 
   return NS_OK;
 }
@@ -749,6 +754,17 @@ BasePrincipal::GetAsciiSpec(nsACString& aSpec) {
 }
 
 NS_IMETHODIMP
+BasePrincipal::GetSpec(nsACString& aSpec) {
+  aSpec.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetSpec(aSpec);
+}
+
+NS_IMETHODIMP
 BasePrincipal::GetAsciiHost(nsACString& aHost) {
   aHost.Truncate();
   nsCOMPtr<nsIURI> prinURI;
@@ -782,9 +798,9 @@ BasePrincipal::GetExposableSpec(nsACString& aSpec) {
   }
   nsCOMPtr<nsIURI> clone;
   rv = NS_MutateURI(prinURI)
-           .SetQuery(EmptyCString())
-           .SetRef(EmptyCString())
-           .SetUserPass(EmptyCString())
+           .SetQuery(""_ns)
+           .SetRef(""_ns)
+           .SetUserPass(""_ns)
            .Finalize(clone);
   NS_ENSURE_SUCCESS(rv, rv);
   return clone->GetAsciiSpec(aSpec);
@@ -863,6 +879,26 @@ NS_IMETHODIMP BasePrincipal::GetIsIpAddress(bool* aIsIpAddress) {
     *aIsIpAddress = true;
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP BasePrincipal::GetIsLocalIpAddress(bool* aIsIpAddress) {
+  *aIsIpAddress = false;
+
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIIOService> ioService = do_GetIOService(&rv);
+  if (NS_FAILED(rv) || !ioService) {
+    return NS_OK;
+  }
+  rv = ioService->HostnameIsLocalIPAddress(prinURI, aIsIpAddress);
+  if (NS_FAILED(rv)) {
+    *aIsIpAddress = false;
+  }
   return NS_OK;
 }
 
@@ -1162,34 +1198,53 @@ void BasePrincipal::FinishInit(BasePrincipal* aOther,
 NS_IMETHODIMP
 BasePrincipal::GetLocalStorageQuotaKey(nsACString& aKey) {
   aKey.Truncate();
-  nsresult rv;
-  nsCOMPtr<nsIEffectiveTLDService> eTLDService(
-      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIURI> uri;
-  rv = GetURI(getter_AddRefs(uri));
+  nsresult rv = GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(uri, NS_ERROR_UNEXPECTED);
 
-  nsAutoCString eTLDplusOne;
-  rv = eTLDService->GetBaseDomain(uri, 0, eTLDplusOne);
-  if (NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS == rv) {
-    // XXX bug 357323 - what to do for localhost/file exactly?
-    rv = uri->GetAsciiHost(eTLDplusOne);
-  }
+  // The special handling of the file scheme should be consistent with
+  // GetStorageOriginKey.
+
+  nsAutoCString baseDomain;
+  rv = uri->GetAsciiHost(baseDomain);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (baseDomain.IsEmpty() && uri->SchemeIs("file")) {
+    nsCOMPtr<nsIURL> url = do_QueryInterface(uri, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = url->GetDirectory(baseDomain);
+    NS_ENSURE_SUCCESS(rv, rv);
+  } else {
+    nsCOMPtr<nsIEffectiveTLDService> eTLDService(
+        do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID, &rv));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsAutoCString eTLDplusOne;
+    rv = eTLDService->GetBaseDomain(uri, 0, eTLDplusOne);
+    if (NS_SUCCEEDED(rv)) {
+      baseDomain = eTLDplusOne;
+    } else if (rv == NS_ERROR_HOST_IS_IP_ADDRESS ||
+               rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
+      rv = NS_OK;
+    }
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   OriginAttributesRef().CreateSuffix(aKey);
 
   nsAutoCString subdomainsDBKey;
-  dom::StorageUtils::CreateReversedDomain(eTLDplusOne, subdomainsDBKey);
+  rv = dom::StorageUtils::CreateReversedDomain(baseDomain, subdomainsDBKey);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   aKey.Append(':');
   aKey.Append(subdomainsDBKey);
 
   return NS_OK;
 }
+
 NS_IMETHODIMP
 BasePrincipal::GetNextSubDomainPrincipal(
     nsIPrincipal** aNextSubDomainPrincipal) {
@@ -1237,12 +1292,14 @@ BasePrincipal::GetNextSubDomainPrincipal(
 NS_IMETHODIMP
 BasePrincipal::GetStorageOriginKey(nsACString& aOriginKey) {
   aOriginKey.Truncate();
+
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
-  if (!uri) {
-    return NS_ERROR_UNEXPECTED;
-  }
+  NS_ENSURE_TRUE(uri, NS_ERROR_UNEXPECTED);
+
+  // The special handling of the file scheme should be consistent with
+  // GetLocalStorageQuotaKey.
 
   nsAutoCString domainOrigin;
   rv = uri->GetAsciiHost(domainOrigin);
@@ -1261,9 +1318,7 @@ BasePrincipal::GetStorageOriginKey(nsACString& aOriginKey) {
   // Append reversed domain
   nsAutoCString reverseDomain;
   rv = dom::StorageUtils::CreateReversedDomain(domainOrigin, reverseDomain);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  NS_ENSURE_SUCCESS(rv, rv);
 
   aOriginKey.Append(reverseDomain);
 
@@ -1280,6 +1335,7 @@ BasePrincipal::GetStorageOriginKey(nsACString& aOriginKey) {
   if (port != -1) {
     aOriginKey.Append(nsPrintfCString(":%d", port));
   }
+
   return NS_OK;
 }
 

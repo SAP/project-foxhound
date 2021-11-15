@@ -72,6 +72,9 @@ class LegacyServiceWorkersWatcher extends LegacyWorkersWatcher {
 
   // Override from LegacyWorkersWatcher.
   async listen() {
+    // Listen to the current target front.
+    this.target = this.targetList.targetFront;
+
     this._workersListener.addListener(this._onRegistrationListChanged);
 
     // Fetch the registrations before calling listen, since service workers
@@ -160,6 +163,10 @@ class LegacyServiceWorkersWatcher extends LegacyWorkersWatcher {
   }
 
   async _onRegistrationListChanged() {
+    if (this.targetList.isDestroyed()) {
+      return;
+    }
+
     await this._updateRegistrations();
 
     // Everything after this point is not strictly necessary for sw support

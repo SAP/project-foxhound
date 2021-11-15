@@ -15,13 +15,6 @@ add_task(async function() {
   // which forces the emission of RDP requests we aren't correctly waiting for.
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
 
-  info("Test platform messages legacy listener");
-  await pushPref("devtools.testing.enableServerWatcherSupport", false);
-  await testPlatformMessagesResources();
-  await testPlatformMessagesResourcesWithIgnoreExistingResources();
-
-  info("Test platform messages server listener");
-  await pushPref("devtools.testing.enableServerWatcherSupport", true);
   await testPlatformMessagesResources();
   await testPlatformMessagesResourcesWithIgnoreExistingResources();
 });
@@ -31,7 +24,7 @@ async function testPlatformMessagesResources() {
     client,
     resourceWatcher,
     targetList,
-  } = await initResourceWatcherAndTarget();
+  } = await initMultiProcessResourceWatcher();
 
   const expectedMessages = [
     "This is a cached message",
@@ -49,31 +42,33 @@ async function testPlatformMessagesResources() {
 
   let done;
   const onAllMessagesReceived = new Promise(resolve => (done = resolve));
-  const onAvailable = ({ resourceType, targetFront, resource }) => {
-    if (!expectedMessages.includes(resource.message)) {
-      return;
-    }
+  const onAvailable = resources => {
+    for (const resource of resources) {
+      if (!expectedMessages.includes(resource.message)) {
+        continue;
+      }
 
-    is(
-      resource.targetFront,
-      targetList.targetFront,
-      "The targetFront property is the expected one"
-    );
+      is(
+        resource.targetFront,
+        targetList.targetFront,
+        "The targetFront property is the expected one"
+      );
 
-    receivedMessages.push(resource.message);
-    is(
-      resource.message,
-      expectedMessages[receivedMessages.length - 1],
-      `Received the expected «${resource.message}» message, in the expected order`
-    );
+      receivedMessages.push(resource.message);
+      is(
+        resource.message,
+        expectedMessages[receivedMessages.length - 1],
+        `Received the expected «${resource.message}» message, in the expected order`
+      );
 
-    ok(
-      resource.timeStamp.toString().match(/^\d+$/),
-      "The resource has a timeStamp property"
-    );
+      ok(
+        resource.timeStamp.toString().match(/^\d+$/),
+        "The resource has a timeStamp property"
+      );
 
-    if (receivedMessages.length == expectedMessages.length) {
-      done();
+      if (receivedMessages.length == expectedMessages.length) {
+        done();
+      }
     }
   };
 
@@ -95,7 +90,7 @@ async function testPlatformMessagesResources() {
   ok(true, "All the expected messages were received");
 
   Services.console.reset();
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 }
 
@@ -104,7 +99,7 @@ async function testPlatformMessagesResourcesWithIgnoreExistingResources() {
     client,
     resourceWatcher,
     targetList,
-  } = await initResourceWatcherAndTarget();
+  } = await initMultiProcessResourceWatcher();
 
   info(
     "Check whether onAvailable will not be called with existing platform messages"
@@ -117,12 +112,14 @@ async function testPlatformMessagesResourcesWithIgnoreExistingResources() {
   await resourceWatcher.watchResources(
     [ResourceWatcher.TYPES.PLATFORM_MESSAGE],
     {
-      onAvailable: ({ resource }) => {
-        if (!expectedMessages.includes(resource.message)) {
-          return;
-        }
+      onAvailable: resources => {
+        for (const resource of resources) {
+          if (!expectedMessages.includes(resource.message)) {
+            continue;
+          }
 
-        availableResources.push(resource);
+          availableResources.push(resource);
+        }
       },
       ignoreExistingResources: true,
     }
@@ -147,6 +144,6 @@ async function testPlatformMessagesResourcesWithIgnoreExistingResources() {
   }
 
   Services.console.reset();
-  await targetList.stopListening();
+  await targetList.destroy();
   await client.close();
 }

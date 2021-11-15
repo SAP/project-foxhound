@@ -128,7 +128,7 @@ const XPI_PERMISSION = "install";
 
 const XPI_SIGNATURE_CHECK_PERIOD = 24 * 60 * 60;
 
-const DB_SCHEMA = 32;
+const DB_SCHEMA = 33;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -967,6 +967,12 @@ var BuiltInLocation = new (class _BuiltInLocation extends XPIStateLocation {
   get enumerable() {
     return false;
   }
+
+  // Builtin addons are never linked, return false
+  // here for correct behavior elsewhere.
+  isLinkedAddon(/* aId */) {
+    return false;
+  }
 })();
 
 /**
@@ -1429,6 +1435,9 @@ var XPIStates = {
    */
   scanForChanges(ignoreSideloads = true) {
     let oldState = this.initialStateData || this.loadExtensionState();
+    // We're called twice, do not restore the second time as new data
+    // may have been inserted since the first call.
+    let shouldRestoreLocationData = !this.initialStateData;
     this.initialStateData = oldState;
 
     let changed = false;
@@ -1437,7 +1446,7 @@ var XPIStates = {
     for (let loc of XPIStates.locations()) {
       oldLocations.delete(loc.name);
 
-      if (oldState[loc.name]) {
+      if (shouldRestoreLocationData && oldState[loc.name]) {
         loc.restore(oldState[loc.name]);
       }
       changed = changed || loc.changed;
@@ -2460,8 +2469,8 @@ var XPIProvider = {
 
       this.maybeInstallBuiltinAddon(
         "default-theme@mozilla.org",
-        "1.0",
-        "resource://gre/modules/themes/default/"
+        "1.1",
+        "resource://default-theme/"
       );
 
       resolveProviderReady(Promise.all(this.startupPromises));
@@ -2558,8 +2567,6 @@ var XPIProvider = {
         async () => {
           XPIProvider._closing = true;
 
-          XPIDatabase.asyncLoadDB();
-
           await XPIProvider.cleanupTemporaryAddons();
           for (let addon of XPIProvider.sortBootstrappedAddons().reverse()) {
             // If no scope has been loaded for this add-on then there is no need
@@ -2618,6 +2625,13 @@ var XPIProvider = {
       // sessionstore-windows-restored.  In a browser toolbox process
       // we wait for the toolbox to show up, based on xul-window-visible
       // and a visible toolbox window.
+      //
+      // TelemetryEnvironment's EnvironmentAddonBuilder awaits databaseReady
+      // before releasing a blocker on AddonManager.beforeShutdown, which in its
+      // turn is a blocker of a shutdown blocker at "profile-before-change".
+      // To avoid a deadlock, trigger the DB load at "profile-before-change" if
+      // the database hasn't started loading yet.
+      //
       // Finally, we have a test-only event called test-load-xpi-database
       // as a temporary workaround for bug 1372845.  The latter can be
       // cleaned up when that bug is resolved.
@@ -2625,6 +2639,7 @@ var XPIProvider = {
         const EVENTS = [
           "sessionstore-windows-restored",
           "xul-window-visible",
+          "profile-before-change",
           "test-load-xpi-database",
         ];
         let observer = (subject, topic, data) => {
@@ -2689,13 +2704,6 @@ var XPIProvider = {
       Services.prefs.setBoolPref(PREF_PENDING_OPERATIONS, false);
     }
 
-    // Ugh, if we reach this point without loading the xpi database,
-    // we need to load it know, otherwise the telemetry shutdown blocker
-    // will never resolve.
-    if (!XPIDatabase.initialized) {
-      await XPIDatabase.asyncLoadDB();
-    }
-
     await XPIDatabase.shutdown();
   },
 
@@ -2735,10 +2743,8 @@ var XPIProvider = {
    * Adds a list of currently active add-ons to the next crash report.
    */
   addAddonsToCrashReporter() {
-    if (
-      !(Services.appinfo instanceof Ci.nsICrashReporter) ||
-      Services.appinfo.inSafeMode
-    ) {
+    void (Services.appinfo instanceof Ci.nsICrashReporter);
+    if (!Services.appinfo.annotateCrashReport || Services.appinfo.inSafeMode) {
       return;
     }
 
@@ -2888,15 +2894,29 @@ var XPIProvider = {
     return changed;
   },
 
-  maybeInstallBuiltinAddon(aID, aVersion, aBase) {
-    if (!(enabledScopes & BuiltInLocation.scope)) {
-      return;
+  /**
+   * Like `installBuiltinAddon`, but only installs the addon at `aBase`
+   * if an existing built-in addon with the ID `aID` and version doesn't
+   * already exist.
+   *
+   * @param {string} aID
+   *        The ID of the add-on being registered.
+   * @param {string} aVersion
+   *        The version of the add-on being registered.
+   * @param {string} aBase
+   *        A string containing the base URL.  Must be a resource: URL.
+   * @returns {Promise<Addon>} a Promise that resolves when the addon is installed.
+   */
+  async maybeInstallBuiltinAddon(aID, aVersion, aBase) {
+    let installed;
+    if (enabledScopes & BuiltInLocation.scope) {
+      let existing = BuiltInLocation.get(aID);
+      if (!existing || existing.version != aVersion) {
+        installed = this.installBuiltinAddon(aBase);
+        this.startupPromises.push(installed);
+      }
     }
-
-    let existing = BuiltInLocation.get(aID);
-    if (!existing || existing.version != aVersion) {
-      this.startupPromises.push(this.installBuiltinAddon(aBase));
-    }
+    return installed;
   },
 
   getDependentAddons(aAddon) {

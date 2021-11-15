@@ -8,7 +8,6 @@
 
 #include "CompositableHost.h"  // for CompositableHost
 #include "LayerScope.h"
-#include "LayersLogging.h"   // for AppendToString
 #include "mozilla/gfx/2D.h"  // for DataSourceSurface, Factory
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Shmem.h"  // for Shmem
@@ -32,6 +31,7 @@
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/webrender/RenderBufferTextureHost.h"
+#include "mozilla/webrender/RenderBufferTextureHostSWGL.h"
 #include "mozilla/webrender/RenderExternalTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -248,7 +248,7 @@ already_AddRefed<TextureHost> TextureHost::Create(
           aDesc.get_SurfaceDescriptorRecorded();
       UniquePtr<SurfaceDescriptor> realDesc =
           aDeallocator->AsCompositorBridgeParentBase()
-              ->LookupSurfaceDescriptorForClientDrawTarget(desc.drawTarget());
+              ->LookupSurfaceDescriptorForClientTexture(desc.textureId());
       if (!realDesc) {
         gfxCriticalNote << "Failed to get descriptor for recorded texture.";
         // Create a dummy to prevent any crashes due to missing IPDL actors.
@@ -457,8 +457,9 @@ void TextureHost::NotifyNotUsed() {
   }
 
   // Do not need to call NotifyNotUsed() if TextureHost does not have
-  // TextureFlags::RECYCLE flag.
-  if (!(GetFlags() & TextureFlags::RECYCLE)) {
+  // TextureFlags::RECYCLE flag nor TextureFlags::WAIT_HOST_USAGE_END flag.
+  if (!(GetFlags() & TextureFlags::RECYCLE) &&
+      !(GetFlags() & TextureFlags::WAIT_HOST_USAGE_END)) {
     return;
   }
 
@@ -509,6 +510,10 @@ void TextureHost::EnsureRenderTexture(
         Some(AsyncImagePipelineManager::GetNextExternalImageId());
   } else {
     // TextureHost is wrapped by WebRenderTextureHost.
+    if (aExternalImageId == mExternalImageId) {
+      // The texture has already been created.
+      return;
+    }
     MOZ_ASSERT(mExternalImageId.isNothing());
     mExternalImageId = aExternalImageId;
   }
@@ -521,11 +526,11 @@ void TextureHost::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   // Note: the TextureHost needs to be locked before it is safe to call
   //       GetSize() and GetFormat() on it.
   if (Lock()) {
-    AppendToString(aStream, GetSize(), " [size=", "]");
-    AppendToString(aStream, GetFormat(), " [format=", "]");
+    aStream << " [size=" << GetSize() << "]"
+            << " [format=" << GetFormat() << "]";
     Unlock();
   }
-  AppendToString(aStream, mFlags, " [flags=", "]");
+  aStream << " [flags=" << mFlags << "]";
 #ifdef MOZ_DUMP_PAINTING
   if (StaticPrefs::layers_dump_texture()) {
     nsAutoCString pfx(aPrefix);
@@ -558,7 +563,7 @@ BufferTextureHost::BufferTextureHost(const BufferDescriptor& aDesc,
   switch (mDescriptor.type()) {
     case BufferDescriptor::TYCbCrDescriptor: {
       const YCbCrDescriptor& ycbcr = mDescriptor.get_YCbCrDescriptor();
-      mSize = ycbcr.ySize();
+      mSize = ycbcr.display().Size();
       mFormat = gfx::SurfaceFormat::YUV;
       mHasIntermediateBuffer = ycbcr.hasIntermediateBuffer();
       break;
@@ -672,7 +677,10 @@ void BufferTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture;
 
-  if (UseExternalTextures()) {
+  if (gfx::gfxVars::UseSoftwareWebRender()) {
+    texture =
+        new wr::RenderBufferTextureHostSWGL(GetBuffer(), GetBufferDescriptor());
+  } else if (UseExternalTextures()) {
     texture =
         new wr::RenderExternalTextureHost(GetBuffer(), GetBufferDescriptor());
   } else {
@@ -700,7 +708,7 @@ void BufferTextureHost::PushResourceUpdates(
                     : &wr::TransactionBuilder::UpdateExternalImage;
 
   auto imageType =
-      UseExternalTextures()
+      UseExternalTextures() || gfx::gfxVars::UseSoftwareWebRender()
           ? wr::ExternalImageType::TextureHandle(wr::TextureTarget::Rect)
           : wr::ExternalImageType::Buffer();
 
@@ -733,22 +741,27 @@ void BufferTextureHost::PushDisplayItems(wr::DisplayListBuilder& aBuilder,
                                          const wr::LayoutRect& aClip,
                                          wr::ImageRendering aFilter,
                                          const Range<wr::ImageKey>& aImageKeys,
-                                         const bool aPreferCompositorSurface) {
+                                         PushDisplayItemFlagSet aFlags) {
+  // SWGL should always try to bypass shaders and composite directly.
+  bool preferCompositorSurface =
+      aFlags.contains(PushDisplayItemFlag::PREFER_COMPOSITOR_SURFACE);
+  bool useExternalSurface =
+      aFlags.contains(PushDisplayItemFlag::SUPPORTS_EXTERNAL_BUFFER_TEXTURES);
   if (GetFormat() != gfx::SurfaceFormat::YUV) {
     MOZ_ASSERT(aImageKeys.length() == 1);
     aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
                        !(mFlags & TextureFlags::NON_PREMULTIPLIED),
                        wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
-                       aPreferCompositorSurface);
+                       preferCompositorSurface, useExternalSurface);
   } else {
     MOZ_ASSERT(aImageKeys.length() == 3);
     const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
-    aBuilder.PushYCbCrPlanarImage(aBounds, aClip, true, aImageKeys[0],
-                                  aImageKeys[1], aImageKeys[2],
-                                  wr::ToWrColorDepth(desc.colorDepth()),
-                                  wr::ToWrYuvColorSpace(desc.yUVColorSpace()),
-                                  wr::ToWrColorRange(desc.colorRange()),
-                                  aFilter, aPreferCompositorSurface);
+    aBuilder.PushYCbCrPlanarImage(
+        aBounds, aClip, true, aImageKeys[0], aImageKeys[1], aImageKeys[2],
+        wr::ToWrColorDepth(desc.colorDepth()),
+        wr::ToWrYuvColorSpace(desc.yUVColorSpace()),
+        wr::ToWrColorRange(desc.colorRange()), aFilter, preferCompositorSurface,
+        useExternalSurface);
   }
 }
 

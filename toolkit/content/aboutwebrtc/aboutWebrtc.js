@@ -181,6 +181,27 @@ class AecLogging extends Control {
   }
 }
 
+class ShowTab extends Control {
+  constructor(browserId) {
+    super();
+    this.label = string("show_tab_label");
+    this.message = null;
+    this.browserId = browserId;
+  }
+
+  onClick() {
+    const gBrowser =
+      window.ownerGlobal.browsingContext.topChromeWindow.gBrowser;
+    for (const tab of gBrowser.visibleTabs) {
+      if (tab.linkedBrowser && tab.linkedBrowser.browserId == this.browserId) {
+        gBrowser.selectedTab = tab;
+        return;
+      }
+    }
+    this.ctrl.disabled = true;
+  }
+}
+
 (async () => {
   // Setup. Retrieve reports & log while page loads.
   const haveReports = getStats();
@@ -206,6 +227,8 @@ class AecLogging extends Control {
   // Render pcs and log
   let reports = await haveReports;
   let log = await haveLog;
+
+  reports.sort((a, b) => a.browserId - b.browserId);
 
   let peerConnections = renderElement("div");
   let connectionLog = renderElement("div");
@@ -274,6 +297,7 @@ class AecLogging extends Control {
         };
         replace("ice-stats", renderICEStats);
         replace("rtp-stats", renderRTPStats);
+        replace("bandwidth-stats", renderBandwidthStats);
         replace("frame-stats", renderFrameRateStats);
       });
     },
@@ -283,7 +307,7 @@ class AecLogging extends Control {
 })();
 
 function renderPeerConnection(report) {
-  const { pcid, closed, timestamp, configuration } = report;
+  const { pcid, browserId, closed, timestamp, configuration } = report;
 
   const pcDiv = renderElement("div", { className: "peer-connection" });
   {
@@ -292,7 +316,10 @@ function renderPeerConnection(report) {
     const closedStr = closed ? `(${string("connection_closed")})` : "";
     const now = new Date(timestamp).toString();
 
-    pcDiv.append(renderText("h3", `[ ${id} ] ${url} ${closedStr} ${now}`));
+    pcDiv.append(
+      renderText("h3", `[ ${browserId} | ${id} ] ${url} ${closedStr} ${now}`)
+    );
+    pcDiv.append(new ShowTab(browserId).render()[0]);
   }
   {
     const section = renderFoldableSection(pcDiv);
@@ -306,6 +333,7 @@ function renderPeerConnection(report) {
       renderConfiguration(configuration),
       renderICEStats(report),
       renderSDPStats(report),
+      renderBandwidthStats(report),
       renderFrameRateStats(report),
       renderRTPStats(report)
     );
@@ -388,6 +416,33 @@ function renderSDPStats({ offerer, localSdp, remoteSdp, sdpHistory }) {
   }
   section.append(localDiv, remoteDiv);
   statsDiv.append(section);
+  return statsDiv;
+}
+
+function renderBandwidthStats(report) {
+  const statsDiv = renderElement("div", {
+    id: "bandwidth-stats: " + report.pcid,
+  });
+  const table = renderSimpleTable(
+    "",
+    [
+      "track_identifier",
+      "send_bandwidth_bytes_sec",
+      "receive_bandwidth_bytes_sec",
+      "max_padding_bytes_sec",
+      "pacer_delay_ms",
+      "round_trip_time_ms",
+    ].map(columnName => string(columnName)),
+    report.bandwidthEstimations.map(stat => [
+      stat.trackIdentifier,
+      stat.sendBandwidthBps,
+      stat.receiveBandwidthBps,
+      stat.maxPaddingBps,
+      stat.pacerDelayMs,
+      stat.rttMs,
+    ])
+  );
+  statsDiv.append(renderText("h4", string("bandwidth_stats_heading")), table);
   return statsDiv;
 }
 

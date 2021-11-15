@@ -19,16 +19,22 @@
 // This file is safe to include unconditionally, and only defines
 // empty macros if MOZ_GECKO_PROFILER is not set.
 
-// BaseProfilerCounts.h is also safe to include unconditionally, with empty
-// macros if MOZ_GECKO_PROFILER is not set.
+// These headers are also safe to include unconditionally, with empty macros if
+// MOZ_GECKO_PROFILER is not set.
 #include "mozilla/BaseProfilerCounts.h"
+
+// BaseProfilerMarkers.h is #included in the middle of this header!
+// #include "mozilla/BaseProfilerMarkers.h"
 
 #ifndef MOZ_GECKO_PROFILER
 
+#  include "mozilla/BaseProfilerMarkers.h"
+#  include "mozilla/UniquePtr.h"
+
 // This file can be #included unconditionally. However, everything within this
 // file must be guarded by a #ifdef MOZ_GECKO_PROFILER, *except* for the
-// following macros, which encapsulate the most common operations and thus
-// avoid the need for many #ifdefs.
+// following macros and functions, which encapsulate the most common operations
+// and thus avoid the need for many #ifdefs.
 
 #  define AUTO_BASE_PROFILER_INIT
 
@@ -47,18 +53,38 @@
 #  define AUTO_BASE_PROFILER_LABEL_DYNAMIC_FAST(label, dynamicString, \
                                                 categoryPair, ctx, flags)
 
-#  define BASE_PROFILER_ADD_MARKER(markerName, categoryPair)
-#  define BASE_PROFILER_ADD_MARKER_WITH_PAYLOAD( \
-      markerName, categoryPair, PayloadType, parenthesizedPayloadArgs)
-
-#  define BASE_PROFILER_TRACING_MARKER(categoryString, markerName, \
-                                       categoryPair, kind)
-#  define AUTO_BASE_PROFILER_TRACING_MARKER(categoryString, markerName, \
-                                            categoryPair)
-#  define AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE(markerName, text, categoryPair, \
-                                               cause)
-
 #  define AUTO_PROFILER_STATS(name)
+
+// Function stubs for when MOZ_GECKO_PROFILER is not defined.
+
+namespace mozilla {
+// This won't be used, it's just there to allow the empty definition of
+// `profiler_capture_backtrace`.
+class ProfileChunkedBuffer {};
+
+namespace baseprofiler {
+// This won't be used, it's just there to allow the empty definition of
+// `profiler_get_backtrace`.
+struct ProfilerBacktrace {};
+using UniqueProfilerBacktrace = UniquePtr<ProfilerBacktrace>;
+
+// Get/Capture-backtrace functions can return nullptr or false, the result
+// should be fed to another empty macro or stub anyway.
+
+static inline UniqueProfilerBacktrace profiler_get_backtrace() {
+  return nullptr;
+}
+
+static inline bool profiler_capture_backtrace_into(
+    ProfileChunkedBuffer& aChunkedBuffer) {
+  return false;
+}
+
+static inline UniquePtr<ProfileChunkedBuffer> profiler_capture_backtrace() {
+  return nullptr;
+}
+}  // namespace baseprofiler
+}  // namespace mozilla
 
 #else  // !MOZ_GECKO_PROFILER
 
@@ -67,7 +93,6 @@
 #  include "mozilla/Assertions.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Attributes.h"
-#  include "mozilla/GuardObjects.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/PowerOfTwo.h"
 #  include "mozilla/Sprintf.h"
@@ -82,13 +107,13 @@
 namespace mozilla {
 
 class MallocAllocPolicy;
+class ProfileChunkedBuffer;
 template <class T, size_t MinInlineCapacity, class AllocPolicy>
 class Vector;
 
 namespace baseprofiler {
 
 class ProfilerBacktrace;
-class ProfilerMarkerPayload;
 class SpliceableJSONWriter;
 
 // Macros used by the AUTO_PROFILER_* macros below.
@@ -424,8 +449,7 @@ inline bool profiler_is_active() {
 // doing some potentially-expensive work that's used in a marker. E.g.:
 //
 //   if (profiler_can_accept_markers()) {
-//     ExpensiveMarkerPayload expensivePayload = CreateExpensivePayload();
-//     BASE_PROFILER_ADD_MARKER_WITH_PAYLOAD(name, OTHER, expensivePayload);
+//     BASE_PROFILER_MARKER(name, OTHER, SomeMarkerType, expensivePayload);
 //   }
 inline bool profiler_can_accept_markers() {
   return baseprofiler::detail::RacyFeatures::IsActiveAndUnpaused();
@@ -476,6 +500,16 @@ MFBT_API int profiler_current_process_id();
 // Get the current thread's ID.
 MFBT_API int profiler_current_thread_id();
 
+// Statically initialized to 0, then set once from profiler_init(), which should
+// be called from the main thread before any other use of the profiler.
+extern MFBT_DATA int scProfilerMainThreadId;
+
+inline int profiler_main_thread_id() { return scProfilerMainThreadId; }
+
+inline bool profiler_is_main_thread() {
+  return profiler_current_thread_id() == profiler_main_thread_id();
+}
+
 // An object of this class is passed to profiler_suspend_and_sample_thread().
 // For each stack frame, one of the Collect methods will be called.
 class ProfilerStackCollector {
@@ -516,8 +550,21 @@ struct ProfilerBacktraceDestructor {
 using UniqueProfilerBacktrace =
     UniquePtr<ProfilerBacktrace, ProfilerBacktraceDestructor>;
 
-// Immediately capture the current thread's call stack and return it. A no-op
-// if the profiler is inactive.
+// Immediately capture the current thread's call stack, store it in the provided
+// buffer (usually to avoid allocations if you can construct the buffer on the
+// stack). Returns false if unsuccessful, or if the profiler is inactive.
+MFBT_API bool profiler_capture_backtrace_into(
+    ProfileChunkedBuffer& aChunkedBuffer);
+
+// Immediately capture the current thread's call stack, and return it in a
+// ProfileChunkedBuffer (usually for later use in MarkerStack::TakeBacktrace()).
+// May be null if unsuccessful, or if the profiler is inactive.
+MFBT_API UniquePtr<ProfileChunkedBuffer> profiler_capture_backtrace();
+
+// Immediately capture the current thread's call stack, and return it in a
+// ProfilerBacktrace (usually for later use in marker function that take a
+// ProfilerBacktrace). May be null if unsuccessful, or if the profiler is
+// inactive.
 MFBT_API UniqueProfilerBacktrace profiler_get_backtrace();
 
 struct ProfilerStats {
@@ -629,17 +676,12 @@ class StaticBaseProfilerStats {
 // `StaticBaseProfilerStats`.
 class MOZ_RAII AutoProfilerStats {
  public:
-  explicit AutoProfilerStats(
-      StaticBaseProfilerStats& aStats MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mStats(aStats), mStart(TimeStamp::NowUnfuzzed()) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AutoProfilerStats(StaticBaseProfilerStats& aStats)
+      : mStats(aStats), mStart(TimeStamp::NowUnfuzzed()) {}
 
   ~AutoProfilerStats() { mStats.AddDurationFrom(mStart); }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-
   StaticBaseProfilerStats& mStats;
   TimeStamp mStart;
 };
@@ -660,6 +702,16 @@ class MOZ_RAII AutoProfilerStats {
 #    define AUTO_PROFILER_STATS(name)
 
 #  endif  // PROFILER_RUNTIME_STATS else
+
+}  // namespace baseprofiler
+}  // namespace mozilla
+
+// BaseProfilerMarkers.h requires some stuff from this header.
+// TODO: Move common stuff to shared header, and move this #include to the top.
+#  include "mozilla/BaseProfilerMarkers.h"
+
+namespace mozilla {
+namespace baseprofiler {
 
 //---------------------------------------------------------------------------
 // Put profiling data into the profiler (labels and markers)
@@ -753,144 +805,13 @@ class MOZ_RAII AutoProfilerStats {
         ctx, label, dynamicString,                                        \
         ::mozilla::baseprofiler::ProfilingCategoryPair::categoryPair, flags)
 
-// Insert a marker in the profile timeline. This is useful to delimit something
-// important happening such as the first paint. Unlike labels, which are only
-// recorded in the profile buffer if a sample is collected while the label is
-// on the label stack, markers will always be recorded in the profile buffer.
-// aMarkerName is copied, so the caller does not need to ensure it lives for a
-// certain length of time. A no-op if the profiler is inactive.
-
-#  define BASE_PROFILER_ADD_MARKER(markerName, categoryPair)             \
-    do {                                                                 \
-      AUTO_PROFILER_STATS(base_add_marker);                              \
-      ::mozilla::baseprofiler::profiler_add_marker(                      \
-          markerName,                                                    \
-          ::mozilla::baseprofiler::ProfilingCategoryPair::categoryPair); \
-    } while (false)
-
-MFBT_API void profiler_add_marker(const char* aMarkerName,
-                                  ProfilingCategoryPair aCategoryPair);
-
-// `PayloadType` is a sub-class of BaseMarkerPayload, `parenthesizedPayloadArgs`
-// is the argument list used to construct that `PayloadType`. E.g.:
-// `BASE_PROFILER_ADD_MARKER_WITH_PAYLOAD("Load", DOM, TextMarkerPayload,
-//                                        ("text", start, end, ds, dsh))`
-#  define BASE_PROFILER_ADD_MARKER_WITH_PAYLOAD(                        \
-      markerName, categoryPair, PayloadType, parenthesizedPayloadArgs)  \
-    do {                                                                \
-      AUTO_PROFILER_STATS(base_add_marker_with_##PayloadType);          \
-      ::mozilla::baseprofiler::profiler_add_marker(                     \
-          markerName,                                                   \
-          ::mozilla::baseprofiler::ProfilingCategoryPair::categoryPair, \
-          PayloadType parenthesizedPayloadArgs);                        \
-    } while (false)
-
-MFBT_API void profiler_add_marker(const char* aMarkerName,
-                                  ProfilingCategoryPair aCategoryPair,
-                                  const ProfilerMarkerPayload& aPayload);
-
-MFBT_API void profiler_add_js_marker(const char* aMarkerName);
+MFBT_API void profiler_add_js_marker(const char* aMarkerName,
+                                     const char* aMarkerText);
 
 // Returns true if the profiler lock is currently held *on the current thread*.
 // This may be used by re-entrant code that may call profiler functions while
 // the profiler already has the lock (which would deadlock).
 bool profiler_is_locked_on_current_thread();
-
-// Insert a marker in the profile timeline for a specified thread.
-MFBT_API void profiler_add_marker_for_thread(
-    int aThreadId, ProfilingCategoryPair aCategoryPair, const char* aMarkerName,
-    const ProfilerMarkerPayload& aPayload);
-
-// Insert a marker in the profile timeline for the main thread.
-// This may be used to gather some markers from any thread, that should be
-// displayed in the main thread track.
-MFBT_API void profiler_add_marker_for_mainthread(
-    ProfilingCategoryPair aCategoryPair, const char* aMarkerName,
-    const ProfilerMarkerPayload& aPayload);
-
-enum TracingKind {
-  TRACING_EVENT,
-  TRACING_INTERVAL_START,
-  TRACING_INTERVAL_END,
-};
-
-// Adds a tracing marker to the profile. A no-op if the profiler is inactive.
-
-#  define BASE_PROFILER_TRACING_MARKER(categoryString, markerName, \
-                                       categoryPair, kind)         \
-    ::mozilla::baseprofiler::profiler_tracing_marker(              \
-        categoryString, markerName,                                \
-        ::mozilla::baseprofiler::ProfilingCategoryPair::categoryPair, kind)
-
-MFBT_API void profiler_tracing_marker(
-    const char* aCategoryString, const char* aMarkerName,
-    ProfilingCategoryPair aCategoryPair, TracingKind aKind,
-    const Maybe<uint64_t>& aInnerWindowID = Nothing());
-MFBT_API void profiler_tracing_marker(
-    const char* aCategoryString, const char* aMarkerName,
-    ProfilingCategoryPair aCategoryPair, TracingKind aKind,
-    UniqueProfilerBacktrace aCause,
-    const Maybe<uint64_t>& aInnerWindowID = Nothing());
-
-// Adds a START/END pair of tracing markers.
-#  define AUTO_BASE_PROFILER_TRACING_MARKER(categoryString, markerName, \
-                                            categoryPair)               \
-    ::mozilla::baseprofiler::AutoProfilerTracing BASE_PROFILER_RAII(    \
-        categoryString, markerName,                                     \
-        ::mozilla::baseprofiler::ProfilingCategoryPair::categoryPair,   \
-        Nothing())
-
-// Add a text marker. Text markers are similar to tracing markers, with the
-// difference that text markers have their "text" separate from the marker name;
-// multiple text markers with the same name can have different text, and these
-// markers will still be displayed in the same "row" in the UI.
-// Another difference is that text markers combine the start and end markers
-// into one marker.
-MFBT_API void profiler_add_text_marker(
-    const char* aMarkerName, const std::string& aText,
-    ProfilingCategoryPair aCategoryPair, const TimeStamp& aStartTime,
-    const TimeStamp& aEndTime,
-    const Maybe<uint64_t>& aInnerWindowID = Nothing(),
-    UniqueProfilerBacktrace aCause = nullptr);
-
-class MOZ_RAII AutoProfilerTextMarker {
- public:
-  AutoProfilerTextMarker(const char* aMarkerName, const std::string& aText,
-                         ProfilingCategoryPair aCategoryPair,
-                         const Maybe<uint64_t>& aInnerWindowID,
-                         UniqueProfilerBacktrace&& aCause =
-                             nullptr MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mMarkerName(aMarkerName),
-        mText(aText),
-        mCategoryPair(aCategoryPair),
-        mStartTime(TimeStamp::NowUnfuzzed()),
-        mCause(std::move(aCause)),
-        mInnerWindowID(aInnerWindowID) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
-
-  ~AutoProfilerTextMarker() {
-    profiler_add_text_marker(mMarkerName, mText, mCategoryPair, mStartTime,
-                             TimeStamp::NowUnfuzzed(), mInnerWindowID,
-                             std::move(mCause));
-  }
-
- protected:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-  const char* mMarkerName;
-  std::string mText;
-  const ProfilingCategoryPair mCategoryPair;
-  TimeStamp mStartTime;
-  UniqueProfilerBacktrace mCause;
-  const Maybe<uint64_t> mInnerWindowID;
-};
-
-#  define AUTO_BASE_PROFILER_TEXT_MARKER_CAUSE(markerName, text, categoryPair, \
-                                               cause)                          \
-    ::mozilla::baseprofiler::AutoProfilerTextMarker BASE_PROFILER_RAII(        \
-        markerName, text,                                                      \
-        ::mozilla::baseprofiler::ProfilingCategoryPair::categoryPair,          \
-        mozilla::Nothing(), cause)
 
 //---------------------------------------------------------------------------
 // Output profiles
@@ -924,24 +845,18 @@ MFBT_API void profiler_save_profile_to_file(const char* aFilename);
 
 class MOZ_RAII AutoProfilerInit {
  public:
-  explicit AutoProfilerInit(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    profiler_init(this);
-  }
+  explicit AutoProfilerInit() { profiler_init(this); }
 
   ~AutoProfilerInit() { profiler_shutdown(); }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // Convenience class to register and unregister a thread with the profiler.
 // Needs to be the first object on the stack of the thread.
 class MOZ_RAII AutoProfilerRegisterThread final {
  public:
-  explicit AutoProfilerRegisterThread(
-      const char* aName MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoProfilerRegisterThread(const char* aName) {
     profiler_register_thread(aName, this);
   }
 
@@ -951,29 +866,23 @@ class MOZ_RAII AutoProfilerRegisterThread final {
   AutoProfilerRegisterThread(const AutoProfilerRegisterThread&) = delete;
   AutoProfilerRegisterThread& operator=(const AutoProfilerRegisterThread&) =
       delete;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 class MOZ_RAII AutoProfilerThreadSleep {
  public:
-  explicit AutoProfilerThreadSleep(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    profiler_thread_sleep();
-  }
+  explicit AutoProfilerThreadSleep() { profiler_thread_sleep(); }
 
   ~AutoProfilerThreadSleep() { profiler_thread_wake(); }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // Temporarily wake up the profiling of a thread while servicing events such as
 // Asynchronous Procedure Calls (APCs).
 class MOZ_RAII AutoProfilerThreadWake {
  public:
-  explicit AutoProfilerThreadWake(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM)
+  explicit AutoProfilerThreadWake()
       : mIssuedWake(profiler_thread_is_sleeping()) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     if (mIssuedWake) {
       profiler_thread_wake();
     }
@@ -987,7 +896,6 @@ class MOZ_RAII AutoProfilerThreadWake {
   }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
   bool mIssuedWake;
 };
 
@@ -1000,10 +908,7 @@ class MOZ_RAII AutoProfilerLabel {
   // This is the AUTO_BASE_PROFILER_LABEL and AUTO_BASE_PROFILER_LABEL_DYNAMIC
   // variant.
   AutoProfilerLabel(const char* aLabel, const char* aDynamicString,
-                    ProfilingCategoryPair aCategoryPair,
-                    uint32_t aFlags = 0 MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-
+                    ProfilingCategoryPair aCategoryPair, uint32_t aFlags = 0) {
     // Get the ProfilingStack from TLS.
     Push(GetProfilingStack(), aLabel, aDynamicString, aCategoryPair, aFlags);
   }
@@ -1031,8 +936,6 @@ class MOZ_RAII AutoProfilerLabel {
   MFBT_API static ProfilingStack* GetProfilingStack();
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-
   // We save a ProfilingStack pointer in the ctor so we don't have to redo the
   // TLS lookup in the dtor.
   ProfilingStack* mProfilingStack;
@@ -1040,48 +943,6 @@ class MOZ_RAII AutoProfilerLabel {
  public:
   // See the comment on the definition in platform.cpp for details about this.
   static MOZ_THREAD_LOCAL(ProfilingStack*) sProfilingStack;
-};
-
-class MOZ_RAII AutoProfilerTracing {
- public:
-  AutoProfilerTracing(const char* aCategoryString, const char* aMarkerName,
-                      ProfilingCategoryPair aCategoryPair,
-                      const Maybe<uint64_t>& aInnerWindowID
-                          MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mCategoryString(aCategoryString),
-        mMarkerName(aMarkerName),
-        mCategoryPair(aCategoryPair),
-        mInnerWindowID(aInnerWindowID) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    profiler_tracing_marker(mCategoryString, mMarkerName, aCategoryPair,
-                            TRACING_INTERVAL_START, mInnerWindowID);
-  }
-
-  AutoProfilerTracing(
-      const char* aCategoryString, const char* aMarkerName,
-      ProfilingCategoryPair aCategoryPair, UniqueProfilerBacktrace aBacktrace,
-      const Maybe<uint64_t>& aInnerWindowID MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mCategoryString(aCategoryString),
-        mMarkerName(aMarkerName),
-        mCategoryPair(aCategoryPair),
-        mInnerWindowID(aInnerWindowID) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    profiler_tracing_marker(mCategoryString, mMarkerName, aCategoryPair,
-                            TRACING_INTERVAL_START, std::move(aBacktrace),
-                            mInnerWindowID);
-  }
-
-  ~AutoProfilerTracing() {
-    profiler_tracing_marker(mCategoryString, mMarkerName, mCategoryPair,
-                            TRACING_INTERVAL_END, mInnerWindowID);
-  }
-
- protected:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-  const char* mCategoryString;
-  const char* mMarkerName;
-  const ProfilingCategoryPair mCategoryPair;
-  const Maybe<uint64_t> mInnerWindowID;
 };
 
 // Get the MOZ_PROFILER_STARTUP* environment variables that should be

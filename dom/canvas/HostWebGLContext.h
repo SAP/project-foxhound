@@ -8,8 +8,10 @@
 
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "ClientWebGLContext.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
+#include "GLContext.h"
 #include "WebGLContext.h"
 #include "WebGL2Context.h"
 #include "WebGLFramebuffer.h"
@@ -69,6 +71,7 @@ struct LockedOutstandingContexts final {
 class HostWebGLContext final : public SupportsWeakPtr {
   friend class WebGLContext;
   friend class WebGLMemoryTracker;
+  friend class dom::WebGLParent;
 
   using ObjectId = webgl::ObjectId;
 
@@ -482,8 +485,8 @@ class HostWebGLContext final : public SupportsWeakPtr {
   }
 
   void BufferData(GLenum target, const RawBuffer<>& data, GLenum usage) const {
-    const auto& range = data.Data();
-    mContext->BufferData(target, range.length(), range.begin().get(), usage);
+    const auto& beginOrNull = data.begin();
+    mContext->BufferData(target, data.size(), beginOrNull, usage);
   }
 
   void BufferSubData(GLenum target, uint64_t dstByteOffset,

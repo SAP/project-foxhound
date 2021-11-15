@@ -18,6 +18,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsProxyRelease.h"
 
 namespace mozilla {
@@ -357,7 +358,7 @@ MediaEventSource<int64_t>& DecodedStreamData::OnOutput() {
 void DecodedStreamData::Forget() { mListener->Forget(); }
 
 void DecodedStreamData::GetDebugInfo(dom::DecodedStreamDataDebugInfo& aInfo) {
-  aInfo.mInstance = NS_ConvertUTF8toUTF16(nsPrintfCString("%p", this));
+  CopyUTF8toUTF16(nsPrintfCString("%p", this), aInfo.mInstance);
   aInfo.mAudioFramesWritten = mAudioFramesWritten;
   aInfo.mStreamAudioWritten = mAudioTrackWritten;
   aInfo.mNextAudioTime = mNextAudioTime.ToMicroseconds();
@@ -420,6 +421,9 @@ nsresult DecodedStream::Start(const TimeUnit& aStartTime,
   mPlaying = true;
   mPrincipalHandle.Connect(mCanonicalOutputPrincipal);
   mWatchManager.Watch(mPlaying, &DecodedStream::PlayingChanged);
+  mAudibilityMonitor.emplace(
+      mInfo.mAudio.mRate,
+      StaticPrefs::dom_media_silence_duration_for_audibility());
   ConnectListener();
 
   class R : public Runnable {
@@ -517,6 +521,7 @@ void DecodedStream::Stop() {
 
   mPrincipalHandle.DisconnectIfConnected();
   mWatchManager.Unwatch(mPlaying, &DecodedStream::PlayingChanged);
+  mAudibilityMonitor.reset();
 }
 
 bool DecodedStream::IsStarted() const {
@@ -674,7 +679,9 @@ void DecodedStream::SendAudio(double aVolume,
 void DecodedStream::CheckIsDataAudible(const AudioData* aData) {
   MOZ_ASSERT(aData);
 
-  bool isAudible = aData->IsAudible();
+  mAudibilityMonitor->Process(aData);
+  bool isAudible = mAudibilityMonitor->RecentlyAudible();
+
   if (isAudible != mIsAudioDataAudible) {
     mIsAudioDataAudible = isAudible;
     mAudibleEvent.Notify(mIsAudioDataAudible);

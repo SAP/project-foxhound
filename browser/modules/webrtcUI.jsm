@@ -364,9 +364,13 @@ var webrtcUI = {
         // presume that it's exempt from the tab switch warning.
         //
         // We use the permanentKey here so that the allowing of
-        // the tab survives tab tear-in and tear-out.
+        // the tab survives tab tear-in and tear-out. We ignore
+        // browsers that don't have permanentKey, since those aren't
+        // tabbrowser browsers.
         let browser = stream.topBrowsingContext.embedderElement;
-        this.allowedSharedBrowsers.add(browser.permanentKey);
+        if (browser.permanentKey) {
+          this.allowedSharedBrowsers.add(browser.permanentKey);
+        }
       }
     }
 
@@ -496,6 +500,9 @@ var webrtcUI = {
    * newest stream's <xul:browser> and window, focus the window, and
    * select the browser.
    *
+   * For camera and microphone streams, this will also revoke any associated
+   * persistent permissions from SitePermissions.
+   *
    * @param {Array<Object>} activeStreams - An array of streams obtained via webrtcUI.getActiveStreams.
    * @param {boolean} stopCameras - True to stop the camera streams (defaults to true)
    * @param {boolean} stopMics - True to stop the microphone streams (defaults to true)
@@ -568,49 +575,54 @@ var webrtcUI = {
       }
 
       for (let permission of permissions) {
-        let windowId = tab._sharingState.webRTC.windowId;
+        if (clearRequested[permission.id]) {
+          let windowId = tab._sharingState.webRTC.windowId;
 
-        if (permission.id == "screen") {
-          windowId = `screen:${webrtcState.windowId}`;
-        } else if (permission.id == "camera" || permission.id == "microphone") {
-          // If we set persistent permissions or the sharing has
-          // started due to existing persistent permissions, we need
-          // to handle removing these even for frames with different hostnames.
-          let origins = browser.getDevicePermissionOrigins("webrtc");
-          for (let origin of origins) {
-            // It's not possible to stop sharing one of camera/microphone
-            // without the other.
-            let principal;
-            for (let id of ["camera", "microphone"]) {
-              if (webrtcState[id]) {
-                if (!principal) {
-                  principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-                    origin
-                  );
-                }
-                let perm = SitePermissions.getForPrincipal(principal, id);
-                if (
-                  perm.state == SitePermissions.ALLOW &&
-                  perm.scope == SitePermissions.SCOPE_PERSISTENT
-                ) {
-                  SitePermissions.removeFromPrincipal(principal, id);
+          if (permission.id == "screen") {
+            windowId = `screen:${webrtcState.windowId}`;
+          } else if (
+            permission.id == "camera" ||
+            permission.id == "microphone"
+          ) {
+            // If we set persistent permissions or the sharing has
+            // started due to existing persistent permissions, we need
+            // to handle removing these even for frames with different hostnames.
+            let origins = browser.getDevicePermissionOrigins("webrtc");
+            for (let origin of origins) {
+              // It's not possible to stop sharing one of camera/microphone
+              // without the other.
+              let principal;
+              for (let id of ["camera", "microphone"]) {
+                if (webrtcState[id]) {
+                  if (!principal) {
+                    principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+                      origin
+                    );
+                  }
+                  let perm = SitePermissions.getForPrincipal(principal, id);
+                  if (
+                    perm.state == SitePermissions.ALLOW &&
+                    perm.scope == SitePermissions.SCOPE_PERSISTENT
+                  ) {
+                    SitePermissions.removeFromPrincipal(principal, id);
+                  }
                 }
               }
             }
           }
+
+          let bc = webrtcState.browsingContext;
+          bc.currentWindowGlobal
+            .getActor("WebRTC")
+            .sendAsyncMessage("webrtc:StopSharing", windowId);
+          webrtcUI.forgetActivePermissionsFromBrowser(browser);
+
+          SitePermissions.removeFromPrincipal(
+            browser.contentPrincipal,
+            permission.id,
+            browser
+          );
         }
-
-        let bc = webrtcState.browsingContext;
-        bc.currentWindowGlobal
-          .getActor("WebRTC")
-          .sendAsyncMessage("webrtc:StopSharing", windowId);
-        webrtcUI.forgetActivePermissionsFromBrowser(browser);
-
-        SitePermissions.removeFromPrincipal(
-          browser.contentPrincipal,
-          permission.id,
-          browser
-        );
       }
     }
 
@@ -836,10 +848,6 @@ var webrtcUI = {
       !this.allowTabSwitchesForSession &&
       !this.allowedSharedBrowsers.has(browser.permanentKey);
 
-    if (shouldShow) {
-      this.recordEvent("tab_switch_warning", "tab_switch_warning");
-    }
-
     return shouldShow;
   },
 
@@ -849,10 +857,6 @@ var webrtcUI = {
     this.allowedSharedBrowsers.add(browser.permanentKey);
     gBrowser.selectedTab = tab;
     this.allowTabSwitchesForSession = allowForSession;
-
-    if (allowForSession) {
-      this.recordEvent("allow_all_tabs", "allow_all_tabs");
-    }
   },
 
   recordEvent(type, object, args = {}) {
@@ -867,6 +871,8 @@ var webrtcUI = {
 };
 
 function getGlobalIndicator() {
+  webrtcUI.recordEvent("show_indicator", "show_indicator");
+
   if (!webrtcUI.useLegacyGlobalIndicator) {
     const INDICATOR_CHROME_URI =
       "chrome://browser/content/webrtcIndicator.xhtml";
@@ -919,7 +925,7 @@ class MacOSWebRTCStatusbarIndicator {
     this._screen = null;
 
     this._hiddenDoc = Services.appShell.hiddenDOMWindow.document;
-    this._statusBar = Cc["@mozilla.org/widget/macsystemstatusbar;1"].getService(
+    this._statusBar = Cc["@mozilla.org/widget/systemstatusbar;1"].getService(
       Ci.nsISystemStatusBar
     );
 

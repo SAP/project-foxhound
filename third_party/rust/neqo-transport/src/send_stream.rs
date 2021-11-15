@@ -8,21 +8,23 @@
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::collections::{hash_map::IterMut, BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::convert::{TryFrom, TryInto};
 use std::mem;
 use std::rc::Rc;
 
+use indexmap::IndexMap;
 use smallvec::SmallVec;
 
-use neqo_common::{qdebug, qerror, qinfo, qtrace};
+use neqo_common::{qdebug, qerror, qinfo, qtrace, Encoder};
 
 use crate::events::ConnectionEvents;
 use crate::flow_mgr::FlowMgr;
 use crate::frame::Frame;
+use crate::packet::PacketBuilder;
 use crate::recovery::RecoveryToken;
+use crate::stats::FrameStats;
 use crate::stream_id::StreamId;
-use crate::tracking::PNSpace;
 use crate::{AppError, Error, Res};
 
 pub const SEND_BUFFER_SIZE: usize = 0x10_0000; // 1 MiB
@@ -208,11 +210,11 @@ impl RangeTracker {
 
     fn unmark_range(&mut self, off: u64, len: usize) {
         if len == 0 {
-            qinfo!("unmark 0-length range at {}", off);
+            qdebug!("unmark 0-length range at {}", off);
             return;
         }
 
-        let len = len as u64;
+        let len = u64::try_from(len).unwrap();
         let end_off = off + len;
 
         let mut to_remove = SmallVec::<[_; 8]>::new();
@@ -225,7 +227,7 @@ impl RangeTracker {
                 // Check for overlap
                 if *cur_off + *cur_len > off {
                     if *cur_state == RangeState::Acked {
-                        qinfo!(
+                        qdebug!(
                             "Attempted to unmark Acked range {}-{} with unmark_range {}-{}",
                             cur_off,
                             cur_len,
@@ -240,7 +242,7 @@ impl RangeTracker {
             }
 
             if *cur_state == RangeState::Acked {
-                qinfo!(
+                qdebug!(
                     "Attempted to unmark Acked range {}-{} with unmark_range {}-{}",
                     cur_off,
                     cur_len,
@@ -271,6 +273,11 @@ impl RangeTracker {
             self.used.insert(new_cur_off, (new_cur_len, cur_state));
         }
     }
+
+    /// Unmark all sent ranges.
+    pub fn unmark_sent(&mut self) {
+        self.unmark_range(0, usize::try_from(self.highest_offset()).unwrap());
+    }
 }
 
 /// Buffer to contain queued bytes and track their state.
@@ -283,10 +290,7 @@ pub struct TxBuffer {
 
 impl TxBuffer {
     pub fn new() -> Self {
-        Self {
-            send_buf: VecDeque::with_capacity(SEND_BUFFER_SIZE),
-            ..Self::default()
-        }
+        Self::default()
     }
 
     /// Attempt to add some or all of the passed-in buffer to the TxBuffer.
@@ -355,6 +359,11 @@ impl TxBuffer {
         self.ranges.unmark_range(offset, len)
     }
 
+    /// Forget about anything that was marked as sent.
+    pub fn unmark_sent(&mut self) {
+        self.ranges.unmark_sent();
+    }
+
     fn data_limit(&self) -> u64 {
         self.buffered() as u64 + self.retired
     }
@@ -383,6 +392,7 @@ enum SendStreamState {
         send_buf: TxBuffer,
         final_size: u64,
         fin_sent: bool,
+        fin_acked: bool,
     },
     DataRecvd {
         final_size: u64,
@@ -479,6 +489,7 @@ impl SendStream {
                 ref send_buf,
                 fin_sent,
                 final_size,
+                ..
             } => {
                 let bytes = send_buf.next_bytes();
                 if bytes.is_some() {
@@ -498,17 +509,84 @@ impl SendStream {
         }
     }
 
+    /// Calculate how many bytes (length) can fit into available space and whether
+    /// the remainder of the space can be filled (or if a length field is needed).
+    fn length_and_fill(data_len: usize, space: usize) -> (usize, bool) {
+        if data_len >= space {
+            // Either more data than space allows, or an exact fit.
+            qtrace!("SendStream::length_and_fill fill {}", space);
+            return (space, true);
+        }
+
+        // Estimate size of the length field based on the available space,
+        // less 1, which is the worst case.
+        let length = min(space.saturating_sub(1), data_len);
+        let length_len = Encoder::varint_len(u64::try_from(length).unwrap());
+        if length_len > space {
+            qtrace!(
+                "SendStream::length_and_fill no room for length of {} in {}",
+                length,
+                space
+            );
+            return (0, false);
+        }
+
+        let length = min(data_len, space - length_len);
+        qtrace!("SendStream::length_and_fill {} in {}", length, space);
+        (length, false)
+    }
+
+    pub fn write_frame(&mut self, builder: &mut PacketBuilder) -> Option<RecoveryToken> {
+        let id = self.stream_id;
+        let final_size = self.final_size();
+        if let Some((offset, data)) = self.next_bytes() {
+            let overhead = 1 // Frame type
+                + Encoder::varint_len(id.as_u64())
+                + if offset > 0 {
+                    Encoder::varint_len(offset)
+                } else {
+                    0
+                };
+            if overhead > builder.remaining() {
+                qtrace!("SendStream::write_frame no space for header");
+                return None;
+            }
+
+            let (length, fill) = Self::length_and_fill(data.len(), builder.remaining() - overhead);
+            let fin = final_size.map_or(false, |fs| fs == offset + u64::try_from(length).unwrap());
+            if length == 0 && !fin {
+                qtrace!("SendStream::write_frame no data, no fin");
+                return None;
+            }
+
+            // Write the stream out.
+            builder.encode_varint(Frame::stream_type(fin, offset > 0, fill));
+            builder.encode_varint(id.as_u64());
+            if offset > 0 {
+                builder.encode_varint(offset);
+            }
+            if fill {
+                builder.encode(&data[..length]);
+            } else {
+                builder.encode_vvec(&data[..length]);
+            }
+
+            self.mark_as_sent(offset, length, fin);
+            Some(RecoveryToken::Stream(StreamRecoveryToken {
+                id,
+                offset,
+                length,
+                fin,
+            }))
+        } else {
+            None
+        }
+    }
+
     pub fn mark_as_sent(&mut self, offset: u64, len: usize, fin: bool) {
         if let Some(buf) = self.state.tx_buf_mut() {
             buf.mark_as_sent(offset, len);
-            if offset + len as u64 == self.max_stream_data {
-                self.flow_mgr
-                    .borrow_mut()
-                    .stream_data_blocked(self.stream_id, self.max_stream_data);
-            }
-            if self.flow_mgr.borrow().conn_credit_avail() == 0 {
-                self.flow_mgr.borrow_mut().data_blocked();
-            }
+            self.send_blocked_if_space_needed(0);
         };
 
         if fin {
@@ -529,10 +607,14 @@ impl SendStream {
             SendStreamState::DataSent {
                 ref mut send_buf,
                 final_size,
+                ref mut fin_acked,
                 ..
             } => {
                 send_buf.mark_as_acked(offset, len);
-                if fin && send_buf.buffered() == 0 {
+                if fin {
+                    *fin_acked = true;
+                }
+                if *fin_acked && send_buf.buffered() == 0 {
                     self.conn_events.send_stream_complete(self.stream_id);
                     self.state
                         .transition(SendStreamState::DataRecvd { final_size });
@@ -548,8 +630,13 @@ impl SendStream {
         }
 
         if fin {
-            if let SendStreamState::DataSent { fin_sent, .. } = &mut self.state {
-                *fin_sent = false;
+            if let SendStreamState::DataSent {
+                fin_sent,
+                fin_acked,
+                ..
+            } = &mut self.state
+            {
+                *fin_sent = *fin_acked;
             }
         }
     }
@@ -617,14 +704,14 @@ impl SendStream {
         self.send_internal(buf, true)
     }
 
-    fn send_blocked(&mut self, len: u64) {
-        if self.credit_avail() < len {
+    fn send_blocked_if_space_needed(&mut self, needed_space: u64) {
+        if self.credit_avail() <= needed_space {
             self.flow_mgr
                 .borrow_mut()
                 .stream_data_blocked(self.stream_id, self.max_stream_data);
         }
 
-        if self.flow_mgr.borrow().conn_credit_avail() < len {
+        if self.flow_mgr.borrow().conn_credit_avail() <= needed_space {
             self.flow_mgr.borrow_mut().data_blocked();
         }
     }
@@ -648,8 +735,8 @@ impl SendStream {
         let buf = if buf.is_empty() || (self.avail() == 0) {
             return Ok(0);
         } else if self.avail() < buf.len() {
-            self.send_blocked(buf.len() as u64);
             if atomic {
+                self.send_blocked_if_space_needed(buf.len() as u64);
                 return Ok(0);
             } else {
                 &buf[..self.avail()]
@@ -678,6 +765,7 @@ impl SendStream {
                     send_buf: TxBuffer::new(),
                     final_size: 0,
                     fin_sent: false,
+                    fin_acked: false,
                 });
             }
             SendStreamState::Send { send_buf } => {
@@ -687,6 +775,7 @@ impl SendStream {
                     send_buf: owned_buf,
                     final_size,
                     fin_sent: false,
+                    fin_acked: false,
                 });
             }
             SendStreamState::DataSent { .. } => qtrace!("already in DataSent state"),
@@ -729,7 +818,7 @@ impl SendStream {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct SendStreams(HashMap<StreamId, SendStream>);
+pub(crate) struct SendStreams(IndexMap<StreamId, SendStream>);
 
 impl SendStreams {
     pub fn get(&self, id: StreamId) -> Res<&SendStream> {
@@ -738,6 +827,10 @@ impl SendStreams {
 
     pub fn get_mut(&mut self, id: StreamId) -> Res<&mut SendStream> {
         self.0.get_mut(&id).ok_or_else(|| Error::InvalidStreamId)
+    }
+
+    pub fn exists(&self, id: StreamId) -> bool {
+        self.0.contains_key(&id)
     }
 
     pub fn insert(&mut self, id: StreamId, stream: SendStream) {
@@ -770,57 +863,26 @@ impl SendStreams {
         self.0.retain(|_, stream| !stream.is_terminal())
     }
 
-    pub(crate) fn get_frame(
+    pub(crate) fn write_frames(
         &mut self,
-        space: PNSpace,
-        remaining: usize,
-    ) -> Option<(Frame, Option<RecoveryToken>)> {
-        if space != PNSpace::ApplicationData {
-            return None;
-        }
-
-        for (stream_id, stream) in self {
-            let final_size = stream.final_size();
-            if let Some((offset, data)) = stream.next_bytes() {
-                let data_len = u64::try_from(data.len()).unwrap();
-                let range_has_fin = final_size
-                    .map(|fs| fs == offset + data_len)
-                    .unwrap_or(false);
-                if let Some((frame, length)) =
-                    Frame::new_stream(stream_id.as_u64(), offset, data, range_has_fin, remaining)
-                {
-                    qdebug!(
-                        "Stream {} sending bytes {}-{}, space {:?}",
-                        stream_id.as_u64(),
-                        offset,
-                        offset + length as u64,
-                        space,
-                    );
-                    let fin = range_has_fin && length == data.len();
-                    debug_assert!(!fin || matches!(frame, Frame::Stream{fin: true, .. }));
-                    stream.mark_as_sent(offset, length, fin);
-
-                    return Some((
-                        frame,
-                        Some(RecoveryToken::Stream(StreamRecoveryToken {
-                            id: *stream_id,
-                            offset,
-                            length,
-                            fin,
-                        })),
-                    ));
-                }
+        builder: &mut PacketBuilder,
+        tokens: &mut Vec<RecoveryToken>,
+        stats: &mut FrameStats,
+    ) {
+        for (_, stream) in self {
+            if let Some(t) = stream.write_frame(builder) {
+                tokens.push(t);
+                stats.stream += 1;
             }
         }
-        None
     }
 }
 
 impl<'a> IntoIterator for &'a mut SendStreams {
     type Item = (&'a StreamId, &'a mut SendStream);
-    type IntoIter = IterMut<'a, StreamId, SendStream>;
+    type IntoIter = indexmap::map::IterMut<'a, StreamId, SendStream>;
 
-    fn into_iter(self) -> IterMut<'a, StreamId, SendStream> {
+    fn into_iter(self) -> indexmap::map::IterMut<'a, StreamId, SendStream> {
         self.0.iter_mut()
     }
 }
@@ -838,6 +900,7 @@ mod tests {
     use super::*;
 
     use crate::events::ConnectionEvent;
+    use neqo_common::{event::Provider, hex_with_len, qtrace};
 
     #[test]
     fn test_mark_range() {
@@ -872,6 +935,59 @@ mod tests {
         rt.mark_range(0, 200, RangeState::Sent);
         assert_eq!(rt.highest_offset(), 400);
         assert_eq!(rt.acked_from_zero(), 400);
+    }
+
+    #[test]
+    fn unmark_sent_start() {
+        let mut rt = RangeTracker::default();
+
+        rt.mark_range(0, 5, RangeState::Sent);
+        assert_eq!(rt.highest_offset(), 5);
+        assert_eq!(rt.acked_from_zero(), 0);
+
+        rt.unmark_sent();
+        assert_eq!(rt.highest_offset(), 0);
+        assert_eq!(rt.acked_from_zero(), 0);
+        assert_eq!(rt.first_unmarked_range(), (0, None));
+    }
+
+    #[test]
+    fn unmark_sent_middle() {
+        let mut rt = RangeTracker::default();
+
+        rt.mark_range(0, 5, RangeState::Acked);
+        assert_eq!(rt.highest_offset(), 5);
+        assert_eq!(rt.acked_from_zero(), 5);
+        rt.mark_range(5, 5, RangeState::Sent);
+        assert_eq!(rt.highest_offset(), 10);
+        assert_eq!(rt.acked_from_zero(), 5);
+        rt.mark_range(10, 5, RangeState::Acked);
+        assert_eq!(rt.highest_offset(), 15);
+        assert_eq!(rt.acked_from_zero(), 5);
+        assert_eq!(rt.first_unmarked_range(), (15, None));
+
+        rt.unmark_sent();
+        assert_eq!(rt.highest_offset(), 15);
+        assert_eq!(rt.acked_from_zero(), 5);
+        assert_eq!(rt.first_unmarked_range(), (5, Some(5)));
+    }
+
+    #[test]
+    fn unmark_sent_end() {
+        let mut rt = RangeTracker::default();
+
+        rt.mark_range(0, 5, RangeState::Acked);
+        assert_eq!(rt.highest_offset(), 5);
+        assert_eq!(rt.acked_from_zero(), 5);
+        rt.mark_range(5, 5, RangeState::Sent);
+        assert_eq!(rt.highest_offset(), 10);
+        assert_eq!(rt.acked_from_zero(), 5);
+        assert_eq!(rt.first_unmarked_range(), (10, None));
+
+        rt.unmark_sent();
+        assert_eq!(rt.highest_offset(), 5);
+        assert_eq!(rt.acked_from_zero(), 5);
+        assert_eq!(rt.first_unmarked_range(), (5, None));
     }
 
     #[test]
@@ -1104,7 +1220,7 @@ mod tests {
     fn send_stream_writable_event_gen() {
         let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
         flow_mgr.borrow_mut().conn_increase_max_credit(2);
-        let conn_events = ConnectionEvents::default();
+        let mut conn_events = ConnectionEvents::default();
 
         let mut s = SendStream::new(4.into(), 0, Rc::clone(&flow_mgr), conn_events.clone());
 
@@ -1168,7 +1284,7 @@ mod tests {
     fn send_stream_writable_event_new_stream() {
         let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
         flow_mgr.borrow_mut().conn_increase_max_credit(2);
-        let conn_events = ConnectionEvents::default();
+        let mut conn_events = ConnectionEvents::default();
 
         let _s = SendStream::new(4.into(), 100, flow_mgr, conn_events.clone());
 
@@ -1191,39 +1307,65 @@ mod tests {
         s.close();
 
         let mut ss = SendStreams::default();
-        ss.insert(0.into(), s);
+        ss.insert(StreamId::from(0), s);
 
-        let (_f1, f1_token) = ss.get_frame(PNSpace::ApplicationData, 6).unwrap();
-        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if !x.fin));
-        let (_f2, f2_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.fin));
+        let mut tokens = Vec::new();
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
 
-        // Should be no more data to frame
-        let f3 = ss.get_frame(PNSpace::ApplicationData, 100);
-        assert!(matches!(f3, None));
+        // Write a small frame: no fin.
+        let written = builder.len();
+        builder.set_limit(written + 6);
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        assert_eq!(builder.len(), written + 6);
+        assert_eq!(tokens.len(), 1);
+        let f1_token = tokens.remove(0);
+        assert!(matches!(&f1_token, RecoveryToken::Stream(x) if !x.fin));
+
+        // Write the rest: fin.
+        let written = builder.len();
+        builder.set_limit(written + 200);
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        assert_eq!(builder.len(), written + 10);
+        assert_eq!(tokens.len(), 1);
+        let f2_token = tokens.remove(0);
+        assert!(matches!(&f2_token, RecoveryToken::Stream(x) if x.fin));
+
+        // Should be no more data to frame.
+        let written = builder.len();
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        assert_eq!(builder.len(), written);
+        assert!(tokens.is_empty());
 
         // Mark frame 1 as lost
-        let f1_token = match f1_token {
-            Some(RecoveryToken::Stream(rt)) => rt,
-            _ => panic!(),
-        };
-        ss.lost(&f1_token);
+        if let RecoveryToken::Stream(rt) = f1_token {
+            ss.lost(&rt);
+        } else {
+            panic!();
+        }
 
         // Next frame should not set fin even though stream has fin but frame
         // does not include end of stream
-        let (_f4, f4_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(f4_token, Some(RecoveryToken::Stream(x)) if !x.fin));
+        let written = builder.len();
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        assert_eq!(builder.len(), written + 7); // Needs a length this time.
+        assert_eq!(tokens.len(), 1);
+        let f4_token = tokens.remove(0);
+        assert!(matches!(&f4_token, RecoveryToken::Stream(x) if !x.fin));
 
         // Mark frame 2 as lost
-        let f2_token = match f2_token {
-            Some(RecoveryToken::Stream(rt)) => rt,
-            _ => panic!(),
-        };
-        ss.lost(&f2_token);
+        if let RecoveryToken::Stream(rt) = f2_token {
+            ss.lost(&rt);
+        } else {
+            panic!();
+        }
 
         // Next frame should set fin because it includes end of stream
-        let (_f5, f5_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(f5_token, Some(RecoveryToken::Stream(x)) if x.fin));
+        let written = builder.len();
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        assert_eq!(builder.len(), written + 10);
+        assert_eq!(tokens.len(), 1);
+        let f5_token = tokens.remove(0);
+        assert!(matches!(&f5_token, RecoveryToken::Stream(x) if x.fin));
     }
 
     #[test]
@@ -1238,49 +1380,55 @@ mod tests {
         s.send(&[0; 10]).unwrap();
 
         let mut ss = SendStreams::default();
-        ss.insert(0.into(), s);
+        ss.insert(StreamId::from(0), s);
 
-        let (_f1, f1_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if x.offset == 0));
-        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if x.length == 10));
-        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if !x.fin));
+        let mut tokens = Vec::new();
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        let f1_token = tokens.remove(0);
+        assert!(matches!(&f1_token, RecoveryToken::Stream(x) if x.offset == 0));
+        assert!(matches!(&f1_token, RecoveryToken::Stream(x) if x.length == 10));
+        assert!(matches!(&f1_token, RecoveryToken::Stream(x) if !x.fin));
 
         // Should be no more data to frame
-        let f2 = ss.get_frame(PNSpace::ApplicationData, 100);
-        assert!(matches!(f2, None));
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        assert!(tokens.is_empty());
 
-        ss.get_mut(0.into()).unwrap().close();
+        ss.get_mut(StreamId::from(0)).unwrap().close();
 
-        let (_f2, f2_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.offset == 10));
-        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.length == 0));
-        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.fin));
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        let f2_token = tokens.remove(0);
+        assert!(matches!(&f2_token, RecoveryToken::Stream(x) if x.offset == 10));
+        assert!(matches!(&f2_token, RecoveryToken::Stream(x) if x.length == 0));
+        assert!(matches!(&f2_token, RecoveryToken::Stream(x) if x.fin));
 
         // Mark frame 2 as lost
-        let f2_token = match f2_token {
-            Some(RecoveryToken::Stream(rt)) => rt,
-            _ => panic!(),
-        };
-        ss.lost(&f2_token);
+        if let RecoveryToken::Stream(rt) = f2_token {
+            ss.lost(&rt);
+        } else {
+            panic!();
+        }
 
         // Next frame should set fin
-        let (_f3, f3_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(&f3_token, Some(RecoveryToken::Stream(x)) if x.offset == 10));
-        assert!(matches!(&f3_token, Some(RecoveryToken::Stream(x)) if x.length == 0));
-        assert!(matches!(&f3_token, Some(RecoveryToken::Stream(x)) if x.fin));
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        let f3_token = tokens.remove(0);
+        assert!(matches!(&f3_token, RecoveryToken::Stream(x) if x.offset == 10));
+        assert!(matches!(&f3_token, RecoveryToken::Stream(x) if x.length == 0));
+        assert!(matches!(&f3_token, RecoveryToken::Stream(x) if x.fin));
 
         // Mark frame 1 as lost
-        let f1_token = match f1_token {
-            Some(RecoveryToken::Stream(rt)) => rt,
-            _ => panic!(),
-        };
-        ss.lost(&f1_token);
+        if let RecoveryToken::Stream(rt) = f1_token {
+            ss.lost(&rt);
+        } else {
+            panic!();
+        }
 
         // Next frame should set fin and include all data
-        let (_f4, f4_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
-        assert!(matches!(&f4_token, Some(RecoveryToken::Stream(x)) if x.offset == 0));
-        assert!(matches!(&f4_token, Some(RecoveryToken::Stream(x)) if x.length == 10));
-        assert!(matches!(&f4_token, Some(RecoveryToken::Stream(x)) if x.fin));
+        ss.write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
+        let f4_token = tokens.remove(0);
+        assert!(matches!(&f4_token, RecoveryToken::Stream(x) if x.offset == 0));
+        assert!(matches!(&f4_token, RecoveryToken::Stream(x) if x.length == 10));
+        assert!(matches!(&f4_token, RecoveryToken::Stream(x) if x.fin));
     }
 
     #[test]
@@ -1289,7 +1437,8 @@ mod tests {
         flow_mgr.borrow_mut().conn_increase_max_credit(5);
         let conn_events = ConnectionEvents::default();
 
-        let mut s = SendStream::new(4.into(), 0, Rc::clone(&flow_mgr), conn_events);
+        let stream_id = StreamId::from(4);
+        let mut s = SendStream::new(stream_id, 0, Rc::clone(&flow_mgr), conn_events);
         s.set_max_stream_data(2);
 
         // Stream is initially blocked (conn:5, stream:2)
@@ -1300,18 +1449,23 @@ mod tests {
         assert_eq!(
             flow_mgr.borrow_mut().next().unwrap(),
             Frame::StreamDataBlocked {
-                stream_id: 4.into(),
+                stream_id,
                 stream_data_limit: 0x2
             }
         );
 
         // assert non-atomic write works
         assert_eq!(s.send(b"abc").unwrap(), 2);
-        // assert that STREAM_DATA_BLOCKED is sent.
+        assert_eq!(s.next_bytes(), Some((0, &b"ab"[..])));
+        // STREAM_DATA_BLOCKED is not sent yet.
+        assert!(flow_mgr.borrow_mut().next().is_none());
+
+        // STREAM_DATA_BLOCKED is queued once bytes using all credit are sent.
+        s.mark_as_sent(0, 2, false);
         assert_eq!(
             flow_mgr.borrow_mut().next().unwrap(),
             Frame::StreamDataBlocked {
-                stream_id: 4.into(),
+                stream_id,
                 stream_data_limit: 0x2
             }
         );
@@ -1329,7 +1483,12 @@ mod tests {
 
         // assert non-atomic write works
         assert_eq!(s.send(b"abcd").unwrap(), 3);
-        // assert that STREAM_DATA_BLOCKED is sent.
+        assert_eq!(s.next_bytes(), Some((2, &b"abc"[..])));
+        // DATA_BLOCKED is not sent yet.
+        assert!(flow_mgr.borrow_mut().next().is_none());
+
+        // DATA_BLOCKED is queued once bytes using all credit are sent.
+        s.mark_as_sent(2, 3, false);
         assert_eq!(
             flow_mgr.borrow_mut().next().unwrap(),
             Frame::DataBlocked { data_limit: 0x5 }
@@ -1341,5 +1500,247 @@ mod tests {
 
         // assert that atomic writing 10 byte works
         assert_eq!(s.send_atomic(b"abcdefghij").unwrap(), 10);
+    }
+
+    #[test]
+    fn ack_fin_first() {
+        const MESSAGE: &[u8] = b"hello";
+        let len_u64 = u64::try_from(MESSAGE.len()).unwrap();
+
+        let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
+        flow_mgr.borrow_mut().conn_increase_max_credit(len_u64);
+        let conn_events = ConnectionEvents::default();
+
+        let mut s = SendStream::new(StreamId::new(100), 0, Rc::clone(&flow_mgr), conn_events);
+        s.set_max_stream_data(len_u64);
+
+        // Send all the data, then the fin.
+        let _ = s.send(MESSAGE).unwrap();
+        s.mark_as_sent(0, MESSAGE.len(), false);
+        s.close();
+        s.mark_as_sent(len_u64, 0, true);
+
+        // Ack the fin, then the data.
+        s.mark_as_acked(len_u64, 0, true);
+        s.mark_as_acked(0, MESSAGE.len(), false);
+        assert!(s.is_terminal());
+    }
+
+    #[test]
+    fn ack_then_lose_fin() {
+        const MESSAGE: &[u8] = b"hello";
+        let len_u64 = u64::try_from(MESSAGE.len()).unwrap();
+
+        let mut flow_mgr = FlowMgr::default();
+        flow_mgr.conn_increase_max_credit(len_u64);
+        let conn_events = ConnectionEvents::default();
+
+        let id = StreamId::new(100);
+        let mut s = SendStream::new(id, 0, Rc::new(RefCell::new(flow_mgr)), conn_events);
+        s.set_max_stream_data(len_u64);
+
+        // Send all the data, then the fin.
+        let _ = s.send(MESSAGE).unwrap();
+        s.mark_as_sent(0, MESSAGE.len(), false);
+        s.close();
+        s.mark_as_sent(len_u64, 0, true);
+
+        // Ack the fin, then mark it lost.
+        s.mark_as_acked(len_u64, 0, true);
+        s.mark_as_lost(len_u64, 0, true);
+
+        // No frame should be sent here.
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        assert!(s.write_frame(&mut builder).is_none());
+    }
+
+    /// Create a `SendStream` and force it into a state where it believes that
+    /// `offset` bytes have already been sent and acknowledged.
+    fn stream_with_sent(stream: u64, offset: usize) -> SendStream {
+        const MAX_VARINT: u64 = (1 << 62) - 1;
+
+        let mut flow_mgr = FlowMgr::default();
+        flow_mgr.conn_increase_max_credit(MAX_VARINT);
+
+        let mut s = SendStream::new(
+            StreamId::from(stream),
+            MAX_VARINT,
+            Rc::new(RefCell::new(flow_mgr)),
+            ConnectionEvents::default(),
+        );
+
+        let mut send_buf = TxBuffer::new();
+        send_buf.retired = u64::try_from(offset).unwrap();
+        send_buf.ranges.mark_range(0, offset, RangeState::Acked);
+        s.state = SendStreamState::Send { send_buf };
+        s
+    }
+
+    fn frame_sent_sid(stream: u64, offset: usize, len: usize, fin: bool, space: usize) -> bool {
+        const BUF: &[u8] = &[0x42; 128];
+        let mut s = stream_with_sent(stream, offset);
+
+        // Now write out the proscribed data and maybe close.
+        if len > 0 {
+            s.send(&BUF[..len]).unwrap();
+        }
+        if fin {
+            s.close();
+        }
+
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        let header_len = builder.len();
+        builder.set_limit(header_len + space);
+        let token = s.write_frame(&mut builder);
+        qtrace!("STREAM frame: {}", hex_with_len(&builder[header_len..]));
+        token.is_some()
+    }
+
+    fn frame_sent(offset: usize, len: usize, fin: bool, space: usize) -> bool {
+        frame_sent_sid(0, offset, len, fin, space)
+    }
+
+    #[test]
+    fn stream_frame_empty() {
+        // Stream frames with empty data and no fin never work.
+        assert!(!frame_sent(10, 0, false, 2));
+        assert!(!frame_sent(10, 0, false, 3));
+        assert!(!frame_sent(10, 0, false, 4));
+        assert!(!frame_sent(10, 0, false, 5));
+        assert!(!frame_sent(10, 0, false, 100));
+
+        // Empty data with fin is only a problem if there is no space.
+        assert!(!frame_sent(0, 0, true, 1));
+        assert!(frame_sent(0, 0, true, 2));
+        assert!(!frame_sent(10, 0, true, 2));
+        assert!(frame_sent(10, 0, true, 3));
+        assert!(frame_sent(10, 0, true, 4));
+        assert!(frame_sent(10, 0, true, 5));
+        assert!(frame_sent(10, 0, true, 100));
+    }
+
+    #[test]
+    fn stream_frame_minimum() {
+        // Add minimum data
+        assert!(!frame_sent(10, 1, false, 3));
+        assert!(!frame_sent(10, 1, true, 3));
+        assert!(frame_sent(10, 1, false, 4));
+        assert!(frame_sent(10, 1, true, 4));
+        assert!(frame_sent(10, 1, false, 5));
+        assert!(frame_sent(10, 1, true, 5));
+        assert!(frame_sent(10, 1, false, 100));
+        assert!(frame_sent(10, 1, true, 100));
+    }
+
+    #[test]
+    fn stream_frame_more() {
+        // Try more data
+        assert!(!frame_sent(10, 100, false, 3));
+        assert!(!frame_sent(10, 100, true, 3));
+        assert!(frame_sent(10, 100, false, 4));
+        assert!(frame_sent(10, 100, true, 4));
+        assert!(frame_sent(10, 100, false, 5));
+        assert!(frame_sent(10, 100, true, 5));
+        assert!(frame_sent(10, 100, false, 100));
+        assert!(frame_sent(10, 100, true, 100));
+
+        assert!(frame_sent(10, 100, false, 1000));
+        assert!(frame_sent(10, 100, true, 1000));
+    }
+
+    #[test]
+    fn stream_frame_big_id() {
+        // A value that encodes to the largest varint.
+        const BIG: u64 = 1 << 30;
+        const BIGSZ: usize = 1 << 30;
+
+        assert!(!frame_sent_sid(BIG, BIGSZ, 0, false, 16));
+        assert!(!frame_sent_sid(BIG, BIGSZ, 0, true, 16));
+        assert!(!frame_sent_sid(BIG, BIGSZ, 0, false, 17));
+        assert!(frame_sent_sid(BIG, BIGSZ, 0, true, 17));
+        assert!(!frame_sent_sid(BIG, BIGSZ, 0, false, 18));
+        assert!(frame_sent_sid(BIG, BIGSZ, 0, true, 18));
+
+        assert!(!frame_sent_sid(BIG, BIGSZ, 1, false, 17));
+        assert!(!frame_sent_sid(BIG, BIGSZ, 1, true, 17));
+        assert!(frame_sent_sid(BIG, BIGSZ, 1, false, 18));
+        assert!(frame_sent_sid(BIG, BIGSZ, 1, true, 18));
+        assert!(frame_sent_sid(BIG, BIGSZ, 1, false, 19));
+        assert!(frame_sent_sid(BIG, BIGSZ, 1, true, 19));
+        assert!(frame_sent_sid(BIG, BIGSZ, 1, false, 100));
+        assert!(frame_sent_sid(BIG, BIGSZ, 1, true, 100));
+    }
+
+    #[test]
+    fn stream_frame_16384() {
+        const DATA16384: &[u8] = &[0x43; 16384];
+
+        // 16383/16384 is an odd boundary in STREAM frame construction.
+        // That is the boundary where a length goes from 2 bytes to 4 bytes.
+        // If the data fits in the available space, then it is simple:
+        let mut s = stream_with_sent(0, 0);
+        s.send(DATA16384).unwrap();
+        s.close();
+
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        let header_len = builder.len();
+        builder.set_limit(header_len + DATA16384.len() + 2);
+        let token = s.write_frame(&mut builder);
+        assert!(token.is_some());
+        // Expect STREAM + FIN only.
+        assert_eq!(&builder[header_len..header_len + 2], &[0b1001, 0]);
+        assert_eq!(&builder[header_len + 2..], DATA16384);
+
+        s.mark_as_lost(0, DATA16384.len(), true);
+
+        // However, if there is one extra byte of space, we will try to add a length.
+        // That length will then make the frame to be too large and the data will be
+        // truncated.  The frame could carry one more byte of data, but it's a corner
+        // case we don't want to address as it should be rare (if not impossible).
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        let header_len = builder.len();
+        builder.set_limit(header_len + DATA16384.len() + 3);
+        let token = s.write_frame(&mut builder);
+        assert!(token.is_some());
+        // Expect STREAM + LEN + FIN.
+        assert_eq!(
+            &builder[header_len..header_len + 4],
+            &[0b1010, 0, 0x7f, 0xfd]
+        );
+        assert_eq!(
+            &builder[header_len + 4..],
+            &DATA16384[..DATA16384.len() - 3]
+        );
+    }
+
+    #[test]
+    fn stream_frame_64() {
+        const DATA64: &[u8] = &[0x43; 64];
+
+        // Unlike 16383/16384, the boundary at 63/64 is easy because the difference
+        // is just one byte.  We lose just the last byte when there is more space.
+        let mut s = stream_with_sent(0, 0);
+        s.send(DATA64).unwrap();
+        s.close();
+
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        let header_len = builder.len();
+        builder.set_limit(header_len + 66);
+        let token = s.write_frame(&mut builder);
+        assert!(token.is_some());
+        // Expect STREAM + FIN only.
+        assert_eq!(&builder[header_len..header_len + 2], &[0b1001, 0]);
+        assert_eq!(&builder[header_len + 2..], DATA64);
+
+        s.mark_as_lost(0, DATA64.len(), true);
+
+        let mut builder = PacketBuilder::short(Encoder::new(), false, &[]);
+        let header_len = builder.len();
+        builder.set_limit(header_len + 67);
+        let token = s.write_frame(&mut builder);
+        assert!(token.is_some());
+        // Expect STREAM + LEN, not FIN.
+        assert_eq!(&builder[header_len..header_len + 3], &[0b1010, 0, 63]);
+        assert_eq!(&builder[header_len + 3..], &DATA64[..63]);
     }
 }

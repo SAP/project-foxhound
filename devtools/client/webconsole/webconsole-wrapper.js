@@ -60,6 +60,7 @@ class WebConsoleWrapper {
    * @param {WebConsoleUI} webConsoleUI
    * @param {Toolbox} toolbox
    * @param {Document} document
+   *
    */
   constructor(parentNode, webConsoleUI, toolbox, document) {
     EventEmitter.decorate(this);
@@ -89,6 +90,7 @@ class WebConsoleWrapper {
         updateRequest: (id, data) => this.batchedRequestUpdates({ id, data }),
       },
       webConsoleFront,
+      resourceWatcher: this.hud.resourceWatcher,
     });
 
     return new Promise(resolve => {
@@ -208,25 +210,8 @@ class WebConsoleWrapper {
     store.dispatch(actions.privateMessagesClear());
   }
 
-  dispatchMessageUpdate(message) {
-    // network-message-updated will emit when all the update message arrives.
-    // Since we can't ensure the order of the network update, we check
-    // that message.updates has all we need.
-    // Note that 'requestPostData' is sent only for POST requests, so we need
-    // to count with that.
-    const NUMBER_OF_NETWORK_UPDATE = 8;
-
-    let expectedLength = NUMBER_OF_NETWORK_UPDATE;
-    if (message.updates.includes("responseCache")) {
-      expectedLength++;
-    }
-    if (message.updates.includes("requestPostData")) {
-      expectedLength++;
-    }
-
-    if (message.updates.length === expectedLength) {
-      this.batchedMessageUpdates(message);
-    }
+  dispatchMessagesUpdate(messages) {
+    this.batchedMessagesUpdates(messages);
   }
 
   dispatchSidebarClose() {
@@ -262,9 +247,11 @@ class WebConsoleWrapper {
     }
   }
 
-  batchedMessageUpdates(message) {
-    this.queuedMessageUpdates.push(message);
-    this.setTimeoutIfNeeded();
+  batchedMessagesUpdates(messages) {
+    if (messages.length > 0) {
+      this.queuedMessageUpdates.push(...messages);
+      this.setTimeoutIfNeeded();
+    }
   }
 
   batchedRequestUpdates(message) {
@@ -273,8 +260,10 @@ class WebConsoleWrapper {
   }
 
   batchedMessagesAdd(messages) {
-    this.queuedMessageAdds = this.queuedMessageAdds.concat(messages);
-    this.setTimeoutIfNeeded();
+    if (messages.length > 0) {
+      this.queuedMessageAdds.push(...messages);
+      this.setTimeoutIfNeeded();
+    }
   }
 
   requestData(id, type) {
@@ -342,16 +331,17 @@ class WebConsoleWrapper {
         this.queuedMessageAdds = [];
 
         if (this.queuedMessageUpdates.length > 0) {
-          for (const message of this.queuedMessageUpdates) {
-            await store.dispatch(actions.networkMessageUpdate(message, null));
-            this.webConsoleUI.emitForTests("network-message-updated", message);
-          }
+          await store.dispatch(
+            actions.networkMessageUpdates(this.queuedMessageUpdates, null)
+          );
+          this.webConsoleUI.emitForTests("network-messages-updated");
           this.queuedMessageUpdates = [];
         }
         if (this.queuedRequestUpdates.length > 0) {
-          for (const { id, data } of this.queuedRequestUpdates) {
-            await store.dispatch(actions.networkUpdateRequest(id, data));
-          }
+          await store.dispatch(
+            actions.networkUpdateRequests(this.queuedRequestUpdates)
+          );
+          const updateCount = this.queuedRequestUpdates.length;
           this.queuedRequestUpdates = [];
 
           // Fire an event indicating that all data fetched from
@@ -361,7 +351,11 @@ class WebConsoleWrapper {
           // (netmonitor/src/connector/firefox-data-provider).
           // This event might be utilized in tests to find the right
           // time when to finish.
-          this.webConsoleUI.emitForTests("network-request-payload-ready");
+
+          this.webConsoleUI.emitForTests(
+            "network-request-payload-ready",
+            updateCount
+          );
         }
         done();
       }, 50);

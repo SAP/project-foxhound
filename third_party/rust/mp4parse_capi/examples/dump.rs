@@ -34,7 +34,7 @@ fn dump_file(filename: &str) {
         match rv {
             Mp4parseStatus::Ok => (),
             _ => {
-                println!("-- fail to parse, '-v' for more info");
+                println!("-- fail to parse: {:?}, '-v' for more info", rv);
                 return;
             }
         }
@@ -44,8 +44,8 @@ fn dump_file(filename: &str) {
             Mp4parseStatus::Ok => {
                 println!("-- mp4parse_fragment_info {:?}", frag_info);
             }
-            _ => {
-                println!("-- mp4parse_fragment_info failed");
+            rv => {
+                println!("-- mp4parse_fragment_info failed with {:?}", rv);
                 return;
             }
         }
@@ -62,9 +62,7 @@ fn dump_file(filename: &str) {
         for i in 0..counts {
             let mut track_info = Mp4parseTrackInfo {
                 track_type: Mp4parseTrackType::Audio,
-                track_id: 0,
-                duration: 0,
-                media_time: 0,
+                ..Default::default()
             };
             match mp4parse_get_track_info(parser, i, &mut track_info) {
                 Mp4parseStatus::Ok => {

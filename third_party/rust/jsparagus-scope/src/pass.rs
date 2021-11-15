@@ -7,10 +7,11 @@
 //! but the goal is to do this analysis as part of the parse phase, even when
 //! no AST is built. So we try to keep AST use separate from the analysis code.
 
-use crate::builder::{ScopeDataMapAndScriptStencilList, ScopeDataMapBuilder};
+use crate::builder::{ScopeBuildError, ScopeDataMapAndScriptStencilList, ScopeDataMapBuilder};
 use crate::data::FunctionDeclarationPropertyMap;
 use ast::arena;
 use ast::associated_data::AssociatedData;
+use ast::source_atom_set::CommonSourceAtomSetIndices;
 use ast::{types::*, visit::Pass};
 use std::collections::HashMap;
 use stencil::scope::ScopeDataMap;
@@ -22,7 +23,8 @@ pub struct ScopePassResult<'alloc> {
     pub function_declarations: HashMap<ScriptStencilIndex, &'alloc Function<'alloc>>,
     pub function_stencil_indices: AssociatedData<ScriptStencilIndex>,
     pub function_declaration_properties: FunctionDeclarationPropertyMap,
-    pub functions: ScriptStencilList,
+    pub scripts: ScriptStencilList,
+    pub error: Option<ScopeBuildError>,
 }
 
 /// The top-level struct responsible for extracting the necessary information
@@ -51,14 +53,16 @@ impl<'alloc> From<ScopePass<'alloc>> for ScopePassResult<'alloc> {
             scope_data_map,
             function_stencil_indices,
             function_declaration_properties,
-            functions,
+            scripts,
+            error,
         } = pass.builder.into();
         ScopePassResult {
             scope_data_map,
             function_declarations: pass.function_declarations,
             function_stencil_indices,
             function_declaration_properties,
-            functions,
+            scripts,
+            error,
         }
     }
 }
@@ -120,7 +124,16 @@ impl<'alloc> Pass<'alloc> for ScopePass<'alloc> {
         self.builder.on_non_binding_identifier(ast.value);
     }
 
+    fn visit_enum_expression_variant_this_expression(&mut self) {
+        self.builder
+            .on_non_binding_identifier(CommonSourceAtomSetIndices::this());
+    }
+
     fn enter_enum_statement_variant_function_declaration(&mut self, ast: &'alloc Function<'alloc>) {
+        if !self.builder.is_syntax_only_mode() {
+            self.builder.enter_syntax_only_mode();
+        }
+
         let name = if let Some(ref name) = ast.name {
             name.name.value
         } else {
@@ -137,6 +150,10 @@ impl<'alloc> Pass<'alloc> for ScopePass<'alloc> {
     }
 
     fn enter_enum_expression_variant_function_expression(&mut self, ast: &'alloc Function<'alloc>) {
+        if !self.builder.is_syntax_only_mode() {
+            self.builder.enter_syntax_only_mode();
+        }
+
         self.builder
             .before_function_expression(ast, ast.is_generator, ast.is_async);
     }
@@ -179,7 +196,7 @@ impl<'alloc> Pass<'alloc> for ScopePass<'alloc> {
         // FIXME: Call self.builder.on_function_name
 
         self.enter_getter(ast);
-        self.visit_property_name(&ast.property_name);
+        self.visit_class_element_name(&ast.property_name);
 
         // FIXME: Pass something that points `()` part of getter.
         self.builder.on_getter_parameter(ast);
@@ -197,7 +214,7 @@ impl<'alloc> Pass<'alloc> for ScopePass<'alloc> {
         // FIXME: Call self.builder.on_function_name
 
         self.enter_setter(ast);
-        self.visit_property_name(&ast.property_name);
+        self.visit_class_element_name(&ast.property_name);
 
         // FIXME: Pass something that points `(param)` part of setter,
         // including `(` and `)`.
@@ -267,5 +284,86 @@ impl<'alloc> Pass<'alloc> for ScopePass<'alloc> {
         _ast: &'alloc arena::Box<'alloc, Expression<'alloc>>,
     ) {
         self.builder.after_function_body();
+    }
+
+    fn enter_catch_clause(&mut self, _ast: &'alloc CatchClause<'alloc>) {
+        self.builder.before_catch_clause();
+    }
+
+    fn enter_call_expression(&mut self, ast: &'alloc CallExpression<'alloc>) {
+        match &ast.callee {
+            ExpressionOrSuper::Expression(expr) => match &**expr {
+                Expression::IdentifierExpression(IdentifierExpression { name, .. }) => {
+                    if name.value == CommonSourceAtomSetIndices::eval() {
+                        self.builder.on_direct_eval();
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn enter_class_declaration(&mut self, _ast: &'alloc ClassDeclaration<'alloc>) {
+        self.builder.on_class();
+    }
+
+    fn enter_class_expression(&mut self, _ast: &'alloc ClassExpression<'alloc>) {
+        self.builder.on_class();
+    }
+
+    fn enter_enum_statement_variant_with_statement(
+        &mut self,
+        _object: &'alloc arena::Box<'alloc, Expression<'alloc>>,
+        _body: &'alloc arena::Box<'alloc, Statement<'alloc>>,
+    ) {
+        self.builder.on_with();
+    }
+
+    fn visit_enum_unary_operator_variant_delete(&mut self) {
+        self.builder.on_delete();
+    }
+
+    fn enter_enum_statement_variant_for_statement(
+        &mut self,
+        init: &'alloc Option<VariableDeclarationOrExpression<'alloc>>,
+        _test: &'alloc Option<arena::Box<'alloc, Expression<'alloc>>>,
+        _update: &'alloc Option<arena::Box<'alloc, Expression<'alloc>>>,
+        _block: &'alloc arena::Box<'alloc, Statement<'alloc>>,
+    ) {
+        match init {
+            Some(VariableDeclarationOrExpression::VariableDeclaration(decl)) => match decl.kind {
+                VariableDeclarationKind::Let { .. } | VariableDeclarationKind::Const { .. } => {
+                    self.builder.on_lexical_for();
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn enter_enum_statement_variant_for_in_statement(
+        &mut self,
+        left: &'alloc VariableDeclarationOrAssignmentTarget<'alloc>,
+        _right: &'alloc arena::Box<'alloc, Expression<'alloc>>,
+        _block: &'alloc arena::Box<'alloc, Statement<'alloc>>,
+    ) {
+        match left {
+            VariableDeclarationOrAssignmentTarget::VariableDeclaration(decl) => match decl.kind {
+                VariableDeclarationKind::Let { .. } | VariableDeclarationKind::Const { .. } => {
+                    self.builder.on_lexical_for();
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    fn enter_enum_statement_variant_switch_statement(
+        &mut self,
+        _discriminant: &'alloc arena::Box<'alloc, Expression<'alloc>>,
+        _cases: &'alloc arena::Vec<'alloc, SwitchCase<'alloc>>,
+    ) {
+        self.builder.on_switch();
     }
 }

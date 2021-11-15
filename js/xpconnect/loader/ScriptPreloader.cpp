@@ -23,6 +23,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 
+#include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "MainThreadUtils.h"
 #include "nsDebug.h"
 #include "nsDirectoryServiceUtils.h"
@@ -256,46 +257,56 @@ void ScriptPreloader::Cleanup() {
 }
 
 void ScriptPreloader::StartCacheWrite() {
-  MOZ_ASSERT(!mSaveThread);
+  MOZ_DIAGNOSTIC_ASSERT(!mSaveThread);
 
   Unused << NS_NewNamedThread("SaveScripts", getter_AddRefs(mSaveThread), this);
 
   nsCOMPtr<nsIAsyncShutdownClient> barrier = GetShutdownBarrier();
   barrier->AddBlocker(this, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
-                      EmptyString());
+                      u""_ns);
 }
 
 void ScriptPreloader::InvalidateCache() {
-  mMonitor.AssertNotCurrentThreadOwns();
-  MonitorAutoLock mal(mMonitor);
+  {
+    mMonitor.AssertNotCurrentThreadOwns();
+    MonitorAutoLock mal(mMonitor);
 
-  mCacheInvalidated = true;
+    // Wait for pending off-thread parses to finish, since they depend on the
+    // memory allocated by our CachedScripts, and can't be canceled
+    // asynchronously.
+    FinishPendingParses(mal);
 
-  // Wait for pending off-thread parses to finish, since they depend on the
-  // memory allocated by our CachedScripts, and can't be canceled
-  // asynchronously.
-  FinishPendingParses(mal);
+    // Pending scripts should have been cleared by the above, and new parses
+    // should not have been queued.
+    MOZ_ASSERT(mParsingScripts.empty());
+    MOZ_ASSERT(mParsingSources.empty());
+    MOZ_ASSERT(mPendingScripts.isEmpty());
 
-  // Pending scripts should have been cleared by the above, and new parses
-  // should not have been queued.
-  MOZ_ASSERT(mParsingScripts.empty());
-  MOZ_ASSERT(mParsingSources.empty());
-  MOZ_ASSERT(mPendingScripts.isEmpty());
+    for (auto& script : IterHash(mScripts)) {
+      script.Remove();
+    }
 
-  for (auto& script : IterHash(mScripts)) {
-    script.Remove();
+    // If we've already finished saving the cache at this point, start a new
+    // delayed save operation. This will write out an empty cache file in place
+    // of any cache file we've already written out this session, which will
+    // prevent us from falling back to the current session's cache file on the
+    // next startup.
+    if (mSaveComplete && mChildCache) {
+      mSaveComplete = false;
+
+      StartCacheWrite();
+    }
   }
 
-  // If we've already finished saving the cache at this point, start a new
-  // delayed save operation. This will write out an empty cache file in place
-  // of any cache file we've already written out this session, which will
-  // prevent us from falling back to the current session's cache file on the
-  // next startup.
-  if (mSaveComplete && mChildCache) {
-    mSaveComplete = false;
+  {
+    MonitorAutoLock saveMonitorAutoLock(mSaveMonitor);
 
-    StartCacheWrite();
+    mCacheInvalidated = true;
   }
+
+  // If we're waiting on a timeout to finish saving, interrupt it and just save
+  // immediately.
+  mSaveMonitor.NotifyAll();
 }
 
 nsresult ScriptPreloader::Observe(nsISupports* subject, const char* topic,
@@ -313,7 +324,7 @@ nsresult ScriptPreloader::Observe(nsISupports* subject, const char* topic,
     MOZ_ASSERT(mStartupFinished);
     MOZ_ASSERT(XRE_IsParentProcess());
 
-    if (mChildCache) {
+    if (mChildCache && !mSaveComplete && !mSaveThread) {
       StartCacheWrite();
     }
   } else if (mContentStartupFinishedTopic.Equals(topic)) {
@@ -366,10 +377,14 @@ void ScriptPreloader::FinishContentStartup() {
 #ifdef XP_WIN
   // Record the amount of USS at startup. This is Windows-only for now,
   // we could turn it on for Linux relatively cheaply. On macOS it can have
-  // a perf impact.
-  mozilla::Telemetry::Accumulate(
-      mozilla::Telemetry::MEMORY_UNIQUE_CONTENT_STARTUP,
-      nsMemoryReporterManager::ResidentUnique() / 1024);
+  // a perf impact. Only record this for non-privileged processes because
+  // privileged processes record this value at a different time, leading to
+  // a higher value which skews the telemetry.
+  if (sProcessType != ProcessType::PrivilegedAbout) {
+    mozilla::Telemetry::Accumulate(
+        mozilla::Telemetry::MEMORY_UNIQUE_CONTENT_STARTUP,
+        nsMemoryReporterManager::ResidentUnique() / 1024);
+  }
 #endif
 }
 
@@ -840,12 +855,23 @@ void ScriptPreloader::NoteScript(const nsCString& url,
   script->mProcessTypes += processType;
 }
 
-JSScript* ScriptPreloader::GetCachedScript(JSContext* cx,
-                                           const nsCString& path) {
+/* static */
+void ScriptPreloader::FillCompileOptionsForCachedScript(
+    JS::CompileOptions& options) {
+  // See IsMultiDecodeCompileOptionsMatching in js/src/vm/JSScript.cpp.
+  options.setNoScriptRval(true);
+  MOZ_ASSERT(!options.selfHostingMode);
+  MOZ_ASSERT(!options.isRunOnce);
+}
+
+JSScript* ScriptPreloader::GetCachedScript(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    const nsCString& path) {
   // If a script is used by both the parent and the child, it's stored only
   // in the child cache.
   if (mChildCache) {
-    RootedScript script(cx, mChildCache->GetCachedScriptInternal(cx, path));
+    RootedScript script(
+        cx, mChildCache->GetCachedScriptInternal(cx, options, path));
     if (script) {
       Telemetry::AccumulateCategorical(
           Telemetry::LABELS_SCRIPT_PRELOADER_REQUESTS::HitChild);
@@ -853,25 +879,27 @@ JSScript* ScriptPreloader::GetCachedScript(JSContext* cx,
     }
   }
 
-  RootedScript script(cx, GetCachedScriptInternal(cx, path));
+  RootedScript script(cx, GetCachedScriptInternal(cx, options, path));
   Telemetry::AccumulateCategorical(
       script ? Telemetry::LABELS_SCRIPT_PRELOADER_REQUESTS::Hit
              : Telemetry::LABELS_SCRIPT_PRELOADER_REQUESTS::Miss);
   return script;
 }
 
-JSScript* ScriptPreloader::GetCachedScriptInternal(JSContext* cx,
-                                                   const nsCString& path) {
+JSScript* ScriptPreloader::GetCachedScriptInternal(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    const nsCString& path) {
   auto script = mScripts.Get(path);
   if (script) {
-    return WaitForCachedScript(cx, script);
+    return WaitForCachedScript(cx, options, script);
   }
 
   return nullptr;
 }
 
-JSScript* ScriptPreloader::WaitForCachedScript(JSContext* cx,
-                                               CachedScript* script) {
+JSScript* ScriptPreloader::WaitForCachedScript(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+    CachedScript* script) {
   // Check for finished operations before locking so that we can move onto
   // decoding the next batch as soon as possible after the pending batch is
   // ready. If we wait until we hit an unfinished script, we wind up having at
@@ -912,7 +940,7 @@ JSScript* ScriptPreloader::WaitForCachedScript(JSContext* cx,
     LOG(Debug, "Waited %fms\n", waitedMS);
   }
 
-  return script->GetJSScript(cx);
+  return script->GetJSScript(cx, options);
 }
 
 /* static */
@@ -1047,7 +1075,8 @@ void ScriptPreloader::DecodeNextBatch(size_t chunkSize,
   JSAutoRealm ar(cx, scope ? scope : xpc::CompilationScope());
 
   JS::CompileOptions options(cx);
-  options.setNoScriptRval(true).setSourceIsLazy(true);
+  FillCompileOptionsForCachedScript(options);
+  options.setSourceIsLazy(true);
 
   if (!JS::CanCompileOffThread(cx, options, size) ||
       !JS::DecodeMultiOffThreadScripts(cx, options, mParsingSources,
@@ -1106,10 +1135,15 @@ bool ScriptPreloader::CachedScript::XDREncode(JSContext* cx) {
   return false;
 }
 
-JSScript* ScriptPreloader::CachedScript::GetJSScript(JSContext* cx) {
+JSScript* ScriptPreloader::CachedScript::GetJSScript(
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options) {
   MOZ_ASSERT(mReadyToExecute);
   if (mScript) {
-    return mScript;
+    if (JS::CheckCompileOptionsMatch(options, mScript)) {
+      return mScript;
+    }
+    LOG(Error, "Cached script %s has different options\n", mURL.get());
+    MOZ_DIAGNOSTIC_ASSERT(false, "Cached script has different options");
   }
 
   if (!HasRange()) {
@@ -1129,7 +1163,7 @@ JSScript* ScriptPreloader::CachedScript::GetJSScript(JSContext* cx) {
   LOG(Info, "Decoding script %s on main thread...\n", mURL.get());
 
   JS::RootedScript script(cx);
-  if (JS::DecodeScript(cx, Range(), &script)) {
+  if (JS::DecodeScript(cx, options, Range(), &script)) {
     mScript = script;
 
     if (mCache.mSaveComplete) {

@@ -1,11 +1,7 @@
 version: 2.1
 
 commands:
-    test-python-version:
-        parameters:
-            requirements-file:
-                type: string
-                default: "requirements_dev.txt"
+    test-start:
         steps:
             - checkout
             - run:
@@ -13,9 +9,36 @@ commands:
                     command: |
                         echo 'export PATH=.:$HOME/.local/bin:$PATH' >> $BASH_ENV
             - run:
+                    name: Upgrade pip
+                    command: |
+                        pip install --upgrade --user pip
+
+    test-min-requirements:
+        steps:
+            - run:
+                    name: install minimum requirements
+                    command: |
+                        # Use requirements-builder to determine the minimum versions of
+                        # all requirements and test those
+                        # We install requirements-builder itself into its own venv, since
+                        # otherwise its dependencies might install newer versions of
+                        # glean_parser's dependencies.
+                        python3 -m venv .rb
+                        .rb/bin/pip install requirements-builder
+                        .rb/bin/requirements-builder --level=min setup.py > min_requirements.txt
+
+                        pip install --use-feature=2020-resolver --progress-bar off --user -U -r min_requirements.txt
+
+    test-python-version:
+        parameters:
+            requirements-file:
+                type: string
+                default: "requirements_dev.txt"
+        steps:
+            - run:
                     name: install
                     command: |
-                        pip install --progress-bar off --user -U -r <<parameters.requirements-file>>
+                        pip install --use-feature=2020-resolver --progress-bar off --user -U -r <<parameters.requirements-file>>
                         sudo apt update -q
                         sudo apt upgrade -q
                         sudo apt install openjdk-11-jdk-headless
@@ -37,23 +60,26 @@ commands:
                     command: make test
 
 jobs:
-    build-35:
-        docker:
-            - image: circleci/python:3.5.9
-        steps:
-            - test-python-version:
-                    requirements-file: requirements_dev_py35.txt
-
     build-36:
         docker:
-            - image: circleci/python:3.6.9
+            - image: circleci/python:3.6.12
         steps:
+            - test-start
+            - test-python-version
+
+    build-36-min:
+        docker:
+            - image: circleci/python:3.6.12
+        steps:
+            - test-start
+            - test-min-requirements
             - test-python-version
 
     build-37:
         docker:
-            - image: circleci/python:3.7.5
+            - image: circleci/python:3.7.9
         steps:
+            - test-start
             - test-python-version
             - run:
                     name: make-docs
@@ -66,8 +92,24 @@ jobs:
 
     build-38:
         docker:
-            - image: circleci/python:3.8.0
+            - image: circleci/python:3.8.5
         steps:
+            - test-start
+            - test-python-version
+
+    build-38-min:
+        docker:
+            - image: circleci/python:3.8.5
+        steps:
+            - test-start
+            - test-min-requirements
+            - test-python-version
+
+    build-39:
+        docker:
+            - image: circleci/python:3.9.0rc1
+        steps:
+            - test-start
             - test-python-version
 
     docs-deploy:
@@ -101,9 +143,13 @@ jobs:
                     command: |
                         echo 'export PATH=.:$HOME/.local/bin:$PATH' >> $BASH_ENV
             - run:
+                    name: Upgrade pip
+                    command: |
+                        pip install --upgrade --user pip
+            - run:
                     name: install
                     command: |
-                        pip install --user -U -r requirements_dev.txt
+                        pip install --use-feature=2020-resolver --user -U -r requirements_dev.txt
             - run:
                     name: deploy
                     # Requires that the TWINE_USERNAME and TWINE_PASSWORD environment
@@ -115,11 +161,11 @@ workflows:
     version: 2
     build:
         jobs:
-            - build-35:
+            - build-36:
                     filters:
                         tags:
                             only: /.*/
-            - build-36:
+            - build-36-min:
                     filters:
                         tags:
                             only: /.*/
@@ -131,12 +177,20 @@ workflows:
                     filters:
                         tags:
                             only: /.*/
+            - build-38-min:
+                    filters:
+                        tags:
+                            only: /.*/
+            - build-39:
+                    filters:
+                        tags:
+                            only: /.*/
             - docs-deploy:
                     requires:
                         - build-37
                     filters:
                         branches:
-                            only: master
+                            only: main
             - pypi-deploy:
                     requires:
                         - build-37

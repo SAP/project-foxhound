@@ -8,7 +8,8 @@
 
 #include "BaseProfiler.h"
 #include "ProfileBuffer.h"
-#include "BaseProfileJSONWriter.h"
+
+#include "mozilla/BaseProfileJSONWriter.h"
 
 #if defined(GP_OS_darwin)
 #  include <pthread.h>
@@ -29,6 +30,9 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
                                     const TimeStamp& aProcessStartTime,
                                     double aSinceTime) {
   UniqueStacks uniqueStacks;
+
+  MOZ_ASSERT(uniqueStacks.mUniqueStrings);
+  aWriter.SetUniqueStrings(*uniqueStacks.mUniqueStrings);
 
   aWriter.Start();
   {
@@ -73,19 +77,25 @@ void ProfiledThreadData::StreamJSON(const ProfileBuffer& aBuffer,
     aWriter.EndObject();
 
     aWriter.StartArrayProperty("stringTable");
-    { uniqueStacks.mUniqueStrings->SpliceStringTableElements(aWriter); }
+    {
+      std::move(*uniqueStacks.mUniqueStrings)
+          .SpliceStringTableElements(aWriter);
+    }
     aWriter.EndArray();
   }
-
   aWriter.End();
+
+  aWriter.ResetUniqueStrings();
 }
 
-void StreamSamplesAndMarkers(
+int StreamSamplesAndMarkers(
     const char* aName, int aThreadId, const ProfileBuffer& aBuffer,
     SpliceableJSONWriter& aWriter, const std::string& aProcessName,
     const std::string& aETLDplus1, const TimeStamp& aProcessStartTime,
     const TimeStamp& aRegisterTime, const TimeStamp& aUnregisterTime,
     double aSinceTime, UniqueStacks& aUniqueStacks) {
+  int processedThreadId = 0;
+
   aWriter.StringProperty(
       "processType",
       "(unknown)" /* XRE_GeckoProcessTypeToString(XRE_GetProcessType()) */);
@@ -99,20 +109,16 @@ void StreamSamplesAndMarkers(
     // profilers should end up in the same track, at which point this won't be
     // necessary anymore. See meta bug 1557566.
     name += " (pre-xul)";
-    aWriter.StringProperty("name", name.c_str());
+    aWriter.StringProperty("name", name);
   }
 
   // Use given process name (if any).
   if (!aProcessName.empty()) {
-    aWriter.StringProperty("processName", aProcessName.c_str());
+    aWriter.StringProperty("processName", aProcessName);
   }
   if (!aETLDplus1.empty()) {
-    aWriter.StringProperty("eTLD+1", aETLDplus1.c_str());
+    aWriter.StringProperty("eTLD+1", aETLDplus1);
   }
-
-  aWriter.IntProperty("tid", static_cast<int64_t>(aThreadId));
-  aWriter.IntProperty("pid",
-                      static_cast<int64_t>(profiler_current_process_id()));
 
   if (aRegisterTime) {
     aWriter.DoubleProperty(
@@ -140,8 +146,8 @@ void StreamSamplesAndMarkers(
 
     aWriter.StartArrayProperty("data");
     {
-      aBuffer.StreamSamplesToJSON(aWriter, aThreadId, aSinceTime,
-                                  aUniqueStacks);
+      processedThreadId = aBuffer.StreamSamplesToJSON(
+          aWriter, aThreadId, aSinceTime, aUniqueStacks);
     }
     aWriter.EndArray();
   }
@@ -152,7 +158,9 @@ void StreamSamplesAndMarkers(
     {
       JSONSchemaWriter schema(aWriter);
       schema.WriteField("name");
-      schema.WriteField("time");
+      schema.WriteField("startTime");
+      schema.WriteField("endTime");
+      schema.WriteField("phase");
       schema.WriteField("category");
       schema.WriteField("data");
     }
@@ -165,6 +173,14 @@ void StreamSamplesAndMarkers(
     aWriter.EndArray();
   }
   aWriter.EndObject();
+
+  aWriter.IntProperty("pid",
+                      static_cast<int64_t>(profiler_current_process_id()));
+  aWriter.IntProperty(
+      "tid",
+      static_cast<int64_t>(aThreadId != 0 ? aThreadId : processedThreadId));
+
+  return processedThreadId;
 }
 
 }  // namespace baseprofiler

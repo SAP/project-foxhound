@@ -15,6 +15,7 @@ const EXPORTED_SYMBOLS = ["ExperimentManager", "_ExperimentManager"];
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
@@ -25,6 +26,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.jsm",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
   FirstStartup: "resource://gre/modules/FirstStartup.jsm",
+  Services: "resource://gre/modules/Services.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
@@ -41,6 +43,9 @@ const EVENT_TELEMETRY_STUDY_TYPE = "preference_study";
 const TELEMETRY_EXPERIMENT_TYPE_PREFIX = "normandy-";
 // Also included in telemetry
 const DEFAULT_EXPERIMENT_TYPE = "messaging_experiment";
+const STUDIES_OPT_OUT_PREF = "app.shield.optoutstudies.enabled";
+const EXPOSURE_EVENT_CATEGORY = "normandy";
+const EXPOSURE_EVENT_METHOD = "expose";
 
 /**
  * A module for processes Experiment recipes, choosing and storing enrollment state,
@@ -51,6 +56,8 @@ class _ExperimentManager {
     this.id = id;
     this.store = store || new ExperimentStore();
     this.sessions = new Map();
+    this._onExposureEvent = this._onExposureEvent.bind(this);
+    Services.prefs.addObserver(STUDIES_OPT_OUT_PREF, this);
   }
 
   /**
@@ -81,6 +88,7 @@ class _ExperimentManager {
    */
   async onStartup() {
     await this.store.init();
+    this.store.on("exposure", this._onExposureEvent);
     const restoredExperiments = this.store.getAllActive();
 
     for (const experiment of restoredExperiments) {
@@ -109,6 +117,8 @@ class _ExperimentManager {
       this.updateEnrollment(recipe);
     } else if (isEnrollmentPaused) {
       log.debug(`Enrollment is paused for "${slug}"`);
+    } else if (!(await this.isInBucketAllocation(recipe.bucketConfig))) {
+      log.debug("Client was not enrolled because of the bucket sampling");
     } else {
       await this.enroll(recipe, source);
     }
@@ -143,6 +153,35 @@ class _ExperimentManager {
   }
 
   /**
+   * Bucket configuration specifies a specific percentage of clients that can
+   * be enrolled.
+   * @param {BucketConfig} bucketConfig
+   * @returns {Promise<boolean>}
+   */
+  isInBucketAllocation(bucketConfig) {
+    if (!bucketConfig) {
+      log.debug("Cannot enroll if recipe bucketConfig is not set.");
+      return false;
+    }
+
+    let id;
+    if (bucketConfig.randomizationUnit === "normandy_id") {
+      id = ClientEnvironment.userId;
+    } else {
+      // Others not currently supported.
+      log.debug(`Invalid randomizationUnit: ${bucketConfig.randomizationUnit}`);
+      return false;
+    }
+
+    return Sampling.bucketSample(
+      [id, bucketConfig.namespace],
+      bucketConfig.start,
+      bucketConfig.count,
+      bucketConfig.total
+    );
+  }
+
+  /**
    * Start a new experiment by enrolling the users
    *
    * @param {RecipeArgs} recipe
@@ -169,12 +208,19 @@ class _ExperimentManager {
     const enrollmentId = NormandyUtils.generateUuid();
     const branch = await this.chooseBranch(slug, branches);
 
-    if (branch.groups && this.store.hasExperimentForGroups(branch.groups)) {
+    if (
+      this.store.hasExperimentForFeature(
+        // Extract out only the feature names from the branch
+        branch.feature?.featureId
+      )
+    ) {
       log.debug(
-        `Skipping enrollment for "${slug}" because there is an existing experiment for one of its groups.`
+        `Skipping enrollment for "${slug}" because there is an existing experiment for its feature.`
       );
-      this.sendFailureTelemetry("enrollFailed", slug, "group-conflict");
-      throw new Error(`An experiment with a conflicting group already exists.`);
+      this.sendFailureTelemetry("enrollFailed", slug, "feature-conflict");
+      throw new Error(
+        `An experiment with a conflicting feature already exists.`
+      );
     }
 
     /** @type {Enrollment} */
@@ -182,6 +228,8 @@ class _ExperimentManager {
       slug,
       branch,
       active: true,
+      // Sent first time feature value is used
+      exposurePingSent: false,
       enrollmentId,
       experimentType,
       source,
@@ -259,6 +307,18 @@ class _ExperimentManager {
   }
 
   /**
+   * Unenroll from all active studies if user opts out.
+   */
+  observe(aSubject, aTopic, aPrefName) {
+    if (Services.prefs.getBoolPref(STUDIES_OPT_OUT_PREF)) {
+      return;
+    }
+    for (const { slug } of this.store.getAllActive()) {
+      this.unenroll(slug, "studies-opt-out");
+    }
+  }
+
+  /**
    * Send Telemetry for undesired event
    *
    * @param {string} eventName
@@ -281,6 +341,32 @@ class _ExperimentManager {
       branch: branch.slug,
       enrollmentId: enrollmentId || TelemetryEvents.NO_ENROLLMENT_ID_MARKER,
     });
+  }
+
+  async _onExposureEvent(event, experimentData) {
+    await this.store.ready();
+    this.store.updateExperiment(experimentData.experimentSlug, {
+      exposurePingSent: true,
+    });
+    // featureId is not validated and might be rejected by recordEvent if not
+    // properly defined in Events.yaml. Saving experiment state regardless of
+    // the result, no use retrying.
+    try {
+      Services.telemetry.recordEvent(
+        EXPOSURE_EVENT_CATEGORY,
+        EXPOSURE_EVENT_METHOD,
+        "feature_study",
+        experimentData.experimentSlug,
+        {
+          branchSlug: experimentData.branchSlug,
+          featureId: experimentData.featureId,
+        }
+      );
+    } catch (e) {
+      Cu.reportError(e);
+    }
+
+    log.debug(`Experiment exposure: ${experimentData.experimentSlug}`);
   }
 
   /**

@@ -41,7 +41,7 @@ void ConsoleReportCollector::FlushReportsToConsole(uint64_t aInnerWindowID,
   {
     MutexAutoLock lock(mMutex);
     if (aAction == ReportAction::Forget) {
-      mPendingReports.SwapElements(reports);
+      reports = std::move(mPendingReports);
     } else {
       reports = mPendingReports.Clone();
     }
@@ -79,7 +79,7 @@ void ConsoleReportCollector::FlushReportsToConsole(uint64_t aInnerWindowID,
 
     nsContentUtils::ReportToConsoleByWindowID(
         errorText, report.mErrorFlags, report.mCategory, aInnerWindowID, uri,
-        EmptyString(), report.mLineNumber, report.mColumnNumber);
+        u""_ns, report.mLineNumber, report.mColumnNumber);
   }
 }
 
@@ -90,7 +90,7 @@ void ConsoleReportCollector::FlushReportsToConsoleForServiceWorkerScope(
   {
     MutexAutoLock lock(mMutex);
     if (aAction == ReportAction::Forget) {
-      mPendingReports.SwapElements(reports);
+      reports = std::move(mPendingReports);
     } else {
       reports = mPendingReports.Clone();
     }
@@ -153,7 +153,7 @@ void ConsoleReportCollector::FlushConsoleReports(
 
   {
     MutexAutoLock lock(mMutex);
-    mPendingReports.SwapElements(reports);
+    reports = std::move(mPendingReports);
   }
 
   for (uint32_t i = 0; i < reports.Length(); ++i) {
@@ -174,7 +174,7 @@ void ConsoleReportCollector::StealConsoleReports(
 
   {
     MutexAutoLock lock(mMutex);
-    mPendingReports.SwapElements(reports);
+    reports = std::move(mPendingReports);
   }
 
   for (const PendingReport& report : reports) {

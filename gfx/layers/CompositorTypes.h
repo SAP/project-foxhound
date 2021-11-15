@@ -7,6 +7,7 @@
 #ifndef MOZILLA_LAYERS_COMPOSITORTYPES_H
 #define MOZILLA_LAYERS_COMPOSITORTYPES_H
 
+#include <iosfwd>
 #include <stdint.h>       // for uint32_t
 #include <sys/types.h>    // for int32_t
 #include "LayersTypes.h"  // for LayersBackend, etc
@@ -90,6 +91,8 @@ enum class TextureFlags : uint32_t {
   DEFAULT = NO_FLAGS
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(TextureFlags)
+
+std::ostream& operator<<(std::ostream& aStream, const TextureFlags& aFlags);
 
 static inline bool TextureRequiresLocking(TextureFlags aFlags) {
   // If we're not double buffered, or uploading
@@ -175,6 +178,8 @@ typedef uintptr_t SyncHandle;
  */
 struct TextureFactoryIdentifier {
   LayersBackend mParentBackend;
+  WebRenderBackend mWebRenderBackend;
+  WebRenderCompositor mWebRenderCompositor;
   GeckoProcessType mParentProcessType;
   int32_t mMaxTextureSize;
   bool mSupportsTextureDirectMapping;
@@ -197,6 +202,33 @@ struct TextureFactoryIdentifier {
       bool aSupportsPartialUploads = false, bool aSupportsComponentAlpha = true,
       SyncHandle aSyncHandle = 0)
       : mParentBackend(aLayersBackend),
+        mWebRenderBackend(WebRenderBackend::HARDWARE),
+        mWebRenderCompositor(WebRenderCompositor::DRAW),
+        mParentProcessType(aParentProcessType),
+        mMaxTextureSize(aMaxTextureSize),
+        mSupportsTextureDirectMapping(aSupportsTextureDirectMapping),
+        mCompositorUseANGLE(aCompositorUseANGLE),
+        mCompositorUseDComp(aCompositorUseDComp),
+        mUseCompositorWnd(aUseCompositorWnd),
+        mSupportsTextureBlitting(aSupportsTextureBlitting),
+        mSupportsPartialUploads(aSupportsPartialUploads),
+        mSupportsComponentAlpha(aSupportsComponentAlpha),
+        mUsingAdvancedLayers(false),
+        mSyncHandle(aSyncHandle) {}
+
+  explicit TextureFactoryIdentifier(
+      WebRenderBackend aWebRenderBackend,
+      WebRenderCompositor aWebRenderCompositor,
+      GeckoProcessType aParentProcessType = GeckoProcessType_Default,
+      int32_t aMaxTextureSize = 4096,
+      bool aSupportsTextureDirectMapping = false,
+      bool aCompositorUseANGLE = false, bool aCompositorUseDComp = false,
+      bool aUseCompositorWnd = false, bool aSupportsTextureBlitting = false,
+      bool aSupportsPartialUploads = false, bool aSupportsComponentAlpha = true,
+      SyncHandle aSyncHandle = 0)
+      : mParentBackend(LayersBackend::LAYERS_WR),
+        mWebRenderBackend(aWebRenderBackend),
+        mWebRenderCompositor(aWebRenderCompositor),
         mParentProcessType(aParentProcessType),
         mMaxTextureSize(aMaxTextureSize),
         mSupportsTextureDirectMapping(aSupportsTextureDirectMapping),
@@ -211,6 +243,8 @@ struct TextureFactoryIdentifier {
 
   bool operator==(const TextureFactoryIdentifier& aOther) const {
     return mParentBackend == aOther.mParentBackend &&
+           mWebRenderBackend == aOther.mWebRenderBackend &&
+           mWebRenderCompositor == aOther.mWebRenderCompositor &&
            mParentProcessType == aOther.mParentProcessType &&
            mMaxTextureSize == aOther.mMaxTextureSize &&
            mSupportsTextureDirectMapping ==

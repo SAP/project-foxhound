@@ -63,6 +63,7 @@ include HangTypes;
 include PrefsTypes;
 include NeckoChannelParams;
 include PSMIPCTypes;
+include LookAndFeelTypes;
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 include protocol PSandboxTesting;
@@ -84,7 +85,7 @@ using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
-using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
+using mozilla::widget::ThemeChangeKind from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
@@ -105,10 +106,10 @@ using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextInitializer from "mozilla/dom/BrowsingContext.h";
+using mozilla::dom::PermitUnloadResult from "mozilla/dom/DocShellMessageUtils.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 using mozilla::dom::WindowContextTransaction from "mozilla/dom/WindowContext.h";
 using base::SharedMemoryHandle from "base/shared_memory.h";
-using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using mozilla::fontlist::Pointer from "SharedFontList.h";
 using gfxSparseBitSet from "gfxFontUtils.h";
 using FontVisibility from "gfxFontEntry.h";
@@ -128,6 +129,11 @@ using JSActorMessageKind from "mozilla/dom/JSActor.h";
 using JSActorMessageMeta from "mozilla/dom/PWindowGlobal.h";
 using mozilla::PermissionDelegateHandler::DelegatedPermissionList from "mozilla/PermissionDelegateIPCUtils.h";
 using refcounted class nsILayoutHistoryState from "nsILayoutHistoryState.h";
+using class mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
+using nsPoint from "mozilla/GfxMessageUtils.h";
+using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
+using mozilla::PDMFactory::MediaCodecsSupported from "PDMFactory.h";
+using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 
 union ChromeRegistryItem
 {
@@ -234,6 +240,7 @@ struct BlobURLRegistrationData
   nsCString url;
   IPCBlob blob;
   nsIPrincipal principal;
+  nsID? agentClusterId;
   bool revoked;
 };
 
@@ -288,13 +295,6 @@ struct GMPCapabilityData
     GMPAPITags[] capabilities;
 };
 
-struct GfxInfoFeatureStatus
-{
-    int32_t feature;
-    int32_t status;
-    nsCString failureId;
-};
-
 struct XPCOMInitData
 {
     bool isOffline;
@@ -314,6 +314,7 @@ struct XPCOMInitData
     nsCString[] requestedLocales;
     DynamicScalarDefinition[] dynamicScalarDefs;
     SystemParameterKVPair[] systemParameters;
+    MediaCodecsSupported codecsSupported;
 };
 
 struct VisitedQueryResult
@@ -368,16 +369,16 @@ struct PostMessageData
     uint64_t innerWindowId;
 };
 
-struct KeyValuePair
-{
-    nsString key;
-    nsString value;
-};
-
 union SyncedContextInitializer
 {
     BrowsingContextInitializer;
     WindowContextInitializer;
+};
+
+union BlobURLDataRequestResult
+{
+  IPCBlob;
+  nsresult;
 };
 
 /**
@@ -449,6 +450,12 @@ parent:
                                 WindowGlobalInit windowInit,
                                 uint32_t chromeFlags);
 
+    // TODO: Do I need to make this return something to watch for completion?
+    // Guess we'll see how we end up triggering the actual print, for preview
+    // this should be enough...
+    async CloneDocumentTreeInto(MaybeDiscardedBrowsingContext aSourceBc,
+                                MaybeDiscardedBrowsingContext aTargetBc);
+
 child:
     async ConstructBrowser(ManagedEndpoint<PBrowserChild> browserEp,
                            ManagedEndpoint<PWindowGlobalChild> windowEp,
@@ -468,8 +475,8 @@ both:
     async PWebBrowserPersistDocument(nullable PBrowser aBrowser,
                                      MaybeDiscardedBrowsingContext aContext);
 
-    async RawMessage(JSActorMessageMeta aMetadata, ClonedMessageData aData,
-                     ClonedMessageData aStack);
+    async RawMessage(JSActorMessageMeta aMetadata, ClonedMessageData? aData,
+                     ClonedMessageData? aStack);
 
 child:
     async InitGMPService(Endpoint<PGMPServiceChild> service);
@@ -511,7 +518,9 @@ child:
     async RequestMemoryReport(uint32_t generation,
                               bool anonymize,
                               bool minimizeMemoryUsage,
-                              FileDescriptor? DMDFile);
+                              FileDescriptor? DMDFile)
+        returns (uint32_t aGeneration);
+
     async RequestPerformanceMetrics(nsID aID);
 
     /**
@@ -546,6 +555,8 @@ child:
 
     async ClearImageCache(bool privateLoader, bool chrome);
 
+    async ClearStyleSheetCache(nsIPrincipal? aForPrincipal);
+
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
     async SetCaptivePortalState(int32_t aState);
@@ -553,10 +564,10 @@ child:
     async NotifyVisited(VisitedQueryResult[] uri);
 
     /**
-     * Tell the child that the system theme has changed, and that a repaint
-     * is necessary.
+     * Tell the child that the system theme has changed, and that a repaint is
+     * necessary.
      */
-    async ThemeChanged(LookAndFeelInt[] lookAndFeelIntCache);
+    async ThemeChanged(LookAndFeelCache aCache, ThemeChangeKind aKind);
 
     async UpdateSystemParameters(SystemParameterKVPair[] aUpdates);
 
@@ -608,6 +619,8 @@ child:
 
     async FlushMemory(nsString reason);
 
+    async ApplicationBackground();
+    async ApplicationForeground();
     async GarbageCollect();
     async CycleCollect();
     async UnlinkGhosts();
@@ -662,7 +675,7 @@ child:
 
     async SetXPCOMProcessAttributes(XPCOMInitData xpcomInit,
                                     StructuredCloneData initialData,
-                                    LookAndFeelInt[] lookAndFeelIntCache,
+                                    LookAndFeelCache lookAndFeelCache,
                                     /* used on MacOSX/Linux/Android only: */
                                     SystemFontListEntry[] systemFontList,
                                     SharedMemoryHandle? sharedUASheetHandle,
@@ -744,7 +757,8 @@ child:
     async GetFilesResponse(nsID aID, GetFilesResponseResult aResult);
 
     async BlobURLRegistration(nsCString aURI, IPCBlob aBlob,
-                              Principal aPrincipal);
+                              Principal aPrincipal,
+                              nsID? aAgentClusterId);
 
     async BlobURLUnregistration(nsCString aURI);
 
@@ -881,7 +895,7 @@ child:
     async LoadURI(MaybeDiscardedBrowsingContext aContext, nsDocShellLoadState aLoadState, bool aSetNavigating)
         returns (bool aSuccess);
 
-    async InternalLoad(MaybeDiscardedBrowsingContext aContext, nsDocShellLoadState aLoadState, bool aTakeFocus);
+    async InternalLoad(nsDocShellLoadState aLoadState, bool aTakeFocus);
 
     async DisplayLoadError(MaybeDiscardedBrowsingContext aContext, nsString aURI);
 
@@ -909,6 +923,15 @@ child:
     async HistoryCommitIndexAndLength(MaybeDiscardedBrowsingContext aContext,
                                       uint32_t aIndex, uint32_t aLength,
                                       nsID aChangeID);
+
+   async DispatchLocationChangeEvent(MaybeDiscardedBrowsingContext aContext);
+
+  // Dispatches a "beforeunload" event to each in-process content window in the
+  // subtree beginning at `aStartingAt`, and returns the result as documented in
+  // the `PermitUnloadResult` enum.
+  async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
+      returns (PermitUnloadResult result);
+
 parent:
     /**
      * This is a temporary way to pass index and length through parent process.
@@ -917,9 +940,23 @@ parent:
     async SessionHistoryUpdate(MaybeDiscardedBrowsingContext aTopContext,
                                int32_t aIndex, int32_t aLength, nsID aChangeID);
 
-    async SynchronizeLayoutHistoryState(uint64_t aSessionHistoryEntryID,
+    async SynchronizeLayoutHistoryState(MaybeDiscardedBrowsingContext aContext,
                                         nsILayoutHistoryState aState);
 
+    async SessionHistoryEntryTitle(MaybeDiscardedBrowsingContext aContext,
+                                   nsString aTitle);
+
+    async SessionHistoryEntryScrollRestorationIsManual(MaybeDiscardedBrowsingContext aContext,
+                                                       bool aIsManual);
+
+    async SessionHistoryEntryCacheKey(MaybeDiscardedBrowsingContext aContext,
+                                      uint32_t aCacheKey);
+
+    async SessionHistoryEntryStoreWindowNameInContiguousEntries(MaybeDiscardedBrowsingContext aContext,
+                                                                nsString aName);
+
+    async GetLoadingSessionHistoryInfoFromParent(MaybeDiscardedBrowsingContext aContext)
+        returns (LoadingSessionHistoryInfo? aLoadingInfo, int32_t aRequestedIndex, int32_t aLength);
 
     async InitBackground(Endpoint<PBackgroundParent> aEndpoint);
 
@@ -944,10 +981,6 @@ parent:
      */
     sync ConnectPluginBridge(uint32_t aPluginId)
         returns (nsresult rv, Endpoint<PPluginModuleParent> aEndpoint);
-
-    // See Bug 1518344 - Investigate using async for PContent::LaunchRDDProcess
-    sync LaunchRDDProcess()
-        returns (nsresult rv, Endpoint<PRemoteDecoderManagerChild> aEndpoint);
 
     async PRemoteSpellcheckEngine();
 
@@ -1015,7 +1048,7 @@ parent:
 
     async OpenNotificationSettings(Principal principal);
 
-    async AddMixedContentSecurityState(MaybeDiscardedWindowContext aContext, uint32_t aStateFlags);
+    async AddSecurityState(MaybeDiscardedWindowContext aContext, uint32_t aStateFlags);
 
     // Request that the ServiceWorkerManager in the parent process create a
     // notification "click" or "close" event and dispatch it on the relevant
@@ -1114,13 +1147,6 @@ parent:
     async FirstIdle();
 
     async DeviceReset();
-
-    sync KeywordToURI(nsCString keyword, bool isPrivateContext)
-        returns (nsString providerName, nsIInputStream postData, nsIURI uri);
-    sync GetFixupURIInfo(nsString uriString, uint32_t fixupflags, bool aAllowThirdPartyFixup)
-        returns (nsString providerName, nsIInputStream postData, nsIURI preferredURI);
-
-    sync NotifyKeywordSearchLoading(nsString providerName, nsString keyword);
 
     async CopyFavicon(nsIURI oldURI, nsIURI newURI, Principal aLoadingPrincipal, bool isPrivate);
 
@@ -1304,7 +1330,7 @@ parent:
      *   In a typical case, there will be a handful of blocks altogether, so
      *   each content process only needs to make this request a few times.
      * @returns aHandle
-     *   Handle that can be used to construct a SharedMemoryBasic that maps the
+     *   Handle that can be used to construct a SharedMemory that maps the
      *   requested block of memory.
      *   If aGeneration does not match the parent's font list generation ID, or
      *   if requesting a block that does not exist (i.e. with aIndex greater
@@ -1332,6 +1358,9 @@ parent:
      * @param aFamilyIndex
      *   The 0-based index of the Family within the font-list that a content
      *   process needs to use.
+     * @param aLoadCmaps
+     *   If true, the parent should eagerly load character maps for the faces
+     *   in the family.
      *
      * This is a sync message because the content process cannot complete its
      * font-matching until the family is fully populated with Face records.
@@ -1339,7 +1368,8 @@ parent:
      * and then have to reflow again once all the font information needed
      * becomes available.
      */
-    sync InitializeFamily(uint32_t aGeneration, uint32_t aFamilyIndex);
+    sync InitializeFamily(uint32_t aGeneration, uint32_t aFamilyIndex,
+                          bool aLoadCmaps);
 
     /**
      * Record the character map of a given Face in the font list.
@@ -1410,7 +1440,7 @@ parent:
      * @param aLoaded
      *   Returns the size in bytes of the resource.
      */
-    sync GetHyphDict(nsIURI aURI) returns (Handle aHandle, uint32_t aSize);
+    sync GetHyphDict(nsIURI aURI) returns (SharedMemoryHandle aHandle, uint32_t aSize);
 
     async CreateWindow(PBrowser aThisTab,
                        MaybeDiscardedBrowsingContext aParent,
@@ -1418,6 +1448,8 @@ parent:
                        uint32_t aChromeFlags,
                        bool aCalledFromJS,
                        bool aWidthSpecified,
+                       bool aForPrinting,
+                       bool aForWindowDotPrint,
                        nsIURI aURIToLoad,
                        nsCString aFeatures,
                        float aFullZoom,
@@ -1480,7 +1512,8 @@ parent:
      async DeleteGetFilesRequest(nsID aID);
 
      async StoreAndBroadcastBlobURLRegistration(nsCString url, IPCBlob blob,
-                                                Principal principal);
+                                                Principal principal,
+                                                nsID? aAgentClusterId);
 
      async UnstoreAndBroadcastBlobURLUnregistration(nsCString url, Principal principal);
 
@@ -1499,7 +1532,6 @@ parent:
                              IHandlerControlHolder aHandlerControl);
 
     async AddMemoryReport(MemoryReport aReport);
-    async FinishMemoryReport(uint32_t aGeneration);
 
     async MaybeReloadPlugins();
 
@@ -1638,22 +1670,54 @@ parent:
      */
     async AbortOtherOrientationPendingPromises(MaybeDiscardedBrowsingContext aContext);
 
-    async NotifyOnHistoryReload(MaybeDiscardedBrowsingContext aContext)
+    async HistoryReload(MaybeDiscardedBrowsingContext aContext, uint32_t aReloadFlags);
+
+    async NotifyOnHistoryReload(MaybeDiscardedBrowsingContext aContext,
+                                bool aForceReload)
             returns (bool canReload, nsDocShellLoadState? loadState,
                      bool? reloadActiveEntry);
 
     async HistoryCommit(MaybeDiscardedBrowsingContext aContext,
-                        uint64_t aSessionHistoryEntryID,
-                        nsID aChangeID);
+                        uint64_t aLoadID, nsID aChangeID, uint32_t aLoadType);
 
     async HistoryGo(MaybeDiscardedBrowsingContext aContext,
-                    int32_t aOffset) returns(int32_t requestedIndex);
+                    int32_t aOffset, uint64_t aHistoryEpoch) returns(int32_t requestedIndex);
+
+    async BlobURLDataRequest(nsCString aBlobURL,
+                             nsIPrincipal aTriggeringPrincipal,
+                             nsIPrincipal aLoadingPrincipal,
+                             OriginAttributes aOriginAttributes,
+                             nsID? aAgentClusterId)
+      returns (BlobURLDataRequestResult aResult);
+
+    async SetActiveSessionHistoryEntry(MaybeDiscardedBrowsingContext context,
+                                       nsPoint? previousScrollPosition,
+                                       SessionHistoryInfo info, uint32_t loadType,
+                                       uint32_t updatedCacheKey, nsID changeID);
+    async ReplaceActiveSessionHistoryEntry(
+        MaybeDiscardedBrowsingContext context, SessionHistoryInfo info);
+
+    async RemoveDynEntriesFromActiveSessionHistoryEntry(
+        MaybeDiscardedBrowsingContext aContext);
+
+    async RemoveFromSessionHistory(
+        MaybeDiscardedBrowsingContext aContext);
 
 both:
     async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
                       uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
                       nsCString category, bool privateWindow, uint64_t innerWindowId,
                       bool fromChromeContext);
+
+    /**
+     * Used in fission to report timing data when the parent window is in
+     * another process. Child frame will send data to its ContentParent which
+     * will then identify the ContentParent for the innerWindowId and pass
+     * the data to the correct process.
+     */
+    async ReportFrameTimingData(uint64_t innerWindowId, nsString entryName,
+                                nsString initiatorType,
+                                UniquePtr<PerformanceTimingData> aData);
 
     async CommitBrowsingContextTransaction(MaybeDiscardedBrowsingContext aContext,
                                            BrowsingContextTransaction aTransaction,
@@ -1707,6 +1771,8 @@ both:
     async SetActiveBrowsingContext(MaybeDiscardedBrowsingContext aContext);
     async UnsetActiveBrowsingContext(MaybeDiscardedBrowsingContext aContext);
     async SetFocusedElement(MaybeDiscardedBrowsingContext aContext, bool aNeedsFocus);
+    async FinalizeFocusOuter(MaybeDiscardedBrowsingContext aContext, bool aCanFocus,
+                             CallerType aCallerType);
 parent:
     async BlurToParent(MaybeDiscardedBrowsingContext aFocusedBrowsingContext,
                       MaybeDiscardedBrowsingContext aBrowsingContextToClear,
@@ -1727,13 +1793,6 @@ both:
                             ClonedOrErrorMessageData aMessage,
                             PostMessageData aData);
 
-    /**
-     * Move sessionStorage data between parent and content processes. See
-     * SessionStorageManager documentation for more details.
-     */
-    async SessionStorageData(uint64_t aTopContextId, nsCString aOriginAttrs,
-                             nsCString aOriginKey, KeyValuePair[] aDefaultData,
-                             KeyValuePair[] aSessionData);
     async CommitWindowContextTransaction(MaybeDiscardedWindowContext aContext,
                                          WindowContextTransaction aTransaction,
                                          uint64_t aEpoch);

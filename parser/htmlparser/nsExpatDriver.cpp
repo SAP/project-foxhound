@@ -28,6 +28,8 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryComms.h"
 
 #include "mozilla/Logging.h"
 
@@ -329,7 +331,7 @@ void nsExpatDriver::HandleStartElementForSystemPrincipal(
 
     nsContentUtils::ReportToConsoleNonLocalized(
         error, nsIScriptError::warningFlag, "XML Document"_ns, doc, nullptr,
-        EmptyString(), lineNumber, colNumber);
+        u""_ns, lineNumber, colNumber);
   }
 }
 
@@ -755,6 +757,7 @@ nsresult nsExpatDriver::HandleError() {
   if (mOriginalSink) {
     doc = do_QueryInterface(mOriginalSink->GetTarget());
   }
+
   bool spoofEnglish =
       nsContentUtils::SpoofLocaleEnglish() && (!doc || !doc->AllowsL10n());
   nsParserMsgUtils::GetLocalizedStringByID(
@@ -815,6 +818,23 @@ nsresult nsExpatDriver::HandleError() {
 
   nsAutoString sourceText(mLastLine);
   AppendErrorPointer(colNumber, mLastLine.get(), sourceText);
+
+  if (doc && nsContentUtils::IsChromeDoc(doc)) {
+    nsCString path = doc->GetDocumentURI()->GetSpecOrDefault();
+
+    mozilla::Maybe<nsTArray<mozilla::Telemetry::EventExtraEntry>> extra =
+        mozilla::Some<nsTArray<mozilla::Telemetry::EventExtraEntry>>({
+            mozilla::Telemetry::EventExtraEntry{"error_code"_ns,
+                                                nsPrintfCString("%u", code)},
+            mozilla::Telemetry::EventExtraEntry{
+                "location"_ns, nsPrintfCString("%u:%u", lineNumber, colNumber)},
+        });
+
+    mozilla::Telemetry::SetEventRecordingEnabled("ysod"_ns, true);
+    mozilla::Telemetry::RecordEvent(
+        mozilla::Telemetry::EventID::Ysod_Shown_Ysod, mozilla::Some(path),
+        extra);
+  }
 
   // Try to create and initialize the script error.
   nsCOMPtr<nsIScriptError> serr(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));

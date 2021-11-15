@@ -38,20 +38,41 @@ class ChromiumFormatter(base.BaseFormatter):
         # List of tests that have failing subtests.
         self.tests_with_subtest_fails = set()
 
-    def _append_test_message(self, test, subtest, status, expected, message):
+        # Browser log for the current test under execution.
+        self.test_log = []
+
+    def _append_test_message(self, test, subtest, wpt_actual_status, message):
         """
-        Appends the message data for a test.
+        Appends the message data for a test or subtest.
         :param str test: the name of the test
-        :param str subtest: the name of the subtest with the message
-        :param str status: the subtest status
-        :param str expected: the expected subtest statuses
+        :param str subtest: the name of the subtest with the message. Will be
+                            None if this is called for a test.
+        :param str wpt_actual_status: the test status as reported by WPT
         :param str message: the string to append to the message for this test
 
         Example:
-        [subtest foo] [FAIL expected PASS] message
+          [test_or_subtest_name]
+            expected: FAIL
+            message: some test message eg assert failure
         """
-        self.messages[test].append("[%s] [%s expected %s] %s" %
-                                   (subtest, status, expected, message))
+        # NOTE: throughout this function we output a key called "expected" but
+        # fill it in with the actual status. This is by design. The goal of this
+        # output is to look exactly like WPT's expectation metadata so that it
+        # can be easily diff-ed.
+        if subtest:
+            result = "  [%s]\n    expected: %s\n" % (subtest, wpt_actual_status)
+            if message:
+                result += "    message: %s\n" % message
+            self.messages[test].append(result)
+        else:
+            # No subtest, so this is the top-level test. The result must be
+            # prepended to the list of messages, so that the message for the
+            # test comes before any subtest messages.
+            test_name_last_part = test.split("/")[-1]
+            result = "[%s]\n  expected: %s\n" % (test_name_last_part, wpt_actual_status)
+            if message:
+                result += "  message: %s\n" % message
+            self.messages[test].insert(0, result)
 
     def _append_artifact(self, cur_dict, artifact_name, artifact_value):
         """
@@ -90,6 +111,9 @@ class ChromiumFormatter(base.BaseFormatter):
             self._append_artifact(cur_dict, "wpt_subtest_failure", "true")
         if wpt_actual != actual:
             self._append_artifact(cur_dict, "wpt_actual_status", wpt_actual)
+        if wpt_actual == 'CRASH':
+            for line in self.test_log:
+                self._append_artifact(cur_dict, "wpt_crash_log", line)
         for message in messages:
             self._append_artifact(cur_dict, "log", message)
 
@@ -129,13 +153,9 @@ class ChromiumFormatter(base.BaseFormatter):
             return "SKIP"
         if status == "EXTERNAL-TIMEOUT":
             return "TIMEOUT"
-        if status in ("ERROR", "CRASH", "PRECONDITION_FAILED"):
-            # CRASH in WPT means a browser crash, which Chromium treats as a
-            # test failure.
+        if status in ("ERROR", "PRECONDITION_FAILED"):
             return "FAIL"
         if status == "INTERNAL-ERROR":
-            # CRASH in Chromium refers to an error in the test runner not the
-            # browser.
             return "CRASH"
         # Any other status just gets returned as-is.
         return status
@@ -173,15 +193,18 @@ class ChromiumFormatter(base.BaseFormatter):
 
     def test_status(self, data):
         test_name = data["test"]
-        actual_status = self._map_status_name(data["status"])
+        wpt_actual_status = data["status"]
+        actual_status = self._map_status_name(wpt_actual_status)
         expected_statuses = self._get_expected_status_from_data(actual_status, data)
 
         is_unexpected = actual_status not in expected_statuses
         if is_unexpected and test_name not in self.tests_with_subtest_fails:
             self.tests_with_subtest_fails.add(test_name)
-        self._append_test_message(test_name, data.get("subtest", ""),
-                                  actual_status, expected_statuses,
-                                  data.get("message", ""))
+        # We should always get a subtest in the data dict, but it's technically
+        # possible that it's missing. Be resilient here.
+        subtest_name = data.get("subtest", "UNKNOWN SUBTEST")
+        self._append_test_message(test_name, subtest_name,
+                                  wpt_actual_status, data.get("message", ""))
 
     def test_end(self, data):
         test_name = data["test"]
@@ -201,8 +224,7 @@ class ChromiumFormatter(base.BaseFormatter):
             if actual_status == "PASS":
                 actual_status = "FAIL"
 
-        self._append_test_message(test_name, "",
-                                  actual_status, expected_statuses,
+        self._append_test_message(test_name, None, wpt_actual_status,
                                   data.get("message", ""))
         self._store_test_result(test_name,
                                 actual_status,
@@ -218,6 +240,9 @@ class ChromiumFormatter(base.BaseFormatter):
         # Update the count of how many tests ran with each status.
         self.num_failures_by_status[actual_status] += 1
 
+        # New test, new browser logs.
+        self.test_log = []
+
     def suite_end(self, data):
         # Create the final result dictionary
         final_result = {
@@ -230,3 +255,7 @@ class ChromiumFormatter(base.BaseFormatter):
             "tests": self.tests
         }
         return json.dumps(final_result)
+
+    def process_output(self, data):
+        if 'command' in data and 'chromedriver' in data['command']:
+            self.test_log.append(data['data'])

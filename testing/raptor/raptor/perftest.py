@@ -47,7 +47,7 @@ from results import RaptorResultsHandler
 LOG = RaptorLogger(component="raptor-perftest")
 
 # - mozproxy.utils LOG displayed INFO messages even when LOG.error() was used in mitm.py
-mpu.LOG = RaptorLogger(component='raptor-mitmproxy')
+mpu.LOG = RaptorLogger(component="raptor-mitmproxy")
 
 try:
     from mozbuild.base import MozbuildObject
@@ -63,7 +63,7 @@ POST_DELAY_DEFAULT = 30000
 
 class Perftest(object):
     """Abstract base class for perftests that execute via a subharness,
-either Raptor or browsertime."""
+    either Raptor or browsertime."""
 
     __metaclass__ = ABCMeta
 
@@ -96,9 +96,10 @@ either Raptor or browsertime."""
         no_conditioned_profile=False,
         device_name=None,
         disable_perf_tuning=False,
-        conditioned_profile_scenario='settled',
+        conditioned_profile_scenario="settled",
         chimera=False,
         extra_prefs={},
+        environment={},
         project="mozilla-central",
         verbose=False,
         **kwargs
@@ -138,8 +139,9 @@ either Raptor or browsertime."""
             "conditioned_profile_scenario": conditioned_profile_scenario,
             "chimera": chimera,
             "extra_prefs": extra_prefs,
+            "environment": environment,
             "project": project,
-            "verbose": verbose
+            "verbose": verbose,
         }
 
         self.firefox_android_apps = FIREFOX_ANDROID_APPS
@@ -148,10 +150,10 @@ either Raptor or browsertime."""
         # - fennec_aurora: no conditioned profiles created see 1606199
         # - reference browser: no conditioned profiles created see 1606767
         self.using_condprof = not (
-             (self.config["platform"] == "win" and self.config["processor"] == "aarch64")
-             or self.config["binary"] == "org.mozilla.fennec_aurora"
-             or self.config["binary"] == "org.mozilla.reference.browser.raptor"
-             or self.config["no_conditioned_profile"]
+            (self.config["platform"] == "win" and self.config["processor"] == "aarch64")
+            or self.config["binary"] == "org.mozilla.fennec_aurora"
+            or self.config["binary"] == "org.mozilla.reference.browser.raptor"
+            or self.config["no_conditioned_profile"]
         )
         if self.using_condprof:
             LOG.info("Using a conditioned profile.")
@@ -190,7 +192,7 @@ either Raptor or browsertime."""
         self.results_handler.add_browser_meta(self.config["app"], browser_version)
 
         # debug mode is currently only supported when running locally
-        self.run_local = self.config['run_local']
+        self.run_local = self.config["run_local"]
         self.debug_mode = debug_mode if self.run_local else False
 
         # For the post startup delay, we want to max it to 1s when using the
@@ -200,8 +202,7 @@ either Raptor or browsertime."""
         else:
             # if running debug-mode reduce the pause after browser startup
             if self.debug_mode:
-                self.post_startup_delay = min(post_startup_delay,
-                                              POST_DELAY_DEBUG)
+                self.post_startup_delay = min(post_startup_delay, POST_DELAY_DEBUG)
             else:
                 self.post_startup_delay = post_startup_delay
 
@@ -272,17 +273,11 @@ either Raptor or browsertime."""
         profile_scenario = self.config.get("conditioned_profile_scenario", "settled")
         try:
             cond_prof_target_dir = get_profile(
-                temp_download_dir,
-                platform,
-                profile_scenario,
-                repo=repo
+                temp_download_dir, platform, profile_scenario, repo=repo
             )
         except ProfileNotFoundError:
             cond_prof_target_dir = get_profile(
-                temp_download_dir,
-                platform,
-                profile_scenario,
-                repo=alternate_repo
+                temp_download_dir, platform, profile_scenario, repo=alternate_repo
             )
         except Exception:
             # any other error is a showstopper
@@ -298,10 +293,7 @@ either Raptor or browsertime."""
             LOG.critical(
                 "Can't find target_dir {}, from get_profile()"
                 "temp_download_dir {}, platform {}, scenario {}".format(
-                    cond_prof_target_dir,
-                    temp_download_dir,
-                    platform,
-                    profile_scenario
+                    cond_prof_target_dir, temp_download_dir, platform, profile_scenario
                 )
             )
             raise OSError
@@ -314,7 +306,11 @@ either Raptor or browsertime."""
         return self.conditioned_profile_copy
 
     def build_browser_profile(self):
-        if not self.using_condprof or self.config['app'] in ['chrome', 'chromium', 'chrome-m']:
+        if not self.using_condprof or self.config["app"] in [
+            "chrome",
+            "chromium",
+            "chrome-m",
+        ]:
             self.profile = create_profile(self.profile_class)
         else:
             # use mozprofile to create a profile for us, from our conditioned profile's path
@@ -489,28 +485,6 @@ either Raptor or browsertime."""
             else:
                 LOG.info("Playback recording information not available")
 
-    def get_playback_config(self, test):
-        platform = self.config["platform"]
-        playback_dir = os.path.join(here, "tooltool-manifests", "playback")
-
-        self.config.update(
-            {
-                "playback_tool": test.get("playback"),
-                "playback_version": test.get("playback_version", "4.0.4"),
-                "playback_binary_zip": test.get("playback_binary_zip_%s" % platform),
-                "playback_pageset_zip": test.get("playback_pageset_zip_%s" % platform),
-                "playback_binary_manifest": test.get("playback_binary_manifest"),
-                "playback_pageset_manifest": test.get("playback_pageset_manifest"),
-            }
-        )
-
-        for key in ("playback_pageset_manifest", "playback_pageset_zip"):
-            if self.config.get(key) is None:
-                continue
-            self.config[key] = os.path.join(playback_dir, self.config[key])
-
-        LOG.info("test uses playback tool: %s " % self.config["playback_tool"])
-
     def delete_proxy_settings_from_profile(self):
         # Must delete the proxy settings from the profile if running
         # the test with a host different from localhost.
@@ -523,10 +497,22 @@ either Raptor or browsertime."""
 
     def start_playback(self, test):
         # creating the playback tool
-        self.get_playback_config(test)
-        self.playback = get_playback(self.config)
 
-        self.playback.config["playback_files"] = self.get_recording_paths(test)
+        playback_dir = os.path.join(here, "tooltool-manifests", "playback")
+
+        self.config.update(
+            {
+                "playback_tool": test.get("playback"),
+                "playback_version": test.get("playback_version", "4.0.4"),
+                "playback_files": [
+                    os.path.join(playback_dir, test.get("playback_pageset_manifest"))
+                ],
+            }
+        )
+
+        LOG.info("test uses playback tool: %s " % self.config["playback_tool"])
+
+        self.playback = get_playback(self.config)
 
         # let's start it!
         self.playback.start()
@@ -580,6 +566,7 @@ class PerftestAndroid(Perftest):
             # version here so that we can select the correct
             # chromedriver for browsertime
             from mozdevice import ADBDeviceFactory
+
             device = ADBDeviceFactory(verbose=True)
             binary = "com.android.chrome"
 
@@ -595,7 +582,9 @@ class PerftestAndroid(Perftest):
                     break
 
             if not browser_version:
-                raise Exception("Could not determine version for Google Chrome for Android")
+                raise Exception(
+                    "Could not determine version for Google Chrome for Android"
+                )
 
         if not browser_name:
             LOG.warning("Could not find a browser name")

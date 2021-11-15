@@ -19,6 +19,10 @@
 #include "xpcprivate.h"
 
 #include "jsapi.h"
+#include "js/experimental/TypedData.h"  // JS_GetTypedArrayLength
+#include "js/friend/WindowProxy.h"      // js::IsWindowProxy
+#include "js/friend/XrayJitInfo.h"      // JS::XrayJitInfo
+#include "js/Object.h"  // JS::GetClass, JS::GetCompartment, JS::GetReservedSlot, JS::SetReservedSlot
 #include "js/PropertySpec.h"
 #include "nsJSUtils.h"
 #include "nsPrintfCString.h"
@@ -42,8 +46,6 @@ using js::UncheckedUnwrap;
 using js::Wrapper;
 
 namespace xpc {
-
-using namespace XrayUtils;
 
 #define Between(x, a, b) (a <= x && x <= b)
 
@@ -271,8 +273,8 @@ bool ReportWrapperDenial(JSContext* cx, HandleId id, WrapperDenialType type,
   }
   nsString filenameStr(NS_ConvertASCIItoUTF16(filename.get()));
   nsresult rv = errorObject->InitWithWindowID(
-      NS_ConvertASCIItoUTF16(errorMessage.ref()), filenameStr, EmptyString(),
-      line, column, nsIScriptError::warningFlag, "XPConnect", windowId);
+      NS_ConvertASCIItoUTF16(errorMessage.ref()), filenameStr, u""_ns, line,
+      column, nsIScriptError::warningFlag, "XPConnect", windowId);
   NS_ENSURE_SUCCESS(rv, true);
   rv = consoleService->LogMessage(errorObject);
   NS_ENSURE_SUCCESS(rv, true);
@@ -706,7 +708,7 @@ bool JSXrayTraits::resolveOwnProperty(JSContext* cx, HandleObject wrapper,
   }
 
   // Grab the JSClass. We require all Xrayable classes to have a ClassSpec.
-  const JSClass* clasp = js::GetObjectClass(target);
+  const JSClass* clasp = JS::GetClass(target);
   MOZ_ASSERT(clasp->specDefined());
 
   // Indexed array properties are handled above, so we can just work with the
@@ -989,7 +991,7 @@ bool JSXrayTraits::enumerateNames(JSContext* cx, HandleObject wrapper,
   }
 
   // Grab the JSClass. We require all Xrayable classes to have a ClassSpec.
-  const JSClass* clasp = js::GetObjectClass(target);
+  const JSClass* clasp = JS::GetClass(target);
   MOZ_ASSERT(clasp->specDefined());
 
   return AppendNamesFromFunctionAndPropertySpecs(
@@ -1089,15 +1091,15 @@ JSObject* JSXrayTraits::createHolder(JSContext* cx, JSObject* wrapper) {
   // Store it on the holder.
   RootedValue v(cx);
   v.setNumber(static_cast<uint32_t>(key));
-  js::SetReservedSlot(holder, SLOT_PROTOKEY, v);
+  JS::SetReservedSlot(holder, SLOT_PROTOKEY, v);
   v.setBoolean(isPrototype);
-  js::SetReservedSlot(holder, SLOT_ISPROTOTYPE, v);
+  JS::SetReservedSlot(holder, SLOT_ISPROTOTYPE, v);
 
   // If this is a function, also compute whether it serves as a constructor
   // for a standard class.
   if (key == JSProto_Function) {
     v.setNumber(static_cast<uint32_t>(IdentifyStandardConstructor(target)));
-    js::SetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR, v);
+    JS::SetReservedSlot(holder, SLOT_CONSTRUCTOR_FOR, v);
   }
 
   return holder;
@@ -1140,7 +1142,7 @@ XrayTraits* GetXrayTraits(JSObject* obj) {
 // one such wrapper which can create or access the expando. This allows for
 // faster access to the expando, including through JIT inline caches.
 static inline bool CompartmentHasExclusiveExpandos(JSObject* obj) {
-  JS::Compartment* comp = js::GetObjectCompartment(obj);
+  JS::Compartment* comp = JS::GetCompartment(obj);
   CompartmentPrivate* priv = CompartmentPrivate::Get(comp);
   return priv && priv->hasExclusiveExpandos;
 }
@@ -1155,13 +1157,13 @@ static nsIPrincipal* WrapperPrincipal(JSObject* obj) {
   // consumers are only interested in the origin-ignoring-document.domain.
   // See expandoObjectMatchesConsumer.
   MOZ_ASSERT(IsXrayWrapper(obj));
-  JS::Compartment* comp = js::GetObjectCompartment(obj);
+  JS::Compartment* comp = JS::GetCompartment(obj);
   CompartmentPrivate* priv = CompartmentPrivate::Get(comp);
   return priv->originInfo.GetPrincipalIgnoringDocumentDomain();
 }
 
 static nsIPrincipal* GetExpandoObjectPrincipal(JSObject* expandoObject) {
-  Value v = JS_GetReservedSlot(expandoObject, JSSLOT_EXPANDO_ORIGIN);
+  Value v = JS::GetReservedSlot(expandoObject, JSSLOT_EXPANDO_ORIGIN);
   return static_cast<nsIPrincipal*>(v.toPrivate());
 }
 
@@ -1205,9 +1207,9 @@ bool XrayTraits::expandoObjectMatchesConsumer(JSContext* cx,
 
   // Certain globals exclusively own the associated expandos, in which case
   // the caller should have used the cached expando on the wrapper instead.
-  JSObject* owner =
-      JS_GetReservedSlot(expandoObject, JSSLOT_EXPANDO_EXCLUSIVE_WRAPPER_HOLDER)
-          .toObjectOrNull();
+  JSObject* owner = JS::GetReservedSlot(expandoObject,
+                                        JSSLOT_EXPANDO_EXCLUSIVE_WRAPPER_HOLDER)
+                        .toObjectOrNull();
   return owner == nullptr;
 }
 
@@ -1231,7 +1233,7 @@ bool XrayTraits::getExpandoObjectInternal(JSContext* cx, JSObject* expandoChain,
     if (expandoObject) {
       JSObject* head = expandoChain;
       while (head && head != expandoObject) {
-        head = JS_GetReservedSlot(head, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
+        head = JS::GetReservedSlot(head, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
       }
       MOZ_ASSERT(head == expandoObject);
     }
@@ -1250,7 +1252,7 @@ bool XrayTraits::getExpandoObjectInternal(JSContext* cx, JSObject* expandoChain,
       expandoObject.set(head);
       return true;
     }
-    head = JS_GetReservedSlot(head, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
+    head = JS::GetReservedSlot(head, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
   }
 
   // Not found.
@@ -1412,8 +1414,9 @@ bool XrayTraits::cloneExpandoChain(JSContext* cx, HandleObject dst,
     RootedObject exclusiveWrapper(cx);
     RootedObject exclusiveWrapperGlobal(cx);
     RootedObject wrapperHolder(
-        cx, JS_GetReservedSlot(oldHead, JSSLOT_EXPANDO_EXCLUSIVE_WRAPPER_HOLDER)
-                .toObjectOrNull());
+        cx,
+        JS::GetReservedSlot(oldHead, JSSLOT_EXPANDO_EXCLUSIVE_WRAPPER_HOLDER)
+            .toObjectOrNull());
     if (wrapperHolder) {
       RootedObject unwrappedHolder(cx, UncheckedUnwrap(wrapperHolder));
       // unwrappedHolder is the compartment of the relevant Xray, so check
@@ -1441,7 +1444,7 @@ bool XrayTraits::cloneExpandoChain(JSContext* cx, HandleObject dst,
 
     if (movingIntoXrayCompartment) {
       // Just copy properties directly onto dst.
-      if (!JS_CopyPropertiesFrom(cx, dst, oldHead)) {
+      if (!JS_CopyOwnPropertiesAndPrivateFields(cx, dst, oldHead)) {
         return false;
       }
     } else {
@@ -1451,11 +1454,12 @@ bool XrayTraits::cloneExpandoChain(JSContext* cx, HandleObject dst,
           cx,
           attachExpandoObject(cx, dst, exclusiveWrapper, exclusiveWrapperGlobal,
                               GetExpandoObjectPrincipal(oldHead)));
-      if (!JS_CopyPropertiesFrom(cx, newHead, oldHead)) {
+      if (!JS_CopyOwnPropertiesAndPrivateFields(cx, newHead, oldHead)) {
         return false;
       }
     }
-    oldHead = JS_GetReservedSlot(oldHead, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
+    oldHead =
+        JS::GetReservedSlot(oldHead, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
   }
   return true;
 }
@@ -1474,9 +1478,9 @@ void ClearXrayExpandoSlots(JSObject* target, size_t slotIndex) {
   RootedObject head(rootingCx,
                     DOMXrayTraits::singleton.getExpandoChain(rootedTarget));
   while (head) {
-    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(js::GetObjectClass(head)) > slotIndex);
-    js::SetReservedSlot(head, slotIndex, UndefinedValue());
-    head = js::GetReservedSlot(head, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
+    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(JS::GetClass(head)) > slotIndex);
+    JS::SetReservedSlot(head, slotIndex, UndefinedValue());
+    head = JS::GetReservedSlot(head, JSSLOT_EXPANDO_NEXT).toObjectOrNull();
   }
 }
 
@@ -1499,7 +1503,7 @@ static const size_t JSSLOT_XRAY_HOLDER = 0;
 /* static */
 JSObject* XrayTraits::getHolder(JSObject* wrapper) {
   MOZ_ASSERT(WrapperFactory::IsXrayWrapper(wrapper));
-  js::Value v = js::GetProxyReservedSlot(wrapper, JSSLOT_XRAY_HOLDER);
+  JS::Value v = js::GetProxyReservedSlot(wrapper, JSSLOT_XRAY_HOLDER);
   return v.isObject() ? &v.toObject() : nullptr;
 }
 
@@ -1520,14 +1524,13 @@ static inline JSObject* GetCachedXrayExpando(JSObject* wrapper) {
   if (!holder) {
     return nullptr;
   }
-  Value v = JS_GetReservedSlot(holder, XrayTraits::HOLDER_SLOT_EXPANDO);
+  Value v = JS::GetReservedSlot(holder, XrayTraits::HOLDER_SLOT_EXPANDO);
   return v.isObject() ? &v.toObject() : nullptr;
 }
 
 static inline void SetCachedXrayExpando(JSObject* holder,
                                         JSObject* expandoWrapper) {
-  MOZ_ASSERT(js::GetObjectCompartment(holder) ==
-             js::GetObjectCompartment(expandoWrapper));
+  MOZ_ASSERT(JS::GetCompartment(holder) == JS::GetCompartment(expandoWrapper));
   JS_SetReservedSlot(holder, XrayTraits::HOLDER_SLOT_EXPANDO,
                      ObjectValue(*expandoWrapper));
 }
@@ -1756,7 +1759,7 @@ bool DOMXrayTraits::call(JSContext* cx, HandleObject wrapper,
                          const JS::CallArgs& args,
                          const js::Wrapper& baseInstance) {
   RootedObject obj(cx, getTargetObject(wrapper));
-  const JSClass* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = JS::GetClass(obj);
   // What we have is either a WebIDL interface object, a WebIDL prototype
   // object, or a WebIDL instance object.  WebIDL prototype objects never have
   // a clasp->call.  WebIDL interface objects we want to invoke on the xray
@@ -1779,7 +1782,7 @@ bool DOMXrayTraits::construct(JSContext* cx, HandleObject wrapper,
                               const js::Wrapper& baseInstance) {
   RootedObject obj(cx, getTargetObject(wrapper));
   MOZ_ASSERT(mozilla::dom::HasConstructor(obj));
-  const JSClass* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = JS::GetClass(obj);
   // See comments in DOMXrayTraits::call() explaining what's going on here.
   if (clasp->flags & JSCLASS_IS_DOMIFACEANDPROTOJSCLASS) {
     if (JSNative construct = clasp->getConstruct()) {
@@ -1828,34 +1831,6 @@ const JSClass* DOMXrayTraits::getExpandoClass(JSContext* cx,
                                               HandleObject target) const {
   return XrayGetExpandoClass(cx, target);
 }
-
-namespace XrayUtils {
-
-bool HasNativeProperty(JSContext* cx, HandleObject wrapper, HandleId id,
-                       bool* hasProp) {
-  MOZ_ASSERT(WrapperFactory::IsXrayWrapper(wrapper));
-  XrayTraits* traits = GetXrayTraits(wrapper);
-  MOZ_ASSERT(traits);
-  RootedObject target(cx, XrayTraits::getTargetObject(wrapper));
-  RootedObject holder(cx, traits->ensureHolder(cx, wrapper));
-  NS_ENSURE_TRUE(holder, false);
-  *hasProp = false;
-  Rooted<PropertyDescriptor> desc(cx);
-
-  // Try resolveOwnProperty.
-  if (!traits->resolveOwnProperty(cx, wrapper, target, holder, id, &desc)) {
-    return false;
-  }
-  if (desc.object()) {
-    *hasProp = true;
-    return true;
-  }
-
-  // Try the holder.
-  return JS_AlreadyHasOwnPropertyById(cx, holder, id, hasProp);
-}
-
-}  // namespace XrayUtils
 
 template <typename Base, typename Traits>
 bool XrayWrapper<Base, Traits>::preventExtensions(
@@ -2206,7 +2181,7 @@ bool XrayWrapper<Base, Traits>::getPrototype(
     RootedValue v(cx);
     {  // Scope for JSAutoRealm
       JSAutoRealm ar(cx, expando);
-      v = JS_GetReservedSlot(expando, JSSLOT_EXPANDO_PROTOTYPE);
+      v = JS::GetReservedSlot(expando, JSSLOT_EXPANDO_PROTOTYPE);
     }
     if (!v.isUndefined()) {
       protop.set(v.toObjectOrNull());
@@ -2220,13 +2195,13 @@ bool XrayWrapper<Base, Traits>::getPrototype(
     return false;
   }
 
-  Value cached = js::GetReservedSlot(holder, Traits::HOLDER_SLOT_CACHED_PROTO);
+  Value cached = JS::GetReservedSlot(holder, Traits::HOLDER_SLOT_CACHED_PROTO);
   if (cached.isUndefined()) {
     if (!Traits::singleton.getPrototype(cx, wrapper, target, protop)) {
       return false;
     }
 
-    js::SetReservedSlot(holder, Traits::HOLDER_SLOT_CACHED_PROTO,
+    JS::SetReservedSlot(holder, Traits::HOLDER_SLOT_CACHED_PROTO,
                         ObjectOrNullValue(protop));
   } else {
     protop.set(cached.toObjectOrNull());
@@ -2341,7 +2316,7 @@ static bool IsCrossCompartmentXrayCallback(
   return handler == &PermissiveXrayDOM::singleton;
 }
 
-js::XrayJitInfo gXrayJitInfo = {
+JS::XrayJitInfo gXrayJitInfo = {
     IsCrossCompartmentXrayCallback, CompartmentHasExclusiveExpandos,
     JSSLOT_XRAY_HOLDER, XrayTraits::HOLDER_SLOT_EXPANDO,
     JSSLOT_EXPANDO_PROTOTYPE};

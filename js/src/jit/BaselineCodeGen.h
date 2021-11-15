@@ -18,7 +18,7 @@ namespace js {
 
 namespace jit {
 
-enum class ScriptGCThingType { Atom, RegExp, Function, Scope, BigInt };
+enum class ScriptGCThingType { Atom, RegExp, Object, Function, Scope, BigInt };
 
 // Base class for BaselineCompiler and BaselineInterpreterGenerator. The Handler
 // template is a class storing fields/methods that are interpreter or compiler
@@ -141,6 +141,8 @@ class BaselineCodeGen {
   MOZ_MUST_USE bool emitDebugInstrumentation(const F& ifDebuggee) {
     return emitDebugInstrumentation(ifDebuggee, mozilla::Maybe<F>());
   }
+
+  bool emitSuspend(JSOp op);
 
   template <typename F>
   MOZ_MUST_USE bool emitAfterYieldDebugInstrumentation(const F& ifDebuggee,
@@ -360,7 +362,7 @@ class BaselineCompilerHandler {
     return script()->nslots() > NumSlotsLimit;
   }
 
-  JSObject* maybeNoCloneSingletonObject();
+  bool canHaveFixedSlots() const { return script()->nfixed() != 0; }
 };
 
 using BaselineCompilerCodeGen = BaselineCodeGen<BaselineCompilerHandler>;
@@ -483,7 +485,7 @@ class BaselineInterpreterHandler {
   // include them.
   bool mustIncludeSlotsInStackCheck() const { return true; }
 
-  JSObject* maybeNoCloneSingletonObject() { return nullptr; }
+  bool canHaveFixedSlots() const { return true; }
 };
 
 using BaselineInterpreterCodeGen = BaselineCodeGen<BaselineInterpreterHandler>;

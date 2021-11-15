@@ -1246,9 +1246,11 @@ Maybe<IntRect> CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
 void CompositorD3D11::NormalDrawingDone() { mDiagnostics->End(); }
 
 void CompositorD3D11::EndFrame() {
+#ifdef MOZ_GECKO_PROFILER
   if (!profiler_feature_active(ProfilerFeature::Screenshots) && mWindowRTCopy) {
     mWindowRTCopy = nullptr;
   }
+#endif  // MOZ_GECKO_PROFILER
 
   if (!mDefaultRT) {
     Compositor::EndFrame();
@@ -1714,6 +1716,13 @@ bool CompositorD3D11::Failed(HRESULT hr, const char* aContext) {
   gfxCriticalNote << "[D3D11] " << aContext << " failed: " << hexa(hr) << ", "
                   << (int)mVerifyBuffersFailed;
   return true;
+}
+
+SyncObjectHost* CompositorD3D11::GetSyncObject() {
+  if (mAttachments) {
+    return mAttachments->mSyncObject;
+  }
+  return nullptr;
 }
 
 void CompositorD3D11::HandleError(HRESULT hr, Severity aSeverity) {

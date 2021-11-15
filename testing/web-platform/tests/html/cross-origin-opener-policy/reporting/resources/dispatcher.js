@@ -17,8 +17,8 @@ const send = function(uuid, message) {
   });
 }
 
-const receive = async function(uuid) {
-  const timeout = 3000;
+const receive = async function(uuid, maybe_timeout) {
+  const timeout = maybe_timeout || Infinity;
   const retry_delay = 100;
   for(let i = 0; i * retry_delay < timeout; ++i) {
     let response = await fetch(dispatcher_url + `?uuid=${uuid}`);
@@ -38,7 +38,7 @@ const receiveReport = async function(uuid, type) {
     reports = JSON.parse(reports);
 
     for(report of reports) {
-      if (report?.["body"]?.["violation-type"] == type)
+      if (report?.body?.type == type)
         return report;
     }
   }
@@ -64,6 +64,8 @@ const reportToHeaders = function(uuid) {
   return {
     header: `|header(report-to,${reportToJSON})`,
     coopSameOriginHeader: `|header(Cross-Origin-Opener-Policy,same-origin%3Breport-to="${uuid}")`,
+    coopSameOriginAllowPopupsHeader: `|header(Cross-Origin-Opener-Policy,same-origin-allow-popups%3Breport-to="${uuid}")`,
     coopReportOnlySameOriginHeader: `|header(Cross-Origin-Opener-Policy-Report-Only,same-origin%3Breport-to="${uuid}")`,
+    coopReportOnlySameOriginAllowPopupsHeader: `|header(Cross-Origin-Opener-Policy-Report-Only,same-origin-allow-popups%3Breport-to="${uuid}")`,
   };
 };

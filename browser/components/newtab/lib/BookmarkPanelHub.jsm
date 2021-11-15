@@ -25,7 +25,7 @@ class _BookmarkPanelHub {
     this._trigger = { id: "bookmark-panel" };
     this._handleMessageRequest = null;
     this._addImpression = null;
-    this._dispatch = null;
+    this._sendTelemetry = null;
     this._initialized = false;
     this._response = null;
     this._l10n = null;
@@ -39,12 +39,12 @@ class _BookmarkPanelHub {
   /**
    * @param {function} handleMessageRequest
    * @param {function} addImpression
-   * @param {function} dispatch - Used for sending user telemetry information
+   * @param {function} sendTelemetry - Used for sending user telemetry information
    */
-  init(handleMessageRequest, addImpression, dispatch) {
+  init(handleMessageRequest, addImpression, sendTelemetry) {
     this._handleMessageRequest = handleMessageRequest;
     this._addImpression = addImpression;
-    this._dispatch = dispatch;
+    this._sendTelemetry = sendTelemetry;
     this._l10n = new DOMLocalization([]);
     this._initialized = true;
   }
@@ -54,7 +54,7 @@ class _BookmarkPanelHub {
     this._initialized = false;
     this._handleMessageRequest = null;
     this._addImpression = null;
-    this._dispatch = null;
+    this._sendTelemetry = null;
     this._response = null;
   }
 
@@ -150,11 +150,10 @@ class _BookmarkPanelHub {
         this.sendUserEventTelemetry("CLICK", win);
       });
       recommendation.style.color = message.color;
-      recommendation.style.background = `-moz-linear-gradient(-45deg, ${message.background_color_1} 0%, ${message.background_color_2} 70%)`;
+      recommendation.style.background = `linear-gradient(135deg, ${message.background_color_1} 0%, ${message.background_color_2} 70%)`;
       const close = createElement("button");
       close.setAttribute("id", "cfrClose");
       close.setAttribute("aria-label", "close");
-      close.style.color = message.color;
       close.addEventListener("click", e => {
         this.sendUserEventTelemetry("DISMISS", win);
         this.collapseMessage();
@@ -273,9 +272,9 @@ class _BookmarkPanelHub {
     this._response = null;
   }
 
-  _forceShowMessage(target, message) {
-    const doc = target.browser.ownerGlobal.gBrowser.ownerDocument;
-    const win = target.browser.ownerGlobal.window;
+  forceShowMessage(browser, message) {
+    const doc = browser.ownerGlobal.gBrowser.ownerDocument;
+    const win = browser.ownerGlobal.window;
     const panelTarget = {
       container: doc.getElementById("editBookmarkPanelRecommendation"),
       infoButton: doc.getElementById("editBookmarkPanelInfoButton"),
@@ -306,7 +305,7 @@ class _BookmarkPanelHub {
         win.ownerGlobal.gBrowser.selectedBrowser
       )
     ) {
-      this._sendTelemetry({
+      this._sendPing({
         message_id: this._response.id,
         bucket_id: this._response.id,
         event,
@@ -314,8 +313,8 @@ class _BookmarkPanelHub {
     }
   }
 
-  _sendTelemetry(ping) {
-    this._dispatch({
+  _sendPing(ping) {
+    this._sendTelemetry({
       type: "DOORHANGER_TELEMETRY",
       data: { action: "cfr_user_event", source: "CFR", ...ping },
     });

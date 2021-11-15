@@ -33,7 +33,14 @@ function nativeVerticalWheelEventMsg() {
     case "windows":
       return 0x020a; // WM_MOUSEWHEEL
     case "mac":
-      return 0; // value is unused, can be anything
+      var useWheelCodepath = SpecialPowers.getBoolPref(
+        "apz.test.mac.synth_wheel_input",
+        false
+      );
+      // Default to 1 (kCGScrollPhaseBegan) to trigger PanGestureInput events
+      // from widget code. Allow setting a pref to override this behaviour and
+      // trigger ScrollWheelInput events instead.
+      return useWheelCodepath ? 0 : 1;
     case "linux":
       return 4; // value is unused, pass GDK_SCROLL_SMOOTH anyway
   }
@@ -219,6 +226,8 @@ function getTargetOrigin(aTarget) {
 
 // Convert (aX, aY), in CSS pixels relative to aTarget's bounding rect
 // to device pixels relative to the screen.
+// TODO: this function currently does not incorporate some CSS transforms on
+// elements enclosing aTarget, e.g. scale transforms.
 function coordinatesRelativeToScreen(aX, aY, aTarget) {
   // Note that |window| might not be the root content window, for two
   // possible reasons:
@@ -339,15 +348,43 @@ function synthesizeNativeWheelAndWaitForWheelEvent(
   aDeltaY,
   aCallback
 ) {
-  var targetWindow = windowForTarget(aTarget);
-  targetWindow.addEventListener(
-    "wheel",
-    function(e) {
-      setTimeout(aCallback, 0);
-    },
-    { once: true }
+  let p = promiseNativeWheelAndWaitForWheelEvent(
+    aTarget,
+    aX,
+    aY,
+    aDeltaX,
+    aDeltaY
   );
-  return synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+  if (aCallback) {
+    p.then(aCallback);
+  }
+  return true;
+}
+
+// Same as synthesizeNativeWheelAndWaitForWheelEvent, except returns a promise
+// instead of taking a callback
+function promiseNativeWheelAndWaitForWheelEvent(
+  aTarget,
+  aX,
+  aY,
+  aDeltaX,
+  aDeltaY
+) {
+  return new Promise((resolve, reject) => {
+    var targetWindow = windowForTarget(aTarget);
+    targetWindow.addEventListener(
+      "wheel",
+      function(e) {
+        setTimeout(resolve, 0);
+      },
+      { once: true }
+    );
+    try {
+      synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+    } catch (e) {
+      reject();
+    }
+  });
 }
 
 // Synthesizes a native mousewheel event and invokes the callback once the
@@ -363,15 +400,40 @@ function synthesizeNativeWheelAndWaitForScrollEvent(
   aDeltaY,
   aCallback
 ) {
-  var targetWindow = windowForTarget(aTarget);
-  targetWindow.addEventListener(
-    "scroll",
-    function() {
-      setTimeout(aCallback, 0);
-    },
-    { capture: true, once: true }
-  ); // scroll events don't always bubble
-  return synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+  promiseNativeWheelAndWaitForScrollEvent(
+    aTarget,
+    aX,
+    aY,
+    aDeltaX,
+    aDeltaY
+  ).then(aCallback);
+  return true;
+}
+
+// Same as synthesizeNativeWheelAndWaitForScrollEvent, but returns a promise
+// instead of taking a callback
+function promiseNativeWheelAndWaitForScrollEvent(
+  aTarget,
+  aX,
+  aY,
+  aDeltaX,
+  aDeltaY
+) {
+  return new Promise((resolve, reject) => {
+    var targetWindow = windowForTarget(aTarget);
+    targetWindow.addEventListener(
+      "scroll",
+      function() {
+        setTimeout(resolve, 0);
+      },
+      { capture: true, once: true }
+    ); // scroll events don't always bubble
+    try {
+      synthesizeNativeWheel(aTarget, aX, aY, aDeltaX, aDeltaY);
+    } catch (e) {
+      reject();
+    }
+  });
 }
 
 // Synthesizes a native mouse move event and returns immediately.
@@ -395,15 +457,28 @@ function synthesizeNativeMouseMoveAndWaitForMoveEvent(
   aY,
   aCallback
 ) {
-  var targetWindow = windowForTarget(aTarget);
-  targetWindow.addEventListener(
-    "mousemove",
-    function(e) {
-      setTimeout(aCallback, 0);
-    },
-    { once: true }
-  );
-  return synthesizeNativeMouseMove(aTarget, aX, aY);
+  promiseNativeMouseMoveAndWaitForMoveEvent(aTarget, aX, aY).then(aCallback);
+  return true;
+}
+
+// Same as synthesizeNativeMouseMoveAndWaitForMoveEvent but returns a promise
+// instead of taking a callback.
+function promiseNativeMouseMoveAndWaitForMoveEvent(aTarget, aX, aY) {
+  return new Promise((resolve, reject) => {
+    var targetWindow = windowForTarget(aTarget);
+    targetWindow.addEventListener(
+      "mousemove",
+      function(e) {
+        setTimeout(resolve, 0);
+      },
+      { once: true }
+    );
+    try {
+      synthesizeNativeMouseMove(aTarget, aX, aY);
+    } catch (e) {
+      reject();
+    }
+  });
 }
 
 // Synthesizes a native touch event and dispatches it. aX and aY in CSS pixels
@@ -428,10 +503,8 @@ function synthesizeNativeTouch(
 //   where advancing the row counter moves forward in time, and each column
 //   represents a single "finger" (or touch input). Each row must have exactly
 //   the same number of columns, and the number of columns must match the length
-//   of the aTouchIds parameter. However, rows are allowed to be null, this
-//   represents a yield point, where the function yields back to the caller for
-//   additional processing at that point in the touch sequence.
-//   For each non-null row, each entry is either an object with x and y fields,
+//   of the aTouchIds parameter.
+//   For each row, each entry is either an object with x and y fields,
 //   or a null. A null value indicates that the "finger" should be "lifted"
 //   (i.e. send a touchend for that touch input). A non-null value therefore
 //   indicates the position of the touch input.
@@ -440,7 +513,7 @@ function synthesizeNativeTouch(
 // aObserver is the observer that will get registered on the very last
 //   synthesizeNativeTouch call this function makes.
 // aTouchIds is an array holding the touch ID values of each "finger".
-function* synthesizeNativeTouchSequences(
+function synthesizeNativeTouchSequences(
   aTarget,
   aPositions,
   aObserver = null,
@@ -449,11 +522,9 @@ function* synthesizeNativeTouchSequences(
   // We use lastNonNullValue to figure out which synthesizeNativeTouch call
   // will be the last one we make, so that we can register aObserver on it.
   var lastNonNullValue = -1;
-  var yields = 0;
   for (let i = 0; i < aPositions.length; i++) {
     if (aPositions[i] == null) {
-      yields++;
-      continue;
+      throw new Error(`aPositions[${i}] was unexpectedly null`);
     }
     if (aPositions[i].length != aTouchIds.length) {
       throw new Error(
@@ -463,7 +534,15 @@ function* synthesizeNativeTouchSequences(
     }
     for (let j = 0; j < aTouchIds.length; j++) {
       if (aPositions[i][j] != null) {
-        lastNonNullValue = (i - yields) * aTouchIds.length + j;
+        lastNonNullValue = i * aTouchIds.length + j;
+        // Do the conversion to screen space before actually synthesizing
+        // the events, otherwise the screen space may change as a result of
+        // the touch inputs and the conversion may not work as intended.
+        aPositions[i][j] = coordinatesRelativeToScreen(
+          aPositions[i][j].x,
+          aPositions[i][j].y,
+          aTarget
+        );
       }
     }
   }
@@ -478,7 +557,7 @@ function* synthesizeNativeTouchSequences(
   allNullRow.fill(null);
   aPositions.push(allNullRow);
 
-  // The last synthesizeNativeTouch call will be the TOUCH_REMOVE which happens
+  // The last sendNativeTouchPoint call will be the TOUCH_REMOVE which happens
   // one iteration of aPosition after the last non-null value.
   var lastSynthesizeCall = lastNonNullValue + aTouchIds.length;
 
@@ -486,14 +565,9 @@ function* synthesizeNativeTouchSequences(
   var currentPositions = new Array(aTouchIds.length);
   currentPositions.fill(null);
 
+  var utils = utilsForTarget(aTarget);
   // Iterate over the position data now, and generate the touches requested
-  yields = 0;
   for (let i = 0; i < aPositions.length; i++) {
-    if (aPositions[i] == null) {
-      yields++;
-      yield i;
-      continue;
-    }
     for (let j = 0; j < aTouchIds.length; j++) {
       if (aPositions[i][j] == null) {
         // null means lift the finger
@@ -502,26 +576,28 @@ function* synthesizeNativeTouchSequences(
         } else {
           // synthesize the touch-up. If this is the last call we're going to
           // make, pass the observer as well
-          var thisIndex = (i - yields) * aTouchIds.length + j;
+          var thisIndex = i * aTouchIds.length + j;
           var observer = lastSynthesizeCall == thisIndex ? aObserver : null;
-          synthesizeNativeTouch(
-            aTarget,
+          utils.sendNativeTouchPoint(
+            aTouchIds[j],
+            SpecialPowers.DOMWindowUtils.TOUCH_REMOVE,
             currentPositions[j].x,
             currentPositions[j].y,
-            SpecialPowers.DOMWindowUtils.TOUCH_REMOVE,
-            observer,
-            aTouchIds[j]
+            1,
+            90,
+            observer
           );
           currentPositions[j] = null;
         }
       } else {
-        synthesizeNativeTouch(
-          aTarget,
+        utils.sendNativeTouchPoint(
+          aTouchIds[j],
+          SpecialPowers.DOMWindowUtils.TOUCH_CONTACT,
           aPositions[i][j].x,
           aPositions[i][j].y,
-          SpecialPowers.DOMWindowUtils.TOUCH_CONTACT,
-          null,
-          aTouchIds[j]
+          1,
+          90,
+          null
         );
         currentPositions[j] = aPositions[i][j];
       }
@@ -551,17 +627,9 @@ function synthesizeNativeTouchDrag(
     positions.push([pos]);
   }
   positions.push([{ x: aX + aDeltaX, y: aY + aDeltaY }]);
-  var continuation = synthesizeNativeTouchSequences(
-    aTarget,
-    positions,
-    aObserver,
-    [aTouchId]
-  );
-  var yielded = continuation.next();
-  while (!yielded.done) {
-    yielded = continuation.next();
-  }
-  return yielded.value;
+  return synthesizeNativeTouchSequences(aTarget, positions, aObserver, [
+    aTouchId,
+  ]);
 }
 
 function synthesizeNativeTap(aElement, aX, aY, aObserver = null) {
@@ -579,6 +647,13 @@ function synthesizeNativeMouseEvent(aTarget, aX, aY, aType, aObserver = null) {
   var element = elementForTarget(aTarget);
   utils.sendNativeMouseEvent(pt.x, pt.y, aType, 0, element, aObserver);
   return true;
+}
+
+// Promise-returning variant of synthesizeNativeMouseEvent
+function promiseNativeMouseEvent(aTarget, aX, aY, aType) {
+  return new Promise(resolve => {
+    synthesizeNativeMouseEvent(aTarget, aX, aY, aType, resolve);
+  });
 }
 
 function synthesizeNativeClick(aElement, aX, aY, aObserver = null) {
@@ -604,6 +679,13 @@ function synthesizeNativeClick(aElement, aX, aY, aObserver = null) {
     }
   );
   return true;
+}
+
+// Promise-returning variant of synthesizeNativeClick.
+function promiseNativeClick(aElement, aX, aY) {
+  return new Promise(resolve => {
+    synthesizeNativeClick(aElement, aX, aY, resolve);
+  });
 }
 
 function synthesizeNativeClickAndWaitForClickEvent(
@@ -636,48 +718,39 @@ function moveMouseAndScrollWheelOver(
   dx,
   dy,
   testDriver,
-  waitForScroll = true
+  waitForScroll = true,
+  scrollDelta = 10
 ) {
-  return synthesizeNativeMouseMoveAndWaitForMoveEvent(
+  promiseMoveMouseAndScrollWheelOver(
     target,
     dx,
     dy,
-    function() {
-      if (waitForScroll) {
-        synthesizeNativeWheelAndWaitForScrollEvent(
-          target,
-          dx,
-          dy,
-          0,
-          -10,
-          testDriver
-        );
-      } else {
-        synthesizeNativeWheelAndWaitForWheelEvent(
-          target,
-          dx,
-          dy,
-          0,
-          -10,
-          testDriver
-        );
-      }
-    }
-  );
+    waitForScroll,
+    scrollDelta
+  ).then(testDriver);
+  return true;
 }
 
 // Same as moveMouseAndScrollWheelOver, but returns a promise instead of taking
-// a callback function. Eventually we should convert all these callback-taking
-// functions into promise-producing functions but for now this is a stopgap.
+// a callback function.
 function promiseMoveMouseAndScrollWheelOver(
   target,
   dx,
   dy,
-  waitForScroll = true
+  waitForScroll = true,
+  scrollDelta = 10
 ) {
-  return new Promise(resolve => {
-    moveMouseAndScrollWheelOver(target, dx, dy, resolve, waitForScroll);
-  });
+  let p = promiseNativeMouseMoveAndWaitForMoveEvent(target, dx, dy);
+  if (waitForScroll) {
+    p = p.then(() =>
+      promiseNativeWheelAndWaitForScrollEvent(target, dx, dy, 0, -scrollDelta)
+    );
+  } else {
+    p = p.then(() =>
+      promiseNativeWheelAndWaitForWheelEvent(target, dx, dy, 0, -scrollDelta)
+    );
+  }
+  return p;
 }
 
 // Synthesizes events to drag |target|'s vertical scrollbar by the distance
@@ -688,6 +761,10 @@ function promiseMoveMouseAndScrollWheelOver(
 // processed by the widget code can be detected by listening for the mousemove
 // events in the caller, or for some other event that is triggered by the
 // mousemove, such as the scroll event resulting from the scrollbar drag.
+// The scaleFactor argument should be provided if the scrollframe has been
+// scaled by an enclosing CSS transform. (TODO: this is a workaround for the
+// fact that coordinatesRelativeToScreen is supposed to do this automatically
+// but it currently does not).
 // Note: helper_scrollbar_snap_bug1501062.html contains a copy of this code
 // with modifications. Fixes here should be copied there if appropriate.
 // |target| can be an element (for subframes) or a window (for root frames).
@@ -695,7 +772,8 @@ function* dragVerticalScrollbar(
   target,
   testDriver,
   distance = 20,
-  increment = 5
+  increment = 5,
+  scaleFactor = 1
 ) {
   var targetElement = elementForTarget(target);
   var w = {},
@@ -709,6 +787,8 @@ function* dragVerticalScrollbar(
   var upArrowHeight = verticalScrollbarWidth; // assume square scrollbar buttons
   var mouseX = targetElement.clientWidth + verticalScrollbarWidth / 2;
   var mouseY = upArrowHeight + 5; // start dragging somewhere in the thumb
+  mouseX *= scaleFactor;
+  mouseY *= scaleFactor;
 
   dump(
     "Starting drag at " +
@@ -767,9 +847,79 @@ function* dragVerticalScrollbar(
   };
 }
 
+// Synthesizes a native mouse drag, starting at offset (mouseX, mouseY) from
+// the given target. The drag occurs in the given number of steps, to a final
+// destination of (mouseX + distanceX, mouseY + distanceY) from the target.
+// Returns a promise (wrapped in a function, so it doesn't execute immediately)
+// that should be awaited after the mousemoves have been processed by the widget
+// code, to end the drag. This is important otherwise the OS can sometimes
+// reorder the events and the drag doesn't have the intended effect (see
+// bug 1368603).
+// Example usage:
+//   let dragFinisher = await promiseNativeMouseDrag(myElement, 0, 0);
+//   await myIndicationThatDragHadAnEffect;
+//   await dragFinisher();
+async function promiseNativeMouseDrag(
+  target,
+  mouseX,
+  mouseY,
+  distanceX = 20,
+  distanceY = 20,
+  steps = 20
+) {
+  var targetElement = elementForTarget(target);
+  dump(
+    "Starting drag at " +
+      mouseX +
+      ", " +
+      mouseY +
+      " from top-left of #" +
+      targetElement.id +
+      "\n"
+  );
+
+  // Move the mouse to the target position
+  await promiseNativeMouseEvent(
+    target,
+    mouseX,
+    mouseY,
+    nativeMouseMoveEventMsg()
+  );
+  // mouse down
+  await promiseNativeMouseEvent(
+    target,
+    mouseX,
+    mouseY,
+    nativeMouseDownEventMsg()
+  );
+  // drag vertically by |increment| until we reach the specified distance
+  for (var s = 1; s <= steps; s++) {
+    let dx = distanceX * (s / steps);
+    let dy = distanceY * (s / steps);
+    dump(`Dragging to ${mouseX + dx}, ${mouseY + dy} from target\n`);
+    await promiseNativeMouseEvent(
+      target,
+      mouseX + dx,
+      mouseY + dy,
+      nativeMouseMoveEventMsg()
+    );
+  }
+
+  // and return a function-wrapped promise to call afterwards to finish the drag
+  return function() {
+    return promiseNativeMouseEvent(
+      target,
+      mouseX + distanceX,
+      mouseY + distanceY,
+      nativeMouseUpEventMsg()
+    );
+  };
+}
+
 // Synthesizes a native touch sequence of events corresponding to a pinch-zoom-in
-// at the given focus point.
-function* pinchZoomInTouchSequence(focusX, focusY) {
+// at the given focus point. The focus point must be specified in CSS coordinates
+// relative to the document body.
+function pinchZoomInTouchSequence(focusX, focusY) {
   // prettier-ignore
   var zoom_in = [
       [ { x: focusX - 25, y: focusY - 50 }, { x: focusX + 25, y: focusY + 50 } ],
@@ -781,43 +931,7 @@ function* pinchZoomInTouchSequence(focusX, focusY) {
   ];
 
   var touchIds = [0, 1];
-  yield* synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
-}
-
-// Synthesizes a native touch sequence of events corresponding to a
-// pinch-zoom-out at the center of the window.
-function* pinchZoomOutTouchSequenceAtCenter() {
-  // Divide the half of visual viewport size by 8, then cause touch events
-  // starting from the 7th furthest away from the center towards the center.
-  const deltaX = window.visualViewport.width / 16;
-  const deltaY = window.visualViewport.height / 16;
-  const centerX =
-    window.visualViewport.pageLeft + window.visualViewport.width / 2;
-  const centerY =
-    window.visualViewport.pageTop + window.visualViewport.height / 2;
-  // prettier-ignore
-  var zoom_out = [
-      [ { x: centerX - (deltaX * 6), y: centerY - (deltaY * 6) },
-        { x: centerX + (deltaX * 6), y: centerY + (deltaY * 6) } ],
-      [ { x: centerX - (deltaX * 5), y: centerY - (deltaY * 5) },
-        { x: centerX + (deltaX * 5), y: centerY + (deltaY * 5) } ],
-      [ { x: centerX - (deltaX * 4), y: centerY - (deltaY * 4) },
-        { x: centerX + (deltaX * 4), y: centerY + (deltaY * 4) } ],
-      [ { x: centerX - (deltaX * 3), y: centerY - (deltaY * 3) },
-        { x: centerX + (deltaX * 3), y: centerY + (deltaY * 3) } ],
-      [ { x: centerX - (deltaX * 2), y: centerY - (deltaY * 2) },
-        { x: centerX + (deltaX * 2), y: centerY + (deltaY * 2) } ],
-      [ { x: centerX - (deltaX * 1), y: centerY - (deltaY * 1) },
-        { x: centerX + (deltaX * 1), y: centerY + (deltaY * 1) } ],
-  ];
-
-  var touchIds = [0, 1];
-  yield* synthesizeNativeTouchSequences(
-    document.body,
-    zoom_out,
-    null,
-    touchIds
-  );
+  return synthesizeNativeTouchSequences(document.body, zoom_in, null, touchIds);
 }
 
 // Returns a promise that is resolved when the observer service dispatches a
@@ -841,42 +955,81 @@ function promiseTopic(aTopic) {
   });
 }
 
+// Returns a promise that is resolved when a APZ transform ends.
+function promiseTransformEnd() {
+  return promiseTopic("APZ:TransformEnd");
+}
+
 // This generates a touch-based pinch zoom-in gesture that is expected
 // to succeed. It returns after APZ has completed the zoom and reaches the end
-// of the transform.
+// of the transform. The focus point is expected to be in CSS coordinates
+// relative to the document body.
 async function pinchZoomInWithTouch(focusX, focusY) {
   // Register the listener for the TransformEnd observer topic
   let transformEndPromise = promiseTopic("APZ:TransformEnd");
 
   // Dispatch all the touch events
-  let generator = pinchZoomInTouchSequence(focusX, focusY);
-  while (true) {
-    let yieldResult = generator.next();
-    if (yieldResult.done) {
-      break;
-    }
-  }
+  pinchZoomInTouchSequence(focusX, focusY);
 
   // Wait for TransformEnd to fire.
   await transformEndPromise;
 }
 
-// This generates a touch-based pinch zoom-out gesture that is expected
-// to succeed. It returns after APZ has completed the zoom and reaches the end
-// of the transform.
-async function pinchZoomOutWithTouchAtCenter() {
+// This generates a touch-based pinch gesture that is expected to succeed
+// and trigger an APZ:TransformEnd observer notification.
+// It returns after that notification has been dispatched.
+// The coordinates of touch events in `touchSequence` are expected to be
+// in CSS coordinates relative to the document body.
+async function synthesizeNativeTouchAndWaitForTransformEnd(
+  touchSequence,
+  touchIds
+) {
   // Register the listener for the TransformEnd observer topic
   let transformEndPromise = promiseTopic("APZ:TransformEnd");
 
   // Dispatch all the touch events
-  let generator = pinchZoomOutTouchSequenceAtCenter();
-  while (true) {
-    let yieldResult = generator.next();
-    if (yieldResult.done) {
-      break;
-    }
-  }
+  synthesizeNativeTouchSequences(document.body, touchSequence, null, touchIds);
 
   // Wait for TransformEnd to fire.
   await transformEndPromise;
+}
+
+// Returns a touch sequence for a pinch-zoom-out operation in the center
+// of the visual viewport. The touch sequence returned is in CSS coordinates
+// relative to the document body.
+function pinchZoomOutTouchSequenceAtCenter() {
+  // Divide the half of visual viewport size by 8, then cause touch events
+  // starting from the 7th furthest away from the center towards the center.
+  const deltaX = window.visualViewport.width / 16;
+  const deltaY = window.visualViewport.height / 16;
+  const centerX =
+    window.visualViewport.pageLeft + window.visualViewport.width / 2;
+  const centerY =
+    window.visualViewport.pageTop + window.visualViewport.height / 2;
+  // prettier-ignore
+  var zoom_out = [
+      [ { x: centerX - (deltaX * 6), y: centerY - (deltaY * 6) },
+        { x: centerX + (deltaX * 6), y: centerY + (deltaY * 6) } ],
+      [ { x: centerX - (deltaX * 5), y: centerY - (deltaY * 5) },
+        { x: centerX + (deltaX * 5), y: centerY + (deltaY * 5) } ],
+      [ { x: centerX - (deltaX * 4), y: centerY - (deltaY * 4) },
+        { x: centerX + (deltaX * 4), y: centerY + (deltaY * 4) } ],
+      [ { x: centerX - (deltaX * 3), y: centerY - (deltaY * 3) },
+        { x: centerX + (deltaX * 3), y: centerY + (deltaY * 3) } ],
+      [ { x: centerX - (deltaX * 2), y: centerY - (deltaY * 2) },
+        { x: centerX + (deltaX * 2), y: centerY + (deltaY * 2) } ],
+      [ { x: centerX - (deltaX * 1), y: centerY - (deltaY * 1) },
+        { x: centerX + (deltaX * 1), y: centerY + (deltaY * 1) } ],
+  ];
+  return zoom_out;
+}
+
+// This generates a touch-based pinch zoom-out gesture that is expected
+// to succeed. It returns after APZ has completed the zoom and reaches the end
+// of the transform. The touch inputs are directed to the center of the
+// current visual viewport.
+async function pinchZoomOutWithTouchAtCenter() {
+  var zoom_out = pinchZoomOutTouchSequenceAtCenter();
+  var touchIds = [0, 1];
+  await synthesizeNativeTouchAndWaitForTransformEnd(zoom_out, touchIds);
 }

@@ -56,7 +56,11 @@ var data = [
 var len = data.length;
 
 add_task(async function setup() {
-  await Services.search.init();
+  await setupSearchService();
+  // Now we've initialised the search service, we force remove the engines
+  // it has, so they don't interfere with this test.
+  // Search engine integration is tested in test_URIFixup_search.js.
+  Services.search.wrappedJSObject._engines.clear();
 });
 
 // Make sure we fix what needs fixing when there is no pref set.
@@ -64,11 +68,11 @@ add_task(function test_unset_pref_fixes_typos() {
   Services.prefs.clearUserPref(pref);
   for (let i = 0; i < len; ++i) {
     let item = data[i];
-    let result = Services.uriFixup.createFixupURI(
+    let { preferredURI } = Services.uriFixup.getFixupURIInfo(
       item.wrong,
       Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS
-    ).spec;
-    Assert.equal(result, item.fixed);
+    );
+    Assert.equal(preferredURI.spec, item.fixed);
   }
 });
 
@@ -78,11 +82,11 @@ add_task(function test_false_pref_keeps_typos() {
   Services.prefs.setBoolPref(pref, false);
   for (let i = 0; i < len; ++i) {
     let item = data[i];
-    let result = Services.uriFixup.createFixupURI(
+    let { preferredURI } = Services.uriFixup.getFixupURIInfo(
       item.wrong,
       Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS
-    ).spec;
-    Assert.equal(result, item.wrong);
+    );
+    Assert.equal(preferredURI.spec, item.wrong);
   }
 });
 
@@ -92,10 +96,10 @@ add_task(function test_true_pref_fixes_typos() {
   Services.prefs.setBoolPref(pref, true);
   for (let i = 0; i < len; ++i) {
     let item = data[i];
-    let result = Services.uriFixup.createFixupURI(
+    let { preferredURI } = Services.uriFixup.getFixupURIInfo(
       item.wrong,
       Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS
-    ).spec;
-    Assert.equal(result, item.fixed);
+    );
+    Assert.equal(preferredURI.spec, item.fixed);
   }
 });

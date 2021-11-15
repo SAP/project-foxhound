@@ -50,11 +50,9 @@ load 880384.html
 load 880404.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load 880724.html
 load 881775.html
-load 882549.html
 load 882956.html
 load 884459.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load 889042.html
-load 894104.html
 load 907986-1.html
 load 907986-2.html
 load 907986-3.html
@@ -88,8 +86,6 @@ load 1185192.html
 skip-if(Android) load 1257700.html # bug 1575666
 load 1267263.html
 load 1270303.html
-load 1304948.html
-load 1319486.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load 1368490.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load 1291702.html
 load 1378826.html
@@ -100,7 +96,9 @@ load 1411322.html
 load 1450845.html
 load disconnect-wrong-destination.html
 load analyser-channels-1.html
+load audiocontext-after-unload-1.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load audiocontext-double-suspend.html
+skip-if(Android) load audioworkletnode-after-unload-1.html # Needs secure context
 load buffer-source-duration-1.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load buffer-source-ended-1.html
 load buffer-source-resampling-start-1.html
@@ -121,7 +119,6 @@ skip-if(Android) load 1526044.html # Bug 1528391
 skip-if(Android&&AndroidVersion<21) load encrypted-track-with-bad-sample-description-index.mp4 # Bug 1533211, unkip after bug 1550912
 load encrypted-track-without-tenc.mp4 # Bug 1533215
 asserts-if(Android,0-1) load encrypted-track-with-sample-missing-cenc-aux.mp4 # Bug 1533625, bug 1588967
-load 1533909.html
 load 1538727.html
 load empty-samples.webm # Bug 1540580
 test-pref(media.autoplay.block-webaudio,false) load 1545133.html
@@ -137,3 +134,4 @@ load 1594466.html
 load 1604941.html
 skip-if(!winWidget) load 1608286.html
 load channel-count-in-metadata-different-than-in-content.mp4 # Bug 1584959
+load mp4_box_emptyrange.mp4 # Bug 1667480

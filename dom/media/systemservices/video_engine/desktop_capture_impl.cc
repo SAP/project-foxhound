@@ -407,14 +407,11 @@ DesktopCaptureImpl::DesktopCaptureImpl(const int32_t id, const char* uniqueId,
 #  endif
 #endif
       started_(false) {
-#if 0
-  // XXX this crashes due to an immediate IsRunning() check
-  capturer_thread_->SetPriority(rtc::kHighPriority);
-#endif
   _requestedCapability.width = kDefaultWidth;
   _requestedCapability.height = kDefaultHeight;
   _requestedCapability.maxFPS = 30;
   _requestedCapability.videoType = kI420;
+  _maxFPSNeeded = 1000 / _requestedCapability.maxFPS;
   memset(_incomingFrameTimesNanos, 0, sizeof(_incomingFrameTimesNanos));
 }
 
@@ -428,14 +425,12 @@ DesktopCaptureImpl::~DesktopCaptureImpl() {
 void DesktopCaptureImpl::RegisterCaptureDataCallback(
     rtc::VideoSinkInterface<VideoFrame>* dataCallback) {
   rtc::CritScope lock(&_apiCs);
-  rtc::CritScope lock2(&_callBackCs);
   _dataCallBacks.insert(dataCallback);
 }
 
 void DesktopCaptureImpl::DeRegisterCaptureDataCallback(
     rtc::VideoSinkInterface<VideoFrame>* dataCallback) {
   rtc::CritScope lock(&_apiCs);
-  rtc::CritScope lock2(&_callBackCs);
   auto it = _dataCallBacks.find(dataCallback);
   if (it != _dataCallBacks.end()) {
     _dataCallBacks.erase(it);
@@ -480,7 +475,7 @@ int32_t DesktopCaptureImpl::IncomingFrame(
     uint8_t* videoFrame, size_t videoFrameLength,
     const VideoCaptureCapability& frameInfo, int64_t captureTime /*=0*/) {
   int64_t startProcessTime = rtc::TimeNanos();
-  rtc::CritScope cs(&_callBackCs);
+  rtc::CritScope cs(&_apiCs);
 
   const int32_t width = frameInfo.width;
   const int32_t height = frameInfo.height;
@@ -535,7 +530,6 @@ int32_t DesktopCaptureImpl::IncomingFrame(
 
 int32_t DesktopCaptureImpl::SetCaptureRotation(VideoRotation rotation) {
   rtc::CritScope lock(&_apiCs);
-  rtc::CritScope lock2(&_callBackCs);
   _rotateFrame = rotation;
   return 0;
 }
@@ -581,12 +575,14 @@ uint32_t DesktopCaptureImpl::CalculateFrameRate(int64_t now_ns) {
 
 int32_t DesktopCaptureImpl::StartCapture(
     const VideoCaptureCapability& capability) {
+  rtc::CritScope lock(&_apiCs);
+
   _requestedCapability = capability;
+  _maxFPSNeeded = _requestedCapability.maxFPS > 0
+                      ? 1000 / _requestedCapability.maxFPS
+                      : 1000;
 #if defined(_WIN32)
-  uint32_t maxFPSNeeded = _requestedCapability.maxFPS > 0
-                              ? 1000 / _requestedCapability.maxFPS
-                              : 1000;
-  capturer_thread_->RequestCallbackTimer(maxFPSNeeded);
+  capturer_thread_->RequestCallbackTimer(_maxFPSNeeded);
 #endif
 
   if (started_) {
@@ -597,8 +593,6 @@ int32_t DesktopCaptureImpl::StartCapture(
   if (!capturer_thread_) {
     capturer_thread_ = std::unique_ptr<rtc::PlatformThread>(
         new rtc::PlatformThread(Run, this, "ScreenCaptureThread"));
-    // XXX this crashes due to an immediate IsRunning() check on Linux
-    // capturer_thread_->SetPriority(rtc::kHighPriority);
   }
 #endif
 
@@ -609,6 +603,7 @@ int32_t DesktopCaptureImpl::StartCapture(
 
   desktop_capturer_cursor_composer_->Start(this);
   capturer_thread_->Start();
+  capturer_thread_->SetPriority(rtc::kHighPriority);
   started_ = true;
 
   return 0;
@@ -669,12 +664,9 @@ void DesktopCaptureImpl::process() {
       ((uint32_t)(rtc::TimeNanos() - startProcessTime)) /
       rtc::kNumNanosecsPerMillisec;
   // Use at most x% CPU or limit framerate
-  const uint32_t maxFPSNeeded = _requestedCapability.maxFPS > 0
-                                    ? 1000 / _requestedCapability.maxFPS
-                                    : 1000;
   const float sleepTimeFactor = (100.0f / kMaxDesktopCaptureCpuUsage) - 1.0f;
   const uint32_t sleepTime = sleepTimeFactor * processTime;
-  time_event_->Wait(std::max<uint32_t>(maxFPSNeeded, sleepTime));
+  time_event_->Wait(std::max<uint32_t>(_maxFPSNeeded, sleepTime));
 #endif
 }
 

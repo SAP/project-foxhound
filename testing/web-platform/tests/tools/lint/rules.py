@@ -81,6 +81,18 @@ class GitIgnoreFile(Rule):
     description = ".gitignore found outside the root"
 
 
+class MojomJSFile(Rule):
+    name = "MOJOM-JS"
+    description = "Don't check *.mojom.js files into WPT"
+    to_fix = """
+        Check if the file is already included in mojojs.zip:
+        https://source.chromium.org/chromium/chromium/src/+/master:chrome/tools/build/linux/FILES.cfg
+        If yes, use `loadMojoResources` from `resources/test-only-api.js` to load
+        it; if not, contact ecosystem-infra@chromium.org for adding new files
+        to mojojs.zip.
+    """
+
+
 class AhemCopy(Rule):
     name = "AHEM COPY"
     description = "Don't add extra copies of Ahem, use /fonts/Ahem.ttf"
@@ -341,6 +353,12 @@ class DuplicateBasenamePath(Rule):
     to_fix = "rename files so they have unique basename paths"
 
 
+class TentativeDirectoryName(Rule):
+    name = "TENTATIVE-DIRECTORY-NAME"
+    description = "Directories for tentative tests must be named exactly 'tentative'"
+    to_fix = "rename directory to be called 'tentative'"
+
+
 class Regexp(six.with_metaclass(abc.ABCMeta)):
     @abc.abstractproperty
     def pattern(self):
@@ -414,6 +432,11 @@ class WebPlatformTestRegexp(Regexp):
     pattern = br"web\-platform\.test"
     name = "WEB-PLATFORM.TEST"
     description = "Internal web-platform.test domain used"
+    to_fix = """
+        use [server-side substitution](https://web-platform-tests.org/writing-tests/server-pipes.html#sub),
+        along with the [`.sub` filename-flag](https://web-platform-tests.org/writing-tests/file-names.html#test-features),
+        to replace web-platform.test with `{{domains[]}}`
+    """
 
 
 class Webidl2Regexp(Regexp):

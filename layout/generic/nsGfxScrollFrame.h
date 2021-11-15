@@ -20,7 +20,6 @@
 #include "nsIReflowCallback.h"
 #include "nsBoxLayoutState.h"
 #include "nsQueryFrame.h"
-#include "nsRefreshDriver.h"
 #include "nsExpirationTracker.h"
 #include "TextOverflow.h"
 #include "ScrollVelocityQueue.h"
@@ -96,8 +95,8 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // wrapped in the async zoom container, if we're building one.
   // It should not be called with an ASR setter on the stack, as the
   // top-layer items handle setting up their own ASRs.
-  void MaybeAddTopLayerItems(nsDisplayListBuilder* aBuilder,
-                             const nsDisplayListSet& aLists);
+  nsDisplayWrapList* MaybeCreateTopLayerItems(nsDisplayListBuilder* aBuilder,
+                                              bool* aIsOpaque);
 
   void AppendScrollPartsTo(nsDisplayListBuilder* aBuilder,
                            const nsDisplayListSet& aLists, bool aCreateLayer,
@@ -173,12 +172,12 @@ class ScrollFrameHelper : public nsIReflowCallback {
     pt.y = mScrollPort.y - mScrolledFrame->GetPosition().y;
     return pt;
   }
-  nsPoint GetApzScrollPosition() const { return mApzScrollPos; }
   nsRect GetLayoutScrollRange() const;
   // Get the scroll range assuming the viewport has size (aWidth, aHeight).
   nsRect GetScrollRange(nscoord aWidth, nscoord aHeight) const;
   nsSize GetVisualViewportSize() const;
   nsPoint GetVisualViewportOffset() const;
+  bool SetVisualViewportOffset(const nsPoint& aOffset, bool aRepaint);
   nsRect GetVisualScrollRange() const;
   nsRect GetScrollRangeForUserInputEvents() const;
 
@@ -345,7 +344,9 @@ class ScrollFrameHelper : public nsIReflowCallback {
     return (mHasVerticalScrollbar ? nsIScrollableFrame::VERTICAL : 0) |
            (mHasHorizontalScrollbar ? nsIScrollableFrame::HORIZONTAL : 0);
   }
-  nsMargin GetActualScrollbarSizes() const;
+  nsMargin GetActualScrollbarSizes(
+      nsIScrollableFrame::ScrollbarSizesOptions aOptions =
+          nsIScrollableFrame::ScrollbarSizesOptions::NONE) const;
   nsMargin GetDesiredScrollbarSizes(nsBoxLayoutState* aState);
   nscoord GetNondisappearingScrollbarWidth(nsBoxLayoutState* aState,
                                            mozilla::WritingMode aVerticalWM);
@@ -376,9 +377,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
     return mWillBuildScrollableLayer;
   }
   bool IsMaybeScrollingActive() const;
-  bool IsProcessingAsyncScroll() const {
-    return mAsyncScroll != nullptr || mAsyncSmoothMSDScroll != nullptr;
-  }
   void ResetScrollPositionForLayerPixelAlignment() {
     mScrollPosForLayerPixelAlignment = GetScrollPosition();
   }
@@ -441,11 +439,7 @@ class ScrollFrameHelper : public nsIReflowCallback {
                              nsRect* aVisibleRect, nsRect* aDirtyRect,
                              bool aSetBase,
                              bool* aDirtyRectHasBeenOverriden = nullptr);
-  void NotifyApzTransaction() {
-    mAllowScrollOriginDowngrade = true;
-    mApzScrollPos = GetScrollPosition();
-    mRelativeOffset.reset();
-  }
+  void NotifyApzTransaction();
   void NotifyApproximateFrameVisibilityUpdate(bool aIgnoreDisplayPort);
   bool GetDisplayPortAtLastApproximateFrameVisibilityUpdate(
       nsRect* aDisplayPort);
@@ -460,18 +454,18 @@ class ScrollFrameHelper : public nsIReflowCallback {
   void HandleScrollbarStyleSwitching();
 
   ScrollOrigin LastScrollOrigin() const { return mLastScrollOrigin; }
-  ScrollOrigin LastSmoothScrollOrigin() const {
-    return mLastSmoothScrollOrigin;
-  }
-  uint32_t CurrentScrollGeneration() const { return mScrollGeneration; }
+  bool IsApzAnimationInProgress() const { return mApzAnimationInProgress; }
+  ScrollGeneration CurrentScrollGeneration() const { return mScrollGeneration; }
   nsPoint LastScrollDestination() const { return mDestination; }
-  void ResetScrollInfoIfGeneration(uint32_t aGeneration) {
-    if (aGeneration == mScrollGeneration) {
-      mLastScrollOrigin = ScrollOrigin::NotSpecified;
-      mLastSmoothScrollOrigin = ScrollOrigin::None;
-    }
-  }
-  Maybe<nsPoint> GetRelativeOffset() const { return mRelativeOffset; }
+  nsTArray<ScrollPositionUpdate> GetScrollUpdates() const;
+  bool HasScrollUpdates() const { return !mScrollUpdates.IsEmpty(); }
+
+  bool IsLastScrollUpdateAnimating() const;
+  using IncludeApzAnimation = nsIScrollableFrame::IncludeApzAnimation;
+  bool IsScrollAnimating(IncludeApzAnimation = IncludeApzAnimation::Yes) const;
+
+  void ResetScrollInfoIfNeeded(const ScrollGeneration& aGeneration,
+                               bool aApzAnimationInProgress);
   bool WantAsyncScroll() const;
   Maybe<mozilla::layers::ScrollMetadata> ComputeScrollMetadata(
       LayerManager* aLayerManager, const nsIFrame* aContainerReferenceFrame,
@@ -532,6 +526,8 @@ class ScrollFrameHelper : public nsIReflowCallback {
                                           bool aVertical,
                                           AnonymousContentKey& aKey);
 
+  void AppendScrollUpdate(const ScrollPositionUpdate& aUpdate);
+
   // owning references to the nsIAnonymousContentCreator-built content
   nsCOMPtr<Element> mHScrollbarContent;
   nsCOMPtr<Element> mVScrollbarContent;
@@ -559,9 +555,11 @@ class ScrollFrameHelper : public nsIReflowCallback {
   RefPtr<ScrollbarActivity> mScrollbarActivity;
   nsTArray<nsIScrollPositionListener*> mListeners;
   ScrollOrigin mLastScrollOrigin;
-  ScrollOrigin mLastSmoothScrollOrigin;
   Maybe<nsPoint> mApzSmoothScrollDestination;
-  uint32_t mScrollGeneration;
+  ScrollGeneration mScrollGeneration;
+
+  nsTArray<ScrollPositionUpdate> mScrollUpdates;
+
   // NOTE: On mobile this value might be factoring into overflow:hidden region
   // in the case of the top level document.
   nsRect mScrollPort;
@@ -576,10 +574,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // just the current scroll position. ScrollBy will choose its
   // destination based on this value.
   nsPoint mDestination;
-
-  // Tracks a relative scroll offset to pass to apz to do a smooth scroll by.
-  // It is used by ScrollBy when this scroll frame can be scrolled by APZ.
-  Maybe<nsPoint> mRelativeOffset;
 
   // A goal position to try to scroll to as content loads. As long as mLastPos
   // matches the current logical scroll position, we try to scroll to
@@ -625,6 +619,13 @@ class ScrollFrameHelper : public nsIReflowCallback {
   bool mNeverHasHorizontalScrollbar : 1;
   bool mHasVerticalScrollbar : 1;
   bool mHasHorizontalScrollbar : 1;
+  // If mHas(Vertical|Horizontal)Scrollbar is true then
+  // mOnlyNeed(V|H)ScrollbarToScrollVVInsideLV indicates if the only reason we
+  // need that scrollbar is to scroll the visual viewport inside the layout
+  // viewport. These scrollbars are special in that even if they are layout
+  // scrollbars they do not take up any layout space.
+  bool mOnlyNeedVScrollbarToScrollVVInsideLV : 1;
+  bool mOnlyNeedHScrollbarToScrollVVInsideLV : 1;
   bool mFrameIsUpdatingScrollbar : 1;
   bool mDidHistoryRestore : 1;
   // Is this the scrollframe for the document's viewport?
@@ -643,6 +644,8 @@ class ScrollFrameHelper : public nsIReflowCallback {
   bool mSkippedScrollbarLayout : 1;
 
   bool mHadNonInitialReflow : 1;
+  // Initially true; first call to ReflowFinished() sets it to false.
+  bool mFirstReflow : 1;
   // State used only by PostScrollEvents so we know
   // which overflow states have changed.
   bool mHorizontalOverflow : 1;
@@ -704,6 +707,22 @@ class ScrollFrameHelper : public nsIReflowCallback {
 
   // True if we're processing an scroll event.
   bool mProcessingScrollEvent : 1;
+
+  // Whether an APZ animation is in progress. Note that this is only set to true
+  // when repainted via APZ, which means that there may be a request for an APZ
+  // animation in flight for example, while this is still false. In order to
+  // answer "is an APZ animation in the process of starting or in progress" you
+  // need to check mScrollUpdates, mApzAnimationRequested, and this bit.
+  bool mApzAnimationInProgress : 1;
+  // This is true from the time a scroll animation is requested of APZ to the
+  // time that APZ responds with an up-to-date repaint request. More precisely,
+  // this is flipped to true if a repaint request is dispatched to APZ where
+  // the most recent scroll request is a smooth scroll, and it is cleared when
+  // mApzAnimationInProgress is updated.
+  bool mApzAnimationRequested : 1;
+
+  // Whether we need to reclamp the visual viewport offset in ReflowFinished.
+  bool mReclampVVOffsetInReflowFinished : 1;
 
   mozilla::layout::ScrollVelocityQueue mVelocityQueue;
 
@@ -854,7 +873,7 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     return mHelper.GetScrolledFrame()->GetContentInsertionFrame();
   }
 
-  bool DoesClipChildren() final { return true; }
+  bool DoesClipChildrenInBothAxes() final { return true; }
 
   nsPoint GetPositionOfChildIgnoringScrolling(const nsIFrame* aChild) final {
     nsPoint pt = aChild->GetPosition();
@@ -886,8 +905,10 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   uint32_t GetScrollbarVisibility() const final {
     return mHelper.GetScrollbarVisibility();
   }
-  nsMargin GetActualScrollbarSizes() const final {
-    return mHelper.GetActualScrollbarSizes();
+  nsMargin GetActualScrollbarSizes(
+      nsIScrollableFrame::ScrollbarSizesOptions aOptions =
+          nsIScrollableFrame::ScrollbarSizesOptions::NONE) const final {
+    return mHelper.GetActualScrollbarSizes(aOptions);
   }
   nsMargin GetDesiredScrollbarSizes(nsBoxLayoutState* aState) final {
     return mHelper.GetDesiredScrollbarSizes(aState);
@@ -912,15 +933,15 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   nsPoint GetLogicalScrollPosition() const final {
     return mHelper.GetLogicalScrollPosition();
   }
-  nsPoint GetApzScrollPosition() const final {
-    return mHelper.GetApzScrollPosition();
-  }
   nsRect GetScrollRange() const final { return mHelper.GetLayoutScrollRange(); }
   nsSize GetVisualViewportSize() const final {
     return mHelper.GetVisualViewportSize();
   }
   nsPoint GetVisualViewportOffset() const final {
     return mHelper.GetVisualViewportOffset();
+  }
+  bool SetVisualViewportOffset(const nsPoint& aOffset, bool aRepaint) final {
+    return mHelper.SetVisualViewportOffset(aOffset, aRepaint);
   }
   nsRect GetVisualScrollRange() const final {
     return mHelper.GetVisualScrollRange();
@@ -1018,9 +1039,6 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   bool IsMaybeAsynchronouslyScrolled() final {
     return mHelper.IsMaybeAsynchronouslyScrolled();
   }
-  bool IsProcessingAsyncScroll() final {
-    return mHelper.IsProcessingAsyncScroll();
-  }
   void ResetScrollPositionForLayerPixelAlignment() final {
     mHelper.ResetScrollPositionForLayerPixelAlignment();
   }
@@ -1034,20 +1052,22 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     return mHelper.ExpandRectToNearlyVisible(aRect);
   }
   ScrollOrigin LastScrollOrigin() final { return mHelper.LastScrollOrigin(); }
-  ScrollOrigin LastSmoothScrollOrigin() final {
-    return mHelper.LastSmoothScrollOrigin();
+  bool IsScrollAnimating(IncludeApzAnimation aIncludeApz) final {
+    return mHelper.IsScrollAnimating(aIncludeApz);
   }
-  uint32_t CurrentScrollGeneration() final {
+  mozilla::ScrollGeneration CurrentScrollGeneration() final {
     return mHelper.CurrentScrollGeneration();
   }
   nsPoint LastScrollDestination() final {
     return mHelper.LastScrollDestination();
   }
-  void ResetScrollInfoIfGeneration(uint32_t aGeneration) final {
-    mHelper.ResetScrollInfoIfGeneration(aGeneration);
+  nsTArray<mozilla::ScrollPositionUpdate> GetScrollUpdates() const final {
+    return mHelper.GetScrollUpdates();
   }
-  Maybe<nsPoint> GetRelativeOffset() const final {
-    return mHelper.GetRelativeOffset();
+  bool HasScrollUpdates() const final { return mHelper.HasScrollUpdates(); }
+  void ResetScrollInfoIfNeeded(const mozilla::ScrollGeneration& aGeneration,
+                               bool aApzAnimationInProgress) final {
+    mHelper.ResetScrollInfoIfNeeded(aGeneration, aApzAnimationInProgress);
   }
   bool WantAsyncScroll() const final { return mHelper.WantAsyncScroll(); }
   mozilla::Maybe<mozilla::layers::ScrollMetadata> ComputeScrollMetadata(
@@ -1298,7 +1318,7 @@ class nsXULScrollFrame final : public nsBoxFrame,
     return mHelper.GetScrolledFrame()->GetContentInsertionFrame();
   }
 
-  bool DoesClipChildren() final { return true; }
+  bool DoesClipChildrenInBothAxes() final { return true; }
 
   nsPoint GetPositionOfChildIgnoringScrolling(const nsIFrame* aChild) final {
     nsPoint pt = aChild->GetPosition();
@@ -1365,8 +1385,10 @@ class nsXULScrollFrame final : public nsBoxFrame,
   uint32_t GetScrollbarVisibility() const final {
     return mHelper.GetScrollbarVisibility();
   }
-  nsMargin GetActualScrollbarSizes() const final {
-    return mHelper.GetActualScrollbarSizes();
+  nsMargin GetActualScrollbarSizes(
+      nsIScrollableFrame::ScrollbarSizesOptions aOptions =
+          nsIScrollableFrame::ScrollbarSizesOptions::NONE) const final {
+    return mHelper.GetActualScrollbarSizes(aOptions);
   }
   nsMargin GetDesiredScrollbarSizes(nsBoxLayoutState* aState) final {
     return mHelper.GetDesiredScrollbarSizes(aState);
@@ -1391,15 +1413,15 @@ class nsXULScrollFrame final : public nsBoxFrame,
   nsPoint GetLogicalScrollPosition() const final {
     return mHelper.GetLogicalScrollPosition();
   }
-  nsPoint GetApzScrollPosition() const final {
-    return mHelper.GetApzScrollPosition();
-  }
   nsRect GetScrollRange() const final { return mHelper.GetLayoutScrollRange(); }
   nsSize GetVisualViewportSize() const final {
     return mHelper.GetVisualViewportSize();
   }
   nsPoint GetVisualViewportOffset() const final {
     return mHelper.GetVisualViewportOffset();
+  }
+  bool SetVisualViewportOffset(const nsPoint& aOffset, bool aRepaint) final {
+    return mHelper.SetVisualViewportOffset(aOffset, aRepaint);
   }
   nsRect GetVisualScrollRange() const final {
     return mHelper.GetVisualScrollRange();
@@ -1493,9 +1515,6 @@ class nsXULScrollFrame final : public nsBoxFrame,
   bool IsMaybeAsynchronouslyScrolled() final {
     return mHelper.IsMaybeAsynchronouslyScrolled();
   }
-  bool IsProcessingAsyncScroll() final {
-    return mHelper.IsProcessingAsyncScroll();
-  }
   void ResetScrollPositionForLayerPixelAlignment() final {
     mHelper.ResetScrollPositionForLayerPixelAlignment();
   }
@@ -1509,20 +1528,22 @@ class nsXULScrollFrame final : public nsBoxFrame,
     return mHelper.ExpandRectToNearlyVisible(aRect);
   }
   ScrollOrigin LastScrollOrigin() final { return mHelper.LastScrollOrigin(); }
-  ScrollOrigin LastSmoothScrollOrigin() final {
-    return mHelper.LastSmoothScrollOrigin();
+  bool IsScrollAnimating(IncludeApzAnimation aIncludeApz) final {
+    return mHelper.IsScrollAnimating(aIncludeApz);
   }
-  uint32_t CurrentScrollGeneration() final {
+  mozilla::ScrollGeneration CurrentScrollGeneration() final {
     return mHelper.CurrentScrollGeneration();
   }
   nsPoint LastScrollDestination() final {
     return mHelper.LastScrollDestination();
   }
-  void ResetScrollInfoIfGeneration(uint32_t aGeneration) final {
-    mHelper.ResetScrollInfoIfGeneration(aGeneration);
+  nsTArray<mozilla::ScrollPositionUpdate> GetScrollUpdates() const final {
+    return mHelper.GetScrollUpdates();
   }
-  Maybe<nsPoint> GetRelativeOffset() const final {
-    return mHelper.GetRelativeOffset();
+  bool HasScrollUpdates() const final { return mHelper.HasScrollUpdates(); }
+  void ResetScrollInfoIfNeeded(const mozilla::ScrollGeneration& aGeneration,
+                               bool aApzAnimationInProgress) final {
+    mHelper.ResetScrollInfoIfNeeded(aGeneration, aApzAnimationInProgress);
   }
   bool WantAsyncScroll() const final { return mHelper.WantAsyncScroll(); }
   mozilla::Maybe<mozilla::layers::ScrollMetadata> ComputeScrollMetadata(

@@ -14,6 +14,7 @@ use std::fs::File;
 use std::io::Read;
 use webrender::api::*;
 use webrender::api::units::*;
+use webrender::render_api::*;
 use webrender::DebugFlags;
 use winit::dpi::LogicalSize;
 
@@ -104,9 +105,9 @@ impl Window {
             DeviceIntSize::new(size.width as i32, size.height as i32)
         };
         let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
-        let (renderer, sender) = webrender::Renderer::new(gl.clone(), notifier, opts, None, device_size).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(gl.clone(), notifier, opts, None).unwrap();
         let mut api = sender.create_api();
-        let document_id = api.add_document(device_size, 0);
+        let document_id = api.add_document(device_size);
 
         let epoch = Epoch(0);
         let pipeline_id = PipelineId(0, 0);
@@ -183,10 +184,10 @@ impl Window {
         };
         let layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
         let mut txn = Transaction::new();
-        let mut builder = DisplayListBuilder::new(self.pipeline_id, layout_size);
+        let mut builder = DisplayListBuilder::new(self.pipeline_id);
         let space_and_clip = SpaceAndClipInfo::root_scroll(self.pipeline_id);
 
-        let bounds = LayoutRect::new(LayoutPoint::zero(), builder.content_size());
+        let bounds = LayoutRect::new(LayoutPoint::zero(), layout_size);
         builder.push_simple_stacking_context(
             bounds.origin,
             space_and_clip.spatial_id,
@@ -288,7 +289,7 @@ impl Window {
         api.send_transaction(self.document_id, txn);
 
         renderer.update();
-        renderer.render(device_size).unwrap();
+        renderer.render(device_size, 0).unwrap();
         context.swap_buffers().ok();
 
         self.context = Some(unsafe { context.make_not_current().unwrap() });

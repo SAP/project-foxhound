@@ -56,7 +56,7 @@ pub use self::page_rule::PageRule;
 pub use self::rule_list::{CssRules, CssRulesHelpers};
 pub use self::rule_parser::{InsertRuleContext, State, TopLevelRuleParser};
 pub use self::rules_iterator::{AllRules, EffectiveRules};
-pub use self::rules_iterator::{NestedRuleIterationCondition, RulesIterator};
+pub use self::rules_iterator::{NestedRuleIterationCondition, EffectiveRulesIterator, RulesIterator};
 pub use self::style_rule::StyleRule;
 pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind};
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
@@ -299,7 +299,7 @@ impl CssRule {
 }
 
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, PartialEq)]
 pub enum CssRuleType {
     // https://drafts.csswg.org/cssom/#the-cssrule-interface
     Style = 1,
@@ -404,8 +404,10 @@ impl CssRule {
             allow_import_rules,
         };
 
-        parse_one_rule(&mut input, &mut rule_parser)
-            .map_err(|_| rule_parser.dom_error.unwrap_or(RulesMutateError::Syntax))
+        match parse_one_rule(&mut input, &mut rule_parser) {
+            Ok((_, rule)) => Ok(rule),
+            Err(_) => Err(rule_parser.dom_error.unwrap_or(RulesMutateError::Syntax)),
+        }
     }
 }
 

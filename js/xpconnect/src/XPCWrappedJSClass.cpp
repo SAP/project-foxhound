@@ -7,6 +7,7 @@
 /* Sharable code and data for wrapper around JSObjects. */
 
 #include "xpcprivate.h"
+#include "js/Object.h"  // JS::GetClass
 #include "js/Printf.h"
 #include "nsArrayEnumerator.h"
 #include "nsINamed.h"
@@ -331,6 +332,9 @@ nsresult nsXPCWrappedJS::DelegatedQueryInterface(REFNSIID aIID,
   nsIGlobalObject* nativeGlobal = NativeGlobal(js::UncheckedUnwrap(obj));
   NS_ENSURE_TRUE(nativeGlobal, NS_ERROR_FAILURE);
   NS_ENSURE_TRUE(nativeGlobal->HasJSGlobal(), NS_ERROR_FAILURE);
+
+  AutoAllowLegacyScriptExecution exemption;
+
   AutoEntryScript aes(nativeGlobal, "XPCWrappedJS QueryInterface",
                       /* aIsMainThread = */ true);
   XPCCallContext ccx(aes.cx());
@@ -713,7 +717,7 @@ nsresult nsXPCWrappedJS::CheckForException(XPCCallContext& ccx,
             }
 
             nsresult rv = scriptError->InitWithWindowID(
-                NS_ConvertUTF8toUTF16(newMessage), sourceName, EmptyString(),
+                NS_ConvertUTF8toUTF16(newMessage), sourceName, u""_ns,
                 lineNumber, 0, 0, "XPConnect JavaScript",
                 nsJSUtils::GetCurrentlyRunningCodeInnerWindowID(cx));
             if (NS_FAILED(rv)) {
@@ -771,6 +775,9 @@ nsXPCWrappedJS::CallMethod(uint16_t methodIndex, const nsXPTMethodInfo* info,
   // definitely will be when we turn off XPConnect for the web.
   RootedObject obj(RootingCx(), GetJSObject());
   nsIGlobalObject* nativeGlobal = NativeGlobal(js::UncheckedUnwrap(obj));
+
+  AutoAllowLegacyScriptExecution exemption;
+
   AutoEntryScript aes(nativeGlobal, "XPCWrappedJS method call",
                       /* aIsMainThread = */ true);
   XPCCallContext ccx(aes.cx());
@@ -1094,7 +1101,7 @@ pre_call_clean_up:
 static const JSClass XPCOutParamClass = {"XPCOutParam", 0, JS_NULL_CLASS_OPS};
 
 bool xpc::IsOutObject(JSContext* cx, JSObject* obj) {
-  return js::GetObjectClass(obj) == &XPCOutParamClass;
+  return JS::GetClass(obj) == &XPCOutParamClass;
 }
 
 JSObject* xpc::NewOutObject(JSContext* cx) {

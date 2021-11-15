@@ -16,6 +16,8 @@ include HttpChannelParams;
 
 include "mozilla/net/NeckoMessageUtils.h";
 
+using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+
 namespace mozilla {
 namespace net {
 
@@ -66,21 +68,11 @@ parent:
   // again, indefinitely.
   async MarkOfflineCacheEntryAsForeign();
 
-  // Divert OnDataAvailable to the parent.
-  async DivertOnDataAvailable(nsCString data,
-                              uint64_t  offset,
-                              uint32_t  count);
-
-  // Divert OnStopRequest to the parent.
-  async DivertOnStopRequest(nsresult statusCode);
-
-  // Child has no more events/messages to divert to the parent.
-  async DivertComplete();
-
   // Child has detected a CORS check failure, so needs to tell the parent
   // to remove any matching entry from the CORS preflight cache.
   async RemoveCorsPreflightCacheEntry(URIParams uri,
-                                      PrincipalInfo requestingPrincipal);
+                                      PrincipalInfo requestingPrincipal,
+                                      OriginAttributes originAttributes);
 
   // After receiving this message, the parent calls SendDeleteSelf, and makes
   // sure not to send any more messages after that.
@@ -147,21 +139,12 @@ child:
                             nsString url,
                             nsString contentType);
 
-  // See ADivertableParentChannel::CancelDiversion
-  async CancelDiversion();
-
   async OriginalCacheInputStreamAvailable(IPCStream? stream);
 
   async AltDataCacheInputStreamAvailable(IPCStream? stream);
 
 
 both:
-  // After receiving this message, the parent also calls
-  // SendFinishInterceptedRedirect, and makes sure not to send any more messages
-  // after that. When receiving this message, the child will call
-  // Send__delete__() and complete the steps required to finish the redirect.
-  async FinishInterceptedRedirect();
-
   async SetPriority(int16_t priority);
 };
 

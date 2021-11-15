@@ -346,7 +346,7 @@ FT2FontEntry* gfxFT2Font::GetFontEntry() {
 // properly.
 
 nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
-  if (mCharacterMap) {
+  if (mCharacterMap || mShmemCharacterMap) {
     return NS_OK;
   }
 
@@ -397,38 +397,37 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
 #endif
 
   mHasCmapTable = NS_SUCCEEDED(rv);
+
   if (mHasCmapTable) {
     gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
-    mCharacterMap = pfl->FindCharMap(charmap);
+    fontlist::FontList* sharedFontList = pfl->SharedFontList();
+    if (!IsUserFont() && mShmemFace) {
+      mShmemFace->SetCharacterMap(sharedFontList, charmap);  // async
+      if (!TrySetShmemCharacterMap()) {
+        // Temporarily retain charmap, until the shared version is
+        // ready for use.
+        mCharacterMap = charmap;
+      }
+    } else {
+      mCharacterMap = pfl->FindCharMap(charmap);
+    }
   } else {
     // if error occurred, initialize to null cmap
     mCharacterMap = new gfxCharacterMap();
   }
+
   return rv;
+}
+
+bool FT2FontEntry::HasFontTable(uint32_t aTableTag) {
+  RefPtr<SharedFTFace> face = GetFTFace();
+  return gfxFT2FontEntryBase::FaceHasTable(face, aTableTag);
 }
 
 nsresult FT2FontEntry::CopyFontTable(uint32_t aTableTag,
                                      nsTArray<uint8_t>& aBuffer) {
   RefPtr<SharedFTFace> face = GetFTFace();
-  if (!face) {
-    return NS_ERROR_FAILURE;
-  }
-
-  FT_Error status;
-  FT_ULong len = 0;
-  status = FT_Load_Sfnt_Table(face->GetFace(), aTableTag, 0, nullptr, &len);
-  if (status != FT_Err_Ok || len == 0) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!aBuffer.SetLength(len, fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  uint8_t* buf = aBuffer.Elements();
-  status = FT_Load_Sfnt_Table(face->GetFace(), aTableTag, 0, buf, &len);
-  NS_ENSURE_TRUE(status == FT_Err_Ok, NS_ERROR_FAILURE);
-
-  return NS_OK;
+  return gfxFT2FontEntryBase::CopyFaceTable(face, aTableTag, aBuffer);
 }
 
 hb_blob_t* FT2FontEntry::GetFontTable(uint32_t aTableTag) {
@@ -1644,9 +1643,6 @@ void gfxFT2FontList::InitSharedFontListForPlatform() {
   // mFaceInitData (shared font list).
   FindFonts();
 
-  ApplyWhitelist(mFamilyInitData);
-  mFamilyInitData.Sort();
-
   mozilla::fontlist::FontList* list = SharedFontList();
   list->SetFamilyNames(mFamilyInitData);
 
@@ -1741,8 +1737,8 @@ searchDone:
   return fe;
 }
 
-FontFamily gfxFT2FontList::GetDefaultFontForPlatform(
-    const gfxFontStyle* aStyle) {
+FontFamily gfxFT2FontList::GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                                     nsAtom* aLanguage) {
   FontFamily ff;
 #if defined(MOZ_WIDGET_ANDROID)
   ff = FindFamily("Roboto"_ns);

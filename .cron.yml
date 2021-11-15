@@ -15,9 +15,9 @@ jobs:
           by-project:
               # No default
               mozilla-beta:
-                  - {weekday: 'Monday', hour: 2, minute: 0}
-                  - {weekday: 'Wednesday', hour: 2, minute: 0}
-                  - {weekday: 'Friday', hour: 2, minute: 0}
+                  - {weekday: 'Sunday', hour: 21, minute: 0}
+                  - {weekday: 'Tuesday', hour: 21, minute: 0}
+                  - {weekday: 'Thursday', hour: 21, minute: 0}
 
     - name: nightly-desktop
       job:
@@ -139,7 +139,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
           - mozilla-esr78
       when:
           - {hour: 10, minute: 0}
@@ -187,7 +186,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
           - mozilla-esr78
       when:
           by-project:
@@ -199,9 +197,6 @@ jobs:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
               mozilla-release:
-                  - {hour: 7, minute: 0}
-                  - {hour: 19, minute: 0}
-              mozilla-esr68:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
               mozilla-esr78:
@@ -217,7 +212,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr68
           - mozilla-esr78
       when:
           - {weekday: 'Monday', hour: 10, minute: 0}
@@ -253,6 +247,24 @@ jobs:
           - {weekday: 'Saturday', hour: 3, minute: 0}
           - {weekday: 'Sunday', hour: 3, minute: 0}
 
+    - name: raptor-tp6-windows10-64-ref-hw-2017
+      job:
+          type: decision-task
+          treeherder-symbol: tp6
+          target-tasks-method: raptor_tp6_windows10_64_ref_hw_2017
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: 'Monday', hour: 3, minute: 0}
+          - {weekday: 'Tuesday', hour: 3, minute: 0}
+          - {weekday: 'Wednesday', hour: 3, minute: 0}
+          - {weekday: 'Thursday', hour: 3, minute: 0}
+          - {weekday: 'Friday', hour: 3, minute: 0}
+          - {weekday: 'Saturday', hour: 3, minute: 0}
+          - {weekday: 'Sunday', hour: 3, minute: 0}
+
+
     - name: condprof
       job:
           type: decision-task
@@ -273,10 +285,8 @@ jobs:
       run-on-projects:
           - mozilla-central
           - mozilla-beta
-          - mozilla-esr68
-          # no mozilla-esr78
       when:
-          - {minute: 45}
+          - {hour: 18, minute: 45}
 
     - name: system-symbols
       job:
@@ -295,6 +305,16 @@ jobs:
           target-tasks-method: perftest
       run-on-projects:
           - mozilla-central
+      when:
+          - {hour: 4, minute: 00}
+
+    - name: perftest-on-autoland
+      job:
+          type: decision-task
+          treeherder-symbol: perftest-auto
+          target-tasks-method: perftest-on-autoland
+      run-on-projects:
+          - autoland
       when:
           - {hour: 4, minute: 00}
 

@@ -13,8 +13,6 @@ from six import text_type, iteritems
 
 import taskgraph
 
-from mozbuild import schedules
-
 from .keyed_by import evaluate_keyed_by
 
 
@@ -31,7 +29,7 @@ def validate_schema(schema, obj, msg_prefix):
         msg = [msg_prefix]
         for error in exc.errors:
             msg.append(str(error))
-        raise Exception('\n'.join(msg) + '\n' + pprint.pformat(obj))
+        raise Exception("\n".join(msg) + "\n" + pprint.pformat(obj))
 
 
 def optionally_keyed_by(*arguments):
@@ -50,18 +48,24 @@ def optionally_keyed_by(*arguments):
     schema = arguments[-1]
     fields = arguments[:-1]
 
-    # build the nestable schema by generating schema = Any(schema,
-    # by-fld1, by-fld2, by-fld3) once for each field.  So we don't allow
-    # infinite nesting, but one level of nesting for each field.
-    for _ in arguments:
-        options = [schema]
-        for field in fields:
-            options.append({'by-' + field: {text_type: schema}})
-        schema = voluptuous.Any(*options)
-    return schema
+    def validator(obj):
+        if isinstance(obj, dict) and len(obj) == 1:
+            k, v = list(obj.items())[0]
+            if k.startswith("by-") and k[len("by-") :] in fields:
+                res = {}
+                for kk, vv in v.items():
+                    try:
+                        res[kk] = validator(vv)
+                    except voluptuous.Invalid as e:
+                        e.prepend([k, kk])
+                        raise
+                return res
+        return Schema(schema)(obj)
+
+    return validator
 
 
-def resolve_keyed_by(item, field, item_name, **extra_values):
+def resolve_keyed_by(item, field, item_name, defer=None, **extra_values):
     """
     For values which can either accept a literal value, or be keyed by some
     other attribute of the item, perform that lookup and replacement in-place
@@ -100,11 +104,17 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
                         cedar: ..
                 linux: 13
                 default: 12
+
+    The `defer` parameter allows evaluating a by-* entry at a later time. In the
+    example above it's possible that the project attribute hasn't been set
+    yet, in which case we'd want to stop before resolving that subkey and then
+    call this function again later. This can be accomplished by setting
+    `defer=["project"]` in this example.
     """
     # find the field, returning the item unchanged if anything goes wrong
     container, subfield = item, field
-    while '.' in subfield:
-        f, subfield = subfield.split('.', 1)
+    while "." in subfield:
+        f, subfield = subfield.split(".", 1)
         if f not in container:
             return item
         container = container[f]
@@ -117,6 +127,7 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
     container[subfield] = evaluate_keyed_by(
         value=container[subfield],
         item_name="`{}` in `{}`".format(field, item_name),
+        defer=defer,
         attributes=dict(item, **extra_values),
     )
 
@@ -128,15 +139,17 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
 # they can be whitelisted here.
 WHITELISTED_SCHEMA_IDENTIFIERS = [
     # upstream-artifacts are handed directly to scriptWorker, which expects interCaps
-    lambda path: "[{!r}]".format(u'upstream-artifacts') in path,
-    lambda path: ("[{!r}]".format(u'test_name') in path or
-                  "[{!r}]".format(u'json_location') in path or
-                  "[{!r}]".format(u'video_location') in path),
+    lambda path: "[{!r}]".format("upstream-artifacts") in path,
+    lambda path: (
+        "[{!r}]".format("test_name") in path
+        or "[{!r}]".format("json_location") in path
+        or "[{!r}]".format("video_location") in path
+    ),
 ]
 
 
 def check_schema(schema):
-    identifier_re = re.compile('^[a-z][a-z0-9-]*$')
+    identifier_re = re.compile("^[a-z][a-z0-9-]*$")
 
     def whitelisted(path):
         return any(f(path) for f in WHITELISTED_SCHEMA_IDENTIFIERS)
@@ -150,8 +163,9 @@ def check_schema(schema):
             elif isinstance(k, text_type):
                 if not identifier_re.match(k) and not whitelisted(path):
                     raise RuntimeError(
-                        'YAML schemas should use dashed lower-case identifiers, '
-                        'not {!r} @ {}'.format(k, path))
+                        "YAML schemas should use dashed lower-case identifiers, "
+                        "not {!r} @ {}".format(k, path)
+                    )
             elif isinstance(k, (voluptuous.Optional, voluptuous.Required)):
                 check_identifier(path, k.schema)
             elif isinstance(k, (voluptuous.Any, voluptuous.All)):
@@ -159,8 +173,10 @@ def check_schema(schema):
                     check_identifier(path, v)
             elif not whitelisted(path):
                 raise RuntimeError(
-                    'Unexpected type in YAML schema: {} @ {}'.format(
-                        type(k).__name__, path))
+                    "Unexpected type in YAML schema: {} @ {}".format(
+                        type(k).__name__, path
+                    )
+                )
 
         if isinstance(sch, collections.Mapping):
             for k, v in iteritems(sch):
@@ -173,7 +189,8 @@ def check_schema(schema):
         elif isinstance(sch, voluptuous.Any):
             for v in sch.validators:
                 iter(path, v)
-    iter('schema', schema.schema)
+
+    iter("schema", schema.schema)
 
 
 class Schema(voluptuous.Schema):
@@ -181,6 +198,7 @@ class Schema(voluptuous.Schema):
     Operates identically to voluptuous.Schema, but applying some taskgraph-specific checks
     in the process.
     """
+
     def __init__(self, *args, **kwargs):
         super(Schema, self).__init__(*args, **kwargs)
         if not taskgraph.fast:
@@ -202,35 +220,9 @@ class Schema(voluptuous.Schema):
         return self.schema[item]
 
 
-OptimizationSchema = voluptuous.Any(
-    # always run this task (default)
-    None,
-    # always optimize this task
-    {'always': None},
-    # optimize strategy aliases for build kind
-    {'build': list(schedules.ALL_COMPONENTS)},
-    {'build-optimized': list(schedules.ALL_COMPONENTS)},
-    {'build-fuzzing': None},
-    # search the index for the given index namespaces, and replace this task if found
-    # the search occurs in order, with the first match winning
-    {'index-search': [text_type]},
-    {'push-interval-10': None},
-    {'push-interval-25': None},
-    # consult SETA and skip this task if it is low-value
-    {'seta': None},
-    # skip this task if none of the given file patterns match
-    {'skip-unless-changed': [text_type]},
-    # skip this task if unless the change files' SCHEDULES contains any of these components
-    {'skip-unless-schedules': list(schedules.ALL_COMPONENTS)},
-    # optimize strategy aliases for the test kind
-    {'test': list(schedules.ALL_COMPONENTS)},
-    {'test-inclusive': list(schedules.ALL_COMPONENTS)},
-    {'test-try': list(schedules.ALL_COMPONENTS)},
-)
-
 # shortcut for a string where task references are allowed
 taskref_or_string = voluptuous.Any(
     text_type,
-    {voluptuous.Required('task-reference'): text_type},
-    {voluptuous.Required('artifact-reference'): text_type},
+    {voluptuous.Required("task-reference"): text_type},
+    {voluptuous.Required("artifact-reference"): text_type},
 )

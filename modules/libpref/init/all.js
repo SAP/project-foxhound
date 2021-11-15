@@ -12,8 +12,8 @@
 // mobile/android/app/mobile.js.
 //
 // NOTE: Not all prefs should be defined in this (or any other) data file.
-// Static prefs, especially VarCache prefs, are defined in StaticPrefList.yaml.
-// Those prefs should *not* appear in this file.
+// Static prefs are defined in StaticPrefList.yaml. Those prefs should *not*
+// appear in this file.
 //
 // For the syntax used by this file, consult the comments at the top of
 // modules/libpref/parser/src/lib.rs.
@@ -186,7 +186,15 @@ pref("security.pki.distrust_ca_policy", 2);
 // 0: Disable CRLite entirely
 // 1: Enable and check revocations via CRLite, but only collect telemetry
 // 2: Enable and enforce revocations via CRLite
+#if defined(NIGHTLY_BUILD)
+pref("security.pki.crlite_mode", 2);
+#else
 pref("security.pki.crlite_mode", 1);
+#endif
+
+// Represents the expected certificate transparency log merge delay (including
+// the time to generate a CRLite filter). Currently 28 hours in seconds.
+pref("security.pki.crlite_ct_merge_delay_seconds", 100800);
 
 // Issuer we use to detect MitM proxies. Set to the issuer of the cert of the
 // Firefox update service. The string format is whatever NSS uses to print a DN.
@@ -218,7 +226,7 @@ pref("security.intermediate_preloading_healer.timer_interval_ms", 300000);
 pref("security.remote_settings.intermediates.bucket", "security-state");
 pref("security.remote_settings.intermediates.collection", "intermediates");
 pref("security.remote_settings.intermediates.checked", 0);
-pref("security.remote_settings.intermediates.downloads_per_poll", 100);
+pref("security.remote_settings.intermediates.downloads_per_poll", 5000);
 pref("security.remote_settings.intermediates.parallel_downloads", 8);
 pref("security.remote_settings.intermediates.signer", "onecrl.content-signature.mozilla.org");
 
@@ -364,14 +372,8 @@ pref("browser.chrome.image_icons.max_size", 1024);
 
 pref("browser.triple_click_selects_paragraph", true);
 
-// Print/Preview Shrink-To-Fit won't shrink below 20% for text-ish documents.
-pref("print.shrink-to-fit.scale-limit-percent", 20);
-
-// Whether we should display simplify page checkbox on print preview UI
-pref("print.use_simplify_page", false);
-
-// The tab modal print dialog is currently only for testing/experiments.
-pref("print.tab_modal.enabled", false);
+// Enable fillable forms in the PDF viewer.
+pref("pdfjs.renderInteractiveForms", true);
 
 // Disable support for MathML
 pref("mathml.disabled",    false);
@@ -435,10 +437,10 @@ pref("media.decoder-doctor.verbose", false);
 pref("media.decoder-doctor.new-issue-endpoint", "https://webcompat.com/issues/new");
 
 pref("media.videocontrols.picture-in-picture.enabled", false);
+pref("media.videocontrols.picture-in-picture.allow-multiple", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.always-show", false);
 pref("media.videocontrols.picture-in-picture.video-toggle.min-video-secs", 45);
-pref("media.videocontrols.picture-in-picture.video-toggle.mode", -1);
 pref("media.videocontrols.picture-in-picture.video-toggle.position", "right");
 pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
 
@@ -448,10 +450,11 @@ pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
   pref("media.navigator.video.use_remb", true);
   pref("media.navigator.video.use_transport_cc", true);
   pref("media.peerconnection.video.use_rtx", true);
-  pref("media.peerconnection.video.use_rtx.blocklist", "");
+  pref("media.peerconnection.video.use_rtx.blocklist", "doxy.me,*.doxy.me");
   pref("media.navigator.video.use_tmmbr", false);
   pref("media.navigator.audio.use_fec", true);
   pref("media.navigator.video.red_ulpfec_enabled", false);
+  pref("media.navigator.video.offer_rtcp_rsize", true);
 
   #ifdef NIGHTLY_BUILD
     pref("media.peerconnection.sdp.parser", "sipcc");
@@ -484,7 +487,7 @@ pref("media.videocontrols.picture-in-picture.video-toggle.has-used", false);
     pref("media.getusermedia.microphone.off_while_disabled.enabled", false);
   #else
     pref("media.getusermedia.camera.off_while_disabled.enabled", true);
-    pref("media.getusermedia.microphone.off_while_disabled.enabled", true);
+    pref("media.getusermedia.microphone.off_while_disabled.enabled", false);
   #endif
   pref("media.getusermedia.camera.off_while_disabled.delay_ms", 3000);
   pref("media.getusermedia.microphone.off_while_disabled.delay_ms", 3000);
@@ -604,6 +607,8 @@ pref("apz.overscroll.stretch_factor", "0.35");
 
 pref("apz.zoom-to-focused-input.enabled", true);
 
+pref("formhelper.autozoom.force-disable.test-only", false);
+
 #ifdef XP_MACOSX
   // Whether to run in native HiDPI mode on machines with "Retina"/HiDPI
   // display.
@@ -632,15 +637,6 @@ pref("gfx.downloadable_fonts.disable_cache", false);
 // Do we fire a notification about missing fonts, so the front-end can decide
 // whether to try and do something about it (e.g. download additional fonts)?
 pref("gfx.missing_fonts.notify", false);
-
-// prefs controlling the font (name/cmap) loader that runs shortly after startup
-#ifdef XP_WIN
-  pref("gfx.font_loader.delay", 120000);       // 2 minutes after startup
-  pref("gfx.font_loader.interval", 1000);      // every 1 second until complete
-#else
-  pref("gfx.font_loader.delay", 8000);         // 8 secs after startup
-  pref("gfx.font_loader.interval", 50);        // run every 50 ms
-#endif
 
 // whether to always search all font cmaps during system font fallback
 pref("gfx.font_rendering.fallback.always_use_cmaps", false);
@@ -691,11 +687,7 @@ pref("gfx.webrender.debug.gpu-time-queries", false);
 pref("gfx.webrender.debug.gpu-sample-queries", false);
 pref("gfx.webrender.debug.disable-batching", false);
 pref("gfx.webrender.debug.epochs", false);
-pref("gfx.webrender.debug.compact-profiler", false);
-pref("gfx.webrender.debug.smart-profiler", false);
 pref("gfx.webrender.debug.echo-driver-messages", false);
-pref("gfx.webrender.debug.new-frame-indicator", false);
-pref("gfx.webrender.debug.new-scene-indicator", false);
 pref("gfx.webrender.debug.show-overdraw", false);
 pref("gfx.webrender.debug.slow-frame-indicator", false);
 pref("gfx.webrender.debug.picture-caching", false);
@@ -704,7 +696,8 @@ pref("gfx.webrender.debug.primitives", false);
 pref("gfx.webrender.debug.small-screen", false);
 pref("gfx.webrender.debug.obscure-images", false);
 pref("gfx.webrender.debug.glyph-flashing", false);
-pref("gfx.webrender.debug.disable-raster-root-scale", false);
+pref("gfx.webrender.debug.capture-profiler", false);
+pref("gfx.webrender.debug.profiler-ui", "Default");
 
 
 pref("accessibility.warn_on_browsewithcaret", true);
@@ -862,6 +855,9 @@ pref("toolkit.dump.emit", false);
 // use. This is useful so that a developer can change it while working on
 // profiler.firefox.com, or in tests. This isn't exposed directly to the user.
 pref("devtools.performance.recording.ui-base-url", "https://profiler.firefox.com");
+// When gathering profiles from child processes, this is the longest time (in
+// seconds) allowed between two responses. 0 = Use internal default.
+pref("devtools.performance.recording.child.timeout_s", 0);
 // The popup is only enabled by default on Nightly, Dev Edition, and debug buildsd since
 // it's a developer focused item. It can still be enabled by going to profiler.firefox.com,
 // but by default it is off on Release and Beta. Note that this only adds it to the
@@ -910,6 +906,10 @@ pref("devtools.performance.recording.objdirs.remote", "[]");
 // The popup will display some introductory text the first time it is displayed.
 pref("devtools.performance.popup.intro-displayed", false);
 
+// Compatibility preferences
+// Stringified array of target browsers that users investigate.
+pref("devtools.inspector.compatibility.target-browsers", "");
+
 // view source
 pref("view_source.editor.path", "");
 // allows to add further arguments to the editor; use the %LINE% placeholder
@@ -930,6 +930,20 @@ pref("browser.fixup.alternate.prefix", "www.");
 pref("browser.fixup.alternate.suffix", ".com");
 pref("browser.fixup.fallback-to-https", true);
 
+// NOTE: On most platforms we save print settins to prefs with the name of the
+// printer in the pref name (Android being the notable exception, where prefs
+// are saved "globally" without a printer name in the pref name).  For those
+// platforms, the prefs below simply act as default values for when we
+// encounter a printer for the first time, but only a subset of prefs will be
+// used in this case.  See nsPrintSettingsService::InitPrintSettingsFromPrefs
+// for the restrictions on which prefs can act as defaults.
+
+// Print/Preview Shrink-To-Fit won't shrink below 20% for text-ish documents.
+pref("print.shrink-to-fit.scale-limit-percent", 20);
+
+// Whether we should display simplify page checkbox on print preview UI
+pref("print.use_simplify_page", false);
+
 // Print header customization
 // Use the following codes:
 // &T - Title
@@ -945,7 +959,14 @@ pref("print.print_headerright", "&U");
 pref("print.print_footerleft", "&PT");
 pref("print.print_footercenter", "");
 pref("print.print_footerright", "&D");
-pref("print.show_print_progress", true);
+
+// A list of comma separated key:value pairs, so:
+//
+//   key1:value1,key2:value2
+//
+// Which allows testing extra CUPS-related printer settings for monochrome
+// printing.
+pref("print.cups.monochrome.extra_settings", "");
 
 // xxxbsmedberg: more toolkit prefs
 
@@ -980,6 +1001,13 @@ pref("print.print_edge_bottom", 0);
   pref("print.print_via_parent", false);
 #endif
 
+// Should this just be checking for MOZ_WIDGET_GTK?
+#if defined(ANDROID) || defined(XP_UNIX) && !defined(XP_MACOSX)
+  pref("print.print_reversed", false);
+  // This is the default. Probably just remove this.
+  pref("print.print_in_color", true);
+#endif
+
 // Pref used by the spellchecker extension to control the
 // maximum number of misspelled words that will be underlined
 // in a document.
@@ -1001,16 +1029,6 @@ pref("editor.positioning.offset",            0);
 pref("dom.beforeunload_timeout_ms",         1000);
 pref("dom.disable_window_flip",             false);
 pref("dom.disable_window_move_resize",      false);
-
-pref("dom.disable_window_open_feature.titlebar",    false);
-pref("dom.disable_window_open_feature.close",       false);
-pref("dom.disable_window_open_feature.toolbar",     false);
-pref("dom.disable_window_open_feature.location",    false);
-pref("dom.disable_window_open_feature.personalbar", false);
-pref("dom.disable_window_open_feature.menubar",     false);
-pref("dom.disable_window_open_feature.resizable",   true);
-pref("dom.disable_window_open_feature.minimizable", false);
-pref("dom.disable_window_open_feature.status",      true);
 
 pref("dom.allow_scripts_to_close_windows",          false);
 
@@ -1071,11 +1089,10 @@ pref("privacy.restrict3rdpartystorage.url_decorations", "");
 pref("privacy.popups.maxReported", 100);
 
 // Purging first-party tracking cookies.
-#ifdef EARLY_BETA_OR_EARLIER
-  pref("privacy.purge_trackers.enabled", true);
+pref("privacy.purge_trackers.enabled", true);
+#ifdef NIGHTLY_BUILD
   pref("privacy.purge_trackers.logging.level", "Warn");
 #else
-  pref("privacy.purge_trackers.enabled", false);
   pref("privacy.purge_trackers.logging.level", "Error");
 #endif
 
@@ -1099,8 +1116,9 @@ pref("javascript.options.baselinejit",      true);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.baselinejit.threshold", 100);
 pref("javascript.options.ion",              true);
+pref("javascript.options.warp",             true);
 // Duplicated in JitOptions - ensure both match.
-pref("javascript.options.ion.threshold",    1000);
+pref("javascript.options.ion.threshold",    1500);
 pref("javascript.options.ion.full.threshold", 100000);
 // Duplicated in JitOptions - ensure both match.
 pref("javascript.options.ion.frequent_bailout_threshold", 10);
@@ -1108,20 +1126,14 @@ pref("javascript.options.asmjs",                  true);
 pref("javascript.options.wasm",                   true);
 pref("javascript.options.wasm_trustedprincipals", true);
 pref("javascript.options.wasm_verbose",           false);
-pref("javascript.options.wasm_ionjit",            true);
 pref("javascript.options.wasm_baselinejit",       true);
-pref("javascript.options.wasm_reftypes",          true);
-#ifdef ENABLE_WASM_CRANELIFT
-  pref("javascript.options.wasm_cranelift",       false);
-#endif
+
 #ifdef ENABLE_WASM_REFTYPES
+  pref("javascript.options.wasm_reftypes",        true);
   pref("javascript.options.wasm_gc",              false);
 #endif
 #ifdef ENABLE_WASM_MULTI_VALUE
   pref("javascript.options.wasm_multi_value",     true);
-#endif
-#ifdef ENABLE_WASM_SIMD
-  pref("javascript.options.wasm_simd",            true);
 #endif
 pref("javascript.options.native_regexp",    true);
 pref("javascript.options.parallel_parsing", true);
@@ -1204,6 +1216,12 @@ pref("javascript.options.mem.gc_min_empty_chunk_count", 1);
 
 // JSGC_MAX_EMPTY_CHUNK_COUNT
 pref("javascript.options.mem.gc_max_empty_chunk_count", 30);
+
+// JSGC_HELPER_THREAD_RATIO
+pref("javascript.options.mem.gc_helper_thread_ratio", 50);
+
+// JSGC_MAX_HELPER_THREADS
+pref("javascript.options.mem.gc_max_helper_threads", 8);
 
 pref("javascript.options.showInConsole", false);
 
@@ -1457,10 +1475,16 @@ pref("network.http.spdy.enable-hpack-dump", false);
 pref("network.http.http3.enabled", false);
 
 // Http3 qpack table size.
-pref("network.http.http3.default-qpack-table-size", 0);
+pref("network.http.http3.default-qpack-table-size", 65536); // 64k
 // Maximal number of streams that can be blocked on waiting for qpack
 // instructions.
-pref("network.http.http3.default-max-stream-blocked", 10);
+pref("network.http.http3.default-max-stream-blocked", 20);
+
+
+// This is only for testing!
+// This adds alt-svc mapping and it has a form of <host-name>;<alt-svc-header>
+// Example: example1.com;h3-29=":443",example2.com;h3-29=":443"
+pref("network.http.http3.alt-svc-mapping-for-testing", "");
 
 // alt-svc allows separation of transport routing from
 // the origin host without using a proxy.
@@ -1790,9 +1814,6 @@ pref("network.dns.offline-localhost", true);
 // A negative value will keep the thread alive forever.
 pref("network.dns.resolver-thread-extra-idle-time-seconds", 60);
 
-// Whether to disable TRR when parental control is enabled.
-pref("network.dns.skipTRR-when-parental-control-enabled", true);
-
 // Idle timeout for ftp control connections - 5 minute default
 pref("network.ftp.idleConnectionTimeout", 300);
 
@@ -1931,8 +1952,6 @@ pref("network.proxy.socks_port",            0);
 pref("network.proxy.socks_version",         5);
 pref("network.proxy.proxy_over_tls",        true);
 pref("network.proxy.no_proxies_on",         "");
-// Set true to allow resolving proxy for localhost
-pref("network.proxy.allow_hijacking_localhost", false);
 pref("network.proxy.failover_timeout",      1800); // 30 minutes
 pref("network.online",                      true); //online/offline
 
@@ -2225,9 +2244,6 @@ pref("security.notification_enable_delay", 500);
   pref("security.disallow_non_local_systemprincipal_in_tests", false);
 #endif
 
-// Sub-resource integrity
-pref("security.sri.enable", true);
-
 // OCSP must-staple
 pref("security.ssl.enable_ocsp_must_staple", true);
 
@@ -2385,22 +2401,6 @@ pref("mousewheel.with_win.delta_multiplier_x", 100);
 pref("mousewheel.with_win.delta_multiplier_y", 100);
 pref("mousewheel.with_win.delta_multiplier_z", 100);
 
-// These define the smooth scroll behavior (min ms, max ms) for different triggers
-// Some triggers:
-// mouseWheel: Discrete mouse wheel events, Synaptics touchpads on windows (generate wheel events)
-// Lines:  Up/Down/Left/Right KB arrows
-// Pages:  Page up/down, Space
-// Scrollbars: Clicking scrollbars arrows, clicking scrollbars tracks
-// Note: Currently OS X trackpad and magic mouse don't use our smooth scrolling
-// Note: These are relevant only when "general.smoothScroll" is enabled
-pref("general.smoothScroll.scrollbars.durationMinMS", 150);
-pref("general.smoothScroll.scrollbars.durationMaxMS", 150);
-// Enable disable smooth scrolling for different triggers (when "general.smoothScroll" is enabled)
-pref("general.smoothScroll.pixels", true);
-pref("general.smoothScroll.lines", true);
-pref("general.smoothScroll.scrollbars", true);
-pref("general.smoothScroll.other", true);
-
 // We can show it anytime from menus
 pref("profile.manage_only_at_launch", false);
 
@@ -2460,9 +2460,6 @@ pref("editor.resizing.preserve_ratio",       true);
 pref("editor.positioning.offset",            0);
 
 pref("dom.use_watchdog", true);
-pref("dom.max_chrome_script_run_time", 0);
-pref("dom.max_script_run_time", 10);
-pref("dom.max_ext_content_script_run_time", 5);
 
 // Stop all scripts in a compartment when the "stop script" dialog is used.
 pref("dom.global_stop_script", true);
@@ -2567,9 +2564,8 @@ pref("dom.ipc.processCount.privilegedabout", 1);
 // to avoid multiple of these content processes
 pref("dom.ipc.processCount.privilegedmozilla", 1);
 
-// Isolated content processes are always one-per-origin.
-// Changing this pref will break fission completely, so it is locked.
-pref("dom.ipc.processCount.webIsolated", 1, locked);
+// Maximum number of isolated content processes per-origin.
+pref("dom.ipc.processCount.webIsolated", 1);
 
 // Keep a single privileged about process alive for performance reasons.
 // e.g. we do not want to throw content processes out every time we navigate
@@ -2592,7 +2588,7 @@ pref("browser.tabs.remote.autostart", false);
 // any session can contain a mix of Fission and non-Fission windows. Instead,
 // callers should check whether the relevant nsILoadContext has the
 // `useRemoteSubframes` flag set.
-#ifdef RELEASE_OR_BETA
+#if defined(RELEASE_OR_BETA)
   pref("fission.autostart", false, locked);
 #else
   pref("fission.autostart", false);
@@ -2992,77 +2988,75 @@ pref("font.size.monospace.x-math", 13);
   //   - Microsoft Old Hangul
   pref("intl.ime.hack.set_input_scope_of_url_bar_to_default", true);
 
-  #ifdef NS_ENABLE_TSF
-    // Enable/Disable TSF support.
-    pref("intl.tsf.enable", true);
+  // Enable/Disable TSF support.
+  pref("intl.tsf.enable", true);
 
-    // Support IMEs implemented with IMM in TSF mode.
-    pref("intl.tsf.support_imm", true);
+  // Support IMEs implemented with IMM in TSF mode.
+  pref("intl.tsf.support_imm", true);
 
-    // This is referred only when both "intl.tsf.enable" and
-    // "intl.tsf.support_imm" are true.  When this is true, default IMC is
-    // associated with focused window only when active keyboard layout is a
-    // legacy IMM-IME.
-    pref("intl.tsf.associate_imc_only_when_imm_ime_is_active", false);
+  // This is referred only when both "intl.tsf.enable" and
+  // "intl.tsf.support_imm" are true.  When this is true, default IMC is
+  // associated with focused window only when active keyboard layout is a
+  // legacy IMM-IME.
+  pref("intl.tsf.associate_imc_only_when_imm_ime_is_active", false);
 
-    // Enables/Disables hack for specific TIP.
+  // Enables/Disables hack for specific TIP.
 
-    // On Windows 10 Build 17643 (an Insider Preview build of RS5), Microsoft
-    // have fixed the caller of ITextACPStore::GetTextExt() to return
-    // TS_E_NOLAYOUT to TIP as-is, rather than converting to E_FAIL.
-    // Therefore, if TIP supports asynchronous layout computation perfectly, we
-    // can return TS_E_NOLAYOUT and TIP waits next OnLayoutChange()
-    // notification.  However, some TIPs still have some bugs of asynchronous
-    // layout support.  We keep hacking the result of GetTextExt() like running
-    // on Windows 10, however, there could be unknown TIP bugs if we stop
-    // hacking the result.  So, user can stop checking build ID to make Gecko
-    // hack the result forcibly.
-    #ifdef EARLY_BETA_OR_EARLIER
-      pref("intl.tsf.hack.allow_to_stop_hacking_on_build_17643_or_later", true);
-    #else
-      pref("intl.tsf.hack.allow_to_stop_hacking_on_build_17643_or_later", false);
-    #endif
+  // On Windows 10 Build 17643 (an Insider Preview build of RS5), Microsoft
+  // have fixed the caller of ITextACPStore::GetTextExt() to return
+  // TS_E_NOLAYOUT to TIP as-is, rather than converting to E_FAIL.
+  // Therefore, if TIP supports asynchronous layout computation perfectly, we
+  // can return TS_E_NOLAYOUT and TIP waits next OnLayoutChange()
+  // notification.  However, some TIPs still have some bugs of asynchronous
+  // layout support.  We keep hacking the result of GetTextExt() like running
+  // on Windows 10, however, there could be unknown TIP bugs if we stop
+  // hacking the result.  So, user can stop checking build ID to make Gecko
+  // hack the result forcibly.
+  #ifdef EARLY_BETA_OR_EARLIER
+    pref("intl.tsf.hack.allow_to_stop_hacking_on_build_17643_or_later", true);
+  #else
+    pref("intl.tsf.hack.allow_to_stop_hacking_on_build_17643_or_later", false);
+  #endif
 
-    // Whether creates native caret for ATOK or not.
-    pref("intl.tsf.hack.atok.create_native_caret", true);
-    // Whether use available composition string rect for result of
-    // ITextStoreACP::GetTextExt() even if the specified range is same as the
-    // range of composition string but some character rects of them are not
-    // available.  Note that this is ignored if active ATOK is or older than
-    // 2016 and create_native_caret is true.
-    pref("intl.tsf.hack.atok.do_not_return_no_layout_error_of_composition_string", true);
-    // Whether use available composition string rect for result of
-    // ITextStoreACP::GetTextExt() even if the specified range is same as or is
-    // in the range of composition string but some character rects of them are
-    // not available.
-    pref("intl.tsf.hack.japanist10.do_not_return_no_layout_error_of_composition_string", true);
-    // Whether use composition start position for the result of
-    // ITfContextView::GetTextExt() if the specified range is larger than
-    // composition start offset.
-    // For Free ChangJie 2010
-    pref("intl.tsf.hack.free_chang_jie.do_not_return_no_layout_error", true);
-    // For Microsoft Pinyin and Microsoft Wubi
-    pref("intl.tsf.hack.ms_simplified_chinese.do_not_return_no_layout_error", true);
-    // For Microsoft ChangJie and Microsoft Quick
-    pref("intl.tsf.hack.ms_traditional_chinese.do_not_return_no_layout_error", true);
-    // Whether use previous character rect for the result of
-    // ITfContextView::GetTextExt() if the specified range is the first
-    // character of selected clause of composition string.
-    pref("intl.tsf.hack.ms_japanese_ime.do_not_return_no_layout_error_at_first_char", true);
-    // Whether use previous character rect for the result of
-    // ITfContextView::GetTextExt() if the specified range is the caret of
-    // composition string.
-    pref("intl.tsf.hack.ms_japanese_ime.do_not_return_no_layout_error_at_caret", true);
-    // Whether hack ITextStoreACP::QueryInsert() or not.  The method should
-    // return new selection after specified length text is inserted at
-    // specified range. However, Microsoft's some Chinese TIPs expect that the
-    // result is same as specified range.  If following prefs are true,
-    // ITextStoreACP::QueryInsert() returns specified range only when one of
-    // the TIPs is active. For Microsoft Pinyin and Microsoft Wubi.
-    pref("intl.tsf.hack.ms_simplified_chinese.query_insert_result", true);
-    // For Microsoft ChangJie and Microsoft Quick
-    pref("intl.tsf.hack.ms_traditional_chinese.query_insert_result", true);
-  #endif // NS_ENABLE_TSF
+  // Whether creates native caret for ATOK or not.
+  pref("intl.tsf.hack.atok.create_native_caret", true);
+  // Whether use available composition string rect for result of
+  // ITextStoreACP::GetTextExt() even if the specified range is same as the
+  // range of composition string but some character rects of them are not
+  // available.  Note that this is ignored if active ATOK is or older than
+  // 2016 and create_native_caret is true.
+  pref("intl.tsf.hack.atok.do_not_return_no_layout_error_of_composition_string", true);
+  // Whether use available composition string rect for result of
+  // ITextStoreACP::GetTextExt() even if the specified range is same as or is
+  // in the range of composition string but some character rects of them are
+  // not available.
+  pref("intl.tsf.hack.japanist10.do_not_return_no_layout_error_of_composition_string", true);
+  // Whether use composition start position for the result of
+  // ITfContextView::GetTextExt() if the specified range is larger than
+  // composition start offset.
+  // For Free ChangJie 2010
+  pref("intl.tsf.hack.free_chang_jie.do_not_return_no_layout_error", true);
+  // For Microsoft Pinyin and Microsoft Wubi
+  pref("intl.tsf.hack.ms_simplified_chinese.do_not_return_no_layout_error", true);
+  // For Microsoft ChangJie and Microsoft Quick
+  pref("intl.tsf.hack.ms_traditional_chinese.do_not_return_no_layout_error", true);
+  // Whether use previous character rect for the result of
+  // ITfContextView::GetTextExt() if the specified range is the first
+  // character of selected clause of composition string.
+  pref("intl.tsf.hack.ms_japanese_ime.do_not_return_no_layout_error_at_first_char", true);
+  // Whether use previous character rect for the result of
+  // ITfContextView::GetTextExt() if the specified range is the caret of
+  // composition string.
+  pref("intl.tsf.hack.ms_japanese_ime.do_not_return_no_layout_error_at_caret", true);
+  // Whether hack ITextStoreACP::QueryInsert() or not.  The method should
+  // return new selection after specified length text is inserted at
+  // specified range. However, Microsoft's some Chinese TIPs expect that the
+  // result is same as specified range.  If following prefs are true,
+  // ITextStoreACP::QueryInsert() returns specified range only when one of
+  // the TIPs is active. For Microsoft Pinyin and Microsoft Wubi.
+  pref("intl.tsf.hack.ms_simplified_chinese.query_insert_result", true);
+  // For Microsoft ChangJie and Microsoft Quick
+  pref("intl.tsf.hack.ms_traditional_chinese.query_insert_result", true);
 
   // If composition_font is set, Gecko sets the font to IME.  IME may use
   // the fonts on their window like candidate window.  If they are empty,
@@ -3373,12 +3367,6 @@ pref("font.size.monospace.x-math", 13);
   pref("helpers.global_mailcap_file", "/etc/mailcap");
   pref("helpers.private_mime_types_file", "~/.mime.types");
   pref("helpers.private_mailcap_file", "~/.mailcap");
-  pref("print.printer_list", ""); // list of printers, separated by spaces
-  pref("print.print_reversed", false);
-  pref("print.print_in_color", true);
-
-  /* PostScript print module prefs */
-  // pref("print.postscript.enabled",      true);
 
   // Setting default_level_parent to true makes the default level for popup
   // windows "top" instead of "parent".  On GTK2 platform, this is implemented
@@ -3414,9 +3402,6 @@ pref("font.size.monospace.x-math", 13);
   pref("helpers.global_mailcap_file", "/etc/mailcap");
   pref("helpers.private_mime_types_file", "~/.mime.types");
   pref("helpers.private_mailcap_file", "~/.mailcap");
-  pref("print.printer_list", ""); // list of printers, separated by spaces
-  pref("print.print_reversed", false);
-  pref("print.print_in_color", true);
 
   // font names
 
@@ -3571,9 +3556,6 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.monospace.zh-TW", "monospace");
   pref("font.name-list.cursive.zh-TW", "cursive");
 
-  /* PostScript print module prefs */
-  // pref("print.postscript.enabled",      true);
-
   // On GTK2 platform, we should use topmost window level for the default window
   // level of <panel> element of XUL. GTK2 has only two window types. One is
   // normal top level window, other is popup window. The popup window is always
@@ -3639,12 +3621,12 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.monospace.he", "Droid Sans Mono");
 
   pref("font.name-list.serif.ja", "Charis SIL Compact, Noto Serif CJK JP, Noto Serif, Droid Serif");
-  pref("font.name-list.sans-serif.ja", "Roboto, Google Sans, Droid Sans, MotoyaLMaru, MotoyaLCedar, Noto Sans JP, Noto Sans CJK JP, Droid Sans Japanese");
-  pref("font.name-list.monospace.ja", "MotoyaLMaru, MotoyaLCedar, Noto Sans Mono CJK JP, Droid Sans Mono");
+  pref("font.name-list.sans-serif.ja", "Roboto, Google Sans, Droid Sans, MotoyaLMaru, MotoyaLCedar, Noto Sans JP, Noto Sans CJK JP, SEC CJK JP, Droid Sans Japanese");
+  pref("font.name-list.monospace.ja", "MotoyaLMaru, MotoyaLCedar, Noto Sans Mono CJK JP, SEC Mono CJK JP, Droid Sans Mono");
 
   pref("font.name-list.serif.ko", "Charis SIL Compact, Noto Serif CJK KR, Noto Serif, Droid Serif, HYSerif");
-  pref("font.name-list.sans-serif.ko", "Roboto, Google Sans, SmartGothic, NanumGothic, Noto Sans KR, Noto Sans CJK KR, DroidSansFallback, Droid Sans Fallback");
-  pref("font.name-list.monospace.ko", "Droid Sans Mono, Noto Sans Mono CJK KR");
+  pref("font.name-list.sans-serif.ko", "Roboto, Google Sans, SmartGothic, NanumGothic, Noto Sans KR, Noto Sans CJK KR, SEC CJK KR, DroidSansFallback, Droid Sans Fallback");
+  pref("font.name-list.monospace.ko", "Droid Sans Mono, Noto Sans Mono CJK KR, SEC Mono CJK KR");
 
   pref("font.name-list.serif.th", "Charis SIL Compact, Noto Serif, Noto Serif Thai, Droid Serif");
   pref("font.name-list.sans-serif.th", "Roboto, Google Sans, Noto Sans Thai, Droid Sans Thai, Droid Sans");
@@ -3707,16 +3689,16 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.monospace.x-western", "Droid Sans Mono");
 
   pref("font.name-list.serif.zh-CN", "Charis SIL Compact, Noto Serif CJK SC, Noto Serif, Droid Serif, Droid Sans Fallback");
-  pref("font.name-list.sans-serif.zh-CN", "Roboto, Google Sans, Droid Sans, Noto Sans SC, Noto Sans CJK SC, Droid Sans Fallback");
-  pref("font.name-list.monospace.zh-CN", "Droid Sans Mono, Noto Sans Mono CJK SC, Droid Sans Fallback");
+  pref("font.name-list.sans-serif.zh-CN", "Roboto, Google Sans, Droid Sans, Noto Sans SC, Noto Sans CJK SC, SEC CJK SC, Droid Sans Fallback");
+  pref("font.name-list.monospace.zh-CN", "Droid Sans Mono, Noto Sans Mono CJK SC, SEC Mono CJK SC, Droid Sans Fallback");
 
   pref("font.name-list.serif.zh-HK", "Charis SIL Compact, Noto Serif CJK TC, Noto Serif, Droid Serif, Droid Sans Fallback");
-  pref("font.name-list.sans-serif.zh-HK", "Roboto, Google Sans, Droid Sans, Noto Sans TC, Noto Sans SC, Noto Sans CJK TC, Droid Sans Fallback");
-  pref("font.name-list.monospace.zh-HK", "Droid Sans Mono, Noto Sans Mono CJK TC, Droid Sans Fallback");
+  pref("font.name-list.sans-serif.zh-HK", "Roboto, Google Sans, Droid Sans, Noto Sans TC, Noto Sans SC, Noto Sans CJK TC, SEC CJK TC, Droid Sans Fallback");
+  pref("font.name-list.monospace.zh-HK", "Droid Sans Mono, Noto Sans Mono CJK TC, SEC Mono CJK TC, Droid Sans Fallback");
 
   pref("font.name-list.serif.zh-TW", "Charis SIL Compact, Noto Serif CJK TC, Noto Serif, Droid Serif, Droid Sans Fallback");
-  pref("font.name-list.sans-serif.zh-TW", "Roboto, Google Sans, Droid Sans, Noto Sans TC, Noto Sans SC, Noto Sans CJK TC, Droid Sans Fallback");
-  pref("font.name-list.monospace.zh-TW", "Droid Sans Mono, Noto Sans Mono CJK TC, Droid Sans Fallback");
+  pref("font.name-list.sans-serif.zh-TW", "Roboto, Google Sans, Droid Sans, Noto Sans TC, Noto Sans SC, Noto Sans CJK TC, SEC CJK TC, Droid Sans Fallback");
+  pref("font.name-list.monospace.zh-TW", "Droid Sans Mono, Noto Sans Mono CJK TC, SEC Mono CJK TC, Droid Sans Fallback");
 
   pref("font.name-list.serif.x-math", "Latin Modern Math, STIX Two Math, XITS Math, Cambria Math, Libertinus Math, DejaVu Math TeX Gyre, TeX Gyre Bonum Math, TeX Gyre Pagella Math, TeX Gyre Schola, TeX Gyre Termes Math, STIX Math, Asana Math, STIXGeneral, DejaVu Serif, DejaVu Sans, Charis SIL Compact");
   pref("font.name-list.sans-serif.x-math", "Roboto, Google Sans");
@@ -3750,11 +3732,7 @@ pref("signon.autofillForms",                true);
 pref("signon.autofillForms.autocompleteOff", true);
 pref("signon.autofillForms.http",           false);
 pref("signon.autologin.proxy",              false);
-#ifdef NIGHTLY_BUILD
-  pref("signon.capture.inputChanges.enabled", true);
-#else
-  pref("signon.capture.inputChanges.enabled", false);
-#endif
+pref("signon.capture.inputChanges.enabled", true);
 pref("signon.formlessCapture.enabled",      true);
 pref("signon.generation.available",               true);
 pref("signon.backup.enabled",               true);
@@ -3765,7 +3743,9 @@ pref("signon.privateBrowsingCapture.enabled",     true);
 pref("signon.storeWhenAutocompleteOff",     true);
 pref("signon.userInputRequiredToCapture.enabled", true);
 pref("signon.debug",                        false);
-pref("signon.recipes.path",                 "chrome://passwordmgr/content/recipes.json");
+pref("signon.recipes.path", "resource://app/defaults/settings/main/password-recipes.json");
+pref("signon.recipes.remoteRecipesEnabled", true);
+
 pref("signon.schemeUpgrades",                     true);
 pref("signon.includeOtherSubdomainsInLookup",     true);
 // This temporarily prevents the master password to reprompt for autocomplete.
@@ -3803,7 +3783,6 @@ pref("image.http.accept", "");
 // Allows image locking of decoded image data in content processes.
 pref("image.mem.allow_locking_in_content_processes", true);
 
-pref("webgl.enable-debug-renderer-info", true);
 pref("webgl.renderer-string-override", "");
 pref("webgl.vendor-string-override", "");
 
@@ -3856,7 +3835,7 @@ pref("network.psl.onUpdate_notify", false);
 #endif
 #ifdef MOZ_WAYLAND
   pref("widget.wayland_vsync.enabled", false);
-  pref("widget.wayland.use-opaque-region", true);
+  pref("widget.wayland.use-opaque-region", false);
   pref("widget.use-xdg-desktop-portal", false);
 #endif
 
@@ -4078,8 +4057,8 @@ pref("network.captive-portal-service.backoffFactor", "5.0");
 pref("network.captive-portal-service.enabled", false);
 
 pref("network.connectivity-service.enabled", true);
-pref("network.connectivity-service.DNSv4.domain", "mozilla.org");
-pref("network.connectivity-service.DNSv6.domain", "mozilla.org");
+pref("network.connectivity-service.DNSv4.domain", "example.org");
+pref("network.connectivity-service.DNSv6.domain", "example.org");
 pref("network.connectivity-service.IPv4.url", "http://detectportal.firefox.com/success.txt?ipv4");
 pref("network.connectivity-service.IPv6.url", "http://detectportal.firefox.com/success.txt?ipv6");
 
@@ -4094,17 +4073,6 @@ pref("network.trr.resolvers", "[{ \"name\": \"Cloudflare\", \"url\": \"https://m
 // credentials to pass to DOH end-point
 pref("network.trr.credentials", "");
 pref("network.trr.custom_uri", "");
-// Wait for captive portal confirmation before enabling TRR
-#if defined(ANDROID)
-  // On Android, the captive portal is handled by the OS itself
-  pref("network.trr.wait-for-portal", false);
-#else
-  pref("network.trr.wait-for-portal", false);
-#endif
-// Allow RFC1918 address in responses?
-pref("network.trr.allow-rfc1918", false);
-// Use GET (rather than POST)
-pref("network.trr.useGET", false);
 // Before TRR is widely used the NS record for this host is fetched
 // from the DOH end point to ensure proper configuration
 pref("network.trr.confirmationNS", "example.com");
@@ -4114,24 +4082,9 @@ pref("network.trr.bootstrapAddress", "");
 // TRR blacklist entry expire time (in seconds). Default is one minute.
 // Meant to survive basically a page load.
 pref("network.trr.blacklist-duration", 60);
-// Allow AAAA entries to be used "early", before the A results are in
-pref("network.trr.early-AAAA", false);
-// When true, it only sends AAAA when the system has IPv6 connectivity
-pref("network.trr.skip-AAAA-when-not-supported", true);
-// When true, the DNS request will wait for both A and AAAA responses
-// (if both have been requested) before notifying the listeners.
-// When true, it effectively cancels `network.trr.early-AAAA`
-pref("network.trr.wait-for-A-and-AAAA", true);
-// Explicitly disable ECS (EDNS Client Subnet, RFC 7871)
-pref("network.trr.disable-ECS", true);
-// After this many failed TRR requests in a row, consider TRR borked
-pref("network.trr.max-fails", 5);
 // Comma separated list of domains that we should not use TRR for
 pref("network.trr.excluded-domains", "");
 pref("network.trr.builtin-excluded-domains", "localhost,local");
-// When true, the DNS+TRR cache will be cleared when a relevant TRR pref
-// changes. (uri, bootstrapAddress, excluded-domains)
-pref("network.trr.clear-cache-on-pref-change", true);
 
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/success.txt");
 pref("captivedetect.canonicalContent", "success\n");
@@ -4215,6 +4168,9 @@ pref("browser.safebrowsing.downloads.remote.block_dangerous_host",       true);
 pref("browser.safebrowsing.downloads.remote.block_potentially_unwanted", true);
 pref("browser.safebrowsing.downloads.remote.block_uncommon",             true);
 
+// Android SafeBrowsing's configuration is in ContentBlocking.java, keep in sync.
+#ifndef MOZ_WIDGET_ANDROID
+
 // Google Safe Browsing provider (legacy)
 pref("browser.safebrowsing.provider.google.pver", "2.2");
 pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-downloadwhite-digest256,goog-phish-shavar,googpub-phish-shavar,goog-malware-shavar,goog-unwanted-shavar");
@@ -4238,6 +4194,8 @@ pref("browser.safebrowsing.provider.google4.advisoryURL", "https://developers.go
 pref("browser.safebrowsing.provider.google4.advisoryName", "Google Safe Browsing");
 pref("browser.safebrowsing.provider.google4.dataSharingURL", "https://safebrowsing.googleapis.com/v4/threatHits?$ct=application/x-protobuf&key=%GOOGLE_SAFEBROWSING_API_KEY%&$httpMethod=POST");
 pref("browser.safebrowsing.provider.google4.dataSharing.enabled", false);
+
+#endif // ifndef MOZ_WIDGET_ANDROID
 
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?url=");
 
@@ -4295,8 +4253,6 @@ pref("browser.search.update.log", false);
 pref("browser.search.update.interval", 21600);
 pref("browser.search.suggest.enabled", true);
 pref("browser.search.suggest.enabled.private", false);
-pref("browser.search.geoSpecificDefaults", false);
-pref("browser.search.modernConfig", false);
 pref("browser.search.separatePrivateDefault", false);
 pref("browser.search.separatePrivateDefault.ui.enabled", false);
 
@@ -4457,6 +4413,10 @@ pref("browser.sanitizer.loglevel", "Warn");
 // To disable blocking of auth prompts, set the limit to -1.
 pref("prompts.authentication_dialog_abuse_limit", 2);
 
+// The prompt type to use for http auth prompts
+// content: 1, tab: 2, window: 3
+pref("prompts.modalType.httpAuth", 2);
+
 // Payment Request API preferences
 pref("dom.payments.loglevel", "Warn");
 pref("dom.payments.defaults.saveCreditCard", false);
@@ -4481,6 +4441,11 @@ pref("dom.clients.openwindow_favors_same_process", true);
 #else
   pref("toolkit.aboutPerformance.showInternals", true);
 #endif
+
+// If `true`, about:processes shows in-process subframes.
+pref("toolkit.aboutProcesses.showAllSubframes", false);
+// If `true`, about:processes shows thread information.
+pref("toolkit.aboutProcesses.showThreads", false);
 
 // When a crash happens, whether to include heap regions of the crash context
 // in the minidump. Enabled by default on nightly and aurora.
@@ -4545,7 +4510,6 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   pref("services.sync.engine.addons", true);
   pref("services.sync.engine.addresses", false);
   pref("services.sync.engine.bookmarks", true);
-  pref("services.sync.engine.bookmarks.buffer", true);
   pref("services.sync.engine.creditcards", false);
   pref("services.sync.engine.history", true);
   pref("services.sync.engine.passwords", true);
@@ -4596,12 +4560,6 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
     // not release candidates or Release.
     pref("services.sync.engine.bookmarks.validation.enabled", true);
     pref("services.sync.engine.passwords.validation.enabled", true);
-  #endif
-
-  #if defined(NIGHTLY_BUILD)
-    // Enable repair of bookmarks on Nightly only - requires validation also be
-    // enabled.
-    pref("services.sync.engine.bookmarks.repair.enabled", true);
   #endif
 
   // We consider validation this frequently. After considering validation, even
@@ -4787,3 +4745,8 @@ pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false
 
 // Whether to start the private browsing mode at application startup
 pref("browser.privatebrowsing.autostart", false);
+
+// Whether sites require the open-protocol-handler permission to open a
+//preferred external application for a protocol. If a site doesn't have
+// permission we will show a prompt.
+pref("security.external_protocol_requires_permission", true);

@@ -7,24 +7,79 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ContentMediaController.h"
 #include "mozilla/dom/MediaSession.h"
+#include "mozilla/dom/MediaControlUtils.h"
+#include "mozilla/dom/WindowContext.h"
 #include "mozilla/EnumeratedArrayCycleCollection.h"
 
-namespace mozilla {
-namespace dom {
+// avoid redefined macro in unified build
+#undef LOG
+#define LOG(msg, ...)                        \
+  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
+          ("MediaSession=%p, " msg, this, ##__VA_ARGS__))
 
-// Only needed for refcounted objects.
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(MediaSession, mParent, mMediaMetadata,
-                                      mActionHandlers)
+namespace mozilla::dom {
+
+// We don't use NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE because we need to
+// unregister MediaSession from document's activity listeners.
+NS_IMPL_CYCLE_COLLECTION_CLASS(MediaSession)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaSession)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaMetadata)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mActionHandlers)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDoc)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(MediaSession)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(MediaSession)
+  tmp->Shutdown();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mMediaMetadata)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mActionHandlers)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDoc)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(MediaSession)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(MediaSession)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(MediaSession)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY(nsIDocumentActivity)
 NS_INTERFACE_MAP_END
 
-MediaSession::MediaSession(nsPIDOMWindowInner* aParent) : mParent(aParent) {
+MediaSession::MediaSession(nsPIDOMWindowInner* aParent)
+    : mParent(aParent), mDoc(mParent->GetExtantDoc()) {
   MOZ_ASSERT(mParent);
-  NotifyMediaSessionStatus(SessionStatus::eCreated);
+  MOZ_ASSERT(mDoc);
+  mDoc->RegisterActivityObserver(this);
+  if (mDoc->IsCurrentActiveDocument()) {
+    SetMediaSessionDocStatus(SessionDocStatus::eActive);
+  }
+}
+
+void MediaSession::Shutdown() {
+  if (mDoc) {
+    mDoc->UnregisterActivityObserver(this);
+  }
+  if (mParent) {
+    SetMediaSessionDocStatus(SessionDocStatus::eInactive);
+  }
+}
+
+void MediaSession::NotifyOwnerDocumentActivityChanged() {
+  const bool isDocActive = mDoc->IsCurrentActiveDocument();
+  LOG("Document activity changed, isActive=%d", isDocActive);
+  if (isDocActive) {
+    SetMediaSessionDocStatus(SessionDocStatus::eActive);
+  } else {
+    SetMediaSessionDocStatus(SessionDocStatus::eInactive);
+  }
+}
+
+void MediaSession::SetMediaSessionDocStatus(SessionDocStatus aState) {
+  if (mSessionDocState == aState) {
+    return;
+  }
+  mSessionDocState = aState;
+  NotifyMediaSessionDocStatus(mSessionDocState);
 }
 
 nsPIDOMWindowInner* MediaSession::GetParentObject() const { return mParent; }
@@ -37,12 +92,14 @@ JSObject* MediaSession::WrapObject(JSContext* aCx,
 MediaMetadata* MediaSession::GetMetadata() const { return mMediaMetadata; }
 
 void MediaSession::SetMetadata(MediaMetadata* aMetadata) {
+  MOZ_ASSERT(mSessionDocState == SessionDocStatus::eActive);
   mMediaMetadata = aMetadata;
   NotifyMetadataUpdated();
 }
 
 void MediaSession::SetPlaybackState(
     const MediaSessionPlaybackState& aPlaybackState) {
+  MOZ_ASSERT(mSessionDocState == SessionDocStatus::eActive);
   if (mDeclaredPlaybackState == aPlaybackState) {
     return;
   }
@@ -62,6 +119,7 @@ MediaSessionPlaybackState MediaSession::PlaybackState() const {
 
 void MediaSession::SetActionHandler(MediaSessionAction aAction,
                                     MediaSessionActionHandler* aHandler) {
+  MOZ_ASSERT(mSessionDocState == SessionDocStatus::eActive);
   MOZ_ASSERT(size_t(aAction) < ArrayLength(mActionHandlers));
   // If the media session changes its supported action, then we would propagate
   // this information to the chrome process in order to run the media session
@@ -84,6 +142,7 @@ MediaSessionActionHandler* MediaSession::GetActionHandler(
 
 void MediaSession::SetPositionState(const MediaPositionState& aState,
                                     ErrorResult& aRv) {
+  MOZ_ASSERT(mSessionDocState == SessionDocStatus::eActive);
   // https://w3c.github.io/mediasession/#dom-mediasession-setpositionstate
   // If the state is an empty dictionary then clear the position state.
   if (!aState.IsAnyMemberPresent()) {
@@ -166,11 +225,23 @@ bool MediaSession::IsSupportedAction(MediaSessionAction aAction) const {
   return mActionHandlers[aAction] != nullptr;
 }
 
-void MediaSession::Shutdown() {
-  NotifyMediaSessionStatus(SessionStatus::eDestroyed);
+bool MediaSession::IsActive() const {
+  RefPtr<BrowsingContext> currentBC = GetParentObject()->GetBrowsingContext();
+  MOZ_ASSERT(currentBC);
+  RefPtr<WindowContext> wc = currentBC->GetTopWindowContext();
+  if (!wc) {
+    return false;
+  }
+  Maybe<uint64_t> activeSessionContextId = wc->GetActiveMediaSessionContextId();
+  if (!activeSessionContextId) {
+    return false;
+  }
+  LOG("session context Id=%" PRIu64 ", active session context Id=%" PRIu64,
+      currentBC->Id(), *activeSessionContextId);
+  return *activeSessionContextId == currentBC->Id();
 }
 
-void MediaSession::NotifyMediaSessionStatus(SessionStatus aState) {
+void MediaSession::NotifyMediaSessionDocStatus(SessionDocStatus aState) {
   RefPtr<BrowsingContext> currentBC = GetParentObject()->GetBrowsingContext();
   MOZ_ASSERT(currentBC, "Update session status after context destroyed!");
 
@@ -178,7 +249,7 @@ void MediaSession::NotifyMediaSessionStatus(SessionStatus aState) {
   if (!updater) {
     return;
   }
-  if (aState == SessionStatus::eCreated) {
+  if (aState == SessionDocStatus::eActive) {
     updater->NotifySessionCreated(currentBC->Id());
   } else {
     updater->NotifySessionDestroyed(currentBC->Id());
@@ -222,5 +293,4 @@ void MediaSession::NotifyPositionStateChanged() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

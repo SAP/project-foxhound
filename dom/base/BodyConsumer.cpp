@@ -31,8 +31,7 @@
 #  undef CreateFile
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -504,7 +503,7 @@ void BodyConsumer::BeginConsumeBodyMainThread(ThreadSafeWorkerRef* aWorkerRef) {
     rv = GetBodyLocalFile(getter_AddRefs(file));
     if (!NS_WARN_IF(NS_FAILED(rv)) && file) {
       ChromeFilePropertyBag bag;
-      bag.mType = NS_ConvertUTF8toUTF16(mBodyMimeType);
+      CopyUTF8toUTF16(mBodyMimeType, bag.mType);
 
       ErrorResult error;
       RefPtr<Promise> promise =
@@ -544,7 +543,7 @@ void BodyConsumer::BeginConsumeBodyMainThread(ThreadSafeWorkerRef* aWorkerRef) {
     listener = loader;
   }
 
-  rv = pump->AsyncRead(listener, nullptr);
+  rv = pump->AsyncRead(listener);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -803,7 +802,7 @@ NS_IMETHODIMP BodyConsumer::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-void BodyConsumer::Abort() {
+void BodyConsumer::RunAbortAlgorithm() {
   AssertIsOnTargetThread();
   ShutDownMainThreadConsuming();
   ContinueConsumeBody(NS_ERROR_DOM_ABORT_ERR, 0, nullptr);
@@ -811,5 +810,4 @@ void BodyConsumer::Abort() {
 
 NS_IMPL_ISUPPORTS(BodyConsumer, nsIObserver, nsISupportsWeakReference)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

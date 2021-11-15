@@ -173,8 +173,10 @@ async function triggerAutofillAndCheckProfile(profile) {
             );
             is(
               event.cancelable,
-              true,
-              `"beforeinput" event should be cancelable on ${element.tagName}`
+              SpecialPowers.getBoolPref(
+                "dom.input_event.allow_to_cancel_set_user_input"
+              ),
+              `"beforeinput" event should be cancelable on ${element.tagName} unless it's suppressed by the pref`
             );
             is(
               event.bubbles,
@@ -437,6 +439,14 @@ function formAutoFillCommonSetup() {
     },
     { once: true }
   );
+}
+
+/*
+ * Extremely over-simplified detection of card type from card number just for
+ * our tests. This is needed to test the aria-label of credit card menu entries.
+ */
+function getCCTypeName(creditCard) {
+  return creditCard["cc-number"][0] == "4" ? "Visa" : "MasterCard";
 }
 
 formAutoFillCommonSetup();

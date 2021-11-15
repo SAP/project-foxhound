@@ -46,8 +46,7 @@
 #  define ASSERT_UNLESS_FUZZING(...) MOZ_ASSERT(false, __VA_ARGS__)
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::quota;
 using namespace mozilla::ipc;
@@ -1007,8 +1006,8 @@ void FileHandleThreadPool::DirectoryInfo::RemoveFileHandleQueue(
   MOZ_ASSERT(mFileHandleQueues.Length() == fileHandleCount - 1,
              "Didn't find the file handle we were looking for!");
 
-  nsTArray<DelayedEnqueueInfo> delayedEnqueueInfos;
-  delayedEnqueueInfos.SwapElements(mDelayedEnqueueInfos);
+  nsTArray<DelayedEnqueueInfo> delayedEnqueueInfos =
+      std::move(mDelayedEnqueueInfos);
 
   for (uint32_t index = 0; index < delayedEnqueueInfos.Length(); index++) {
     DelayedEnqueueInfo& delayedEnqueueInfo = delayedEnqueueInfos[index];
@@ -2195,5 +2194,4 @@ void FlushOp::GetResponse(FileRequestResponse& aResponse) {
   aResponse = FileRequestFlushResponse();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

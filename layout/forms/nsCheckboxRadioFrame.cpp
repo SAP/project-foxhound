@@ -67,8 +67,7 @@ nscoord nsCheckboxRadioFrame::GetPrefISize(gfxContext* aRenderingContext) {
 LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
     gfxContext* aRC, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
-    ComputeSizeFlags aFlags) {
+    const LogicalSize& aBorderPadding, ComputeSizeFlags aFlags) {
   LogicalSize size(aWM, 0, 0);
   if (!StyleDisplay()->HasAppearance()) {
     return size;
@@ -76,7 +75,7 @@ LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
 
   // Note: this call always set the BSize to NS_UNCONSTRAINEDSIZE.
   size = nsAtomicContainerFrame::ComputeAutoSize(
-      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorder, aPadding, aFlags);
+      aRC, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding, aFlags);
   size.BSize(aWM) = DefaultSize();
   return size;
 }
@@ -121,8 +120,8 @@ void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,
     RegUnRegAccessKey(static_cast<nsIFrame*>(this), true);
   }
 
-  aDesiredSize.SetSize(aReflowInput.GetWritingMode(),
-                       aReflowInput.ComputedSizeWithBorderPadding());
+  const auto wm = aReflowInput.GetWritingMode();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   if (nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
     float inflation = nsLayoutUtils::FontSizeInflationFor(this);

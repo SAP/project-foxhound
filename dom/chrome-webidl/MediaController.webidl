@@ -27,14 +27,49 @@ enum MediaControlKey {
  */
 [Exposed=Window, ChromeOnly]
 interface MediaController : EventTarget {
+  readonly attribute unsigned long long id;
+  readonly attribute boolean isActive;
+  readonly attribute boolean isAudible;
+  readonly attribute boolean isPlaying;
+  readonly attribute MediaSessionPlaybackState playbackState;
+
+  [Throws]
+  MediaMetadataInit getMetadata();
+
   [Frozen, Cached, Pure]
   readonly attribute sequence<MediaControlKey> supportedKeys;
 
+  attribute EventHandler onactivated;
+  attribute EventHandler ondeactivated;
+
+  // Following events would only be dispatched after controller is active.
+  attribute EventHandler onmetadatachange;
+  attribute EventHandler onplaybackstatechange;
   attribute EventHandler onpositionstatechange;
   attribute EventHandler onsupportedkeyschange;
 
-  // TODO : expose other media controller methods to webidl in order to support
-  // the plan of controlling media directly from the chrome JS.
-  // eg. play(), pause().
+  void focus();
+  void play();
+  void pause();
+  void stop();
+  void prevTrack();
+  void nextTrack();
+  void seekBackward();
+  void seekForward();
+  void skipAd();
   void seekTo(double seekTime, optional boolean fastSeek = false);
+};
+
+[ChromeOnly,Exposed=Window,HeaderFile="mozilla/dom/MediaControlService.h"]
+namespace MediaControlService {
+  // This is used to generate fake media control keys event in testing.
+  void generateMediaControlKey(MediaControlKey aKey);
+
+  // This is used to get the media metadata from the current main controller in
+  // testing.
+  MediaMetadataInit getCurrentActiveMediaMetadata();
+
+  // This is used to get the actual media playback state from the current main
+  // controller in testing.
+  MediaSessionPlaybackState getCurrentMediaSessionPlaybackState();
 };

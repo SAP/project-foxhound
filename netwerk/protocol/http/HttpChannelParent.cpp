@@ -74,16 +74,11 @@ HttpChannelParent::HttpChannelParent(dom::BrowserParent* iframeEmbedding,
       mSentRedirect1BeginFailed(false),
       mReceivedRedirect2Verify(false),
       mHasSuspendedByBackPressure(false),
-      mPendingDiversion(false),
-      mDivertingFromChild(false),
-      mDivertedOnStartRequest(false),
-      mSuspendedForDiversion(false),
-      mSuspendAfterSynthesizeResponse(false),
-      mWillSynthesizeResponse(false),
       mCacheNeedFlowControlInitialized(false),
       mNeedFlowControl(true),
       mSuspendedForFlowControl(false),
-      mAfterOnStartRequestBegun(false) {
+      mAfterOnStartRequestBegun(false),
+      mDataSentToChildProcess(false) {
   LOG(("Creating HttpChannelParent [this=%p]\n", this));
 
   // Ensure gHttpHandler is initialized: we need the atom table up and running.
@@ -117,13 +112,6 @@ void HttpChannelParent::ActorDestroy(ActorDestroyReason why) {
   // yet, but child process has crashed.  We must not try to send any more msgs
   // to child, or IPDL will kill chrome process, too.
   mIPCClosed = true;
-
-  // If this is an intercepted channel, we need to make sure that any resources
-  // are cleaned up to avoid leaks.
-  if (mParentListener) {
-    mParentListener->ClearInterceptedChannel(this);
-  }
-
   CleanupBackgroundChannel();
 }
 
@@ -140,11 +128,9 @@ bool HttpChannelParent::Init(const HttpChannelCreationArgs& aArgs) {
           a.priority(), a.classOfService(), a.redirectionLimit(), a.allowSTS(),
           a.thirdPartyFlags(), a.resumeAt(), a.startPos(), a.entityID(),
           a.chooseApplicationCache(), a.appCacheClientID(), a.allowSpdy(),
-          a.allowAltSvc(), a.beConservative(), a.tlsFlags(), a.loadInfo(),
-          a.synthesizedResponseHead(), a.synthesizedSecurityInfoSerialization(),
-          a.cacheKey(), a.requestContextID(), a.preflightArgs(),
-          a.initialRwin(), a.blockAuthPrompt(),
-          a.suspendAfterSynthesizeResponse(), a.allowStaleCacheContent(),
+          a.allowHttp3(), a.allowAltSvc(), a.beConservative(), a.tlsFlags(),
+          a.loadInfo(), a.cacheKey(), a.requestContextID(), a.preflightArgs(),
+          a.initialRwin(), a.blockAuthPrompt(), a.allowStaleCacheContent(),
           a.preferCacheLoadOverBypass(), a.contentTypeHint(), a.corsMode(),
           a.redirectMode(), a.channelId(), a.integrityMetadata(),
           a.contentWindowId(), a.preferredAlternativeTypes(),
@@ -156,7 +142,7 @@ bool HttpChannelParent::Init(const HttpChannelCreationArgs& aArgs) {
     }
     case HttpChannelCreationArgs::THttpChannelConnectArgs: {
       const HttpChannelConnectArgs& cArgs = aArgs.get_HttpChannelConnectArgs();
-      return ConnectChannel(cArgs.registrarId(), cArgs.shouldIntercept());
+      return ConnectChannel(cArgs.registrarId());
     }
     default:
       MOZ_ASSERT_UNREACHABLE("unknown open type");
@@ -385,14 +371,12 @@ bool HttpChannelParent::DoAsyncOpen(
     const uint32_t& thirdPartyFlags, const bool& doResumeAt,
     const uint64_t& startPos, const nsCString& entityID,
     const bool& chooseApplicationCache, const nsCString& appCacheClientID,
-    const bool& allowSpdy, const bool& allowAltSvc, const bool& beConservative,
-    const uint32_t& tlsFlags, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
-    const Maybe<nsHttpResponseHead>& aSynthesizedResponseHead,
-    const nsCString& aSecurityInfoSerialization, const uint32_t& aCacheKey,
+    const bool& allowSpdy, const bool& allowHttp3, const bool& allowAltSvc,
+    const bool& beConservative, const uint32_t& tlsFlags,
+    const Maybe<LoadInfoArgs>& aLoadInfoArgs, const uint32_t& aCacheKey,
     const uint64_t& aRequestContextID,
     const Maybe<CorsPreflightArgs>& aCorsPreflightArgs,
     const uint32_t& aInitialRwin, const bool& aBlockAuthPrompt,
-    const bool& aSuspendAfterSynthesizeResponse,
     const bool& aAllowStaleCacheContent, const bool& aPreferCacheLoadOverBypass,
     const nsCString& aContentTypeHint, const uint32_t& aCorsMode,
     const uint32_t& aRedirectMode, const uint64_t& aChannelId,
@@ -540,22 +524,6 @@ bool HttpChannelParent::DoAsyncOpen(
     httpChannel->SetUploadStreamHasHeaders(uploadStreamHasHeaders);
   }
 
-  if (aSynthesizedResponseHead.isSome()) {
-    parentListener->SetupInterception(aSynthesizedResponseHead.ref());
-    mWillSynthesizeResponse = true;
-    httpChannelImpl->SetCouldBeSynthesized();
-
-    if (!aSecurityInfoSerialization.IsEmpty()) {
-      nsCOMPtr<nsISupports> secInfo;
-      rv = NS_DeserializeObject(aSecurityInfoSerialization,
-                                getter_AddRefs(secInfo));
-      MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv),
-                            "Deserializing security info should not fail");
-      rv = httpChannel->OverrideSecurityInfo(secInfo);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
-    }
-  }
-
   nsCOMPtr<nsICacheInfoChannel> cacheChannel =
       do_QueryInterface(static_cast<nsIChannel*>(httpChannel.get()));
   if (cacheChannel) {
@@ -586,6 +554,7 @@ bool HttpChannelParent::DoAsyncOpen(
   httpChannel->SetAllowSTS(allowSTS);
   httpChannel->SetThirdPartyFlags(thirdPartyFlags);
   httpChannel->SetAllowSpdy(allowSpdy);
+  httpChannel->SetAllowHttp3(allowHttp3);
   httpChannel->SetAllowAltSvc(allowAltSvc);
   httpChannel->SetBeConservative(beConservative);
   httpChannel->SetTlsFlags(tlsFlags);
@@ -648,8 +617,6 @@ bool HttpChannelParent::DoAsyncOpen(
   mParentListener = std::move(parentListener);
   mChannel->SetNotificationCallbacks(mParentListener);
 
-  mSuspendAfterSynthesizeResponse = aSuspendAfterSynthesizeResponse;
-
   MOZ_ASSERT(!mBgParent);
   MOZ_ASSERT(mPromise.IsEmpty());
   // Wait for HttpBackgrounChannel to continue the async open procedure.
@@ -699,8 +666,7 @@ RefPtr<GenericNonExclusivePromise> HttpChannelParent::WaitForBgParent() {
   return mPromise.Ensure(__func__);
 }
 
-bool HttpChannelParent::ConnectChannel(const uint32_t& registrarId,
-                                       const bool& shouldIntercept) {
+bool HttpChannelParent::ConnectChannel(const uint32_t& registrarId) {
   nsresult rv;
 
   LOG(
@@ -732,18 +698,6 @@ bool HttpChannelParent::ConnectChannel(const uint32_t& registrarId,
   RefPtr<nsHttpChannel> httpChannelImpl = do_QueryObject(mChannel);
   if (httpChannelImpl) {
     httpChannelImpl->SetWarningReporter(this);
-  }
-
-  nsCOMPtr<nsINetworkInterceptController> controller;
-  NS_QueryNotificationCallbacks(channel, controller);
-  RefPtr<ParentChannelListener> parentListener = do_QueryObject(controller);
-  if (parentListener) {
-    // It's possible with DocumentChannel redirects that we failed to Suspend
-    // the nsHttpChannel, so it has delivered OnDataAvailable/OnStopRequest
-    // to the DocumentChannelParent, and then cleared the listener pointer.
-    // In that case the DocumentChannelParent will handle forwarding
-    // those messages to us so we don't need to add the listener again.
-    parentListener->SetupInterceptionAfterRedirect(shouldIntercept);
   }
 
   if (mPBOverride != kPBOverride_Unset) {
@@ -1091,217 +1045,10 @@ HttpChannelParent::RecvMarkOfflineCacheEntryAsForeign() {
   return IPC_OK();
 }
 
-class DivertDataAvailableEvent : public MainThreadChannelEvent {
- public:
-  DivertDataAvailableEvent(HttpChannelParent* aParent, const nsCString& data,
-                           const uint64_t& offset, const uint32_t& count)
-      : mParent(aParent), mData(data), mOffset(offset), mCount(count) {}
-
-  void Run() override {
-    mParent->DivertOnDataAvailable(mData, mOffset, mCount);
-  }
-
- private:
-  HttpChannelParent* mParent;
-  nsCString mData;
-  uint64_t mOffset;
-  uint32_t mCount;
-};
-
-mozilla::ipc::IPCResult HttpChannelParent::RecvDivertOnDataAvailable(
-    const nsCString& data, const uint64_t& offset, const uint32_t& count) {
-  LOG(("HttpChannelParent::RecvDivertOnDataAvailable [this=%p]\n", this));
-
-  MOZ_ASSERT(mParentListener);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot RecvDivertOnDataAvailable if diverting is not set!");
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  // Drop OnDataAvailables if the parent was canceled already.
-  if (NS_FAILED(mStatus)) {
-    return IPC_OK();
-  }
-
-  mEventQ->RunOrEnqueue(
-      new DivertDataAvailableEvent(this, data, offset, count));
-  return IPC_OK();
-}
-
-void HttpChannelParent::DivertOnDataAvailable(const nsCString& data,
-                                              const uint64_t& offset,
-                                              const uint32_t& count) {
-  LOG(("HttpChannelParent::DivertOnDataAvailable [this=%p]\n", this));
-
-  MOZ_ASSERT(mParentListener);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot DivertOnDataAvailable if diverting is not set!");
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  // Drop OnDataAvailables if the parent was canceled already.
-  if (NS_FAILED(mStatus)) {
-    return;
-  }
-
-  nsCOMPtr<nsIInputStream> stringStream;
-  nsresult rv =
-      NS_NewByteInputStream(getter_AddRefs(stringStream),
-                            MakeSpan(data).To(count), NS_ASSIGNMENT_DEPEND);
-  if (NS_FAILED(rv)) {
-    if (mChannel) {
-      mChannel->Cancel(rv);
-    }
-    mStatus = rv;
-    return;
-  }
-
-  AutoEventEnqueuer ensureSerialDispatch(mEventQ);
-
-  rv = mParentListener->OnDataAvailable(mChannel, stringStream, offset, count);
-  stringStream->Close();
-  if (NS_FAILED(rv)) {
-    if (mChannel) {
-      mChannel->Cancel(rv);
-    }
-    mStatus = rv;
-  }
-}
-
-class DivertStopRequestEvent : public MainThreadChannelEvent {
- public:
-  DivertStopRequestEvent(HttpChannelParent* aParent, const nsresult& statusCode)
-      : mParent(aParent), mStatusCode(statusCode) {}
-
-  void Run() override { mParent->DivertOnStopRequest(mStatusCode); }
-
- private:
-  HttpChannelParent* mParent;
-  nsresult mStatusCode;
-};
-
-mozilla::ipc::IPCResult HttpChannelParent::RecvDivertOnStopRequest(
-    const nsresult& statusCode) {
-  LOG(("HttpChannelParent::RecvDivertOnStopRequest [this=%p]\n", this));
-
-  MOZ_ASSERT(mParentListener);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot RecvDivertOnStopRequest if diverting is not set!");
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  mEventQ->RunOrEnqueue(new DivertStopRequestEvent(this, statusCode));
-  return IPC_OK();
-}
-
-void HttpChannelParent::DivertOnStopRequest(const nsresult& statusCode) {
-  LOG(("HttpChannelParent::DivertOnStopRequest [this=%p]\n", this));
-
-  MOZ_ASSERT(mParentListener);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot DivertOnStopRequest if diverting is not set!");
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  // Honor the channel's status even if the underlying transaction completed.
-  nsresult status = NS_FAILED(mStatus) ? mStatus : statusCode;
-
-  // Reset fake pending status in case OnStopRequest has already been called.
-  if (mChannel) {
-    mChannel->ForcePending(false);
-  }
-
-  AutoEventEnqueuer ensureSerialDispatch(mEventQ);
-  mParentListener->OnStopRequest(mChannel, status);
-}
-
-class DivertCompleteEvent : public MainThreadChannelEvent {
- public:
-  explicit DivertCompleteEvent(HttpChannelParent* aParent) : mParent(aParent) {}
-
-  void Run() override { mParent->DivertComplete(); }
-
- private:
-  HttpChannelParent* mParent;
-};
-
-mozilla::ipc::IPCResult HttpChannelParent::RecvDivertComplete() {
-  LOG(("HttpChannelParent::RecvDivertComplete [this=%p]\n", this));
-
-  MOZ_ASSERT(mParentListener);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot RecvDivertComplete if diverting is not set!");
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  mEventQ->RunOrEnqueue(new DivertCompleteEvent(this));
-  return IPC_OK();
-}
-
-void HttpChannelParent::DivertComplete() {
-  LOG(("HttpChannelParent::DivertComplete [this=%p]\n", this));
-
-  MOZ_ASSERT(mParentListener);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot DivertComplete if diverting is not set!");
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  nsresult rv = ResumeForDiversion();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return;
-  }
-
-  mParentListener = nullptr;
-}
-
-void HttpChannelParent::MaybeFlushPendingDiversion() {
-  if (!mPendingDiversion) {
-    return;
-  }
-
-  mPendingDiversion = false;
-
-  nsresult rv = SuspendForDiversion();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  if (mDivertListener) {
-    DivertTo(mDivertListener);
-  }
-}
-
-void HttpChannelParent::ResponseSynthesized() {
-  // Suspend now even though the FinishSynthesizeResponse runnable has
-  // not executed.  We want to suspend after we get far enough to trigger
-  // the synthesis, but not actually allow the nsHttpChannel to trigger
-  // any OnStartRequests().
-  if (mSuspendAfterSynthesizeResponse) {
-    mChannel->Suspend();
-  }
-
-  mWillSynthesizeResponse = false;
-
-  MaybeFlushPendingDiversion();
-}
-
 mozilla::ipc::IPCResult HttpChannelParent::RecvRemoveCorsPreflightCacheEntry(
     const URIParams& uri,
-    const mozilla::ipc::PrincipalInfo& requestingPrincipal) {
+    const mozilla::ipc::PrincipalInfo& requestingPrincipal,
+    const OriginAttributes& originAttributes) {
   nsCOMPtr<nsIURI> deserializedURI = DeserializeURI(uri);
   if (!deserializedURI) {
     return IPC_FAIL_NO_REASON(this);
@@ -1311,7 +1058,8 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvRemoveCorsPreflightCacheEntry(
     return IPC_FAIL_NO_REASON(this);
   }
   nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
-  nsCORSListenerProxy::RemoveFromCorsPreflightCache(deserializedURI, principal);
+  nsCORSListenerProxy::RemoveFromCorsPreflightCache(deserializedURI, principal,
+                                                    originAttributes);
   return IPC_OK();
 }
 
@@ -1375,8 +1123,6 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
   LOG(("HttpChannelParent::OnStartRequest [this=%p, aRequest=%p]\n", this,
        aRequest));
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_RELEASE_ASSERT(!mDivertingFromChild,
-                     "Cannot call OnStartRequest if diverting is set!");
 
   Maybe<uint32_t> multiPartID;
   bool isLastPartOfMultiPart = false;
@@ -1441,6 +1187,16 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
     httpChannelImpl->GetCacheTokenFetchCount(&args.cacheFetchCount());
     httpChannelImpl->GetCacheTokenExpirationTime(&args.cacheExpirationTime());
     httpChannelImpl->GetCacheTokenCachedCharset(args.cachedCharset());
+
+    mDataSentToChildProcess = httpChannelImpl->DataSentToChildProcess();
+
+    // If RCWN is enabled and cache wins, we can't use the ODA from socket
+    // process.
+    if (args.isRacing()) {
+      mDataSentToChildProcess =
+          httpChannelImpl->DataSentToChildProcess() && !args.isFromCache();
+    }
+    args.dataFromSocketProcess() = mDataSentToChildProcess;
 
     bool loadedFromApplicationCache = false;
     httpChannelImpl->GetLoadedFromApplicationCache(&loadedFromApplicationCache);
@@ -1574,9 +1330,6 @@ HttpChannelParent::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
        this, aRequest, static_cast<uint32_t>(aStatusCode)));
   MOZ_ASSERT(NS_IsMainThread());
 
-  MOZ_RELEASE_ASSERT(!mDivertingFromChild,
-                     "Cannot call OnStopRequest if diverting is set!");
-
   RefPtr<nsHttpChannel> httpChannelImpl = do_QueryObject(mChannel);
   if (httpChannelImpl) {
     httpChannelImpl->SetWarningReporter(nullptr);
@@ -1594,6 +1347,14 @@ HttpChannelParent::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
   // Either IPC channel is closed or background channel
   // is ready to send OnStopRequest.
   MOZ_ASSERT(mIPCClosed || mBgParent);
+
+  if (mDataSentToChildProcess) {
+    if (mIPCClosed || !mBgParent ||
+        !mBgParent->OnConsoleReport(consoleReports)) {
+      return NS_ERROR_UNEXPECTED;
+    }
+    return NS_OK;
+  }
 
   // If we're handling a multi-part stream, then send this directly
   // over PHttpChannel to make synchronization easier.
@@ -1614,7 +1375,7 @@ HttpChannelParent::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
     isLocal = (peerAddr.raw.family == PR_AF_LOCAL);
 #endif
 
-    isLocal = isLocal || IsLoopBackAddress(&peerAddr);
+    isLocal = isLocal || peerAddr.IsLoopbackAddr();
 
     if (!isLocal) {
       if (!mHasSuspendedByBackPressure) {
@@ -1685,8 +1446,10 @@ HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
        this, aRequest, aOffset, aCount));
   MOZ_ASSERT(NS_IsMainThread());
 
-  MOZ_RELEASE_ASSERT(!mDivertingFromChild,
-                     "Cannot call OnDataAvailable if diverting is set!");
+  if (mDataSentToChildProcess) {
+    uint32_t n;
+    return aInputStream->ReadSegments(NS_DiscardSegment, nullptr, aCount, &n);
+  }
 
   nsresult channelStatus = NS_OK;
   mChannel->GetStatus(&channelStatus);
@@ -1697,41 +1460,25 @@ HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
     if (httpChannelImpl->IsReadingFromCache()) {
       transportStatus = NS_NET_STATUS_READING;
     }
-
-    if (httpChannelImpl->OnDataAlreadySent()) {
-      LOG(("  OnDataAvailable already sent to the child.\n"));
-      uint32_t n;
-      return aInputStream->ReadSegments(NS_DiscardSegment, nullptr, aCount, &n);
-    }
   }
-
-  static uint32_t const kCopyChunkSize = 128 * 1024;
-  uint32_t toRead = std::min<uint32_t>(aCount, kCopyChunkSize);
 
   nsCString data;
+  nsresult rv = NS_ReadInputStreamToString(aInputStream, data, aCount);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // Either IPC channel is closed or background channel
+  // is ready to send OnTransportAndData.
+  MOZ_ASSERT(mIPCClosed || mBgParent);
+
+  if (mIPCClosed || !mBgParent ||
+      !mBgParent->OnTransportAndData(channelStatus, transportStatus, aOffset,
+                                     aCount, data)) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
   int32_t count = static_cast<int32_t>(aCount);
-
-  while (aCount) {
-    nsresult rv = NS_ReadInputStreamToString(aInputStream, data, toRead);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    // Either IPC channel is closed or background channel
-    // is ready to send OnTransportAndData.
-    MOZ_ASSERT(mIPCClosed || mBgParent);
-
-    if (mIPCClosed || !mBgParent ||
-        !mBgParent->OnTransportAndData(channelStatus, transportStatus, aOffset,
-                                       toRead, data)) {
-      return NS_ERROR_UNEXPECTED;
-    }
-
-    aOffset += toRead;
-    aCount -= toRead;
-    toRead = std::min<uint32_t>(aCount, kCopyChunkSize);
-  }
 
   if (NeedFlowControl()) {
     // We're going to run out of sending window size
@@ -1767,12 +1514,14 @@ bool HttpChannelParent::NeedFlowControl() {
   // a. pref-out
   // b. the resource is from cache or partial cache
   // c. the resource is small
+  // d. data will be sent from socket process to child process directly
   // Note that we served the cached resource first for partical cache, which is
   // ignored here since we only take the first ODA into consideration.
   if (gHttpHandler->SendWindowSize() == 0 || !httpChannelImpl ||
       httpChannelImpl->IsReadingFromCache() ||
       NS_FAILED(httpChannelImpl->GetContentLength(&contentLength)) ||
-      contentLength < gHttpHandler->SendWindowSize()) {
+      contentLength < gHttpHandler->SendWindowSize() ||
+      mDataSentToChildProcess) {
     mNeedFlowControl = false;
   }
   mCacheNeedFlowControlInitialized = true;
@@ -1781,8 +1530,7 @@ bool HttpChannelParent::NeedFlowControl() {
 
 mozilla::ipc::IPCResult HttpChannelParent::RecvBytesRead(
     const int32_t& aCount) {
-  // no more flow control after diviersion starts
-  if (!NeedFlowControl() || mDivertingFromChild) {
+  if (!NeedFlowControl()) {
     return IPC_OK();
   }
 
@@ -2167,290 +1915,6 @@ HttpChannelParent::CompleteRedirect(bool succeeded) {
   return NS_OK;
 }
 
-//-----------------------------------------------------------------------------
-// HttpChannelParent::ADivertableParentChannel
-//-----------------------------------------------------------------------------
-nsresult HttpChannelParent::SuspendForDiversion() {
-  LOG(("HttpChannelParent::SuspendForDiversion [this=%p]\n", this));
-  MOZ_ASSERT(mChannel);
-  MOZ_ASSERT(mParentListener);
-
-  // If we're in the process of opening a synthesized response, we must wait
-  // to perform the diversion.  Some of our diversion listeners clear callbacks
-  // which breaks the synthesis process.
-  if (mWillSynthesizeResponse) {
-    mPendingDiversion = true;
-    return NS_OK;
-  }
-
-  if (NS_WARN_IF(mDivertingFromChild)) {
-    MOZ_ASSERT(!mDivertingFromChild, "Already suspended for diversion!");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  // MessageDiversionStarted call will suspend mEventQ as many times as the
-  // channel has been suspended, so that channel and this queue are in sync.
-  nsCOMPtr<nsIChannelWithDivertableParentListener> divertChannel =
-      do_QueryInterface(static_cast<nsIChannel*>(mChannel.get()));
-  divertChannel->MessageDiversionStarted(this);
-
-  nsresult rv = NS_OK;
-
-  // Try suspending the channel. Allow it to fail, since OnStopRequest may have
-  // been called and thus the channel may not be pending.  If we've already
-  // automatically suspended after synthesizing the response, then we don't
-  // need to suspend again here.
-  if (!mSuspendAfterSynthesizeResponse) {
-    // We need to suspend only nsHttpChannel (i.e. we should not suspend
-    // mEventQ). Therefore we call mChannel->SuspendInternal() and not
-    // mChannel->Suspend().
-    // We are suspending only nsHttpChannel here because we want to stop
-    // OnDataAvailable until diversion is over. At the same time we should
-    // send the diverted OnDataAvailable-s to the listeners and not queue them
-    // in mEventQ.
-    rv = divertChannel->SuspendInternal();
-    MOZ_ASSERT(NS_SUCCEEDED(rv) || rv == NS_ERROR_NOT_AVAILABLE);
-    mSuspendedForDiversion = NS_SUCCEEDED(rv);
-  } else {
-    // Take ownership of the automatic suspend that occurred after synthesizing
-    // the response.
-    mSuspendedForDiversion = true;
-
-    // If mSuspendAfterSynthesizeResponse is true channel has been already
-    // suspended. From comment above mSuspendedForDiversion takes the ownership
-    // of this suspend, therefore mEventQ should not be suspened so we need to
-    // resume it once.
-    mEventQ->Resume();
-  }
-
-  rv = mParentListener->SuspendForDiversion();
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-  // After we suspend for diversion, we don't need the flow control since the
-  // channel is suspended until all the data is consumed and no more e10s later.
-  // No point to have another redundant suspension.
-  if (mSuspendedForFlowControl) {
-    LOG(("  resume the channel due to e10s backpressure relief by diversion"));
-    Unused << mChannel->Resume();
-    mSuspendedForFlowControl = false;
-  }
-
-  // Once this is set, no more OnStart/OnData/OnStop callbacks should be sent
-  // to the child.
-  mDivertingFromChild = true;
-
-  return NS_OK;
-}
-
-nsresult HttpChannelParent::SuspendMessageDiversion() {
-  LOG(("HttpChannelParent::SuspendMessageDiversion [this=%p]", this));
-  // This only needs to suspend message queue.
-  mEventQ->Suspend();
-  return NS_OK;
-}
-
-nsresult HttpChannelParent::ResumeMessageDiversion() {
-  LOG(("HttpChannelParent::SuspendMessageDiversion [this=%p]", this));
-  // This only needs to resumes message queue.
-  mEventQ->Resume();
-  return NS_OK;
-}
-
-nsresult HttpChannelParent::CancelDiversion() {
-  LOG(("HttpChannelParent::CancelDiversion [this=%p]", this));
-  if (!mIPCClosed) {
-    Unused << SendCancelDiversion();
-  }
-  return NS_OK;
-}
-
-/* private, supporting function for ADivertableParentChannel */
-nsresult HttpChannelParent::ResumeForDiversion() {
-  LOG(("HttpChannelParent::ResumeForDiversion [this=%p]\n", this));
-  MOZ_ASSERT(mChannel);
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot ResumeForDiversion if not diverting!");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  nsCOMPtr<nsIChannelWithDivertableParentListener> divertChannel =
-      do_QueryInterface(static_cast<nsIChannel*>(mChannel.get()));
-  divertChannel->MessageDiversionStop();
-
-  if (mSuspendedForDiversion) {
-    // The nsHttpChannel will deliver remaining OnData/OnStop for the transfer.
-    nsresult rv = divertChannel->ResumeInternal();
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    mSuspendedForDiversion = false;
-  }
-
-  if (NS_WARN_IF(mIPCClosed || !DoSendDeleteSelf())) {
-    return NS_ERROR_UNEXPECTED;
-  }
-  return NS_OK;
-}
-
-void HttpChannelParent::DivertTo(nsIStreamListener* aListener) {
-  LOG(("HttpChannelParent::DivertTo [this=%p aListener=%p]\n", this,
-       aListener));
-  MOZ_ASSERT(mParentListener);
-
-  // If we're in the process of opening a synthesized response, we must wait
-  // to perform the diversion.  Some of our diversion listeners clear callbacks
-  // which breaks the synthesis process.
-  if (mWillSynthesizeResponse) {
-    // We should already have started pending the diversion when
-    // SuspendForDiversion() was called.
-    MOZ_ASSERT(mPendingDiversion);
-    mDivertListener = aListener;
-    return;
-  }
-
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot DivertTo new listener if diverting is not set!");
-    return;
-  }
-
-  mDivertListener = aListener;
-
-  // Call OnStartRequest and SendDivertMessages asynchronously to avoid
-  // reentering client context.
-  NS_DispatchToCurrentThread(
-      NewRunnableMethod("net::HttpChannelParent::StartDiversion", this,
-                        &HttpChannelParent::StartDiversion));
-}
-
-void HttpChannelParent::StartDiversion() {
-  LOG(("HttpChannelParent::StartDiversion [this=%p]\n", this));
-  if (NS_WARN_IF(!mDivertingFromChild)) {
-    MOZ_ASSERT(mDivertingFromChild,
-               "Cannot StartDiversion if diverting is not set!");
-    return;
-  }
-
-  // Fake pending status in case OnStopRequest has already been called.
-  if (mChannel) {
-    mChannel->ForcePending(true);
-  }
-
-  {
-    AutoEventEnqueuer ensureSerialDispatch(mEventQ);
-
-    // Call OnStartRequest for the "DivertTo" listener.
-    nsresult rv = mDivertListener->OnStartRequest(mChannel);
-    if (NS_FAILED(rv)) {
-      if (mChannel) {
-        mChannel->Cancel(rv);
-      }
-      mStatus = rv;
-    }
-  }
-  mDivertedOnStartRequest = true;
-
-  // After OnStartRequest has been called, setup content decoders if needed.
-  //
-  // Create a content conversion chain based on mDivertListener and update
-  // mDivertListener.
-  nsCOMPtr<nsIStreamListener> converterListener;
-  Unused << mChannel->DoApplyContentConversions(
-      mDivertListener, getter_AddRefs(converterListener));
-  if (converterListener) {
-    mDivertListener = std::move(converterListener);
-  }
-
-  // Now mParentListener can be diverted to mDivertListener.
-  mParentListener->DivertTo(mDivertListener);
-  mDivertListener = nullptr;
-
-  // Either IPC channel is closed or background channel
-  // is ready to send FlushedForDiversion and DivertMessages.
-  MOZ_ASSERT(mIPCClosed || mBgParent);
-
-  if (NS_WARN_IF(mIPCClosed || !mBgParent || !mBgParent->OnDiversion())) {
-    FailDiversion(NS_ERROR_UNEXPECTED);
-    return;
-  }
-}
-
-class HTTPFailDiversionEvent : public Runnable {
- public:
-  HTTPFailDiversionEvent(HttpChannelParent* aChannelParent, nsresult aErrorCode)
-      : Runnable("net::HTTPFailDiversionEvent"),
-        mChannelParent(aChannelParent),
-        mErrorCode(aErrorCode) {
-    MOZ_RELEASE_ASSERT(aChannelParent);
-    MOZ_RELEASE_ASSERT(NS_FAILED(aErrorCode));
-  }
-  NS_IMETHOD Run() override {
-    mChannelParent->NotifyDiversionFailed(mErrorCode);
-    return NS_OK;
-  }
-
- private:
-  RefPtr<HttpChannelParent> mChannelParent;
-  nsresult mErrorCode;
-};
-
-void HttpChannelParent::FailDiversion(nsresult aErrorCode) {
-  MOZ_RELEASE_ASSERT(NS_FAILED(aErrorCode));
-  MOZ_RELEASE_ASSERT(mDivertingFromChild);
-  MOZ_RELEASE_ASSERT(mParentListener);
-  MOZ_RELEASE_ASSERT(mChannel);
-
-  NS_DispatchToCurrentThread(new HTTPFailDiversionEvent(this, aErrorCode));
-}
-
-void HttpChannelParent::NotifyDiversionFailed(nsresult aErrorCode) {
-  LOG(("HttpChannelParent::NotifyDiversionFailed [this=%p aErrorCode=%" PRIx32
-       "]\n",
-       this, static_cast<uint32_t>(aErrorCode)));
-  MOZ_RELEASE_ASSERT(NS_FAILED(aErrorCode));
-  MOZ_RELEASE_ASSERT(mDivertingFromChild);
-  MOZ_RELEASE_ASSERT(mParentListener);
-  MOZ_RELEASE_ASSERT(mChannel);
-
-  mChannel->Cancel(aErrorCode);
-
-  mChannel->ForcePending(false);
-
-  bool isPending = false;
-  nsresult rv = mChannel->IsPending(&isPending);
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-
-  // Resume only if we suspended earlier.
-  if (mSuspendedForDiversion) {
-    nsCOMPtr<nsIChannelWithDivertableParentListener> divertChannel =
-        do_QueryInterface(static_cast<nsIChannel*>(mChannel.get()));
-    divertChannel->ResumeInternal();
-  }
-  // Channel has already sent OnStartRequest to the child, so ensure that we
-  // call it here if it hasn't already been called.
-  if (!mDivertedOnStartRequest) {
-    mChannel->ForcePending(true);
-    mParentListener->OnStartRequest(mChannel);
-    mChannel->ForcePending(false);
-  }
-  // If the channel is pending, it will call OnStopRequest itself; otherwise, do
-  // it here.
-  if (!isPending) {
-    mParentListener->OnStopRequest(mChannel, aErrorCode);
-  }
-
-  if (!mIPCClosed) {
-    Unused << DoSendDeleteSelf();
-  }
-
-  // DoSendDeleteSelf will need channel Id to remove the strong reference in
-  // BackgroundChannelRegistrar if channel pairing is aborted.
-  // Thus we need to keep mChannel until DoSendDeleteSelf is done.
-  mParentListener = nullptr;
-  mChannel = nullptr;
-}
-
 nsresult HttpChannelParent::OpenAlternativeOutputStream(
     const nsACString& type, int64_t predictedSize,
     nsIAsyncOutputStream** _retval) {
@@ -2502,16 +1966,6 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvDeletingChannel() {
   // messages after this, as the child is going away. DoSendDeleteSelf will
   // set mIPCClosed = true;
   if (!DoSendDeleteSelf()) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult HttpChannelParent::RecvFinishInterceptedRedirect() {
-  // We make sure not to send any more messages until the IPC channel is torn
-  // down by the child.
-  mIPCClosed = true;
-  if (!SendFinishInterceptedRedirect()) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();

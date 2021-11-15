@@ -8,12 +8,6 @@
 // Slow on asan builds.
 requestLongerTimeout(5);
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "ActorManagerParent",
-  "resource://gre/modules/ActorManagerParent.jsm"
-);
-
 var isDevtools = SimpleTest.harnessParameters.subsuite == "devtools";
 
 // This list should contain only path prefixes. It is meant to stop the test
@@ -34,10 +28,10 @@ var gExceptionPaths = [
   "resource://payments/",
 
   // https://github.com/mozilla/activity-stream/issues/3053
-  "resource://activity-stream/data/content/tippytop/images/",
-  "resource://activity-stream/data/content/tippytop/favicons/",
+  "chrome://activity-stream/content/data/content/tippytop/images/",
+  "chrome://activity-stream/content/data/content/tippytop/favicons/",
   // These resources are referenced by messages delivered through Remote Settings
-  "resource://activity-stream/data/content/assets/remote/",
+  "chrome://activity-stream/content/data/content/assets/remote/",
 
   // browser/extensions/pdfjs/content/build/pdf.js#1999
   "resource://pdf.js/web/images/",
@@ -52,11 +46,6 @@ var gExceptionPaths = [
   // Exclude all services-automation because they are used through webdriver
   "resource://gre/modules/services-automation/",
   "resource://services-automation/ServicesAutomation.jsm",
-
-  // Bug 1550165 - Exclude localized App/Play store badges. These badges
-  // are displayed in a promo area on the first load of about:logins.
-  "chrome://browser/content/aboutlogins/third-party/app-store/",
-  "chrome://browser/content/aboutlogins/third-party/play-store/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -70,6 +59,9 @@ if (AppConstants.platform == "macosx") {
 // referencing the whitelisted file in a way that the test can't detect, or a
 // bug number to remove or use the file if it is indeed currently unreferenced.
 var whitelist = [
+  // pocket/content/panels/tmpl/loggedoutvariants/variant_a.handlebars
+  { file: "chrome://pocket/content/panels/img/glyph.svg" },
+
   // toolkt/components/pdfjs/content/PdfStreamConverter.jsm
   { file: "chrome://pdf.js/locale/chrome.properties" },
   { file: "chrome://pdf.js/locale/viewer.properties" },
@@ -176,8 +168,6 @@ var whitelist = [
     file: "resource://gre/modules/OSCrypto.jsm",
     platforms: ["linux", "macosx"],
   },
-  // Bug 1356031 (only used by devtools)
-  { file: "chrome://global/skin/icons/error-16.png" },
   // Bug 1344267
   { file: "chrome://marionette/content/test.xhtml" },
   { file: "chrome://marionette/content/test_dialog.properties" },
@@ -223,6 +213,9 @@ var whitelist = [
 
   // services/fxaccounts/RustFxAccount.js
   { file: "resource://gre/modules/RustFxAccount.js" },
+
+  // dom/media/mediacontrol/MediaControlService.cpp
+  { file: "resource://gre/localization/en-US/dom/media.ftl" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
@@ -231,6 +224,14 @@ if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
   // can access the FxR UI via --chrome rather than --fxr (which includes VR-
   // specific functionality)
   whitelist.push({ file: "chrome://fxr/content/fxrui.html" });
+}
+
+if (AppConstants.platform == "android") {
+  // The l10n build system can't package string files only for some platforms.
+  // Referenced by aboutGlean.html
+  whitelist.push({
+    file: "resource://gre/localization/en-US/toolkit/about/aboutGlean.ftl",
+  });
 }
 
 whitelist = new Set(
@@ -382,9 +383,10 @@ function parseManifest(manifestUri) {
   });
 }
 
-// If the given URI is a webextension manifest, extract the scripts
-// for any embedded APIs.  Returns the passed in URI if the manifest
-// is not a webextension manifest, null otherwise.
+// If the given URI is a webextension manifest, extract files used by
+// any of its APIs (scripts, icons, style sheets, theme images).
+// Returns the passed in URI if the manifest is not a webextension
+// manifest, null otherwise.
 async function parseJsonManifest(uri) {
   uri = Services.io.newURI(convertToCodeURI(uri.spec));
 
@@ -419,6 +421,14 @@ async function parseJsonManifest(uri) {
   if (data.theme_experiment && data.theme_experiment.stylesheet) {
     let stylesheet = uri.resolve(data.theme_experiment.stylesheet);
     gReferencesFromCode.set(stylesheet, null);
+  }
+
+  for (let themeKey of ["theme", "dark_theme"]) {
+    if (data?.[themeKey]?.images?.additional_backgrounds) {
+      for (let background of data[themeKey].images.additional_backgrounds) {
+        gReferencesFromCode.set(uri.resolve(background), null);
+      }
+    }
   }
 
   return null;
@@ -711,19 +721,6 @@ function findChromeUrlsFromArray(array, prefix) {
   }
 }
 
-function addActorModules() {
-  let groups = [
-    ...ActorManagerParent.parentGroups.values(),
-    ...ActorManagerParent.childGroups.values(),
-    ...ActorManagerParent.singletons.values(),
-  ];
-  for (let group of groups) {
-    for (let { module } of group.actors.values()) {
-      gReferencesFromCode.set(module, null);
-    }
-  }
-}
-
 add_task(async function checkAllTheFiles() {
   let libxulPath = OS.Constants.Path.libxul;
   if (AppConstants.platform != "macosx") {
@@ -801,8 +798,6 @@ add_task(async function checkAllTheFiles() {
     await Promise.all(jsonManifests.map(parseJsonManifest))
   ).filter(uri => !!uri);
   uris.push(...nonWebextManifests);
-
-  addActorModules();
 
   // We build a list of promises that get resolved when their respective
   // files have loaded and produced no errors.

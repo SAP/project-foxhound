@@ -13,6 +13,12 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const { ExperimentAPI } = ChromeUtils.import(
+  "resource://messaging-system/experiments/ExperimentAPI.jsm"
+);
+const { PrivateBrowsingUtils } = ChromeUtils.import(
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -23,7 +29,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "SEPARATE_ABOUT_WELCOME",
+  "isAboutWelcomePrefEnabled",
   "browser.aboutwelcome.enabled",
   false
 );
@@ -34,20 +40,11 @@ class AboutNewTabChild extends JSWindowActorChild {
       // If the separate about:welcome page is enabled, we can skip all of this,
       // since that mode doesn't load any of the Activity Stream bits.
       if (
-        SEPARATE_ABOUT_WELCOME &&
+        isAboutWelcomePrefEnabled &&
+        // about:welcome should be enabled by default if no experiment exists.
+        ExperimentAPI.isFeatureEnabled("aboutwelcome", true) &&
         this.contentWindow.location.pathname.includes("welcome")
       ) {
-        return;
-      }
-
-      // In the event that the document that was loaded here was the cached
-      // about:home document, then there's nothing further to do - the page
-      // will load its scripts itself.
-      //
-      // Note that it's okay to waive the xray wrappers here since this actor
-      // is registered to only run in the privileged about content process from
-      // about:home, about:newtab and about:welcome.
-      if (ChromeUtils.waiveXrays(this.contentWindow).__FROM_STARTUP_CACHE__) {
         return;
       }
 
@@ -71,6 +68,25 @@ class AboutNewTabChild extends JSWindowActorChild {
 
       for (let script of scripts) {
         Services.scriptloader.loadSubScript(script, this.contentWindow);
+      }
+    } else if (
+      (event.type == "pageshow" || event.type == "visibilitychange") &&
+      // The default browser notification shouldn't be shown on about:welcome
+      // since we don't want to distract from the onboarding wizard.
+      !this.contentWindow.location.pathname.includes("welcome")
+    ) {
+      // Don't show the notification in non-permanent private windows
+      // since it is expected to have very little opt-in here.
+      let contentWindowPrivate = PrivateBrowsingUtils.isContentWindowPrivate(
+        this.contentWindow
+      );
+      if (
+        this.document.visibilityState == "visible" &&
+        (!contentWindowPrivate ||
+          (contentWindowPrivate &&
+            PrivateBrowsingUtils.permanentPrivateBrowsing))
+      ) {
+        this.sendAsyncMessage("DefaultBrowserNotification");
       }
     }
   }

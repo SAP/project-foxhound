@@ -9,9 +9,26 @@
 #ifndef vm_CommonPropertyNames_h
 #define vm_CommonPropertyNames_h
 
-#include "js/ProtoKey.h"
+// The following common atoms are reserved by the js::StaticStrigs /
+// WellKnownParserAtoms::lookupTiny mechanisms. We still use a named reference
+// for the parser and VM to use.
+#define FOR_EACH_NON_EMPTY_TINY_PROPERTYNAME(MACRO) \
+  MACRO(as, as, "as")                               \
+  MACRO(by, by, "by")                               \
+  MACRO(comma, comma, ",")                          \
+  MACRO(do, do_, "do")                              \
+  MACRO(futexOK, futexOK, "ok")                     \
+  MACRO(if, if_, "if")                              \
+  MACRO(in, in, "in")                               \
+  MACRO(js, js, "js")                               \
+  MACRO(of, of, "of")                               \
+  MACRO(star, star, "*")
 
-#define FOR_EACH_COMMON_PROPERTYNAME(MACRO)                                    \
+#define FOR_EACH_TINY_PROPERTYNAME(MACRO) \
+  MACRO(empty, empty, "")                 \
+  FOR_EACH_NON_EMPTY_TINY_PROPERTYNAME(MACRO)
+
+#define FOR_EACH_NONTINY_COMMON_PROPERTYNAME(MACRO)                            \
   MACRO(abort, abort, "abort")                                                 \
   MACRO(add, add, "add")                                                       \
   MACRO(allowContentIter, allowContentIter, "allowContentIter")                \
@@ -29,7 +46,6 @@
   MACRO(ArrayToLocaleString, ArrayToLocaleString, "ArrayToLocaleString")       \
   MACRO(ArrayType, ArrayType, "ArrayType")                                     \
   MACRO(ArrayValues, ArrayValues, "$ArrayValues")                              \
-  MACRO(as, as, "as")                                                          \
   MACRO(Async, Async, "Async")                                                 \
   MACRO(AsyncFromSyncIterator, AsyncFromSyncIterator,                          \
         "Async-from-Sync Iterator")                                            \
@@ -50,7 +66,6 @@
   MACRO(breakdown, breakdown, "breakdown")                                     \
   MACRO(buffer, buffer, "buffer")                                              \
   MACRO(builder, builder, "builder")                                           \
-  MACRO(by, by, "by")                                                          \
   MACRO(byob, byob, "byob")                                                    \
   MACRO(byteAlignment, byteAlignment, "byteAlignment")                         \
   MACRO(byteLength, byteLength, "byteLength")                                  \
@@ -73,7 +88,6 @@
   MACRO(collation, collation, "collation")                                     \
   MACRO(collections, collections, "collections")                               \
   MACRO(columnNumber, columnNumber, "columnNumber")                            \
-  MACRO(comma, comma, ",")                                                     \
   MACRO(compare, compare, "compare")                                           \
   MACRO(configurable, configurable, "configurable")                            \
   MACRO(const, const_, "const")                                                \
@@ -82,7 +96,6 @@
         "constructContentFunction")                                            \
   MACRO(constructor, constructor, "constructor")                               \
   MACRO(continue, continue_, "continue")                                       \
-  MACRO(ConvertAndCopyTo, ConvertAndCopyTo, "ConvertAndCopyTo")                \
   MACRO(CopyDataProperties, CopyDataProperties, "CopyDataProperties")          \
   MACRO(CopyDataPropertiesUnfiltered, CopyDataPropertiesUnfiltered,            \
         "CopyDataPropertiesUnfiltered")                                        \
@@ -113,7 +126,6 @@
   MACRO(deleteProperty, deleteProperty, "deleteProperty")                      \
   MACRO(direction, direction, "direction")                                     \
   MACRO(displayURL, displayURL, "displayURL")                                  \
-  MACRO(do, do_, "do")                                                         \
   MACRO(domNode, domNode, "domNode")                                           \
   MACRO(done, done, "done")                                                    \
   MACRO(dotAll, dotAll, "dotAll")                                              \
@@ -127,7 +139,6 @@
   MACRO(element, element, "element")                                           \
   MACRO(elementType, elementType, "elementType")                               \
   MACRO(else, else_, "else")                                                   \
-  MACRO(empty, empty, "")                                                      \
   MACRO(emptyRegExp, emptyRegExp, "(?:)")                                      \
   MACRO(encodeURI, encodeURI, "encodeURI")                                     \
   MACRO(encodeURIComponent, encodeURIComponent, "encodeURIComponent")          \
@@ -174,7 +185,6 @@
   MACRO(from, from, "from")                                                    \
   MACRO(fulfilled, fulfilled, "fulfilled")                                     \
   MACRO(futexNotEqual, futexNotEqual, "not-equal")                             \
-  MACRO(futexOK, futexOK, "ok")                                                \
   MACRO(futexTimedOut, futexTimedOut, "timed-out")                             \
   MACRO(gcCycleNumber, gcCycleNumber, "gcCycleNumber")                         \
   MACRO(Generator, Generator, "Generator")                                     \
@@ -183,6 +193,8 @@
   MACRO(GeneratorThrow, GeneratorThrow, "GeneratorThrow")                      \
   MACRO(get, get, "get")                                                       \
   MACRO(GetAggregateError, GetAggregateError, "GetAggregateError")             \
+  MACRO(GetBuiltinConstructor, GetBuiltinConstructor, "GetBuiltinConstructor") \
+  MACRO(GetBuiltinPrototype, GetBuiltinPrototype, "GetBuiltinPrototype")       \
   MACRO(GetInternalError, GetInternalError, "GetInternalError")                \
   MACRO(getBigInt64, getBigInt64, "getBigInt64")                               \
   MACRO(getBigUint64, getBigUint64, "getBigUint64")                            \
@@ -211,12 +223,10 @@
   MACRO(highWaterMark, highWaterMark, "highWaterMark")                         \
   MACRO(hour, hour, "hour")                                                    \
   MACRO(hourCycle, hourCycle, "hourCycle")                                     \
-  MACRO(if, if_, "if")                                                         \
   MACRO(ignoreCase, ignoreCase, "ignoreCase")                                  \
   MACRO(ignorePunctuation, ignorePunctuation, "ignorePunctuation")             \
   MACRO(implements, implements, "implements")                                  \
   MACRO(import, import, "import")                                              \
-  MACRO(in, in, "in")                                                          \
   MACRO(includes, includes, "includes")                                        \
   MACRO(incumbentGlobal, incumbentGlobal, "incumbentGlobal")                   \
   MACRO(index, index, "index")                                                 \
@@ -257,7 +267,6 @@
   MACRO(IterableToList, IterableToList, "IterableToList")                      \
   MACRO(iterate, iterate, "iterate")                                           \
   MACRO(join, join, "join")                                                    \
-  MACRO(js, js, "js")                                                          \
   MACRO(keys, keys, "keys")                                                    \
   MACRO(label, label, "label")                                                 \
   MACRO(language, language, "language")                                        \
@@ -275,6 +284,7 @@
   MACRO(MapConstructorInit, MapConstructorInit, "MapConstructorInit")          \
   MACRO(MapIterator, MapIterator, "Map Iterator")                              \
   MACRO(maxColumn, maxColumn, "maxColumn")                                     \
+  MACRO(maximum, maximum, "maximum")                                           \
   MACRO(maximumFractionDigits, maximumFractionDigits, "maximumFractionDigits") \
   MACRO(maximumSignificantDigits, maximumSignificantDigits,                    \
         "maximumSignificantDigits")                                            \
@@ -284,6 +294,7 @@
   MACRO(meta, meta, "meta")                                                    \
   MACRO(minColumn, minColumn, "minColumn")                                     \
   MACRO(minDays, minDays, "minDays")                                           \
+  MACRO(minimum, minimum, "minimum")                                           \
   MACRO(minimumFractionDigits, minimumFractionDigits, "minimumFractionDigits") \
   MACRO(minimumIntegerDigits, minimumIntegerDigits, "minimumIntegerDigits")    \
   MACRO(minimumSignificantDigits, minimumSignificantDigits,                    \
@@ -300,6 +311,7 @@
   MACRO(ModuleEvaluate, ModuleEvaluate, "ModuleEvaluate")                      \
   MACRO(month, month, "month")                                                 \
   MACRO(multiline, multiline, "multiline")                                     \
+  MACRO(mutable, mutable_, "mutable")                                          \
   MACRO(name, name, "name")                                                    \
   MACRO(nan, nan, "nan")                                                       \
   MACRO(NaN, NaN, "NaN")                                                       \
@@ -313,6 +325,7 @@
   MACRO(NFKD, NFKD, "NFKD")                                                    \
   MACRO(noFilename, noFilename, "noFilename")                                  \
   MACRO(nonincrementalReason, nonincrementalReason, "nonincrementalReason")    \
+  MACRO(NoPrivateGetter, NoPrivateGetter, "NoPrivateGetter")                   \
   MACRO(noStack, noStack, "noStack")                                           \
   MACRO(notation, notation, "notation")                                        \
   MACRO(notes, notes, "notes")                                                 \
@@ -333,7 +346,6 @@
   MACRO(objectString, objectString, "[object String]")                         \
   MACRO(objectSymbol, objectSymbol, "[object Symbol]")                         \
   MACRO(objectUndefined, objectUndefined, "[object Undefined]")                \
-  MACRO(of, of, "of")                                                          \
   MACRO(offset, offset, "offset")                                              \
   MACRO(optimizedOut, optimizedOut, "optimizedOut")                            \
   MACRO(other, other, "other")                                                 \
@@ -404,7 +416,6 @@
   MACRO(source, source, "source")                                              \
   MACRO(SpeciesConstructor, SpeciesConstructor, "SpeciesConstructor")          \
   MACRO(stack, stack, "stack")                                                 \
-  MACRO(star, star, "*")                                                       \
   MACRO(starNamespaceStar, starNamespaceStar, "*namespace*")                   \
   MACRO(start, start, "start")                                                 \
   MACRO(startRange, startRange, "startRange")                                  \
@@ -471,6 +482,7 @@
         "UnsafeGetStringFromReservedSlot")                                     \
   MACRO(UnsafeGetBooleanFromReservedSlot, UnsafeGetBooleanFromReservedSlot,    \
         "UnsafeGetBooleanFromReservedSlot")                                    \
+  MACRO(UnsafeSetReservedSlot, UnsafeSetReservedSlot, "UnsafeSetReservedSlot") \
   MACRO(unsized, unsized, "unsized")                                           \
   MACRO(unwatch, unwatch, "unwatch")                                           \
   MACRO(url, url, "url")                                                       \
@@ -517,5 +529,9 @@
   MACRO(bigint, bigint, "bigint")                                              \
   MACRO(defineDataPropertyIntrinsic, defineDataPropertyIntrinsic,              \
         "_DefineDataProperty")
+
+#define FOR_EACH_COMMON_PROPERTYNAME(MACRO)   \
+  FOR_EACH_NONTINY_COMMON_PROPERTYNAME(MACRO) \
+  FOR_EACH_TINY_PROPERTYNAME(MACRO)
 
 #endif /* vm_CommonPropertyNames_h */

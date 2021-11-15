@@ -320,7 +320,7 @@ def write_new_expected(metadata_path, expected):
         manifest_str = wptmanifest.serialize(expected.node,
                                              skip_empty_data=True)
         assert manifest_str != ""
-        dir = os.path.split(path)[0]
+        dir = os.path.dirname(path)
         if not os.path.exists(dir):
             os.makedirs(dir)
         tmp_path = path + ".tmp"
@@ -621,6 +621,7 @@ class PackedResultList(object):
 class TestFileData(object):
     __slots__ = ("url_base", "item_type", "test_path", "metadata_path", "tests",
                  "_requires_update", "data")
+
     def __init__(self, url_base, item_type, metadata_path, test_path, tests):
         self.url_base = url_base
         self.item_type = item_type

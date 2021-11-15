@@ -93,6 +93,14 @@ NS_IMETHODIMP
 TRRLoadInfo::GetSandboxFlags(uint32_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
+NS_IMETHODIMP
+TRRLoadInfo::GetTriggeringSandboxFlags(uint32_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+NS_IMETHODIMP
+TRRLoadInfo::SetTriggeringSandboxFlags(uint32_t aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 NS_IMETHODIMP
 TRRLoadInfo::GetSecurityMode(uint32_t* aFlags) {
@@ -231,6 +239,17 @@ TRRLoadInfo::GetBrowserUpgradeInsecureRequests(bool* aResult) {
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetBrowserDidUpgradeInsecureRequests(bool* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetBrowserDidUpgradeInsecureRequests(
+    bool aBrowserDidUpgradeInsecureRequests) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetBrowserWouldUpgradeInsecureRequests(bool* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -296,7 +315,6 @@ NS_IMETHODIMP
 TRRLoadInfo::GetInnerWindowID(uint64_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
-
 
 NS_IMETHODIMP
 TRRLoadInfo::GetBrowsingContextID(uint64_t* aResult) {
@@ -455,16 +473,6 @@ TRRLoadInfo::GetDocumentHasUserInteracted(bool* aDocumentHasUserInteracted) {
 
 NS_IMETHODIMP
 TRRLoadInfo::SetDocumentHasUserInteracted(bool aDocumentHasUserInteracted) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::GetDocumentHasLoaded(bool* aDocumentHasLoaded) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::SetDocumentHasLoaded(bool aDocumentHasLoaded) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

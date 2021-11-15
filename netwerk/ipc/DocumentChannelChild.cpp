@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocumentChannelChild.h"
+#include "nsIObjectLoadingContent.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
@@ -105,9 +106,6 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
     args.timing() = Some(mTiming);
   }
 
-  args.hasValidTransientUserAction() =
-      loadingContext->HasValidTransientUserGestureActivation();
-
   switch (mLoadInfo->GetExternalContentPolicyType()) {
     case nsIContentPolicy::TYPE_DOCUMENT:
     case nsIContentPolicy::TYPE_SUBDOCUMENT: {
@@ -134,8 +132,8 @@ DocumentChannelChild::AsyncOpen(nsIStreamListener* aListener) {
   switch (mLoadInfo->GetExternalContentPolicyType()) {
     case nsIContentPolicy::TYPE_DOCUMENT:
     case nsIContentPolicy::TYPE_SUBDOCUMENT:
-      loadingContext->SetCurrentLoadIdentifier(
-          Some(mLoadState->GetLoadIdentifier()));
+      MOZ_ALWAYS_SUCCEEDS(loadingContext->SetCurrentLoadIdentifier(
+          Some(mLoadState->GetLoadIdentifier())));
       break;
 
     default:
@@ -257,8 +255,9 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
   }
 
   nsDocShell* docShell = GetDocShell();
-  if (docShell && aArgs.sessionHistoryInfo().isSome()) {
-    docShell->SetLoadingSessionHistoryInfo(aArgs.sessionHistoryInfo().ref());
+  if (docShell && aArgs.loadingSessionHistoryInfo().isSome()) {
+    docShell->SetLoadingSessionHistoryInfo(
+        aArgs.loadingSessionHistoryInfo().ref());
   }
 
   // transfer any properties. This appears to be entirely a content-side
@@ -293,6 +292,48 @@ IPCResult DocumentChannelChild::RecvRedirectToRealChannel(
   }
 
   // scopeExit will call CrossProcessRedirectFinished(rv) here
+  return IPC_OK();
+}
+
+IPCResult DocumentChannelChild::RecvUpgradeObjectLoad(
+    UpgradeObjectLoadResolver&& aResolve) {
+  // We're doing a load for an <object> or <embed> element if we got here.
+  MOZ_ASSERT(mLoadFlags & nsIRequest::LOAD_HTML_OBJECT_DATA,
+             "Should have LOAD_HTML_OBJECT_DATA set");
+  MOZ_ASSERT(!(mLoadFlags & nsIChannel::LOAD_DOCUMENT_URI),
+             "Shouldn't be a LOAD_DOCUMENT_URI load yet");
+  MOZ_ASSERT(mLoadInfo->GetExternalContentPolicyType() ==
+                 nsIContentPolicy::TYPE_OBJECT,
+             "Should have the TYPE_OBJECT content policy type");
+
+  // If our load has already failed, or been cancelled, abort this attempt to
+  // upgade the load.
+  if (NS_FAILED(mStatus)) {
+    aResolve(nullptr);
+    return IPC_OK();
+  }
+
+  nsCOMPtr<nsIObjectLoadingContent> loadingContent;
+  NS_QueryNotificationCallbacks(this, loadingContent);
+  if (!loadingContent) {
+    return IPC_FAIL(this, "Channel is not for ObjectLoadingContent!");
+  }
+
+  // We're upgrading to a document channel now. Add the LOAD_DOCUMENT_URI flag
+  // after-the-fact.
+  mLoadFlags |= nsIChannel::LOAD_DOCUMENT_URI;
+
+  RefPtr<BrowsingContext> browsingContext;
+  nsresult rv = loadingContent->UpgradeLoadToDocument(
+      this, getter_AddRefs(browsingContext));
+  if (NS_FAILED(rv) || !browsingContext) {
+    // Oops! Looks like something went wrong, so let's bail out.
+    mLoadFlags &= ~nsIChannel::LOAD_DOCUMENT_URI;
+    aResolve(nullptr);
+    return IPC_OK();
+  }
+
+  aResolve(browsingContext);
   return IPC_OK();
 }
 

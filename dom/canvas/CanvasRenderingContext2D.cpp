@@ -67,6 +67,7 @@
 #include "jsfriendapi.h"
 #include "js/Array.h"  // JS::GetArrayLength
 #include "js/Conversions.h"
+#include "js/experimental/TypedData.h"  // JS_NewUint8ClampedArray, JS_GetUint8ClampedArrayData
 #include "js/HeapAPI.h"
 #include "js/Warnings.h"  // JS::WarnASCII
 
@@ -110,6 +111,7 @@
 #include "nsGlobalWindow.h"
 #include "nsDeviceContext.h"
 #include "nsFontMetrics.h"
+#include "nsLayoutUtils.h"
 #include "Units.h"
 #include "CanvasUtils.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
@@ -138,8 +140,7 @@ using namespace mozilla::image;
 using namespace mozilla::ipc;
 using namespace mozilla::layers;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Cap sigma to avoid overly large temp surfaces.
 const Float SIGMA_MAX = 100;
@@ -152,17 +153,13 @@ static int64_t gCanvasAzureMemoryUsed = 0;
 // Adds Save() / Restore() calls to the scope.
 class MOZ_RAII AutoSaveRestore {
  public:
-  explicit AutoSaveRestore(
-      CanvasRenderingContext2D* aCtx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : mCtx(aCtx) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  explicit AutoSaveRestore(CanvasRenderingContext2D* aCtx) : mCtx(aCtx) {
     mCtx->Save();
   }
   ~AutoSaveRestore() { mCtx->Restore(); }
 
  private:
   RefPtr<CanvasRenderingContext2D> mCtx;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // This is KIND_OTHER because it's not always clear where in memory the pixels
@@ -1318,9 +1315,12 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
   if (mCanvasElement) {
     mCanvasElement->InvalidateCanvas();
   }
+  // EnsureTarget hasn't drawn anything. Preserve mIsCapturedFrameInvalid.
+  bool capturedFrameInvalid = mIsCapturedFrameInvalid;
   // Calling Redraw() tells our invalidation machinery that the entire
   // canvas is already invalid, which can speed up future drawing.
   Redraw();
+  mIsCapturedFrameInvalid = capturedFrameInvalid;
 
   return true;
 }
@@ -2068,7 +2068,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     }
 
     // Special case for Canvas, which could be an Azure canvas!
-    nsICanvasRenderingContextInternal* srcCanvas = canvas->GetContextAtIndex(0);
+    nsICanvasRenderingContextInternal* srcCanvas = canvas->GetCurrentContext();
     if (srcCanvas) {
       // This might not be an Azure canvas!
       RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
@@ -2132,9 +2132,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
 
   // The canvas spec says that createPattern should use the first frame
   // of animated images
-  nsLayoutUtils::SurfaceFromElementResult res =
-      nsLayoutUtils::SurfaceFromElement(
-          element, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE, mTarget);
+  SurfaceFromElementResult res = nsLayoutUtils::SurfaceFromElement(
+      element, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE, mTarget);
 
   // Per spec, we should throw here for the HTMLImageElement and SVGImageElement
   // cases if the image request state is "broken".  In terms of the infromation
@@ -2185,14 +2184,9 @@ void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
 static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
     nsCSSPropertyID aProperty, const nsAString& aPropertyValue,
     Document* aDocument) {
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForInternalCSSResources(aDocument);
-
-  RefPtr<URLExtraData> data = new URLExtraData(
-      aDocument->GetDocBaseURI(), referrerInfo, aDocument->NodePrincipal());
-
-  ServoCSSParser::ParsingEnvironment env(
-      data, aDocument->GetCompatibilityMode(), aDocument->CSSLoader());
+  ServoCSSParser::ParsingEnvironment env{aDocument->DefaultStyleAttrURLData(),
+                                         aDocument->GetCompatibilityMode(),
+                                         aDocument->CSSLoader()};
   RefPtr<RawServoDeclarationBlock> servoDeclarations =
       ServoCSSParser::ParseProperty(aProperty, aPropertyValue, env);
 
@@ -2206,9 +2200,9 @@ static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
   if (aProperty == eCSSProperty_font) {
     const nsCString normalString = "normal"_ns;
     Servo_DeclarationBlock_SetPropertyById(
-        servoDeclarations, eCSSProperty_line_height, &normalString, false, data,
-        ParsingMode::Default, aDocument->GetCompatibilityMode(),
-        aDocument->CSSLoader(), {});
+        servoDeclarations, eCSSProperty_line_height, &normalString, false,
+        env.mUrlExtraData, ParsingMode::Default, env.mCompatMode, env.mLoader,
+        env.mRuleType, {});
   }
 
   return servoDeclarations.forget();
@@ -2317,7 +2311,7 @@ bool CanvasRenderingContext2D::ParseFilter(
   }
 
   RefPtr<PresShell> presShell = GetPresShell();
-  if (!presShell) {
+  if (NS_WARN_IF(!presShell)) {
     aError.Throw(NS_ERROR_FAILURE);
     return false;
   }
@@ -3189,7 +3183,7 @@ bool CanvasRenderingContext2D::SetFontInternal(const nsAString& aFont,
   }
 
   RefPtr<PresShell> presShell = GetPresShell();
-  if (!presShell) {
+  if (NS_WARN_IF(!presShell)) {
     aError.Throw(NS_ERROR_FAILURE);
     return false;
   }
@@ -3394,8 +3388,8 @@ void CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& aOptions,
       }
     }
 #ifdef ACCESSIBILITY
-    aOptions.mControl->SetProperty(nsGkAtoms::hitregion, new bool(true),
-                                   nsINode::DeleteProperty<bool>);
+    aOptions.mControl->SetProperty(nsGkAtoms::hitregion,
+                                   reinterpret_cast<void*>(true));
 #endif
   }
 
@@ -3718,7 +3712,7 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
   }
 
   RefPtr<PresShell> presShell = GetPresShell();
-  if (!presShell) {
+  if (NS_WARN_IF(!presShell)) {
     aError = NS_ERROR_FAILURE;
     return nullptr;
   }
@@ -4003,6 +3997,9 @@ gfxFontGroup* CanvasRenderingContext2D::GetCurrentFontStyle() {
     bool fontUpdated = SetFontInternal(kDefaultFontStyle, err);
     if (err.Failed() || !fontUpdated) {
       err.SuppressException();
+      // XXX Should we get a default lang from the prescontext or something?
+      nsAtom* language = nsGkAtoms::x_western;
+      bool explicitLanguage = false;
       gfxFontStyle style;
       style.size = kDefaultFontSize;
       gfxTextPerfMetrics* tp = nullptr;
@@ -4015,8 +4012,8 @@ gfxFontGroup* CanvasRenderingContext2D::GetCurrentFontStyle() {
       GetAppUnitsValues(&perDevPixel, &perCSSPixel);
       gfxFloat devToCssSize = gfxFloat(perDevPixel) / gfxFloat(perCSSPixel);
       CurrentState().fontGroup = gfxPlatform::GetPlatform()->CreateFontGroup(
-          FontFamilyList(StyleGenericFontFamily::SansSerif), &style, tp,
-          fontStats, nullptr, devToCssSize);
+          FontFamilyList(StyleGenericFontFamily::SansSerif), &style, language,
+          explicitLanguage, tp, fontStats, nullptr, devToCssSize);
       if (CurrentState().fontGroup) {
         CurrentState().font = kDefaultFontStyle;
       } else {
@@ -4311,9 +4308,9 @@ static void ClipImageDimension(double& aSourceCoord, double& aSourceSize,
 // Acts like nsLayoutUtils::SurfaceFromElement, but it'll attempt
 // to pull a SourceSurface from our cache. This allows us to avoid
 // reoptimizing surfaces if content and canvas backends are different.
-nsLayoutUtils::SurfaceFromElementResult
-CanvasRenderingContext2D::CachedSurfaceFromElement(Element* aElement) {
-  nsLayoutUtils::SurfaceFromElementResult res;
+SurfaceFromElementResult CanvasRenderingContext2D::CachedSurfaceFromElement(
+    Element* aElement) {
+  SurfaceFromElementResult res;
   nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(aElement);
   if (!imageLoader) {
     return res;
@@ -4452,7 +4449,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
                                              &intrinsicImgSize);
   }
 
-  nsLayoutUtils::DirectDrawInfo drawInfo;
+  DirectDrawInfo drawInfo;
 
   if (!srcSurf) {
     // The canvas spec says that drawImage should draw the first frame
@@ -4460,7 +4457,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     uint32_t sfeFlags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
                         nsLayoutUtils::SFE_NO_RASTERIZING_VECTORS;
 
-    nsLayoutUtils::SurfaceFromElementResult res =
+    SurfaceFromElementResult res =
         CanvasRenderingContext2D::CachedSurfaceFromElement(element);
 
     if (!res.mSourceSurface) {
@@ -4511,7 +4508,6 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
   }
 
   if (aSw == 0.0 || aSh == 0.0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
   }
 
@@ -4595,8 +4591,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 }
 
 void CanvasRenderingContext2D::DrawDirectlyToCanvas(
-    const nsLayoutUtils::DirectDrawInfo& aImage, gfx::Rect* aBounds,
-    gfx::Rect aDest, gfx::Rect aSrc, gfx::IntSize aImgSize) {
+    const DirectDrawInfo& aImage, gfx::Rect* aBounds, gfx::Rect aDest,
+    gfx::Rect aSrc, gfx::IntSize aImgSize) {
   MOZ_ASSERT(aSrc.width > 0 && aSrc.height > 0,
              "Need positive source width and height");
 
@@ -4880,27 +4876,6 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
       aError.Throw(NS_ERROR_FAILURE);
       return;
     }
-    RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
-    if (!data || !Factory::AllowedSurfaceSize(data->GetSize())) {
-      gfxCriticalError() << "Unexpected invalid data source surface "
-                         << (data ? data->GetSize() : IntSize(0, 0));
-      aError.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-
-    DataSourceSurface::MappedSurface rawData;
-    if (NS_WARN_IF(!data->Map(DataSourceSurface::READ, &rawData))) {
-      aError.Throw(NS_ERROR_FAILURE);
-      return;
-    }
-    RefPtr<SourceSurface> source = mTarget->CreateSourceSurfaceFromData(
-        rawData.mData, data->GetSize(), rawData.mStride, data->GetFormat());
-    data->Unmap();
-
-    if (!source) {
-      aError.Throw(NS_ERROR_FAILURE);
-      return;
-    }
 
     op = UsedOperation();
     if (!IsTargetValid()) {
@@ -4909,7 +4884,7 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
     }
     gfx::Rect destRect(0, 0, aW, aH);
     gfx::Rect sourceRect(0, 0, sw, sh);
-    mTarget->DrawSurface(source, destRect, sourceRect,
+    mTarget->DrawSurface(snapshot, destRect, sourceRect,
                          DrawSurfaceOptions(gfx::SamplingFilter::POINT),
                          DrawOptions(GlobalAlpha(), op, AntialiasMode::NONE));
   } else {
@@ -5757,5 +5732,4 @@ size_t BindingJSObjectMallocBytes(CanvasRenderingContext2D* aContext) {
   return bytes.value();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

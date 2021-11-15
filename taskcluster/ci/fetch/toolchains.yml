@@ -72,13 +72,13 @@ gcc-8.3.0:
         strip-components: 1
         add-prefix: gcc-source/
 
-gcc-9.1.0:
-    description: GCC 9.1.0 source code
+gcc-9.3.0:
+    description: GCC 9.3.0 source code
     fetch:
         type: static-url
-        url: ftp://ftp.gnu.org/gnu/gcc/gcc-9.1.0/gcc-9.1.0.tar.xz
-        sha256: 79a66834e96a6050d8fe78db2c3b32fb285b230b855d0a66288235bc04b327a0
-        size: 70546856
+        url: ftp://ftp.gnu.org/gnu/gcc/gcc-9.3.0/gcc-9.3.0.tar.xz
+        sha256: 71e197867611f6054aa1119b13a0c0abac12834765fe2d81f35ac57f84f742d1
+        size: 70533868
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/33C235A34C46AA3FFB293709A328C3A2C3C45C06.key
@@ -113,6 +113,14 @@ gmp-6.1.0:
         artifact-name: gmp-source.tar.zst
         strip-components: 1
         add-prefix: gmp-source/
+
+go-1.14.4:
+    description: Golang 1.14.4 build tools
+    fetch:
+        type: static-url
+        url: https://dl.google.com/go/go1.14.4.linux-amd64.tar.gz
+        sha256: aed845e4185a0b2a3c3d5e1d0a35491702c55889192bb9c30e67a3de6849c067
+        size: 123711003
 
 iris-2.0:
     description: Iris_Firefox source code
@@ -280,26 +288,26 @@ wine-5.0:
             sig-url: "{url}.sign"
             key-path: build/unix/build-gcc/DA23579A74D4AD9AF9D3F945CEFAC8EAAF17519D.key
 
-cbindgen-0.14.3:
+cbindgen-0.15.0:
     description: cbindgen source code
     fetch:
         type: git
         repo: https://github.com/eqrion/cbindgen
-        revision: cc2876f709808a52d132a5f84e53ca1964eb92db
+        revision: 83b3be9f884697a51f8717af8b5498866a81e62e
 
 cctools-port:
     description: cctools-port source code
     fetch:
         type: git
         repo: https://github.com/tpoechtrager/cctools-port
-        revision: 4e1faecce83dc14108397a9fb6e7025411e4702d
+        revision: 43f32a4c61b5ba7fde011e816136c550b1b3146f
 
 libtapi:
     description: libtapi source code
     fetch:
         type: git
         repo: https://github.com/tpoechtrager/apple-libtapi
-        revision: 3efb201881e7a76a21e0554906cf306432539cef
+        revision: b4f141a16c7c82f75973429c92242a8c7de3ddb1
 
 libdmg-hfsplus:
     description: libdmg-hfsplug source code
@@ -344,7 +352,7 @@ sccache:
         type: git
         repo: https://github.com/mozilla/sccache
         # 0.2.13 release + various changes
-        revision: d172e77c1bfd08714e71fe80f80cc149eeae1749
+        revision: 6628e1f70db3d583cb5e79210603ad878de3d315
 
 fxc2:
     description: fxc2 source code
@@ -357,8 +365,8 @@ mingw-w64:
     description: mingw-w64 source code
     fetch:
         type: git
-        repo: git://git.code.sf.net/p/mingw-w64/mingw-w64
-        revision: 1b373beec6d07478ffba33726bb3bb21f32e4411
+        repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
+        revision: bd8ca6c303658659496d0c440cf9f2baa8f7a5f0
 
 libunwind:
     description: libunwind source code
@@ -416,12 +424,19 @@ clang-10:
         repo: https://github.com/llvm/llvm-project
         revision: d32170dbd5b0d54436537b6b75beaf44324e0c28
 
+clang-11:
+    description: clang 11.0.0 source code
+    fetch:
+        type: git
+        repo: https://github.com/llvm/llvm-project
+        revision: 176249bd6732a8044d457092ed932768724a6f06
+
 wasi-sdk:
     description: wasi-sdk source code
     fetch:
         type: git
-        repo: https://github.com/CraneStation/wasi-sdk
-        revision: 5225b05436ce57f01fe649f411f3ff701246628b
+        repo: https://github.com/WebAssembly/wasi-sdk
+        revision: 8446a3f8d49f70d17e38cefd9990a9e79bf3e78a
 
 ninja:
     description: ninja 1.9.0
@@ -449,22 +464,21 @@ lucetc-source:
     fetch:
         type: git
         repo: https://github.com/PLSysSec/lucet_sandbox_compiler/
-        revision: a0a1ce981638109f1f76cd1eecf17a0436a20055
+        revision: 477d8fc53a64705a9d3fbcce9de92f4988558525
 
 dump-syms:
     description: dump_syms source code
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        # 0.0.5 + ELF/MachO/fixes
-        revision: 756bf4b555418960564c0a7c6d5ed0b1a8329283
+        revision: 1e64e56720131bcf0ab01f201ed89a337c73069d
 
 fix-stacks:
     description: fix-stacks source code
     fetch:
         type: git
         repo: https://github.com/mozilla/fix-stacks/
-        revision: b8b127d27cdcd64a5e66a7fb0a06c6c818445a61
+        revision: 45a3301151244615df92c503379bb189dc3ee7f5
 
 winchecksec:
     description: winchecksec source code
@@ -492,3 +506,10 @@ sonatype-nexus:
         artifact-name: sonatype-nexus.tar.zst
         strip-components: 1
         add-prefix: sonatype-nexus/
+
+makecab:
+    description: makecab source code
+    fetch:
+        type: git
+        repo: https://github.com/luser/rust-makecab/
+        revision: d2bc6797648b7a834782714a55d339d2fd4e58c8

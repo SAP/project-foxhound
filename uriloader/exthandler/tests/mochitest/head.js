@@ -121,3 +121,77 @@ async function openHelperAppDialog(launcher) {
 
   return dlg;
 }
+
+async function waitForSubDialog(browser, url, state) {
+  let eventStr = state ? "dialogopen" : "dialogclose";
+
+  let tabDialogBox = gBrowser.getTabDialogBox(browser);
+  let dialogStack = tabDialogBox._dialogManager._dialogStack;
+
+  let checkFn;
+
+  if (state) {
+    checkFn = dialogEvent => dialogEvent.detail.dialog?._openedURL == url;
+  }
+
+  let event = await BrowserTestUtils.waitForEvent(
+    dialogStack,
+    eventStr,
+    true,
+    checkFn
+  );
+
+  let { dialog } = event.detail;
+
+  // If the dialog is closing wait for it to be fully closed before resolving
+  if (!state) {
+    await dialog._closingPromise;
+  }
+
+  return event.detail.dialog;
+}
+
+/**
+ * Wait for protocol permission dialog open/close.
+ * @param {MozBrowser} browser - Browser element the dialog belongs to.
+ * @param {boolean} state - true: dialog open, false: dialog close
+ * @returns {Promise<SubDialog>} - Returns a promise which resolves with the
+ * SubDialog object of the dialog which closed or opened.
+ */
+async function waitForProtocolPermissionDialog(browser, state) {
+  return waitForSubDialog(
+    browser,
+    "chrome://mozapps/content/handling/permissionDialog.xhtml",
+    state
+  );
+}
+
+/**
+ * Wait for protocol app chooser dialog open/close.
+ * @param {MozBrowser} browser - Browser element the dialog belongs to.
+ * @param {boolean} state - true: dialog open, false: dialog close
+ * @returns {Promise<SubDialog>} - Returns a promise which resolves with the
+ * SubDialog object of the dialog which closed or opened.
+ */
+async function waitForProtocolAppChooserDialog(browser, state) {
+  return waitForSubDialog(
+    browser,
+    "chrome://mozapps/content/handling/appChooser.xhtml",
+    state
+  );
+}
+
+async function promiseDownloadFinished(list) {
+  return new Promise(resolve => {
+    list.addView({
+      onDownloadChanged(download) {
+        info("Download changed!");
+        if (download.succeeded || download.error) {
+          info("Download succeeded or errored");
+          list.removeView(this);
+          resolve(download);
+        }
+      },
+    });
+  });
+}

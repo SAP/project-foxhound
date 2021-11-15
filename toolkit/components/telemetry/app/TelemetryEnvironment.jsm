@@ -262,13 +262,21 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["extensions.enabledScopes", { what: RECORD_PREF_VALUE }],
   ["extensions.blocklist.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.formautofill.addresses.enabled", { what: RECORD_PREF_VALUE }],
+  [
+    "extensions.formautofill.addresses.capture.enabled",
+    { what: RECORD_PREF_VALUE },
+  ],
   ["extensions.formautofill.creditCards.enabled", { what: RECORD_PREF_VALUE }],
+  [
+    "extensions.formautofill.creditCards.available",
+    { what: RECORD_PREF_VALUE },
+  ],
+  ["extensions.formautofill.creditCards.used", { what: RECORD_PREF_VALUE }],
   ["extensions.strictCompatibility", { what: RECORD_PREF_VALUE }],
   ["extensions.update.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.update.url", { what: RECORD_PREF_VALUE }],
   ["extensions.update.background.url", { what: RECORD_PREF_VALUE }],
   ["extensions.screenshots.disabled", { what: RECORD_PREF_VALUE }],
-  ["fission.autostart", { what: RECORD_DEFAULTPREF_VALUE }],
   ["general.config.filename", { what: RECORD_DEFAULTPREF_STATE }],
   ["general.smoothScroll", { what: RECORD_PREF_VALUE }],
   ["gfx.direct2d.disabled", { what: RECORD_PREF_VALUE }],
@@ -313,6 +321,12 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["signon.generation.enabled", { what: RECORD_PREF_VALUE }],
   ["signon.rememberSignons", { what: RECORD_PREF_VALUE }],
   ["toolkit.telemetry.pioneerId", { what: RECORD_PREF_STATE }],
+  ["widget.content.allow-gtk-dark-theme", { what: RECORD_DEFAULTPREF_VALUE }],
+  ["widget.content.gtk-theme-override", { what: RECORD_PREF_STATE }],
+  [
+    "widget.content.gtk-high-contrast.enabled",
+    { what: RECORD_DEFAULTPREF_VALUE },
+  ],
   ["xpinstall.signatures.required", { what: RECORD_PREF_VALUE }],
 ]);
 
@@ -325,7 +339,6 @@ const PREF_DISTRIBUTOR = "app.distributor";
 const PREF_DISTRIBUTOR_CHANNEL = "app.distributor.channel";
 const PREF_APP_PARTNER_BRANCH = "app.partner.";
 const PREF_PARTNER_ID = "mozilla.partner.id";
-const PREF_SEARCH_COHORT = "browser.search.cohort";
 
 const COMPOSITOR_CREATED_TOPIC = "compositor:created";
 const COMPOSITOR_PROCESS_ABORTED_TOPIC = "compositor:process-aborted";
@@ -1452,13 +1465,6 @@ EnvironmentCache.prototype = {
         ...defaultEngineInfo.defaultPrivateSearchEngineData,
       };
     }
-
-    // Record the cohort identifier used for search defaults A/B testing.
-    if (Services.prefs.prefHasUserValue(PREF_SEARCH_COHORT)) {
-      const searchCohort = Services.prefs.getCharPref(PREF_SEARCH_COHORT);
-      this._currentEnvironment.settings.searchCohort = searchCohort;
-      TelemetryEnvironment.setExperimentActive("searchCohort", searchCohort);
-    }
   },
 
   /**
@@ -1602,6 +1608,7 @@ EnvironmentCache.prototype = {
       ),
       e10sEnabled: Services.appinfo.browserTabsRemoteAutostart,
       e10sMultiProcesses: Services.appinfo.maxWebProcessCount,
+      fissionEnabled: Services.appinfo.fissionAutostart,
       telemetryEnabled: Utils.isTelemetryEnabled,
       locale: getBrowserLocale(),
       // We need to wait for browser-delayed-startup-finished to ensure that the locales
@@ -2073,6 +2080,10 @@ EnvironmentCache.prototype = {
     if (this._shutdown) {
       this._log.trace("_onEnvironmentChange - Already shut down.");
       return;
+    }
+
+    if (ObjectUtils.deepEqual(this._currentEnvironment, oldEnvironment)) {
+      Services.telemetry.scalarAdd("telemetry.environment_didnt_change", 1);
     }
 
     for (let [name, listener] of this._changeListeners) {

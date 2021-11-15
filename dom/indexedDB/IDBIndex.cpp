@@ -23,8 +23,7 @@
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 
@@ -526,12 +525,13 @@ RefPtr<IDBRequest> IDBIndex::OpenCursorInternal(bool aKeysOnly, JSContext* aCx,
         IDB_LOG_STRINGIFY(aDirection));
   }
 
-  BackgroundCursorChildBase* const actor =
-      aKeysOnly ? static_cast<BackgroundCursorChildBase*>(
-                      new BackgroundCursorChild<IDBCursorType::IndexKey>(
-                          request, this, aDirection))
-                : new BackgroundCursorChild<IDBCursorType::Index>(request, this,
-                                                                  aDirection);
+  const auto actor =
+      aKeysOnly
+          ? static_cast<SafeRefPtr<BackgroundCursorChildBase>>(
+                MakeSafeRefPtr<BackgroundCursorChild<IDBCursorType::IndexKey>>(
+                    request, this, aDirection))
+          : MakeSafeRefPtr<BackgroundCursorChild<IDBCursorType::Index>>(
+                request, this, aDirection);
 
   auto& mutableTransaction = mObjectStore->MutableTransactionRef();
 
@@ -540,7 +540,7 @@ RefPtr<IDBRequest> IDBIndex::OpenCursorInternal(bool aKeysOnly, JSContext* aCx,
   // doesn't require invalidating cursor caches (Bug 1580499).
   mutableTransaction.InvalidateCursorCaches();
 
-  mutableTransaction.OpenCursor(actor, params);
+  mutableTransaction.OpenCursor(*actor, params);
 
   return request;
 }
@@ -635,5 +635,4 @@ JSObject* IDBIndex::WrapObject(JSContext* aCx,
   return IDBIndex_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

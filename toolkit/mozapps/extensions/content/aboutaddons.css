@@ -98,7 +98,7 @@ body {
   background-image: url("chrome://mozapps/skin/extensions/category-themes.svg");
 }
 .category[name="plugin"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-plugins.svg");
+  background-image: url("chrome://global/skin/plugins/plugin.svg");
 }
 .category[name="dictionary"] {
   background-image: url("chrome://mozapps/skin/extensions/category-dictionaries.svg");
@@ -111,7 +111,7 @@ body {
 }
 
 .header-name {
-  -moz-user-select: initial;
+  user-select: initial;
 }
 
 .sticky-container {
@@ -235,18 +235,33 @@ addon-card[expanded] .addon.card {
 }
 
 addon-list addon-card > .addon.card {
-  -moz-user-select: none;
+  user-select: none;
 }
 
-.addon-card-message {
+.addon-card-message,
+.update-postponed-bar {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   margin: 8px calc(var(--card-padding) * -1) calc(var(--card-padding) * -1);
 }
 
-addon-card[expanded] .addon-card-message {
+addon-card[expanded] .addon-card-message,
+addon-card[expanded] .update-postponed-bar {
   border-radius: 0;
   margin-bottom: 0;
+}
+
+addon-card[expanded] .update-postponed-bar + .addon-card-message {
+  /* Remove margin between the two message bars when they are both
+   * visible in the detail view */
+  margin-top: 0px;
+}
+
+.update-postponed-bar + .addon-card-message {
+  /* Prevent the small overlapping between the two message bars
+   * when they are both visible at the same time one after the
+   * other on the same addon card */
+  margin-top: 12px;
 }
 
 /* Theme preview image. */
@@ -300,12 +315,14 @@ addon-card[expanded] .addon-card-message {
 .addon-badge {
   display: inline-block;
   margin-inline-end: 8px;
-  width: 16px;
-  height: 16px;
-  background-size: 16px;
+  width: 22px;
+  height: 22px;
   background-repeat: no-repeat;
   background-position: center;
   flex-shrink: 0;
+  border-radius: 11px;
+  -moz-context-properties: fill;
+  fill: #fff;
 }
 
 .addon-badge-private-browsing-allowed {
@@ -315,10 +332,21 @@ addon-card[expanded] .addon-card-message {
 .addon-badge-recommended {
   background-color: var(--orange-50);
   background-image: url("chrome://mozapps/skin/extensions/recommended.svg");
-  background-size: 10px;
-  border-radius: 8px;
-  fill: #fff;
-  -moz-context-properties: fill;
+}
+
+.addon-badge-line {
+  background-color: #fff;
+  background-image: url("chrome://mozapps/skin/extensions/line.svg");
+  background-size: 16px;
+  border-radius: 10px;
+  border: 1px solid #CFCFD8;
+  width: 20px;
+  height: 20px;
+}
+
+.addon-badge-verified {
+  background-color: var(--green-70);
+  background-image: url("chrome://global/skin/icons/check.svg");
 }
 
 .theme-enable-button {
@@ -604,8 +632,46 @@ panel-item-separator {
   margin-block: 4px;
 }
 
-addon-permissions-list > .addon-detail-row:first-of-type {
+addon-permissions-list > .addon-detail-row {
   border-top: none;
+}
+
+.addon-permissions-list {
+  list-style-type: none;
+  margin: 0;
+  padding-inline-start: 8px;
+}
+
+.addon-permissions-list > li {
+  border: none;
+  padding-block: 4px;
+  padding-inline-start: 2rem;
+  background-image: none;
+  background-position: 0 center;
+  background-size: 1.6rem 1.6rem;
+  background-repeat: no-repeat;
+}
+
+.addon-permissions-list > li:dir(rtl) {
+  background-position-x: right 0;
+}
+
+/* justify the permission toggle */
+li.permission-info > label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* using a list-style-image prevents aligning the image */
+.addon-permissions-list > li.permission-checked {
+  background-image: url("chrome://global/skin/icons/check.svg");
+  -moz-context-properties: fill;
+  fill: var(--green-60);
+}
+
+.permission-header {
+  font-size: 1em;
 }
 
 .tab-group {

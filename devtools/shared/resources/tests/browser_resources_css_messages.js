@@ -26,13 +26,6 @@ httpServer.registerPathHandler(`/test_css_messages.html`, (req, res) => {
 const TEST_URI = `http://localhost:${httpServer.identity.primaryPort}/test_css_messages.html`;
 
 add_task(async function() {
-  info("Test css messages legacy listener");
-  await pushPref("devtools.testing.enableServerWatcherSupport", false);
-  await testWatchingCssMessages();
-  await testWatchingCachedCssMessages();
-
-  info("Test css messages server listener");
-  await pushPref("devtools.testing.enableServerWatcherSupport", true);
   await testWatchingCssMessages();
   await testWatchingCachedCssMessages();
 });
@@ -45,11 +38,9 @@ async function testWatchingCssMessages() {
   // Open a test tab
   const tab = await addTab(TEST_URI);
 
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   const receivedMessages = [];
   const { onAvailable, onAllMessagesReceived } = setupOnAvailableFunction(
@@ -77,7 +68,7 @@ async function testWatchingCssMessages() {
   ok(true, "All the expected CSS messages were received");
 
   Services.console.reset();
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 }
 
@@ -109,11 +100,9 @@ async function testWatchingCachedCssMessages() {
 
   // At this point, all messages should be in the ConsoleService cache, and we can begin
   // to watch and check that we do retrieve those messages.
-  const {
-    client,
-    resourceWatcher,
-    targetList,
-  } = await initResourceWatcherAndTarget(tab);
+  const { client, resourceWatcher, targetList } = await initResourceWatcher(
+    tab
+  );
 
   const receivedMessages = [];
   const { onAvailable } = setupOnAvailableFunction(
@@ -126,7 +115,7 @@ async function testWatchingCachedCssMessages() {
   is(receivedMessages.length, 3, "Cached messages were retrieved as expected");
 
   Services.console.reset();
-  targetList.stopListening();
+  targetList.destroy();
   await client.close();
 }
 
@@ -170,29 +159,33 @@ function setupOnAvailableFunction(targetList, receivedMessages) {
 
   let done;
   const onAllMessagesReceived = new Promise(resolve => (done = resolve));
-  const onAvailable = ({ resourceType, targetFront, resource }) => {
-    const { pageError } = resource;
+  const onAvailable = resources => {
+    for (const resource of resources) {
+      const { pageError } = resource;
 
-    is(
-      resource.targetFront,
-      targetList.targetFront,
-      "The targetFront property is the expected one"
-    );
+      is(
+        resource.targetFront,
+        targetList.targetFront,
+        "The targetFront property is the expected one"
+      );
 
-    if (!pageError.sourceName.includes("test_css_messages")) {
-      info(`Ignore error from unknown source: "${pageError.sourceName}"`);
-      return;
-    }
+      if (!pageError.sourceName.includes("test_css_messages")) {
+        info(`Ignore error from unknown source: "${pageError.sourceName}"`);
+        continue;
+      }
 
-    const index = receivedMessages.length;
-    receivedMessages.push(pageError);
+      const index = receivedMessages.length;
+      receivedMessages.push(pageError);
 
-    info(`checking received css message #${index}: ${pageError.errorMessage}`);
-    ok(pageError, "The resource has a pageError attribute");
-    checkObject(resource, expectedMessages[index]);
+      info(
+        `checking received css message #${index}: ${pageError.errorMessage}`
+      );
+      ok(pageError, "The resource has a pageError attribute");
+      checkObject(resource, expectedMessages[index]);
 
-    if (receivedMessages.length == expectedMessages.length) {
-      done();
+      if (receivedMessages.length == expectedMessages.length) {
+        done();
+      }
     }
   };
   return { onAvailable, onAllMessagesReceived };

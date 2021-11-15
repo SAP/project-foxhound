@@ -19,7 +19,7 @@
  * // If the properties are in multiple code paths and you can't send them all
  * // in one go you will need to use the full telemetry API.
  *
- * import { Telemetry } from "devtools-modules";
+ * const Telemetry = require("devtools/client/shared/telemetry");
  *
  * const telemetry = new Telemetry();
  *
@@ -44,8 +44,10 @@
 
 // @flow
 
-import { Telemetry } from "devtools-modules";
-import { isFirefoxPanel } from "devtools-environment";
+// $FlowIgnore
+const Telemetry = require("devtools/client/shared/telemetry");
+
+import { isNode } from "./environment";
 
 const telemetry = new Telemetry();
 
@@ -71,7 +73,7 @@ export function recordEvent(eventName: string, fields: {} = {}): void {
   });
   /* eslint-enable camelcase */
 
-  if (!isFirefoxPanel() && window.dbg) {
+  if (isNode()) {
     const { events } = window.dbg._telemetry;
     if (!events[eventName]) {
       events[eventName] = [];

@@ -17,10 +17,10 @@
 #include "jit/arm/disasm/Disasm-arm.h"
 #include "jit/CompactBuffer.h"
 #include "jit/JitCode.h"
-#include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 #include "jit/shared/Disassembler-shared.h"
 #include "jit/shared/IonAssemblerBufferWithConstantPools.h"
+#include "wasm/WasmTypes.h"
 
 union PoolHintPun;
 
@@ -147,6 +147,7 @@ class ABIArgGenerator {
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
   uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
+  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 };
 
 bool IsUnaligned(const wasm::MemoryAccessDesc& access);
@@ -1255,10 +1256,6 @@ class Assembler : public AssemblerShared {
 
   static DoubleCondition InvertCondition(DoubleCondition cond);
 
-  void writeRelocation(BufferOffset src) {
-    jumpRelocations_.writeUnsigned(src.getOffset());
-  }
-
   void writeDataRelocation(BufferOffset offset, ImmGCPtr ptr) {
     // Raw GC pointer relocations and Value relocations both end up in
     // Assembler::TraceDataRelocations.
@@ -1678,7 +1675,7 @@ class Assembler : public AssemblerShared {
   void addPendingJump(BufferOffset src, ImmPtr target, RelocationKind kind) {
     enoughMemory_ &= jumps_.append(RelativePatch(target.value, kind));
     if (kind == RelocationKind::JITCODE) {
-      writeRelocation(src);
+      jumpRelocations_.writeUnsigned(src.getOffset());
     }
   }
 

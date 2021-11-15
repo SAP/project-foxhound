@@ -13,23 +13,27 @@ import java.util.Locale;
 
 import android.app.Service;
 import android.graphics.Rect;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.LocaleList;
 import android.os.Parcel;
 import android.os.Parcelable;
-import android.support.annotation.AnyThread;
-import android.support.annotation.IntDef;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.AnyThread;
+import androidx.annotation.IntDef;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
+import android.util.Log;
 
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoSystemStateListener;
 import org.mozilla.gecko.util.GeckoBundle;
 
+import static android.os.Build.VERSION;
+
 @AnyThread
 public final class GeckoRuntimeSettings extends RuntimeSettings {
+    private static final String LOGTAG = "GeckoRuntimeSettings";
+
     /**
      * Settings builder used to construct the settings object.
      */
@@ -40,22 +44,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         protected @NonNull GeckoRuntimeSettings newSettings(
                 final @Nullable GeckoRuntimeSettings settings) {
             return new GeckoRuntimeSettings(settings);
-        }
-
-        /**
-         * Set whether multiprocess support should be enabled.
-         *
-         * @param use A flag determining whether multiprocess should be enabled.
-         *            Default is true.
-         * @return This Builder instance.
-         *
-         * @deprecated This method will be removed in GeckoView 82, at which point GeckoView will
-         *             only operate in multiprocess mode.
-         */
-        @Deprecated // Bug 1650118
-        public @NonNull Builder useMultiprocess(final boolean use) {
-            getSettings().mUseMultiprocess.set(use);
-            return this;
         }
 
         /**
@@ -89,6 +77,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         /**
          * Path to configuration file from which GeckoView will read configuration options such as
          * Gecko process arguments, environment variables, and preferences.
+         *
+         * Note: this feature is only available for
+         * <code>{@link VERSION#SDK_INT} &gt; 21</code>, on older devices this will be
+         * silently ignored.
          *
          * @param configFilePath Configuration file path to read from, or <code>null</code> to use
          *                       default location <code>/data/local/tmp/$PACKAGE-geckoview-config.yaml</code>.
@@ -500,8 +492,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
             "general.aboutConfig.enable", false);
     /* package */ final Pref<Boolean> mForceUserScalable = new Pref<>(
             "browser.ui.zoom.force-user-scalable", false);
-    /* package */ final Pref<Boolean> mUseMultiprocess = new Pref<>(
-            "browser.tabs.remote.autostart", true);
     /* package */ final Pref<Boolean> mAutofillLogins = new Pref<Boolean>(
         "signon.autofillForms", true);
 
@@ -575,20 +565,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
-     * Whether multiprocess is enabled.
-     *
-     * @return true if multiprocess is enabled, false otherwise.
-     *
-     * @deprecated This method will be removed in GeckoView 82, at which point GeckoView will only
-     *             operate in multiprocess mode.
-     */
-    @Deprecated // Bug 1650118
-    public boolean getUseMultiprocess() {
-        return mUseMultiprocess.get();
-    }
-
-
-    /**
      * Get the custom Gecko process arguments.
      *
      * @return The Gecko process arguments.
@@ -609,6 +585,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     /**
      * Path to configuration file from which GeckoView will read configuration options such as
      * Gecko process arguments, environment variables, and preferences.
+     *
+     * Note: this feature is only available for <code>{@link VERSION#SDK_INT} &gt; 21</code>.
      *
      * @return Path to configuration file from which GeckoView will read configuration options,
      * or <code>null</code> for default location
@@ -785,7 +763,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     private static String[] getDefaultLocales() {
-        if (Build.VERSION.SDK_INT >= 24) {
+        if (VERSION.SDK_INT >= 24) {
             final LocaleList localeList = LocaleList.getDefault();
             String[] locales = new String[localeList.size()];
             for (int i = 0; i < localeList.size(); i++) {
@@ -795,7 +773,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         }
         String[] locales = new String[1];
         final Locale locale = Locale.getDefault();
-        if (Build.VERSION.SDK_INT >= 21) {
+        if (VERSION.SDK_INT >= 21) {
             locales[0] = locale.toLanguageTag();
             return locales;
         }
@@ -917,13 +895,24 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         return setFontSizeFactorInternal(fontSizeFactor);
     }
 
-    /* package */ @NonNull GeckoRuntimeSettings setFontSizeFactorInternal(
-            final float fontSizeFactor) {
+    private final static float DEFAULT_FONT_SIZE_FACTOR = 1f;
+
+    private float sanitizeFontSizeFactor(final float fontSizeFactor) {
         if (fontSizeFactor < 0) {
-            throw new IllegalArgumentException("fontSizeFactor cannot be < 0");
+            if (BuildConfig.DEBUG) {
+                throw new IllegalArgumentException("fontSizeFactor cannot be < 0");
+            } else {
+                Log.e(LOGTAG, "fontSizeFactor cannot be < 0");
+                return DEFAULT_FONT_SIZE_FACTOR;
+            }
         }
 
-        final int fontSizePercentage = Math.round(fontSizeFactor * 100);
+        return fontSizeFactor;
+    }
+
+    /* package */ @NonNull GeckoRuntimeSettings setFontSizeFactorInternal(
+            final float fontSizeFactor) {
+        final int fontSizePercentage = Math.round(sanitizeFontSizeFactor(fontSizeFactor) * 100);
         mFontSizeFactor.commit(fontSizePercentage);
         if (getFontInflationEnabled()) {
             final int scaledFontInflation = Math.round(FONT_INFLATION_BASE_VALUE * fontSizeFactor);

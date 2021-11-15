@@ -494,7 +494,18 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
 
   SchedulePaint();
 
-  bool shouldPosition = true;
+  bool shouldPosition = [&] {
+    if (!IsAnchored()) {
+      return true;
+    }
+    if (ShouldFollowAnchor()) {
+      return true;
+    }
+    // Don't reposition anchored popups that shouldn't follow the anchor and
+    // have already been positioned.
+    return mPopupState != ePopupShown || mUsedScreenRect.IsEmpty();
+  }();
+
   bool isOpen = IsOpen();
   if (!isOpen) {
     // if the popup is not open, only do layout while showing or if the menu
@@ -533,9 +544,31 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
   }
   prefSize = XULBoundsCheck(minSize, prefSize, maxSize);
 
+#ifdef MOZ_WAYLAND
+  static bool inWayland = gdk_display_get_default() &&
+                          !GDK_IS_X11_DISPLAY(gdk_display_get_default());
+#else
+  static bool inWayland = false;
+#endif
+  if (inWayland) {
+    // If prefSize it is not a whole number in css pixels we need round it up
+    // to avoid reflow of the tooltips/popups and putting the text on two lines
+    // (usually happens with 200% scale factor and font scale factor <> 1)
+    // because GTK thrown away the decimals.
+    int32_t appPerCSS = AppUnitsPerCSSPixel();
+    if (prefSize.width % appPerCSS > 0) {
+      prefSize.width += appPerCSS;
+    }
+    if (prefSize.height % appPerCSS > 0) {
+      prefSize.height += appPerCSS;
+    }
+  }
+
   bool sizeChanged = (mPrefSize != prefSize);
-  // if the size changed then set the bounds to be the preferred size
+  // if the size changed then set the bounds to be the preferred size, and make
+  // sure we re-position the popup too (as that can shrink or resize us again).
   if (sizeChanged) {
+    shouldPosition = true;
     SetXULBounds(aState, nsRect(0, 0, prefSize.width, prefSize.height), false);
     mPrefSize = prefSize;
 #if MOZ_WAYLAND
@@ -550,8 +583,7 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
 
   bool needCallback = false;
   if (shouldPosition) {
-    SetPopupPosition(aParentMenu, false, aSizedToPopup,
-                     mPopupState == ePopupPositioning);
+    SetPopupPosition(aParentMenu, false, aSizedToPopup);
     needCallback = true;
   }
 
@@ -577,7 +609,7 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
   }
 
   if (rePosition) {
-    SetPopupPosition(aParentMenu, false, aSizedToPopup, false);
+    SetPopupPosition(aParentMenu, false, aSizedToPopup);
   }
 
   nsPresContext* pc = PresContext();
@@ -643,7 +675,7 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
 
 bool nsMenuPopupFrame::ReflowFinished() {
   SetPopupPosition(mReflowCallbackData.mAnchor, false,
-                   mReflowCallbackData.mSizedToPopup, true);
+                   mReflowCallbackData.mSizedToPopup);
 
   mReflowCallbackData.Clear();
 
@@ -1310,8 +1342,7 @@ nsRect nsMenuPopupFrame::ComputeAnchorRect(nsPresContext* aRootPresContext,
 }
 
 nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
-                                            bool aIsMove, bool aSizedToPopup,
-                                            bool aNotify) {
+                                            bool aIsMove, bool aSizedToPopup) {
   if (!mShouldAutoPosition) return NS_OK;
 
   // If this is due to a move, return early if the popup hasn't been laid out
@@ -1422,11 +1453,9 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
           !GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
         screenPoint = nsPoint(anchorRect.x, anchorRect.y);
         mAnchorRect = anchorRect;
-      } else
-#endif
-      {
-        screenPoint = AdjustPositionForAnchorAlign(anchorRect, hFlip, vFlip);
       }
+#endif
+      screenPoint = AdjustPositionForAnchorAlign(anchorRect, hFlip, vFlip);
     } else {
       // with no anchor, the popup is positioned relative to the root frame
       anchorRect = rootScreenRect;
@@ -1664,8 +1693,9 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
       (mPopupState == ePopupShown && !newRect.IsEqualEdges(mUsedScreenRect)) ||
       (mPopupState == ePopupShown && oldAlignmentOffset != mAlignmentOffset)) {
     mUsedScreenRect = newRect;
-    if (aNotify) {
-      nsXULPopupPositionedEvent::DispatchIfNeeded(mContent, false, false);
+    if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW) && !mPendingPositionedEvent) {
+      mPendingPositionedEvent =
+          nsXULPopupPositionedEvent::DispatchIfNeeded(mContent);
     }
   }
 
@@ -2041,26 +2071,24 @@ nsMenuFrame* nsMenuPopupFrame::FindMenuWithShortcut(KeyboardEvent* aKeyEvent,
       if (!isMenu && !mIncrementalString.IsEmpty()) {
         mIncrementalString.SetLength(mIncrementalString.Length() - 1);
         return nullptr;
-      } else {
-#ifdef XP_WIN
-        nsCOMPtr<nsISound> soundInterface =
-            do_CreateInstance("@mozilla.org/sound;1");
-        if (soundInterface) soundInterface->Beep();
-#endif  // #ifdef XP_WIN
       }
+#ifdef XP_WIN
+      nsCOMPtr<nsISound> soundInterface =
+          do_CreateInstance("@mozilla.org/sound;1");
+      if (soundInterface) soundInterface->Beep();
+#endif  // #ifdef XP_WIN
     }
     return nullptr;
+  }
+  char16_t uniChar = ToLowerCase(static_cast<char16_t>(charCode));
+  if (isMenu) {
+    // Menu supports only first-letter navigation
+    mIncrementalString = uniChar;
+  } else if (IsWithinIncrementalTime(keyTime)) {
+    mIncrementalString.Append(uniChar);
   } else {
-    char16_t uniChar = ToLowerCase(static_cast<char16_t>(charCode));
-    if (isMenu) {
-      // Menu supports only first-letter navigation
-      mIncrementalString = uniChar;
-    } else if (IsWithinIncrementalTime(keyTime)) {
-      mIncrementalString.Append(uniChar);
-    } else {
-      // Interval too long, treat as new typing
-      mIncrementalString = uniChar;
-    }
+    // Interval too long, treat as new typing
+    mIncrementalString = uniChar;
   }
 
   // See bug 188199 & 192346, if all letters in incremental string are same,
@@ -2211,8 +2239,9 @@ nsresult nsMenuPopupFrame::AttributeChanged(int32_t aNameSpaceID,
   nsresult rv =
       nsBoxFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 
-  if (aAttribute == nsGkAtoms::left || aAttribute == nsGkAtoms::top)
+  if (aAttribute == nsGkAtoms::left || aAttribute == nsGkAtoms::top) {
     MoveToAttributePosition();
+  }
 
   if (aAttribute == nsGkAtoms::remote) {
     // When the remote attribute changes, we need to create a new widget to
@@ -2267,6 +2296,9 @@ void nsMenuPopupFrame::MoveToAttributePosition() {
   mozilla::CSSIntPoint pos(left.ToInteger(&err1), top.ToInteger(&err2));
 
   if (NS_SUCCEEDED(err1) && NS_SUCCEEDED(err2)) MoveTo(pos, false);
+
+  PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
+                                NS_FRAME_IS_DIRTY);
 }
 
 void nsMenuPopupFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -2323,7 +2355,7 @@ void nsMenuPopupFrame::MoveTo(const CSSIntPoint& aPos, bool aUpdateAttrs) {
   mScreenRect.x = aPos.x - nsPresContext::AppUnitsToIntCSSPixels(margin.left);
   mScreenRect.y = aPos.y - nsPresContext::AppUnitsToIntCSSPixels(margin.top);
 
-  SetPopupPosition(nullptr, true, false, true);
+  SetPopupPosition(nullptr, true, false);
 
   RefPtr<Element> popup = mContent->AsElement();
   if (aUpdateAttrs && (popup->HasAttr(kNameSpaceID_None, nsGkAtoms::left) ||
@@ -2348,7 +2380,7 @@ void nsMenuPopupFrame::MoveToAnchor(nsIContent* aAnchorContent,
   mPopupState = oldstate;
 
   // Pass false here so that flipping and adjusting to fit on the screen happen.
-  SetPopupPosition(nullptr, false, false, true);
+  SetPopupPosition(nullptr, false, false);
 }
 
 bool nsMenuPopupFrame::GetAutoPosition() { return mShouldAutoPosition; }
@@ -2534,7 +2566,7 @@ void nsMenuPopupFrame::CheckForAnchorChange(nsRect& aRect) {
   // If the rectangles are different, move the popup.
   if (!anchorRect.IsEqualEdges(aRect)) {
     aRect = anchorRect;
-    SetPopupPosition(nullptr, true, false, true);
+    SetPopupPosition(nullptr, true, false);
   }
 }
 

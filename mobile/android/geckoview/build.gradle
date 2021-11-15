@@ -71,6 +71,7 @@ android {
         targetSdkVersion project.ext.targetSdkVersion
         minSdkVersion project.ext.minSdkVersion
         manifestPlaceholders = project.ext.manifestPlaceholders
+        multiDexEnabled true
 
         versionCode computeVersionCode()
         versionName "${mozconfig.substs.MOZ_APP_VERSION}-${mozconfig.substs.MOZ_UPDATE_CHANNEL}"
@@ -154,8 +155,8 @@ android {
 
                 if (mozconfig.substs.MOZ_WEBRTC) {
                     srcDir "${topsrcdir}/dom/media/systemservices/android_video_capture/java/src"
-                    srcDir "${topsrcdir}/media/webrtc/trunk/webrtc/sdk/android"
-                    srcDir "${topsrcdir}/media/webrtc/trunk/webrtc/rtc_base/java"
+                    srcDir "${topsrcdir}/third_party/libwebrtc/webrtc/sdk/android"
+                    srcDir "${topsrcdir}/third_party/libwebrtc/webrtc/rtc_base/java"
                 }
             }
 
@@ -213,18 +214,20 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile) {
 
 dependencies {
     // For exoplayer.
-    implementation "androidx.annotation:annotation:1.1.0"
     compileOnly "com.google.code.findbugs:jsr305:3.0.2"
     compileOnly "org.checkerframework:checker-compat-qual:2.5.0"
     compileOnly "org.checkerframework:checker-qual:2.5.0"
     compileOnly "org.jetbrains.kotlin:kotlin-annotations-jvm:1.3.70"
 
-    implementation "com.android.support:support-v4:$support_library_version"
-    implementation "com.android.support:palette-v7:$support_library_version"
+    implementation "androidx.annotation:annotation:1.1.0"
+    implementation "androidx.legacy:legacy-support-v4:1.0.0"
+    implementation "androidx.palette:palette:1.0.0"
+
+    implementation "com.google.android.gms:play-services-fido:18.1.0"
     implementation "org.yaml:snakeyaml:1.24:android"
 
-    implementation "android.arch.lifecycle:extensions:$lifecycle_library_version"
-    implementation "android.arch.lifecycle:common-java8:$lifecycle_library_version"
+    implementation "androidx.lifecycle:lifecycle-extensions:2.0.0"
+    implementation "androidx.lifecycle:lifecycle-common-java8:2.0.0"
 
     testImplementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     testImplementation 'junit:junit:4.12'
@@ -238,9 +241,9 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0'
 
-    androidTestImplementation "com.android.support:support-annotations:$support_library_version"
-
     androidTestImplementation 'com.koushikdutta.async:androidasync:2.+'
+
+    androidTestImplementation 'androidx.multidex:multidex:2.0.0'
 }
 
 apply from: "${topsrcdir}/mobile/android/gradle/with_gecko_binaries.gradle"
@@ -350,7 +353,7 @@ android.libraryVariants.all { variant ->
         classifier 'sources'
         description = "Generate Javadoc for build variant $name"
         destinationDir = new File(destinationDir, variant.baseName)
-        from files(variant.javaCompileProvider.get().source)
+        from files(variant.sourceSets.collect({ it.java.srcDirs }).flatten())
     }
 
     task("checkstyle${name.capitalize()}", type: Checkstyle) {
@@ -358,12 +361,14 @@ android.libraryVariants.all { variant ->
         // TODO: cleanup and include all sources
         source = ['src/main/java/']
         include '**/*.java'
+
     }
 }
 
 checkstyle {
     configDir = file(".")
     configFile = file("checkstyle.xml")
+    toolVersion = "8.36.2"
 }
 
 android.libraryVariants.all { variant ->
@@ -553,9 +558,12 @@ apiLint {
     changelogFileName = 'src/main/java/org/mozilla/geckoview/doc-files/CHANGELOG.md'
     skipClassesRegex = ['^org.mozilla.geckoview.BuildConfig$']
     lintFilters = ['GV']
+    deprecationAnnotation = 'org.mozilla.geckoview.DeprecationSchedule'
+    libraryVersion = mozconfig.substs.MOZILLA_VERSION.split('\\.')[0] as Integer
     allowedPackages = [
         'java',
         'android',
+        'androidx',
         'org.json',
         'org.mozilla.geckoview',
     ]

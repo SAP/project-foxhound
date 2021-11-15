@@ -12,7 +12,6 @@
 
 class APZCSnappingOnMomentumTester : public APZCTreeManagerTester {};
 
-#ifndef MOZ_WIDGET_ANDROID  // Currently fails on Android
 TEST_F(APZCSnappingOnMomentumTester, Snap_On_Momentum) {
   SCOPED_GFX_VAR(UseWebRender, bool, false);
 
@@ -47,24 +46,36 @@ TEST_F(APZCSnappingOnMomentumTester, Snap_On_Momentum) {
   PanGesture(PanGestureInput::PANGESTURE_START, manager, ScreenIntPoint(50, 80),
              ScreenPoint(0, 2), now);
   mcc->AdvanceByMillis(5);
-  apzc->AdvanceAnimations(mcc->Time());
+  apzc->AdvanceAnimations(mcc->GetSampleTime());
   PanGesture(PanGestureInput::PANGESTURE_PAN, manager, ScreenIntPoint(50, 80),
-             ScreenPoint(0, 50), mcc->Time());
+             ScreenPoint(0, 25), mcc->Time());
   mcc->AdvanceByMillis(5);
-  apzc->AdvanceAnimations(mcc->Time());
+  apzc->AdvanceAnimations(mcc->GetSampleTime());
+  PanGesture(PanGestureInput::PANGESTURE_PAN, manager, ScreenIntPoint(50, 80),
+             ScreenPoint(0, 25), mcc->Time());
+
+  // The velocity should be positive when panning with positive displacement.
+  EXPECT_GT(apzc->GetVelocityVector().y, 3.0);
+
+  mcc->AdvanceByMillis(5);
+  apzc->AdvanceAnimations(mcc->GetSampleTime());
   PanGesture(PanGestureInput::PANGESTURE_END, manager, ScreenIntPoint(50, 80),
              ScreenPoint(0, 0), mcc->Time());
+
+  // After lifting the fingers, the velocity should still be positive.
+  EXPECT_GT(apzc->GetVelocityVector().y, 3.0);
+
   mcc->AdvanceByMillis(5);
 
-  apzc->AdvanceAnimations(mcc->Time());
+  apzc->AdvanceAnimations(mcc->GetSampleTime());
   PanGesture(PanGestureInput::PANGESTURE_MOMENTUMSTART, manager,
              ScreenIntPoint(50, 80), ScreenPoint(0, 200), mcc->Time());
   mcc->AdvanceByMillis(10);
-  apzc->AdvanceAnimations(mcc->Time());
+  apzc->AdvanceAnimations(mcc->GetSampleTime());
   PanGesture(PanGestureInput::PANGESTURE_MOMENTUMPAN, manager,
              ScreenIntPoint(50, 80), ScreenPoint(0, 50), mcc->Time());
   mcc->AdvanceByMillis(10);
-  apzc->AdvanceAnimations(mcc->Time());
+  apzc->AdvanceAnimations(mcc->GetSampleTime());
   PanGesture(PanGestureInput::PANGESTURE_MOMENTUMEND, manager,
              ScreenIntPoint(50, 80), ScreenPoint(0, 0), mcc->Time());
 
@@ -75,4 +86,3 @@ TEST_F(APZCSnappingOnMomentumTester, Snap_On_Momentum) {
               AsyncPanZoomController::AsyncTransformConsumer::eForHitTesting)
           .y);
 }
-#endif

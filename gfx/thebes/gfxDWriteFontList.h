@@ -390,7 +390,8 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
 
   void GetFacesInitDataForFamily(
       const mozilla::fontlist::Family* aFamily,
-      nsTArray<mozilla::fontlist::Face::InitData>& aFaces) const override;
+      nsTArray<mozilla::fontlist::Face::InitData>& aFaces,
+      bool aLoadCmaps) const override;
 
   gfxFontEntry* LookupLocalFont(const nsACString& aFontName,
                                 WeightRange aWeightForEntry,
@@ -412,6 +413,7 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
                           nsTArray<FamilyAndGeneric>* aOutput,
                           FindFamiliesFlags aFlags,
                           gfxFontStyle* aStyle = nullptr,
+                          nsAtom* aLanguage = nullptr,
                           gfxFloat aDevToCssSize = 1.0) override;
 
   gfxFloat GetForceGDIClassicMaxFontSize() {
@@ -424,7 +426,8 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
                                       FontListSizes* aSizes) const;
 
  protected:
-  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle) override;
+  FontFamily GetDefaultFontForPlatform(const gfxFontStyle* aStyle,
+                                       nsAtom* aLanguage = nullptr) override;
 
   // attempt to use platform-specific fallback for the given character,
   // return null if no usable result found

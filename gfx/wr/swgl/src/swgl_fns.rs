@@ -153,12 +153,11 @@ extern "C" {
         transpose: GLboolean,
         value: *const GLfloat,
     );
-
     fn DrawElementsInstanced(
         mode: GLenum,
         count: GLsizei,
         type_: GLenum,
-        indices: *const c_void,
+        indices: GLintptr,
         instancecount: GLsizei,
     );
     fn EnableVertexAttribArray(index: GLuint);
@@ -273,6 +272,7 @@ extern "C" {
         min_width: GLsizei,
         min_height: GLsizei,
     );
+    fn SetTextureParameter(tex: GLuint, pname: GLenum, param: GLint);
     fn DeleteTexture(n: GLuint);
     fn DeleteRenderbuffer(n: GLuint);
     fn DeleteFramebuffer(n: GLuint);
@@ -285,6 +285,12 @@ extern "C" {
     fn LockTexture(tex: GLuint) -> *mut LockedTexture;
     fn LockResource(resource: *mut LockedTexture);
     fn UnlockResource(resource: *mut LockedTexture);
+    fn GetResourceBuffer(
+        resource: *mut LockedTexture,
+        width: *mut i32,
+        height: *mut i32,
+        stride: *mut i32,
+    ) -> *mut c_void;
     fn Composite(
         locked_dst: *mut LockedTexture,
         locked_src: *mut LockedTexture,
@@ -294,20 +300,51 @@ extern "C" {
         src_height: GLsizei,
         dst_x: GLint,
         dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
         opaque: GLboolean,
         flip: GLboolean,
+        filter: GLenum,
+        band_offset: GLint,
+        band_height: GLsizei,
+    );
+    fn CompositeYUV(
+        locked_dst: *mut LockedTexture,
+        locked_y: *mut LockedTexture,
+        locked_u: *mut LockedTexture,
+        locked_v: *mut LockedTexture,
+        color_space: YUVColorSpace,
+        color_depth: GLuint,
+        src_x: GLint,
+        src_y: GLint,
+        src_width: GLsizei,
+        src_height: GLsizei,
+        dst_x: GLint,
+        dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
+        flip: GLboolean,
+        band_offset: GLint,
+        band_height: GLsizei,
     );
     fn CreateContext() -> *mut c_void;
+    fn ReferenceContext(ctx: *mut c_void);
     fn DestroyContext(ctx: *mut c_void);
     fn MakeCurrent(ctx: *mut c_void);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Context(*mut c_void);
 
 impl Context {
     pub fn create() -> Self {
         Context(unsafe { CreateContext() })
+    }
+
+    pub fn reference(&self) {
+        unsafe {
+            ReferenceContext(self.0);
+        }
     }
 
     pub fn destroy(&self) {
@@ -360,6 +397,12 @@ impl Context {
                 min_width,
                 min_height,
             );
+        }
+    }
+
+    pub fn set_texture_parameter(&self, tex: GLuint, pname: GLenum, param: GLint) {
+        unsafe {
+            SetTextureParameter(tex, pname, param);
         }
     }
 
@@ -418,6 +461,7 @@ fn calculate_length(width: GLsizei, height: GLsizei, format: GLenum, pixel_type:
         UNSIGNED_SHORT => 2,
         SHORT => 2,
         FLOAT => 4,
+        UNSIGNED_INT_8_8_8_8_REV => 1,
         _ => panic!("unsupported pixel_type for read_pixels: {:?}", pixel_type),
     };
 
@@ -1484,7 +1528,15 @@ impl Gl for Context {
     }
 
     fn draw_arrays(&self, mode: GLenum, first: GLint, count: GLsizei) {
-        panic!();
+        unsafe {
+            DrawElementsInstanced(
+                mode,
+                count,
+                NONE,
+                first as GLintptr,
+                1,
+            );
+        }
     }
 
     fn draw_arrays_instanced(
@@ -1494,7 +1546,15 @@ impl Gl for Context {
         count: GLsizei,
         primcount: GLsizei,
     ) {
-        panic!();
+        unsafe {
+            DrawElementsInstanced(
+                mode,
+                count,
+                NONE,
+                first as GLintptr,
+                primcount,
+            );
+        }
     }
 
     fn draw_elements(
@@ -1514,7 +1574,7 @@ impl Gl for Context {
                 mode,
                 count,
                 element_type,
-                indices_offset as *const c_void,
+                indices_offset as GLintptr,
                 1,
             );
         }
@@ -1538,7 +1598,7 @@ impl Gl for Context {
                 mode,
                 count,
                 element_type,
-                indices_offset as *const c_void,
+                indices_offset as GLintptr,
                 primcount,
             );
         }
@@ -2106,7 +2166,7 @@ impl Gl for Context {
         //ptr::null()
     }
 
-    fn client_wait_sync(&self, sync: GLsync, flags: GLbitfield, timeout: GLuint64) {
+    fn client_wait_sync(&self, sync: GLsync, flags: GLbitfield, timeout: GLuint64) -> GLenum {
         panic!();
     }
 
@@ -2257,6 +2317,20 @@ impl Gl for Context {
     ) {
         unimplemented!("Not supported by SWGL");
     }
+
+    fn buffer_storage(
+        &self,
+        target: GLenum,
+        size: GLsizeiptr,
+        data: *const GLvoid,
+        flags: GLbitfield,
+    ) {
+        unimplemented!("Not supported by SWGL");
+    }
+
+    fn flush_mapped_buffer_range(&self, target: GLenum, offset: GLintptr, length: GLsizeiptr) {
+        unimplemented!("Not supported by SWGL");
+    }
 }
 
 /// A resource that is intended for sharing between threads.
@@ -2269,19 +2343,34 @@ pub struct LockedResource(*mut LockedTexture);
 unsafe impl Send for LockedResource {}
 unsafe impl Sync for LockedResource {}
 
+#[repr(C)]
+pub enum YUVColorSpace {
+    Rec601 = 0,
+    Rec709,
+    Rec2020,
+    Identity,
+}
+
 impl LockedResource {
-    /// Composites from a locked resource to another locked resource
+    /// Composites from a locked resource to another locked resource. The band
+    /// offset and height are relative to the destination rectangle and specify
+    /// how to clip the composition into appropriate range for this band.
     pub fn composite(
         &self,
         locked_src: &LockedResource,
         src_x: GLint,
         src_y: GLint,
         src_width: GLsizei,
-        src_height: GLint,
+        src_height: GLsizei,
         dst_x: GLint,
         dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
         opaque: bool,
         flip: bool,
+        filter: GLenum,
+        band_offset: GLint,
+        band_height: GLsizei,
     ) {
         unsafe {
             Composite(
@@ -2293,9 +2382,68 @@ impl LockedResource {
                 src_height,
                 dst_x,
                 dst_y,
+                dst_width,
+                dst_height,
                 opaque as GLboolean,
                 flip as GLboolean,
+                filter,
+                band_offset,
+                band_height,
             );
+        }
+    }
+
+    /// Composites from locked resources representing YUV planes
+    pub fn composite_yuv(
+        &self,
+        locked_y: &LockedResource,
+        locked_u: &LockedResource,
+        locked_v: &LockedResource,
+        color_space: YUVColorSpace,
+        color_depth: GLuint,
+        src_x: GLint,
+        src_y: GLint,
+        src_width: GLsizei,
+        src_height: GLsizei,
+        dst_x: GLint,
+        dst_y: GLint,
+        dst_width: GLsizei,
+        dst_height: GLsizei,
+        flip: bool,
+        band_offset: GLint,
+        band_height: GLsizei,
+    ) {
+        unsafe {
+            CompositeYUV(
+                self.0,
+                locked_y.0,
+                locked_u.0,
+                locked_v.0,
+                color_space,
+                color_depth,
+                src_x,
+                src_y,
+                src_width,
+                src_height,
+                dst_x,
+                dst_y,
+                dst_width,
+                dst_height,
+                flip as GLboolean,
+                band_offset,
+                band_height,
+            );
+        }
+    }
+
+    /// Get the underlying buffer for a locked resource
+    pub fn get_buffer(&self) -> (*mut c_void, i32, i32, i32) {
+        unsafe {
+            let mut width: i32 = 0;
+            let mut height: i32 = 0;
+            let mut stride: i32 = 0;
+            let data_ptr = GetResourceBuffer(self.0, &mut width, &mut height, &mut stride);
+            (data_ptr, width, height, stride)
         }
     }
 }

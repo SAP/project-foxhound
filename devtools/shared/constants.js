@@ -89,23 +89,35 @@ const SCORES = {
 
 // List of simulation types.
 const SIMULATION_TYPE = {
-  // Low red color blindness
-  PROTANOMALY: "PROTANOMALY",
-  // Low green color blindness
-  DEUTERANOMALY: "DEUTERANOMALY",
-  // Low blue color blindness
-  TRITANOMALY: "TRITANOMALY",
   // No red color blindness
   PROTANOPIA: "PROTANOPIA",
   // No green color blindness
   DEUTERANOPIA: "DEUTERANOPIA",
   // No blue color blindness
   TRITANOPIA: "TRITANOPIA",
+  // Absense of color vision
+  ACHROMATOPSIA: "ACHROMATOPSIA",
   // Low contrast
   CONTRAST_LOSS: "CONTRAST_LOSS",
 };
 
-/* WebConsole Panel ====================================================== */
+/* Compatibility Panel ====================================================== */
+
+const COMPATIBILITY_ISSUE_TYPE = {
+  CSS_PROPERTY: "CSS_PROPERTY",
+  CSS_PROPERTY_ALIASES: "CSS_PROPERTY_ALIASES",
+};
+
+/* Style Editor ============================================================= */
+
+// The PageStyle actor flattens the DOM CSS objects a little bit, merging
+// Rules and their Styles into one actor.  For elements (which have a style
+// but no associated rule) we fake a rule with the following style id.
+// This `id` is intended to be used instead of a regular CSSRule Type constant.
+// See https://developer.mozilla.org/en-US/docs/Web/API/CSSRule#Type_constants
+const ELEMENT_STYLE = 100;
+
+/* WebConsole Panel ========================================================= */
 
 const MESSAGE_CATEGORY = {
   CSS_PARSER: "CSS Parser",
@@ -118,5 +130,9 @@ module.exports = {
     SCORES,
     SIMULATION_TYPE,
   },
+  COMPATIBILITY_ISSUE_TYPE,
   MESSAGE_CATEGORY,
+  style: {
+    ELEMENT_STYLE,
+  },
 };

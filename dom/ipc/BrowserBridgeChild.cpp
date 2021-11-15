@@ -26,8 +26,7 @@
 
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 BrowserBridgeChild::BrowserBridgeChild(BrowsingContext* aBrowsingContext,
                                        TabId aId, const LayersId& aLayersId)
@@ -118,7 +117,7 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvRequestFocus(
 mozilla::ipc::IPCResult BrowserBridgeChild::RecvMoveFocus(
     const bool& aForward, const bool& aForDocumentNavigation) {
   // Adapted from BrowserParent
-  nsCOMPtr<nsIFocusManager> fm = nsFocusManager::GetFocusManager();
+  RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager();
   if (!fm) {
     return IPC_OK();
   }
@@ -242,5 +241,18 @@ void BrowserBridgeChild::UnblockOwnerDocsLoadEvent() {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvIntrinsicSizeOrRatioChanged(
+    const Maybe<IntrinsicSize>& aIntrinsicSize,
+    const Maybe<AspectRatio>& aIntrinsicRatio) {
+  if (RefPtr<Element> owner = mFrameLoader->GetOwnerContent()) {
+    if (nsIFrame* f = owner->GetPrimaryFrame()) {
+      if (nsSubDocumentFrame* sdf = do_QueryFrame(f)) {
+        sdf->SubdocumentIntrinsicSizeOrRatioChanged(aIntrinsicSize,
+                                                    aIntrinsicRatio);
+      }
+    }
+  }
+  return IPC_OK();
+}
+
+}  // namespace mozilla::dom

@@ -24,6 +24,7 @@ class nsIFrame;
 
 namespace mozilla {
 
+class AutoChangeLengthNotifier;
 class SMILValue;
 
 namespace dom {
@@ -79,6 +80,7 @@ class NonSVGFrameUserSpaceMetrics : public UserSpaceMetricsWithSize {
 }  // namespace dom
 
 class SVGAnimatedLength {
+  friend class AutoChangeLengthNotifier;
   friend class dom::DOMSVGAnimatedLength;
   friend class dom::DOMSVGLength;
   using DOMSVGLength = dom::DOMSVGLength;
@@ -150,6 +152,8 @@ class SVGAnimatedLength {
   // usable, and represents the default base value of the attribute.
   bool IsExplicitlySet() const { return mIsAnimated || mIsBaseSet; }
 
+  bool IsAnimated() const { return mIsAnimated; }
+
   already_AddRefed<dom::DOMSVGAnimatedLength> ToDOMAnimatedLength(
       SVGElement* aSVGElement);
 
@@ -179,8 +183,7 @@ class SVGAnimatedLength {
   // perform unit conversion and are therefore infallible.
   nsresult SetBaseValue(float aValue, SVGElement* aSVGElement, bool aDoSetAttr);
   void SetBaseValueInSpecifiedUnits(float aValue, SVGElement* aSVGElement,
-                                    bool aDoSetAttr,
-                                    const mozAutoDocUpdate& aProofOfUpdate);
+                                    bool aDoSetAttr);
   nsresult SetAnimValue(float aValue, SVGElement* aSVGElement);
   void SetAnimValueInSpecifiedUnits(float aValue, SVGElement* aSVGElement);
   nsresult NewValueSpecifiedUnits(uint16_t aUnitType,

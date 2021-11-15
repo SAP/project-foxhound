@@ -11,7 +11,7 @@
 #include <utility>
 
 #include "MainThreadUtils.h"
-#include "mozilla/AbstractEventQueue.h"
+#include "mozilla/EventQueue.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Likely.h"
@@ -691,9 +691,9 @@ already_AddRefed<mozilla::CancelableRunnable> NS_NewCancelableRunnableFunction(
           mFunc{mozilla::Some(std::forward<Function>(aFunc))} {}
 
     NS_IMETHOD Run() override {
-      MOZ_ASSERT(mFunc);
-
-      (*mFunc)();
+      if (mFunc) {
+        (*mFunc)();
+      }
 
       return NS_OK;
     }
@@ -1923,6 +1923,8 @@ class LogTaskBase {
 
   // Adds a simple log about dispatch of this runnable.
   static void LogDispatch(T* aEvent);
+  // The `aContext` pointer adds another uniqe identifier, nothing more
+  static void LogDispatch(T* aEvent, void* aContext);
 
   // Logs dispatch of the message and along that also the PID of the target
   // proccess, purposed for uniquely identifying IPC messages.
@@ -1936,6 +1938,7 @@ class LogTaskBase {
    public:
     Run() = delete;
     explicit Run(T* aEvent, bool aWillRunAgain = false);
+    explicit Run(T* aEvent, void* aContext, bool aWillRunAgain = false);
     ~Run();
 
     // When this is called, the log in this RAII dtor will only say
@@ -1949,6 +1952,10 @@ class LogTaskBase {
 
 class MicroTaskRunnable;
 class Task;  // TaskController
+class PresShell;
+namespace dom {
+class FrameRequestCallback;
+}  // namespace dom
 
 // Specialized methods must be explicitly predeclared.
 template <>
@@ -1966,6 +1973,8 @@ typedef LogTaskBase<MicroTaskRunnable> LogMicroTaskRunnable;
 typedef LogTaskBase<IPC::Message> LogIPCMessage;
 typedef LogTaskBase<nsTimerImpl> LogTimerEvent;
 typedef LogTaskBase<Task> LogTask;
+typedef LogTaskBase<PresShell> LogPresShellObserver;
+typedef LogTaskBase<dom::FrameRequestCallback> LogFrameRequestCallback;
 // If you add new types don't forget to add:
 // `template class LogTaskBase<YourType>;` to nsThreadUtils.cpp
 

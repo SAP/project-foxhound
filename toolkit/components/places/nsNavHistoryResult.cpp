@@ -8,7 +8,6 @@
 #include "nsNavHistory.h"
 #include "nsNavBookmarks.h"
 #include "nsFaviconService.h"
-#include "nsAnnotationService.h"
 #include "Helpers.h"
 #include "mozilla/DebugOnly.h"
 #include "nsDebug.h"
@@ -1725,7 +1724,7 @@ nsNavHistoryQueryResultNode::GetFolderItemId(int64_t* aItemId) {
 
 NS_IMETHODIMP
 nsNavHistoryQueryResultNode::GetTargetFolderGuid(nsACString& aGuid) {
-  aGuid = EmptyCString();
+  aGuid.Truncate();
   return NS_OK;
 }
 
@@ -2597,7 +2596,7 @@ nsNavHistoryFolderResultNode::nsNavHistoryFolderResultNode(
     const nsACString& aTitle, nsNavHistoryQueryOptions* aOptions,
     int64_t aFolderId)
     : nsNavHistoryContainerResultNode(
-          EmptyCString(), aTitle, 0, nsNavHistoryResultNode::RESULT_TYPE_FOLDER,
+          ""_ns, aTitle, 0, nsNavHistoryResultNode::RESULT_TYPE_FOLDER,
           aOptions),
       mContentsValid(false),
       mTargetFolderItemId(aFolderId),
@@ -3444,7 +3443,7 @@ nsNavHistoryFolderResultNode::OnItemMoved(
  * Separator nodes do not hold any data.
  */
 nsNavHistorySeparatorResultNode::nsNavHistorySeparatorResultNode()
-    : nsNavHistoryResultNode(EmptyCString(), EmptyCString(), 0, 0) {}
+    : nsNavHistoryResultNode(""_ns, ""_ns, 0, 0) {}
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsNavHistoryResult)
 

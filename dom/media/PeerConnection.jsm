@@ -253,7 +253,7 @@ setupPrototype(RTCIceCandidate, {
 class RTCSessionDescription {
   init(win) {
     this._win = win;
-    this._winID = this._win.windowUtils.currentInnerWindowID;
+    this._winID = this._win.windowGlobalChild.innerWindowId;
   }
 
   __init({ type, sdp }) {
@@ -389,7 +389,7 @@ class RTCPeerConnection {
   }
 
   __init(rtcConfig) {
-    this._winID = this._win.windowUtils.currentInnerWindowID;
+    this._winID = this._win.windowGlobalChild.innerWindowId;
     // TODO: Update this code once we support pc.setConfiguration, to track
     // setting from content independently from pref (Bug 1181768).
     if (
@@ -1021,7 +1021,7 @@ class RTCPeerConnection {
       } else {
         this._havePermission = new Promise((resolve, reject) => {
           this._settlePermission = { allow: resolve, deny: reject };
-          let outerId = this._win.windowUtils.outerWindowID;
+          let outerId = this._win.docShell.outerWindowID;
 
           let chrome = new CreateOfferRequest(
             outerId,
@@ -2020,7 +2020,7 @@ setupPrototype(PeerConnectionObserver, {
 
 class RTCPeerConnectionStatic {
   init(win) {
-    this._winID = win.windowUtils.currentInnerWindowID;
+    this._winID = win.windowGlobalChild.innerWindowId;
   }
 
   registerPeerConnectionLifecycleCallback(cb) {
@@ -2154,6 +2154,10 @@ class RTCRtpSender {
   setTrack(track) {
     this._pc._replaceTrackNoRenegotiation(this._transceiverImpl, track);
     this.track = track;
+  }
+
+  get transport() {
+    return this._transceiverImpl.dtlsTransport;
   }
 
   getStats() {

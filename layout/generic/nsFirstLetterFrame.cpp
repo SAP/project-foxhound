@@ -15,6 +15,7 @@
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsIContent.h"
+#include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
 #include "nsGkAtoms.h"
 #include "nsFrameManager.h"
@@ -98,7 +99,8 @@ nsresult nsFirstLetterFrame::GetChildFrameContainingOffset(
 /* virtual */
 void nsFirstLetterFrame::AddInlineMinISize(
     gfxContext* aRenderingContext, nsIFrame::InlineMinISizeData* aData) {
-  DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::MIN_ISIZE);
+  DoInlineIntrinsicISize(aRenderingContext, aData,
+                         IntrinsicISizeType::MinISize);
 }
 
 // Needed for non-floating first-letter frames and for the continuations
@@ -106,7 +108,8 @@ void nsFirstLetterFrame::AddInlineMinISize(
 /* virtual */
 void nsFirstLetterFrame::AddInlinePrefISize(
     gfxContext* aRenderingContext, nsIFrame::InlinePrefISizeData* aData) {
-  DoInlineIntrinsicISize(aRenderingContext, aData, nsLayoutUtils::PREF_ISIZE);
+  DoInlineIntrinsicISize(aRenderingContext, aData,
+                         IntrinsicISizeType::PrefISize);
   aData->mLineIsEmpty = false;
 }
 
@@ -123,19 +126,19 @@ nscoord nsFirstLetterFrame::GetPrefISize(gfxContext* aRenderingContext) {
 }
 
 /* virtual */
-LogicalSize nsFirstLetterFrame::ComputeSize(
+nsIFrame::SizeComputationResult nsFirstLetterFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorder, const LogicalSize& aPadding,
-    ComputeSizeFlags aFlags) {
+    const LogicalSize& aBorderPadding, ComputeSizeFlags aFlags) {
   if (GetPrevInFlow()) {
     // We're wrapping the text *after* the first letter, so behave like an
     // inline frame.
-    return LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+    return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
+            AspectRatioUsage::None};
   }
   return nsContainerFrame::ComputeSize(aRenderingContext, aWM, aCBSize,
-                                       aAvailableISize, aMargin, aBorder,
-                                       aPadding, aFlags);
+                                       aAvailableISize, aMargin, aBorderPadding,
+                                       aFlags);
 }
 
 void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
@@ -156,7 +159,7 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
   // Setup reflow input for our child
   WritingMode wm = aReflowInput.GetWritingMode();
   LogicalSize availSize = aReflowInput.AvailableSize();
-  const LogicalMargin& bp = aReflowInput.ComputedLogicalBorderPadding();
+  const auto bp = aReflowInput.ComputedLogicalBorderPadding(wm);
   NS_ASSERTION(availSize.ISize(wm) != NS_UNCONSTRAINEDSIZE,
                "should no longer use unconstrained inline size");
   availSize.ISize(wm) -= bp.IStartEnd(wm);
@@ -258,9 +261,9 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
       if (!IsFloating()) {
         CreateNextInFlow(kid);
         // And then push it to our overflow list
-        const nsFrameList& overflow = mFrames.RemoveFramesAfter(kid);
+        nsFrameList overflow = mFrames.RemoveFramesAfter(kid);
         if (overflow.NotEmpty()) {
-          SetOverflowFrames(overflow);
+          SetOverflowFrames(std::move(overflow));
         }
       } else if (!kid->GetNextInFlow()) {
         // For floating first letter frames (if a continuation wasn't already
@@ -377,7 +380,7 @@ nscoord nsFirstLetterFrame::GetLogicalBaseline(WritingMode aWritingMode) const {
 }
 
 nsIFrame::LogicalSides nsFirstLetterFrame::GetLogicalSkipSides(
-    const ReflowInput* aReflowInput) const {
+    const Maybe<SkipSidesDuringReflow>&) const {
   if (GetPrevContinuation()) {
     // We shouldn't get calls to GetSkipSides for later continuations since
     // they have separate ComputedStyles with initial values for all the

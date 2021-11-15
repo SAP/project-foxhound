@@ -162,6 +162,12 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     ///        user-select: none;
     ///        pointer-events: none;
     ///        cursor: default;
+    ///
+    /// NOTE: dialog:-moz-topmost-modal-dialog is used to override above
+    /// rules to remove the inertness for the topmost modal dialog.
+    ///
+    /// NOTE: If this or the pointer-events tweak is removed, then
+    /// minimal-xul.css and the scrollbar style caching need to be tweaked.
     fn adjust_for_inert(&mut self) {
         use properties::longhands::_moz_inert::computed_value::T as Inert;
         use properties::longhands::_moz_user_focus::computed_value::T as UserFocus;
@@ -469,48 +475,22 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         }
     }
 
-    /// CSS3 overflow-x and overflow-y require some fixup as well in some
-    /// cases.
-    ///
-    /// overflow: clip and overflow: visible are meaningful only when used in
-    /// both dimensions.
+    /// CSS overflow-x and overflow-y require some fixup as well in some cases.
+    /// https://drafts.csswg.org/css-overflow-3/#overflow-properties
+    /// "Computed value: as specified, except with `visible`/`clip` computing to
+    /// `auto`/`hidden` (respectively) if one of `overflow-x` or `overflow-y` is
+    /// neither `visible` nor `clip`."
     fn adjust_for_overflow(&mut self) {
-        let original_overflow_x = self.style.get_box().clone_overflow_x();
-        let original_overflow_y = self.style.get_box().clone_overflow_y();
-
-        let mut overflow_x = original_overflow_x;
-        let mut overflow_y = original_overflow_y;
-
+        let overflow_x = self.style.get_box().clone_overflow_x();
+        let overflow_y = self.style.get_box().clone_overflow_y();
         if overflow_x == overflow_y {
-            return;
+            return; // optimization for the common case
         }
 
-        // If 'visible' is specified but doesn't match the other dimension,
-        // it turns into 'auto'.
-        if overflow_x == Overflow::Visible {
-            overflow_x = Overflow::Auto;
-        }
-
-        if overflow_y == Overflow::Visible {
-            overflow_y = Overflow::Auto;
-        }
-
-        #[cfg(feature = "gecko")]
-        {
-            // overflow: clip is deprecated, so convert to hidden if it's
-            // specified in only one dimension.
-            if overflow_x == Overflow::MozHiddenUnscrollable {
-                overflow_x = Overflow::Hidden;
-            }
-            if overflow_y == Overflow::MozHiddenUnscrollable {
-                overflow_y = Overflow::Hidden;
-            }
-        }
-
-        if overflow_x != original_overflow_x || overflow_y != original_overflow_y {
+        if overflow_x.is_scrollable() != overflow_y.is_scrollable() {
             let box_style = self.style.mutate_box();
-            box_style.set_overflow_x(overflow_x);
-            box_style.set_overflow_y(overflow_y);
+            box_style.set_overflow_x(overflow_x.to_scrollable());
+            box_style.set_overflow_y(overflow_y.to_scrollable());
         }
     }
 
@@ -559,13 +539,9 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         let overflow_x = box_style.clone_overflow_x();
         let overflow_y = box_style.clone_overflow_y();
 
-        fn scrollable(v: Overflow) -> bool {
-            v != Overflow::MozHiddenUnscrollable && v != Overflow::Visible
-        }
-
         // If at least one is scrollable we'll adjust the other one in
         // adjust_for_overflow if needed.
-        if scrollable(overflow_x) || scrollable(overflow_y) {
+        if overflow_x.is_scrollable() || overflow_y.is_scrollable() {
             return;
         }
 

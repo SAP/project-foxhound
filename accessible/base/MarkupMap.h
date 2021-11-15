@@ -90,33 +90,45 @@ MARKUPMAP(
       nsIContent* prevSibling = aElement->GetPreviousSibling();
       if (prevSibling) {
         nsIFrame* prevSiblingFrame = prevSibling->GetPrimaryFrame();
-        if (prevSiblingFrame && prevSiblingFrame->IsInlineFrame()) {
+        if (prevSiblingFrame && prevSiblingFrame->IsInlineOutside()) {
           return new HyperTextAccessibleWrap(aElement, aContext->Document());
         }
       }
       // Now, check the children.
       nsIContent* firstChild = aElement->GetFirstChild();
       if (firstChild) {
-        // Render it if it is a text node.
-        if (firstChild->IsText()) {
-          return new HyperTextAccessibleWrap(aElement, aContext->Document());
+        nsIFrame* firstChildFrame = firstChild->GetPrimaryFrame();
+        if (!firstChildFrame) {
+          // The first child is invisible, but this might be due to an
+          // invisible text node. Try the next.
+          firstChild = firstChild->GetNextSibling();
+          if (!firstChild) {
+            // If there's no next sibling, there's only one child, so there's
+            // nothing more we can do.
+            return nullptr;
+          }
+          firstChildFrame = firstChild->GetPrimaryFrame();
         }
         // Check to see if first child has an inline frame.
-        nsIFrame* firstChildFrame = firstChild->GetPrimaryFrame();
-        if (firstChildFrame && (firstChildFrame->IsInlineFrame() ||
-                                firstChildFrame->IsBrFrame())) {
+        if (firstChildFrame && firstChildFrame->IsInlineOutside()) {
           return new HyperTextAccessibleWrap(aElement, aContext->Document());
         }
         nsIContent* lastChild = aElement->GetLastChild();
-        if (lastChild && lastChild != firstChild) {
-          // Render it if it is a text node.
-          if (lastChild->IsText()) {
-            return new HyperTextAccessibleWrap(aElement, aContext->Document());
+        MOZ_ASSERT(lastChild);
+        if (lastChild != firstChild) {
+          nsIFrame* lastChildFrame = lastChild->GetPrimaryFrame();
+          if (!lastChildFrame) {
+            // The last child is invisible, but this might be due to an
+            // invisible text node. Try the next.
+            lastChild = lastChild->GetPreviousSibling();
+            MOZ_ASSERT(lastChild);
+            if (lastChild == firstChild) {
+              return nullptr;
+            }
+            lastChildFrame = lastChild->GetPrimaryFrame();
           }
           // Check to see if last child has an inline frame.
-          nsIFrame* lastChildFrame = lastChild->GetPrimaryFrame();
-          if (lastChildFrame && (lastChildFrame->IsInlineFrame() ||
-                                 lastChildFrame->IsBrFrame())) {
+          if (lastChildFrame && lastChildFrame->IsInlineOutside()) {
             return new HyperTextAccessibleWrap(aElement, aContext->Document());
           }
         }
@@ -214,7 +226,7 @@ MARKUPMAP(
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::time, eIgnoreCase)) {
-        return new HTMLDateTimeAccessible<roles::GROUPING>(
+        return new HTMLDateTimeAccessible<roles::TIME_EDITOR>(
             aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
@@ -442,6 +454,21 @@ MARKUPMAP(
           aElement->GetPrimaryFrame()->AccessibleType() != eHTMLTableType) {
         return new ARIAGridAccessibleWrap(aElement, aContext->Document());
       }
+
+      // Make sure that our children are proper layout table parts
+      for (nsIContent* child = aElement->GetFirstChild(); child;
+           child = child->GetNextSibling()) {
+        if (child->IsAnyOfHTMLElements(nsGkAtoms::thead, nsGkAtoms::tfoot,
+                                       nsGkAtoms::tbody, nsGkAtoms::tr)) {
+          // These children elements need to participate in the layout table
+          // and need table row(group) frames.
+          nsIFrame* childFrame = child->GetPrimaryFrame();
+          if (childFrame && (!childFrame->IsTableRowGroupFrame() &&
+                             !childFrame->IsTableRowFrame())) {
+            return new ARIAGridAccessibleWrap(aElement, aContext->Document());
+          }
+        }
+      }
       return nullptr;
     },
     0)
@@ -449,17 +476,7 @@ MARKUPMAP(
 MARKUPMAP(time, New_HyperText, 0, Attr(xmlroles, time),
           AttrFromDOM(datetime, datetime))
 
-MARKUPMAP(
-    tbody,
-    [](Element* aElement, Accessible* aContext) -> Accessible* {
-      // Expose this as a grouping if its frame type is non-standard.
-      if (aElement->GetPrimaryFrame() &&
-          aElement->GetPrimaryFrame()->IsTableRowGroupFrame()) {
-        return nullptr;
-      }
-      return new HyperTextAccessibleWrap(aElement, aContext->Document());
-    },
-    roles::GROUPING)
+MARKUPMAP(tbody, nullptr, roles::GROUPING)
 
 MARKUPMAP(
     td,
@@ -486,17 +503,7 @@ MARKUPMAP(
     },
     0)
 
-MARKUPMAP(
-    tfoot,
-    [](Element* aElement, Accessible* aContext) -> Accessible* {
-      // Expose this as a grouping if its frame type is non-standard.
-      if (aElement->GetPrimaryFrame() &&
-          aElement->GetPrimaryFrame()->IsTableRowGroupFrame()) {
-        return nullptr;
-      }
-      return new HyperTextAccessibleWrap(aElement, aContext->Document());
-    },
-    roles::GROUPING)
+MARKUPMAP(tfoot, nullptr, roles::GROUPING)
 
 MARKUPMAP(
     th,
@@ -513,17 +520,7 @@ MARKUPMAP(
     },
     0)
 
-MARKUPMAP(
-    thead,
-    [](Element* aElement, Accessible* aContext) -> Accessible* {
-      // Expose this as a grouping if its frame type is non-standard.
-      if (aElement->GetPrimaryFrame() &&
-          aElement->GetPrimaryFrame()->IsTableRowGroupFrame()) {
-        return nullptr;
-      }
-      return new HyperTextAccessibleWrap(aElement, aContext->Document());
-    },
-    roles::GROUPING)
+MARKUPMAP(thead, nullptr, roles::GROUPING)
 
 MARKUPMAP(
     tr,

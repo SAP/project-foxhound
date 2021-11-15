@@ -60,8 +60,10 @@
 
 #include "GeckoProfiler.h"
 #include "js/Debug.h"
+#include "js/friend/DumpFunctions.h"  // js::DumpHeap
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
+#include "js/Object.h"    // JS::GetClass, JS::GetCompartment, JS::GetPrivate
 #include "js/Warnings.h"  // JS::SetWarningReporter
 #include "jsfriendapi.h"
 #include "mozilla/ArrayUtils.h"
@@ -146,15 +148,14 @@ class IncrementalFinalizeRunnable : public CancelableRunnable {
 struct NoteWeakMapChildrenTracer : public JS::CallbackTracer {
   NoteWeakMapChildrenTracer(JSRuntime* aRt,
                             nsCycleCollectionNoteRootCallback& aCb)
-      : JS::CallbackTracer(aRt),
+      : JS::CallbackTracer(aRt, JS::TracerKind::Callback,
+                           JS::IdTraceAction::CanSkip),
         mCb(aCb),
         mTracedAny(false),
         mMap(nullptr),
         mKey(nullptr),
-        mKeyDelegate(nullptr) {
-    setCanSkipJsids(true);
-  }
-  bool onChild(const JS::GCCellPtr& aThing) override;
+        mKeyDelegate(nullptr) {}
+  void onChild(const JS::GCCellPtr& aThing) override;
   nsCycleCollectionNoteRootCallback& mCb;
   bool mTracedAny;
   JSObject* mMap;
@@ -162,13 +163,13 @@ struct NoteWeakMapChildrenTracer : public JS::CallbackTracer {
   JSObject* mKeyDelegate;
 };
 
-bool NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
+void NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
   if (aThing.is<JSString>()) {
-    return true;
+    return;
   }
 
   if (!JS::GCThingIsMarkedGray(aThing) && !mCb.WantAllTraces()) {
-    return true;
+    return;
   }
 
   if (JS::IsCCTraceKind(aThing.kind())) {
@@ -177,7 +178,6 @@ bool NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
   } else {
     JS::TraceChildren(this, aThing);
   }
-  return true;
 }
 
 struct NoteWeakMapsTracer : public js::WeakMapTracer {
@@ -388,23 +388,25 @@ JSZoneParticipant::TraverseNative(void* aPtr,
 
 struct TraversalTracer : public JS::CallbackTracer {
   TraversalTracer(JSRuntime* aRt, nsCycleCollectionTraversalCallback& aCb)
-      : JS::CallbackTracer(aRt, DoNotTraceWeakMaps), mCb(aCb) {
-    setCanSkipJsids(true);
-  }
-  bool onChild(const JS::GCCellPtr& aThing) override;
+      : JS::CallbackTracer(aRt, JS::TracerKind::Callback,
+                           JS::TraceOptions(JS::WeakMapTraceAction::Skip,
+                                            JS::WeakEdgeTraceAction::Trace,
+                                            JS::IdTraceAction::CanSkip)),
+        mCb(aCb) {}
+  void onChild(const JS::GCCellPtr& aThing) override;
   nsCycleCollectionTraversalCallback& mCb;
 };
 
-bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
+void TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   // Checking strings and symbols for being gray is rather slow, and we don't
   // need either of them for the cycle collector.
   if (aThing.is<JSString>() || aThing.is<JS::Symbol>()) {
-    return true;
+    return;
   }
 
   // Don't traverse non-gray objects, unless we want all traces.
   if (!JS::GCThingIsMarkedGray(aThing) && !mCb.WantAllTraces()) {
-    return true;
+    return;
   }
 
   /*
@@ -417,7 +419,7 @@ bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   if (JS::IsCCTraceKind(aThing.kind())) {
     if (MOZ_UNLIKELY(mCb.WantDebugInfo())) {
       char buffer[200];
-      getTracingEdgeName(buffer, sizeof(buffer));
+      context().getEdgeName(buffer, sizeof(buffer));
       mCb.NoteNextEdgeName(buffer);
     }
     mCb.NoteJSChild(aThing);
@@ -433,13 +435,6 @@ bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   } else {
     JS::TraceChildren(this, aThing);
   }
-  return true;
-}
-
-static void NoteJSChildGrayWrapperShim(void* aData, JS::GCCellPtr aThing,
-                                       const JS::AutoRequireNoGC& nogc) {
-  TraversalTracer* trc = static_cast<TraversalTracer*>(aData);
-  trc->onChild(aThing);
 }
 
 /*
@@ -711,14 +706,14 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
 class JSLeakTracer : public JS::CallbackTracer {
  public:
   explicit JSLeakTracer(JSRuntime* aRuntime)
-      : JS::CallbackTracer(aRuntime, TraceWeakMapKeysValues) {}
+      : JS::CallbackTracer(aRuntime, JS::TracerKind::Callback,
+                           JS::WeakMapTraceAction::TraceKeysAndValues) {}
 
  private:
-  bool onChild(const JS::GCCellPtr& thing) override {
+  void onChild(const JS::GCCellPtr& thing) override {
     const char* kindName = JS::GCTraceKindToAscii(thing.kind());
     size_t size = JS::GCTraceKindSize(thing.kind());
     MOZ_LOG_CTOR(thing.asCell(), kindName, size);
-    return true;
   }
 };
 #endif
@@ -774,8 +769,8 @@ void CycleCollectedJSRuntime::DescribeGCThing(
   uint64_t compartmentAddress = 0;
   if (aThing.is<JSObject>()) {
     JSObject* obj = &aThing.as<JSObject>();
-    compartmentAddress = (uint64_t)js::GetObjectCompartment(obj);
-    const JSClass* clasp = js::GetObjectClass(obj);
+    compartmentAddress = (uint64_t)JS::GetCompartment(obj);
+    const JSClass* clasp = JS::GetClass(obj);
 
     // Give the subclass a chance to do something
     if (DescribeCustomObjects(obj, clasp, name)) {
@@ -813,7 +808,7 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
     const JSClass* aClasp, JSObject* aObj,
     nsCycleCollectionTraversalCallback& aCb) const {
   MOZ_ASSERT(aClasp);
-  MOZ_ASSERT(aClasp == js::GetObjectClass(aObj));
+  MOZ_ASSERT(aClasp == JS::GetClass(aObj));
 
   JS::Rooted<JSObject*> obj(RootingCx(), aObj);
 
@@ -826,8 +821,8 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
   //     that do hold a strong reference, but that might not be possible.
   if (aClasp->flags & JSCLASS_HAS_PRIVATE &&
       aClasp->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "js::GetObjectPrivate(obj)");
-    aCb.NoteXPCOMChild(static_cast<nsISupports*>(js::GetObjectPrivate(obj)));
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "JS::GetPrivate(obj)");
+    aCb.NoteXPCOMChild(static_cast<nsISupports*>(JS::GetPrivate(obj)));
     return;
   }
 
@@ -884,7 +879,7 @@ void CycleCollectedJSRuntime::TraverseGCThing(
 
   if (aThing.is<JSObject>()) {
     JSObject* obj = &aThing.as<JSObject>();
-    NoteGCThingXPCOMChildren(js::GetObjectClass(obj), obj, aCb);
+    NoteGCThingXPCOMChildren(JS::GetClass(obj), obj, aCb);
   }
 }
 
@@ -916,7 +911,7 @@ void CycleCollectedJSRuntime::TraverseZone(
    * unnecessary loop edges to the graph (bug 842137).
    */
   TraversalTracer trc(mJSRuntime, aCb);
-  js::VisitGrayWrapperTargets(aZone, NoteJSChildGrayWrapperShim, &trc);
+  js::TraceGrayWrapperTargets(&trc, aZone);
 
   /*
    * To find C++ children of things in the zone, we scan every JS Object in
@@ -1791,10 +1786,16 @@ void CycleCollectedJSRuntime::ErrorInterceptor::interceptError(
   switch (*type) {
     case JSExnType::JSEXN_REFERENCEERR:
     case JSExnType::JSEXN_SYNTAXERR:
-    case JSExnType::JSEXN_TYPEERR:
       break;
     default:
       // Not one of the errors we are interested in.
+      // Note that we are not interested in instances of `TypeError`
+      // for the time being, as DOM (ab)uses this constructor to represent
+      // all sorts of errors that are not even remotely related to type
+      // errors (e.g. some network errors).
+      // If we ever have a mechanism to differentiate between DOM-thrown
+      // and SpiderMonkey-thrown instances of `TypeError`, we should
+      // consider watching for `TypeError` here.
       return;
   }
 

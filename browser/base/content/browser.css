@@ -10,7 +10,7 @@ body {
   padding: 0;
   height: 100%;
   width: 100%;
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 :root {
@@ -61,7 +61,7 @@ body {
 }
 
 /* Prevent shrinking the page content to 0 height and width */
-.browserStack > browser {
+.browserStack {
   min-height: 25px;
   min-width: 25px;
 }
@@ -269,7 +269,7 @@ panelview[mainview] > .panel-header {
  * from the overflow menu, but we still don't want to render them outside of
  * the customization target. */
 toolbar[overflowable][customizing] > .customization-target {
-  overflow: -moz-hidden-unscrollable;
+  overflow: clip;
 }
 
 toolbar:not([overflowing]) > .overflow-button,
@@ -277,7 +277,7 @@ toolbar[customizing] > .overflow-button {
   display: none;
 }
 
-toolbar[customizing] #pioneer-button,
+toolbar[customizing] #ion-button,
 toolbar[customizing] #whats-new-menu-button {
   display: none;
 }
@@ -353,6 +353,10 @@ toolbar[customizing] #whats-new-menu-button {
   appearance: auto;
   -moz-default-appearance: -moz-window-button-box;
   position: relative;
+}
+
+#personal-toolbar-empty-description {
+  -moz-window-dragging: no-drag;
 }
 
 #personal-bookmarks {
@@ -490,13 +494,13 @@ toolbarpaletteitem[place="toolbar"] {
 #bookmarks-toolbar-placeholder,
 #bookmarks-toolbar-button,
 toolbarpaletteitem > #personal-bookmarks > #PlacesToolbar,
-#personal-bookmarks:-moz-any([overflowedItem=true], [cui-areatype="menu-panel"]) > #PlacesToolbar {
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="menu-panel"]) > #PlacesToolbar {
   display: none;
 }
 
 toolbarpaletteitem[place="toolbar"] > #personal-bookmarks > #bookmarks-toolbar-placeholder,
 toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-button,
-#personal-bookmarks:-moz-any([overflowedItem=true], [cui-areatype="menu-panel"]) > #bookmarks-toolbar-button {
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="menu-panel"]) > #bookmarks-toolbar-button {
   display: -moz-box;
 }
 
@@ -659,7 +663,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="loginsFooter"] {
   -moz-box-pack: center;
-  color: -moz-fieldText;
+  color: FieldText;
   min-height: 2.6666em;
   border-top: 1px solid rgba(38,38,38,.15);
   background-color: hsla(0,0%,80%,.35); /* match arrowpanel-dimmed */;
@@ -677,12 +681,9 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   min-width: 17em;
 }
 
+#PopupAutoComplete[resultstyles~="importableLogins"],
 #PopupAutoComplete[resultstyles~="generatedPassword"] {
   min-width: 22em;
-}
-
-#PopupAutoComplete[resultstyles~="importableLogins"] {
-  min-width: 24em;
 }
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] {
@@ -952,7 +953,7 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
   position: absolute;
 }
 
-browser[tabmodalPromptShowing] {
+browser[tabmodalPromptShowing], browser[tabDialogShowing] {
   -moz-user-focus: none !important;
 }
 
@@ -989,7 +990,7 @@ browser[tabmodalPromptShowing] {
   transition: opacity 120ms ease-out, visibility 120ms;
 }
 
-#statuspanel[type=overLink] > #statuspanel-inner {
+#statuspanel:is([type=overLink], [inactive][previoustype=overLink]) > #statuspanel-inner {
   direction: ltr;
 }
 
@@ -1034,6 +1035,10 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   direction: ltr;
 }
 
+#ContentSelectDropdown > menupopup::part(arrowscrollbox-scrollbox) {
+  scrollbar-width: var(--content-select-scrollbar-width, auto);
+}
+
 /* Indent options in optgroups */
 .contentSelectDropdown-ingroup .menu-iconic-text {
   padding-inline-start: 2em;
@@ -1060,12 +1065,19 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
      for repaints.
      These properties are not implemented on other platforms. */
   #BMB_bookmarksPopup:not([animate="false"]) {
-    -moz-window-opacity: 0;
-    -moz-window-transform: translateY(-70px);
     transition-property: -moz-window-transform, -moz-window-opacity;
     transition-duration: 0.18s, 0.18s;
     transition-timing-function:
       var(--animation-easing-function), ease-out;
+  }
+
+  /* Only do the fade-in animation on pre-Big Sur to avoid missing shadows on
+   * Big Sur, see bug 1672091. */
+  @media (-moz-mac-big-sur-theme: 0) {
+    #BMB_bookmarksPopup:not([animate="false"]) {
+      -moz-window-opacity: 0;
+      -moz-window-transform: translateY(-70px);
+    }
   }
 
   #BMB_bookmarksPopup[side="bottom"]:not([animate="false"]) {
@@ -1083,6 +1095,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
   }
 
   #BMB_bookmarksPopup[animate][animate="cancel"] {
+    -moz-window-opacity: 0;
     -moz-window-transform: none;
   }
 %else
@@ -1365,6 +1378,53 @@ toolbarpaletteitem > toolbaritem {
   visibility: visible;
 }
 
+/* Print pending */
+.printSettingsBrowser {
+  width: 250px !important;
+}
+
+.previewStack {
+  background-color: #f9f9fa;
+  color: #0c0c0d;
+}
+
+.previewRendering {
+  background-image: url("chrome://browser/skin/tabbrowser/pendingpaint.png");
+  background-repeat: no-repeat;
+  background-size: 60px 60px;
+  background-position: center center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+}
+
+.previewStack[rendering=true] > .previewRendering {
+  visibility: visible;
+}
+
+.printPreviewBrowser {
+  opacity: 1;
+  transition: opacity 60ms;
+}
+
+.previewStack[rendering=true] > .printPreviewBrowser {
+  opacity: 0;
+  transition: opacity 1ms 250ms;
+}
+
+.print-pending-label {
+  margin-top: 110px;
+  font-size: large;
+}
+
+@media (prefers-color-scheme: dark) {
+  .previewStack {
+    background-color: #2A2A2E;
+    color: rgb(249, 249, 250);
+  }
+}
+
 /* WebExtension Sidebars */
 #sidebar-box[sidebarcommand$="-sidebar-action"] > #sidebar-header > #sidebar-switcher-target > #sidebar-icon {
   list-style-image: var(--webextension-menuitem-image, inherit);
@@ -1385,13 +1445,9 @@ toolbar[keyNav=true]:not([collapsed=true]):not([customizing=true]) toolbartabsto
 }
 
 /* Frame used for rendering the DevTools inspector highlighters */
-iframe.devtools-highlighter-renderer {
+:root > iframe.devtools-highlighter-renderer {
   border: none;
   pointer-events: none;
-}
-
-/* Highlighter for the Browser Toolbox */
-:root > iframe.devtools-highlighter-renderer {
   position: fixed;
   top: 0;
   left: 0;
@@ -1400,7 +1456,95 @@ iframe.devtools-highlighter-renderer {
   z-index: 2;
 }
 
-/* Highlighter for web content */
-.browserStack > iframe.devtools-highlighter-renderer {
-  -moz-box-flex: 1;
+/**
+ * Tab Dialogs
+ */
+
+.dialogStack {
+  /* Should outrank the z-index values of other UI elements, particularly the devtools
+     splitter element. */
+  z-index: 2;
 }
+
+.dialogStack.temporarilyHidden {
+  /* For some printing use cases we need to visually hide the dialog before
+   * actually closing it / make it disappear from the frame tree. */
+  visibility: hidden;
+}
+
+.dialogOverlay {
+  visibility: hidden;
+}
+
+.dialogOverlay[topmost="true"] {
+  background-color: rgba(0,0,0,0.5);
+  z-index: 1;
+}
+
+.dialogBox {
+  background-clip: content-box;
+  box-shadow: 0 2px 6px 0 rgba(0,0,0,0.3);
+  display: -moz-box;
+  margin: 0;
+  /* Make dialogs overlap with upper chrome UI */
+  margin-top: -5px;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.dialogBox[resizable="true"] {
+  resize: both;
+  overflow: hidden;
+  min-height: 20em;
+  min-width: 66ch;
+}
+
+.dialogBox[sizeto="available"] {
+  --box-inline-margin: 4px;
+  --box-block-margin: 4px;
+  --box-ideal-width: 1000;
+  --box-ideal-height: 650;
+  --box-max-width-margin: calc(100vw - 2 * var(--box-inline-margin));
+  --box-max-height-margin: calc(100vh - var(--box-top-px) - var(--box-block-margin));
+  --box-max-width-ratio: 70vw;
+  --box-max-height-ratio: calc(var(--box-ideal-height) / var(--box-ideal-width) * var(--box-max-width-ratio));
+  max-width: min(max(var(--box-ideal-width) * 1px, var(--box-max-width-ratio)), var(--box-max-width-margin));
+  max-height: min(max(var(--box-ideal-height) * 1px, var(--box-max-height-ratio)), var(--box-max-height-margin));
+  width: 100vw;
+  height: 100vh;
+}
+
+@media (min-width: 550px) {
+  .dialogBox[sizeto="available"] {
+    --box-inline-margin: min(calc(4px + (100vw - 550px) / 4), 16px);
+  }
+}
+
+@media (min-width: 800px) {
+  .dialogBox[sizeto="available"] {
+    --box-inline-margin: min(calc(16px + (100vw - 800px) / 4), 32px);
+  }
+}
+
+@media (min-height: 350px) {
+  .dialogBox[sizeto="available"] {
+    --box-block-margin: min(calc(4px + (100vh - 350px) / 4), 16px);
+  }
+}
+
+@media (min-height: 550px) {
+  .dialogBox[sizeto="available"] {
+    --box-block-margin: min(calc(16px + (100vh - 550px) / 4), 32px);
+  }
+}
+
+.dialogFrame {
+  margin: 0;
+  -moz-box-flex: 1;
+  /* Default dialog dimensions */
+  width: 66ch;
+}
+
+/**
+ * End Tab Dialogs
+ */

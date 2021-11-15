@@ -51,6 +51,7 @@
 #include "nsIProgressEventSink.h"
 #include "nsIProtocolHandler.h"
 #include "nsImageModule.h"
+#include "nsMediaSniffer.h"
 #include "nsMimeTypes.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -524,8 +525,8 @@ class imgMemoryReporter final : public nsIMemoryReporter {
     nsAutoCString path(aPathPrefix);
     path.Append(aPathSuffix);
 
-    aHandleReport->Callback(EmptyCString(), path, aKind, UNITS_BYTES, aValue,
-                            desc, aData);
+    aHandleReport->Callback(""_ns, path, aKind, UNITS_BYTES, aValue, desc,
+                            aData);
   }
 
   static void RecordCounterForRequest(imgRequest* aRequest,
@@ -701,7 +702,7 @@ static bool ShouldLoadCachedImage(imgRequest* aImgRequest,
 
   int16_t decision = nsIContentPolicy::REJECT_REQUEST;
   rv = NS_CheckContentLoadPolicy(contentLocation, secCheckLoadInfo,
-                                 EmptyCString(),  // mime guess
+                                 ""_ns,  // mime guess
                                  &decision, nsContentUtils::GetContentPolicy());
   if (NS_FAILED(rv) || !NS_CP_ACCEPTED(decision)) {
     return false;
@@ -730,8 +731,8 @@ static bool ShouldLoadCachedImage(imgRequest* aImgRequest,
       decision = nsIContentPolicy::REJECT_REQUEST;
       rv = nsMixedContentBlocker::ShouldLoad(insecureRedirect, contentLocation,
                                              secCheckLoadInfo,
-                                             EmptyCString(),  // mime guess
-                                             true,            // aReportError
+                                             ""_ns,  // mime guess
+                                             true,   // aReportError
                                              &decision);
       if (NS_FAILED(rv) || !NS_CP_ACCEPTED(decision)) {
         return false;
@@ -2111,15 +2112,14 @@ imgLoader::LoadImageXPCOM(
   nsresult rv = LoadImage(
       aURI, aInitialDocumentURI, aReferrerInfo, aTriggeringPrincipal, 0,
       aLoadGroup, aObserver, aLoadingDocument, aLoadingDocument, aLoadFlags,
-      aCacheKey, aContentPolicyType, EmptyString(),
+      aCacheKey, aContentPolicyType, u""_ns,
       /* aUseUrgentStartForChannel */ false, /* aListPreload */ false, &proxy);
   *_retval = proxy;
   return rv;
 }
 
 static void MakeRequestStaticIfNeeded(
-    Document* aLoadingDocument,
-    imgRequestProxy** aProxyAboutToGetReturned) {
+    Document* aLoadingDocument, imgRequestProxy** aProxyAboutToGetReturned) {
   if (!aLoadingDocument || !aLoadingDocument->IsStaticDocument()) {
     return;
   }
@@ -2156,9 +2156,8 @@ nsresult imgLoader::LoadImage(
     return NS_ERROR_NULL_POINTER;
   }
 
-  auto makeStaticIfNeeded = mozilla::MakeScopeExit([&] {
-    MakeRequestStaticIfNeeded(aLoadingDocument, _retval);
-  });
+  auto makeStaticIfNeeded = mozilla::MakeScopeExit(
+      [&] { MakeRequestStaticIfNeeded(aLoadingDocument, _retval); });
 
 #ifdef MOZ_GECKO_PROFILER
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("imgLoader::LoadImage", NETWORK,
@@ -2518,9 +2517,8 @@ nsresult imgLoader::LoadImageWithChannel(nsIChannel* channel,
 
   MOZ_ASSERT(NS_UsePrivateBrowsing(channel) == mRespectPrivacy);
 
-  auto makeStaticIfNeeded = mozilla::MakeScopeExit([&] {
-    MakeRequestStaticIfNeeded(aLoadingDocument, _retval);
-  });
+  auto makeStaticIfNeeded = mozilla::MakeScopeExit(
+      [&] { MakeRequestStaticIfNeeded(aLoadingDocument, _retval); });
 
   LOG_SCOPE(gImgLog, "imgLoader::LoadImageWithChannel");
   RefPtr<imgRequest> request;
@@ -2731,6 +2729,8 @@ imgLoader::GetMIMETypeFromContent(nsIRequest* aRequest,
 nsresult imgLoader::GetMimeTypeFromContent(const char* aContents,
                                            uint32_t aLength,
                                            nsACString& aContentType) {
+  nsAutoCString detected;
+
   /* Is it a GIF? */
   if (aLength >= 6 &&
       (!strncmp(aContents, "GIF87a", 6) || !strncmp(aContents, "GIF89a", 6))) {
@@ -2782,6 +2782,10 @@ nsresult imgLoader::GetMimeTypeFromContent(const char* aContents,
              !memcmp(aContents + 8, "WEBP", 4)) {
     aContentType.AssignLiteral(IMAGE_WEBP);
 
+  } else if (MatchesMP4(reinterpret_cast<const uint8_t*>(aContents), aLength,
+                        detected) &&
+             detected.Equals(IMAGE_AVIF)) {
+    aContentType.AssignLiteral(IMAGE_AVIF);
   } else {
     /* none of the above?  I give up */
     return NS_ERROR_NOT_AVAILABLE;

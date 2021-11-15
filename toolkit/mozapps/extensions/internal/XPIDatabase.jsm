@@ -25,7 +25,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
-  AppConstants: "resource://gre/modules/AppConstants.jsm",
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
@@ -713,6 +712,7 @@ class AddonInternal {
       if (this.userDisabled || this.softDisabled) {
         permissions |= AddonManager.PERM_CAN_ENABLE;
       } else if (this.type != "theme" || this.id != DEFAULT_THEME_ID) {
+        // We do not expose disabling the default theme.
         permissions |= AddonManager.PERM_CAN_DISABLE;
       }
     }
@@ -727,9 +727,10 @@ class AddonInternal {
     let changesAllowed = !this.location.locked && !this.pendingUninstall;
     if (changesAllowed) {
       // System add-on upgrades are triggered through a different mechanism (see updateSystemAddons())
-      let isSystem = this.location.isSystem;
+      // Builtin addons are only upgraded with Firefox (or app) updates.
+      let isSystem = this.location.isSystem || this.location.isBuiltin;
       // Add-ons that are installed by a file link cannot be upgraded.
-      if (!this.location.isLinkedAddon(this.id) && !isSystem) {
+      if (!isSystem && !this.location.isLinkedAddon(this.id)) {
         permissions |= AddonManager.PERM_CAN_UPGRADE;
       }
     }
@@ -795,7 +796,7 @@ AddonWrapper = class {
   }
 
   get __AddonInternal__() {
-    return AppConstants.DEBUG ? addonFor(this) : undefined;
+    return addonFor(this);
   }
 
   get seen() {
@@ -937,7 +938,7 @@ AddonWrapper = class {
     return null;
   }
 
-  get isRecommended() {
+  get recommendationStates() {
     let addon = addonFor(this);
     let state = addon.recommendationState;
     if (
@@ -947,9 +948,22 @@ AddonWrapper = class {
       addon.isCorrectlySigned &&
       !this.temporarilyInstalled
     ) {
-      return state.states.includes("recommended");
+      return state.states;
     }
-    return false;
+    return [];
+  }
+
+  get isRecommended() {
+    return this.recommendationStates.includes("recommended");
+  }
+
+  get canBypassThirdParyInstallPrompt() {
+    // We only bypass if the extension is signed (to support distributions
+    // that turn off the signing requirement) and has recommendation states.
+    return (
+      this.signedState >= AddonManager.SIGNEDSTATE_SIGNED &&
+      this.recommendationStates.length
+    );
   }
 
   get applyBackgroundUpdates() {
@@ -2835,6 +2849,12 @@ this.XPIDatabaseReconcile = {
         );
       } else if (unsigned && !isNewInstall) {
         logger.warn("Not uninstalling existing unsigned add-on");
+      } else if (aLocation.name == KEY_APP_BUILTINS) {
+        // If a builtin has been removed from the build, we need to remove it from our
+        // data sets.  We cannot use location.isBuiltin since the system addon locations
+        // mix it up.
+        XPIDatabase.removeAddonMetadata(aAddonState);
+        aLocation.removeAddon(aId);
       } else {
         aLocation.installer.uninstallAddon(aId);
       }
@@ -2847,7 +2867,8 @@ this.XPIDatabaseReconcile = {
 
     // Assume that add-ons in the system add-ons install location aren't
     // foreign and should default to enabled.
-    aNewAddon.foreignInstall = isDetectedInstall && !aLocation.isSystem;
+    aNewAddon.foreignInstall =
+      isDetectedInstall && !aLocation.isSystem && !aLocation.isBuiltin;
 
     // appDisabled depends on whether the add-on is a foreignInstall so update
     aNewAddon.appDisabled = !XPIDatabase.isUsableAddon(aNewAddon);
@@ -3013,6 +3034,16 @@ this.XPIDatabaseReconcile = {
       aOldAddon.signedDate === undefined &&
       (aOldAddon.signedState || checkSigning);
 
+    // If maxVersion was inadvertently updated for a locale, force a reload
+    // from the manifest.  See Bug 1646016 for details.
+    if (
+      !aReloadMetadata &&
+      aOldAddon.type === "locale" &&
+      aOldAddon.matchingTargetApplication
+    ) {
+      aReloadMetadata = aOldAddon.matchingTargetApplication.maxVersion === "*";
+    }
+
     let manifest = null;
     if (checkSigning || aReloadMetadata || signedDateMissing) {
       try {
@@ -3040,7 +3071,6 @@ this.XPIDatabaseReconcile = {
     if (aReloadMetadata) {
       // Avoid re-reading these properties from manifest,
       // use existing addon instead.
-      // TODO - consider re-scanning for targetApplications.
       let remove = [
         "syncGUID",
         "foreignInstall",
@@ -3051,9 +3081,13 @@ this.XPIDatabaseReconcile = {
         "applyBackgroundUpdates",
         "sourceURI",
         "releaseNotesURI",
-        "targetApplications",
         "installTelemetryInfo",
       ];
+
+      // TODO - consider re-scanning for targetApplications for other addon types.
+      if (aOldAddon.type !== "locale") {
+        remove.push("targetApplications");
+      }
 
       let props = PROP_JSON_FIELDS.filter(a => !remove.includes(a));
       copyProperties(manifest, props, aOldAddon);

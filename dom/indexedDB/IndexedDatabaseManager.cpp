@@ -11,6 +11,7 @@
 #include "nsIScriptGlobalObject.h"
 
 #include "jsapi.h"
+#include "js/Object.h"  // JS::GetClass
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
@@ -54,8 +55,7 @@
 
 #define IDB_STR "indexedDB"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 namespace indexedDB {
 
 using namespace mozilla::dom::quota;
@@ -485,9 +485,9 @@ nsresult IndexedDatabaseManager::CommonPostHandleEvent(
 // static
 bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(js::GetObjectClass(JS::CurrentGlobalOrNull(aCx))->flags &
-                 JSCLASS_DOM_GLOBAL,
-             "Passed object is not a global object!");
+  MOZ_ASSERT(
+      JS::GetClass(JS::CurrentGlobalOrNull(aCx))->flags & JSCLASS_DOM_GLOBAL,
+      "Passed object is not a global object!");
 
   // We need to ensure that the manager has been created already here so that we
   // load preferences that may control which properties are exposed.
@@ -518,7 +518,7 @@ bool IndexedDatabaseManager::ResolveSandboxBinding(JSContext* aCx) {
 bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
                                              JS::Handle<JSObject*> aGlobal) {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(js::GetObjectClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
+  MOZ_ASSERT(JS::GetClass(aGlobal)->flags & JSCLASS_DOM_GLOBAL,
              "Passed object is not a global object!");
 
   nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
@@ -526,12 +526,8 @@ bool IndexedDatabaseManager::DefineIndexedDB(JSContext* aCx,
     return false;
   }
 
-  auto res = IDBFactory::CreateForMainThreadJS(global);
-  if (res.isErr()) {
-    return false;
-  }
-
-  auto factory = res.unwrap();
+  IDB_TRY_UNWRAP(auto factory, IDBFactory::CreateForMainThreadJS(global),
+                 false);
 
   MOZ_ASSERT(factory, "This should never fail for chrome!");
 
@@ -937,5 +933,4 @@ nsTArray<SafeRefPtr<FileManager> >& FileManagerInfo::GetArray(
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -70,6 +70,16 @@ sm-plain-linux64/opt:
     run:
         spidermonkey-variant: plain
 
+sm-nowarp-linux64/debug:
+    description: "Spidermonkey No Warp"
+    index:
+        job-name: sm-plain-linux64-nowarp
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(nowarp)
+    run:
+        spidermonkey-variant: nowarpdebug
+
 sm-smoosh-linux64/debug:
     description: "Spidermonkey SmooshMonkey"
     index:
@@ -86,6 +96,7 @@ sm-smoosh-linux64/debug:
             - linux64-gcc
             - linux64-rust
             - linux64-cbindgen
+            - linux64-dump-syms
     run-on-projects: ['mozilla-central']
 
 sm-smoosh-linux64/opt:
@@ -104,6 +115,7 @@ sm-smoosh-linux64/opt:
             - linux64-gcc
             - linux64-rust
             - linux64-cbindgen
+            - linux64-dump-syms
     run-on-projects: ['mozilla-central']
 
 sm-warp-linux64/debug:
@@ -149,6 +161,26 @@ sm-arm64-sim-linux64/debug:
         symbol: SM(arm64)
     run:
         spidermonkey-variant: arm64-sim
+
+sm-arm64-sim-cranelift-linux64/debug:
+    description: "Spidermonkey ARM64 sim with Cranelift Wasm backend"
+    index:
+        job-name: sm-arm64-sim-cranelift-linux64-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: SM(arm64cl)
+    run:
+        spidermonkey-variant: arm64-cranelift-sim
+    fetches:
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-gcc
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-dump-syms
+    run-on-projects: ['mozilla-central']
 
 sm-asan-linux64/opt:
     description: "Spidermonkey Address Sanitizer"
@@ -205,7 +237,8 @@ sm-tsan-linux64/opt:
         toolchain:
             - linux64-binutils
             - linux64-clang
-            - linux64-rust
+            - linux64-rust-nightly
+            - linux64-dump-syms
 
 sm-rootanalysis-linux64/debug:
     description: "Spidermonkey Root Analysis"
@@ -232,6 +265,7 @@ sm-nonunified-linux64/debug:
             - linux64-gcc
             - linux64-rust
             - linux64-cbindgen
+            - linux64-dump-syms
 
 sm-fuzzing-linux64/opt:
     description: "Spidermonkey Fuzzing"

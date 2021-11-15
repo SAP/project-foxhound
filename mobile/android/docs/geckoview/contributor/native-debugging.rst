@@ -25,7 +25,7 @@ Perform a debug build of Gecko.
 1. Edit your ``mozconfig`` file and add the following lines. These will
    ensure that the build includes debug checks and symbols.
 
-.. code:: txt
+.. code::
 
    ac_add_options --enable-debug
    ac_add_options --with-android-ndk="<path>/.mozbuild/android-ndk-r17b"
@@ -34,7 +34,7 @@ Perform a debug build of Gecko.
    ``mozconfig`` if present. ``./mach configure`` will not allow
    artifact builds to be enabled when generating a debug build.
 
-.. code:: txt
+.. code::
 
    # ac_add_options --enable-artifact-builds
 
@@ -113,7 +113,7 @@ Debug Native code in Android Studio
    debug window, and then select the ``lldb`` console tab. Type the
    following into the console:
 
-.. code:: lldb
+.. code::
 
    b <file>.cpp:<line number>
 
@@ -211,7 +211,7 @@ Managing more debug tabs may require different approaches.
 Using Android Studio on Windows
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can now use `artifact builds <https://developer.mozilla.org/docs/Mozilla/Developer_guide/Build_Instructions/Artifact_builds>`_
+You can now use :ref:`artifact builds <Understanding Artifact Builds>`
 mode on `MozillaBuild environment <https://wiki.mozilla.org/MozillaBuild>`_ even if you are
 not using WSL. If you want to debug GeckoView using Android Studio on
 Windows, you have to set an additional environment variable via the

@@ -24,6 +24,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIChannel.h"
 #include "nsIBackgroundFileSaver.h"
+#include "nsIHttpChannel.h"
 
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
@@ -36,6 +37,13 @@ class nsIMIMEInfo;
 class nsITransfer;
 class nsIPrincipal;
 class MaybeCloseWindowHelper;
+
+#define EXTERNAL_APP_HANDLER_IID                     \
+  {                                                  \
+    0x50eb7479, 0x71ff, 0x4ef8, {                    \
+      0xb3, 0x1e, 0x3b, 0x59, 0xc8, 0xab, 0xb9, 0x24 \
+    }                                                \
+  }
 
 /**
  * The helper app service. Responsible for handling content that Mozilla
@@ -136,6 +144,14 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
                                               nsIMIMEInfo* aMIMEInfo);
 
   /**
+   * Replace the primary extension of the mimeinfo object if it's in our
+   * list of forbidden extensions. This fixes up broken information
+   * provided to us by the OS.
+   */
+  bool MaybeReplacePrimaryExtension(const nsACString& aPrimaryExtension,
+                                    nsIMIMEInfo* aMIMEInfo);
+
+  /**
    * Searches the "extra" array for a MIME type, and gets its extension.
    * @param aExtension The extension to search for
    * @param aMIMEType [out] The found MIME type.
@@ -213,6 +229,8 @@ class nsExternalAppHandler final : public nsIStreamListener,
   NS_DECL_NSICANCELABLE
   NS_DECL_NSIBACKGROUNDFILESAVEROBSERVER
   NS_DECL_NSINAMED
+
+  NS_DECLARE_STATIC_IID_ACCESSOR(EXTERNAL_APP_HANDLER_IID)
 
   /**
    * @param aMIMEInfo       MIMEInfo object, representing the type of the
@@ -322,6 +340,13 @@ class nsExternalAppHandler final : public nsIStreamListener,
    * etc).
    */
   uint32_t mReason;
+
+  /**
+   * Indicates if the nsContentSecurityUtils rate this download as
+   * acceptable, potentialy unwanted or illigal request.
+   *
+   */
+  int32_t mDownloadClassification;
 
   /**
    * Track the executable-ness of the temporary file.
@@ -436,10 +461,22 @@ class nsExternalAppHandler final : public nsIStreamListener,
   bool GetNeverAskFlagFromPref(const char* prefName, const char* aContentType);
 
   /**
-   * Helper routine to ensure that mTempFileExtension only contains an extension
+   * Helper routine that checks whether we should enforce an extension
+   * for this file.
+   */
+  bool ShouldForceExtension(const nsString& aFileExt);
+
+  /**
+   * Helper routine to ensure that mSuggestedFileName ends in the correct
+   * extension, in case the original extension contains invalid characters
+   * or if this download is for a mimetype where we enforce using a specific
+   * extension (image/, video/, and audio/ based mimetypes, and a few specific
+   * document types).
+   *
+   * It also ensure that mTempFileExtension only contains an extension
    * when it is different from mSuggestedFileName's extension.
    */
-  void EnsureTempFileExtension(const nsString& aFileExt);
+  void EnsureCorrectExtension(const nsString& aFileExt);
 
   typedef enum { kReadError, kWriteError, kLaunchError } ErrorType;
   /**
@@ -471,5 +508,6 @@ class nsExternalAppHandler final : public nsIStreamListener,
 
   RefPtr<nsExternalHelperAppService> mExtProtSvc;
 };
+NS_DEFINE_STATIC_IID_ACCESSOR(nsExternalAppHandler, EXTERNAL_APP_HANDLER_IID)
 
 #endif  // nsExternalHelperAppService_h__

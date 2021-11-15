@@ -6,14 +6,14 @@ source $(dirname $0)/sm-tooltool-config.sh
 
 : ${PYTHON3:=python3}
 
+# Ensure upload dir exists
+mkdir -p $UPLOAD_DIR
+
 # Run the script
 export MOZ_UPLOAD_DIR="$(cd "$UPLOAD_DIR"; pwd)"
 export OBJDIR=$WORK/obj-spider
 AUTOMATION=1 $PYTHON3 $GECKO_PATH/js/src/devtools/automation/autospider.py ${SPIDERMONKEY_PLATFORM:+--platform=$SPIDERMONKEY_PLATFORM} $SPIDERMONKEY_VARIANT
 BUILD_STATUS=$?
-
-# Ensure upload dir exists
-mkdir -p $UPLOAD_DIR
 
 # Copy artifacts for upload by TaskCluster.
 upload=${MOZ_AUTOMATION_UPLOAD-1}
@@ -45,7 +45,7 @@ else # !upload
 
 # Provide a note for users on why we don't include artifacts for these builds
 # by default, and how they can get the artifacts if they really need them.
-cat >$UPLOAD_DIR/README-artifacts.txt <<EOF
+cat >$UPLOAD_DIR/README-artifacts.txt <<'EOF'
 Artifact upload has been disabled for this build due to infrequent usage of the
 generated artifacts.  If you find yourself in a position where you need the
 shell or similar artifacts from this build, please redo your push with the

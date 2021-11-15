@@ -4,11 +4,11 @@
 
 use api::{BuiltDisplayList, DisplayListWithCache, ColorF, DynamicProperties, Epoch, FontRenderMode};
 use api::{PipelineId, PropertyBinding, PropertyBindingId, PropertyValue, MixBlendMode, StackingContext};
-use api::MemoryReport;
 use api::units::*;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use crate::render_api::MemoryReport;
 use crate::composite::CompositorKind;
-use crate::clip::{ClipStore, ClipDataStore};
+use crate::clip::ClipStore;
 use crate::spatial_tree::SpatialTree;
 use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
 use crate::hit_test::{HitTester, HitTestingScene, HitTestingSceneStats};
@@ -162,7 +162,6 @@ impl SceneProperties {
 pub struct ScenePipeline {
     pub pipeline_id: PipelineId,
     pub viewport_size: LayoutSize,
-    pub content_size: LayoutSize,
     pub background_color: Option<ColorF>,
     pub display_list: DisplayListWithCache,
 }
@@ -197,7 +196,6 @@ impl Scene {
         display_list: BuiltDisplayList,
         background_color: Option<ColorF>,
         viewport_size: LayoutSize,
-        content_size: LayoutSize,
     ) {
         // Adds a cache to the given display list. If this pipeline already had
         // a display list before, that display list is updated and used instead.
@@ -212,7 +210,6 @@ impl Scene {
         let new_pipeline = ScenePipeline {
             pipeline_id,
             viewport_size,
-            content_size,
             background_color,
             display_list,
         };
@@ -299,11 +296,11 @@ impl BuiltScene {
                 dual_source_blending_is_enabled: true,
                 dual_source_blending_is_supported: false,
                 chase_primitive: ChasePrimitive::Nothing,
-                global_enable_picture_caching: false,
                 testing: false,
                 gpu_supports_fast_clears: false,
                 gpu_supports_advanced_blend: false,
                 advanced_blend_is_coherent: false,
+                gpu_supports_render_target_partial_update: true,
                 batch_lookback_count: 0,
                 background_color: None,
                 compositor_kind: CompositorKind::default(),
@@ -322,15 +319,10 @@ impl BuiltScene {
         }
     }
 
-    pub fn create_hit_tester(
-        &mut self,
-        clip_data_store: &ClipDataStore,
-    ) -> HitTester {
+    pub fn create_hit_tester(&mut self) -> HitTester {
         HitTester::new(
             Arc::clone(&self.hit_testing_scene),
             &self.spatial_tree,
-            &self.clip_store,
-            clip_data_store,
         )
     }
 }

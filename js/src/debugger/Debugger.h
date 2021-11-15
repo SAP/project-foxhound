@@ -68,12 +68,10 @@ class DebuggerEnvironment;
 class PromiseObject;
 namespace gc {
 struct Cell;
-}
+} /* namespace gc */
 namespace wasm {
 class Instance;
-}
-template <typename T>
-struct GCManagedDeletePolicy;
+} /* namespace wasm */
 } /* namespace js */
 
 /*
@@ -582,12 +580,10 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
   struct AllocationsLogEntry {
     AllocationsLogEntry(HandleObject frame, mozilla::TimeStamp when,
-                        const char* className, HandleAtom ctorName, size_t size,
-                        bool inNursery)
+                        const char* className, size_t size, bool inNursery)
         : frame(frame),
           when(when),
           className(className),
-          ctorName(ctorName),
           size(size),
           inNursery(inNursery) {
       MOZ_ASSERT_IF(frame, UncheckedUnwrap(frame)->is<SavedFrame>() ||
@@ -597,32 +593,20 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
     HeapPtr<JSObject*> frame;
     mozilla::TimeStamp when;
     const char* className;
-    HeapPtr<JSAtom*> ctorName;
     size_t size;
     bool inNursery;
 
     void trace(JSTracer* trc) {
       TraceNullableEdge(trc, &frame, "Debugger::AllocationsLogEntry::frame");
-      TraceNullableEdge(trc, &ctorName,
-                        "Debugger::AllocationsLogEntry::ctorName");
     }
   };
 
-  // Barrier methods so we can have WeakHeapPtr<Debugger*>.
-  static void readBarrier(Debugger* dbg) {
-    InternalBarrierMethods<JSObject*>::readBarrier(dbg->object);
-  }
-  static void writeBarrierPost(Debugger** vp, Debugger* prev, Debugger* next) {}
-#ifdef DEBUG
-  static void assertThingIsNotGray(Debugger* dbg) { return; }
-#endif
-
  private:
-  GCPtrNativeObject object; /* The Debugger object. Strong reference. */
+  HeapPtrNativeObject object; /* The Debugger object. Strong reference. */
   WeakGlobalObjectSet
       debuggees; /* Debuggee globals. Cross-compartment weak references. */
   JS::ZoneSet debuggeeZones; /* Set of zones that we have debuggees in. */
-  js::GCPtrObject uncaughtExceptionHook; /* Strong reference. */
+  HeapPtrObject uncaughtExceptionHook; /* Strong reference. */
   bool allowUnobservedAsmJS;
 
   // Whether to enable code coverage on the Debuggee.
@@ -874,7 +858,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static void traceObject(JSTracer* trc, JSObject* obj);
 
   void trace(JSTracer* trc);
-  friend struct js::GCManagedDeletePolicy<Debugger>;
 
   void traceForMovingGC(JSTracer* trc);
   void traceCrossCompartmentEdges(JSTracer* tracer);
@@ -1113,8 +1096,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   Debugger(JSContext* cx, NativeObject* dbg);
   ~Debugger();
 
-  inline const js::GCPtrNativeObject& toJSObject() const;
-  inline js::GCPtrNativeObject& toJSObjectRef();
+  inline const js::HeapPtrNativeObject& toJSObject() const;
+  inline js::HeapPtrNativeObject& toJSObjectRef();
   static inline Debugger* fromJSObject(const JSObject* obj);
 
 #ifdef DEBUG
@@ -1269,6 +1252,22 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
  private:
   Debugger(const Debugger&) = delete;
   Debugger& operator=(const Debugger&) = delete;
+};
+
+// Specialize InternalBarrierMethods so we can have WeakHeapPtr<Debugger*>.
+template <>
+struct InternalBarrierMethods<Debugger*> {
+  static bool isMarkable(Debugger* dbg) { return dbg->toJSObject(); }
+
+  static void postBarrier(Debugger** vp, Debugger* prev, Debugger* next) {}
+
+  static void readBarrier(Debugger* dbg) {
+    InternalBarrierMethods<JSObject*>::readBarrier(dbg->toJSObject());
+  }
+
+#ifdef DEBUG
+  static void assertThingIsNotGray(Debugger* dbg) {}
+#endif
 };
 
 /**
@@ -1561,12 +1560,12 @@ Breakpoint* Debugger::firstBreakpoint() const {
   return &(*breakpoints.begin());
 }
 
-const js::GCPtrNativeObject& Debugger::toJSObject() const {
+const js::HeapPtrNativeObject& Debugger::toJSObject() const {
   MOZ_ASSERT(object);
   return object;
 }
 
-js::GCPtrNativeObject& Debugger::toJSObjectRef() {
+js::HeapPtrNativeObject& Debugger::toJSObjectRef() {
   MOZ_ASSERT(object);
   return object;
 }
@@ -1589,6 +1588,7 @@ MOZ_MUST_USE bool ReportObjectRequired(JSContext* cx);
 JSObject* IdVectorToArray(JSContext* cx, Handle<IdVector> ids);
 bool IsInterpretedNonSelfHostedFunction(JSFunction* fun);
 JSScript* GetOrCreateFunctionScript(JSContext* cx, HandleFunction fun);
+ArrayObject* GetFunctionParameterNamesArray(JSContext* cx, HandleFunction fun);
 bool ValueToIdentifier(JSContext* cx, HandleValue v, MutableHandleId id);
 bool ValueToStableChars(JSContext* cx, const char* fnname, HandleValue value,
                         JS::AutoStableStringChars& stableChars);
@@ -1613,13 +1613,5 @@ bool ParseResumptionValue(JSContext* cx, HandleValue rval,
   JS_FN(Name, CallData::ToNative<&CallData::Method>, NumArgs, 0)
 
 } /* namespace js */
-
-namespace JS {
-
-template <>
-struct DeletePolicy<js::Debugger>
-    : public js::GCManagedDeletePolicy<js::Debugger> {};
-
-} /* namespace JS */
 
 #endif /* debugger_Debugger_h */

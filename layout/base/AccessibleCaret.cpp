@@ -16,6 +16,7 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsDOMTokenList.h"
 #include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 #include "nsPlaceholderFrame.h"
 
 namespace mozilla {
@@ -113,8 +114,10 @@ nsAutoString AccessibleCaret::AppearanceString(Appearance aAppearance) {
   nsAutoString string;
   switch (aAppearance) {
     case Appearance::None:
-    case Appearance::NormalNotShown:
       string = u"none"_ns;
+      break;
+    case Appearance::NormalNotShown:
+      string = u"hidden"_ns;
       break;
     case Appearance::Normal:
       string = u"normal"_ns;
@@ -259,15 +262,15 @@ AccessibleCaret::PositionChangedResult AccessibleCaret::SetPosition(
       mImaginaryCaretRectInContainerFrame);
   const bool isSameZoomLevel = FuzzyEqualsMultiplicative(zoomLevel, mZoomLevel);
 
+  // Always update cached mImaginaryCaretRect (relative to the root frame)
+  // because it can change when the caret is scrolled.
+  mImaginaryCaretRect = imaginaryCaretRectInFrame;
+  nsLayoutUtils::TransformRect(aFrame, RootFrame(), mImaginaryCaretRect);
+
   if (isSamePosition && isSameZoomLevel) {
     return PositionChangedResult::NotChanged;
   }
 
-  nsRect imaginaryCaretRect = imaginaryCaretRectInFrame;
-  nsLayoutUtils::TransformRect(aFrame, RootFrame(), imaginaryCaretRect);
-
-  // Cache mImaginaryCaretRect, which is relative to the root frame.
-  mImaginaryCaretRect = imaginaryCaretRect;
   mImaginaryCaretRectInContainerFrame = imaginaryCaretRectInContainerFrame;
   mImaginaryCaretReferenceFrame = aFrame;
   mZoomLevel = zoomLevel;
@@ -301,7 +304,10 @@ void AccessibleCaret::SetCaretElementStyle(const nsRect& aRect,
   styleStr.AppendLiteral("px; margin-left: ");
   styleStr.AppendFloat(StaticPrefs::layout_accessiblecaret_margin_left() /
                        aZoomLevel);
-  styleStr.AppendLiteral("px");
+  styleStr.AppendLiteral("px; transition-duration: ");
+  styleStr.AppendFloat(
+      StaticPrefs::layout_accessiblecaret_transition_duration());
+  styleStr.AppendLiteral("ms");
 
   CaretElement().SetAttr(kNameSpaceID_None, nsGkAtoms::style, styleStr, true);
   AC_LOG("%s: %s", __FUNCTION__, NS_ConvertUTF16toUTF8(styleStr).get());

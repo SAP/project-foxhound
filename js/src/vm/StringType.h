@@ -18,7 +18,6 @@
 #include <type_traits>  // std::is_same
 
 #include "jsapi.h"
-#include "jsfriendapi.h"
 
 #include "gc/Allocator.h"
 #include "gc/Barrier.h"
@@ -29,6 +28,8 @@
 #include "gc/Rooting.h"
 #include "js/CharacterEncoding.h"
 #include "js/RootingAPI.h"
+#include "js/shadow/String.h"  // JS::shadow::String
+#include "js/String.h"         // JS::MaxStringLength
 #include "js/UniquePtr.h"
 #include "util/Text.h"
 #include "vm/Printer.h"
@@ -46,6 +47,15 @@ class JS_FRIEND_API AutoStableStringChars;
 }  // namespace JS
 
 namespace js {
+
+namespace frontend {
+
+class ParserAtom;
+class ParserAtomEntry;
+class WellKnownParserAtoms_ROM;
+struct CompilationAtomCache;
+
+}  // namespace frontend
 
 class StaticStrings;
 class PropertyName;
@@ -312,7 +322,12 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   // NON_DEDUP_BIT is used in string deduplication during tenuring.
   static const uint32_t NON_DEDUP_BIT = js::Bit(11);
 
-  static const uint32_t MAX_LENGTH = js::MaxStringLength;
+  // If IN_STRING_TO_ATOM_CACHE is set, this string had an entry in the
+  // StringToAtomCache at some point. Note that GC can purge the cache without
+  // clearing this bit.
+  static const uint32_t IN_STRING_TO_ATOM_CACHE = js::Bit(12);
+
+  static const uint32_t MAX_LENGTH = JS::MaxStringLength;
 
   static const JS::Latin1Char MAX_LATIN1_CHAR = 0xff;
 
@@ -562,6 +577,12 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   MOZ_ALWAYS_INLINE
   bool isDeduplicatable() { return !(flags() & NON_DEDUP_BIT); }
 
+  void setInStringToAtomCache() {
+    MOZ_ASSERT(!isAtom());
+    setFlagBit(IN_STRING_TO_ATOM_CACHE);
+  }
+  bool inStringToAtomCache() const { return flags() & IN_STRING_TO_ATOM_CACHE; }
+
   // Fills |array| with various strings that represent the different string
   // kinds and character encodings.
   static bool fillWithRepresentatives(JSContext* cx,
@@ -683,29 +704,22 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   void dumpRepresentation(js::GenericPrinter& out, int indent) const;
   void dumpRepresentationHeader(js::GenericPrinter& out,
                                 const char* subclass) const;
+  void dumpCharsNoQuote(js::GenericPrinter& out);
 
   template <typename CharT>
   static void dumpChars(const CharT* s, size_t len, js::GenericPrinter& out);
+
+  template <typename CharT>
+  static void dumpCharsNoQuote(const CharT* s, size_t len,
+                               js::GenericPrinter& out);
 
   bool equals(const char* s);
 #endif
 
   void traceChildren(JSTracer* trc);
 
-  static MOZ_ALWAYS_INLINE void readBarrier(JSString* thing) {
-    if (thing->isPermanentAtom() || js::gc::IsInsideNursery(thing)) {
-      return;
-    }
-    js::gc::TenuredCell::readBarrier(&thing->asTenured());
-  }
-
-  static MOZ_ALWAYS_INLINE void writeBarrierPre(JSString* thing) {
-    if (!thing || thing->isPermanentAtom() || js::gc::IsInsideNursery(thing)) {
-      return;
-    }
-
-    js::gc::TenuredCell::writeBarrierPre(&thing->asTenured());
-  }
+  // Override base class implementation to tell GC about permanent atoms.
+  bool isPermanentAndMayBeShared() const { return isPermanentAtom(); }
 
   static void addCellAddressToStoreBuffer(js::gc::StoreBuffer* buffer,
                                           js::gc::Cell** cellp) {
@@ -715,24 +729,6 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static void removeCellAddressFromStoreBuffer(js::gc::StoreBuffer* buffer,
                                                js::gc::Cell** cellp) {
     buffer->unputCell(reinterpret_cast<JSString**>(cellp));
-  }
-
-  static void writeBarrierPost(void* cellp, JSString* prev, JSString* next) {
-    // See JSObject::writeBarrierPost for a description of the logic here.
-    MOZ_ASSERT(cellp);
-
-    js::gc::StoreBuffer* buffer;
-    if (next && (buffer = next->storeBuffer())) {
-      if (prev && prev->storeBuffer()) {
-        return;
-      }
-      buffer->putCell(static_cast<JSString**>(cellp));
-      return;
-    }
-
-    if (prev && (buffer = prev->storeBuffer())) {
-      buffer->unputCell(static_cast<JSString**>(cellp));
-    }
   }
 
  private:
@@ -1317,6 +1313,12 @@ class LittleEndianChars {
 };
 
 class StaticStrings {
+  // NOTE: The WellKnownParserAtoms rely on these tables and may need to be
+  //       update if these tables are changed.
+  friend class js::frontend::ParserAtomEntry;
+  friend class js::frontend::WellKnownParserAtoms_ROM;
+  friend struct js::frontend::CompilationAtomCache;
+
  private:
   /* Bigger chars cannot be in a length-2 string. */
   static const size_t SMALL_CHAR_LIMIT = 128U;
@@ -1453,13 +1455,61 @@ class StaticStrings {
 
   static const SmallCharArray toSmallCharArray;
 
-  MOZ_ALWAYS_INLINE JSAtom* getLength2(char16_t c1, char16_t c2) {
+  static MOZ_ALWAYS_INLINE size_t getLength2Index(char16_t c1, char16_t c2) {
     MOZ_ASSERT(fitsInSmallChar(c1));
     MOZ_ASSERT(fitsInSmallChar(c2));
-    size_t index = (size_t(toSmallCharArray[c1]) << 6) + toSmallCharArray[c2];
+    return (size_t(toSmallCharArray[c1]) << 6) + toSmallCharArray[c2];
+  }
+
+  MOZ_ALWAYS_INLINE JSAtom* getLength2FromIndex(size_t index) {
     return length2StaticTable[index];
   }
+
+  MOZ_ALWAYS_INLINE JSAtom* getLength2(char16_t c1, char16_t c2) {
+    return getLength2FromIndex(getLength2Index(c1, c2));
+  }
 };
+
+/*
+ * Declare length-2 strings. We only store strings where both characters are
+ * alphanumeric. The lower 10 short chars are the numerals, the next 26 are
+ * the lowercase letters, and the next 26 are the uppercase letters.
+ */
+
+constexpr Latin1Char StaticStrings::fromSmallChar(SmallChar c) {
+  if (c < 10) {
+    return c + '0';
+  }
+  if (c < 36) {
+    return c + 'a' - 10;
+  }
+  if (c < 62) {
+    return c + 'A' - 36;
+  }
+  if (c == 62) {
+    return '$';
+  }
+  return '_';
+}
+
+constexpr StaticStrings::SmallChar StaticStrings::toSmallChar(uint32_t c) {
+  if (mozilla::IsAsciiDigit(c)) {
+    return c - '0';
+  }
+  if (mozilla::IsAsciiLowercaseAlpha(c)) {
+    return c - 'a' + 10;
+  }
+  if (mozilla::IsAsciiUppercaseAlpha(c)) {
+    return c - 'A' + 36;
+  }
+  if (c == '$') {
+    return 62;
+  }
+  if (c == '_') {
+    return 63;
+  }
+  return StaticStrings::INVALID_SMALL_CHAR;
+}
 
 /*
  * Represents an atomized string which does not contain an index (that is, an
@@ -1509,6 +1559,9 @@ static inline UniqueChars StringToNewUTF8CharsZ(JSContext* maybecx,
           : JS::CharsToNewUTF8CharsZ(maybecx, linear->twoByteRange(nogc))
                 .c_str());
 }
+
+UniqueChars ParserAtomToNewUTF8CharsZ(JSContext* maybecx,
+                                      const js::frontend::ParserAtom* atom);
 
 /**
  * Allocate a string with the given contents.  If |allowGC == CanGC|, this may

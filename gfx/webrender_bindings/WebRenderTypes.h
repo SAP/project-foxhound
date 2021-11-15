@@ -39,13 +39,7 @@ namespace wr {
 typedef uintptr_t usize;
 
 typedef wr::WrWindowId WindowId;
-typedef wr::WrPipelineId PipelineId;
-typedef wr::WrDocumentId DocumentId;
 typedef wr::WrRemovedPipeline RemovedPipeline;
-typedef wr::WrImageKey ImageKey;
-typedef wr::WrFontKey FontKey;
-typedef wr::WrFontInstanceKey FontInstanceKey;
-typedef wr::WrEpoch Epoch;
 
 class RenderedFrameIdType {};
 typedef layers::BaseTransactionId<RenderedFrameIdType> RenderedFrameId;
@@ -767,6 +761,7 @@ enum class WebRenderError : int8_t {
   MAKE_CURRENT,
   RENDER,
   NEW_SURFACE,
+  VIDEO_OVERLAY,
 
   Sentinel /* this must be last for serialization purposes. */
 };
@@ -780,6 +775,8 @@ static inline wr::WrYuvColorSpace ToWrYuvColorSpace(
       return wr::WrYuvColorSpace::Rec709;
     case gfx::YUVColorSpace::BT2020:
       return wr::WrYuvColorSpace::Rec2020;
+    case gfx::YUVColorSpace::Identity:
+      return wr::WrYuvColorSpace::Identity;
     default:
       MOZ_ASSERT_UNREACHABLE("Tried to convert invalid YUVColorSpace.");
   }

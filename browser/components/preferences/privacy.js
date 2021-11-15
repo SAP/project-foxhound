@@ -64,6 +64,9 @@ const PREF_ADDON_RECOMMENDATIONS_ENABLED = "browser.discovery.enabled";
 const PREF_PASSWORD_GENERATION_AVAILABLE = "signon.generation.available";
 const { BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN } = Ci.nsICookieService;
 
+const PASSWORD_MANAGER_PREF_ID = "services.passwordSavingEnabled";
+const PREF_PASSWORD_MANAGER_ENABLED = "signon.rememberSignons";
+
 XPCOMUtils.defineLazyGetter(this, "AlertsServiceDND", function() {
   try {
     let alertsService = Cc["@mozilla.org/alerts-service;1"]
@@ -95,6 +98,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "gIsFirstPartyIsolated",
   "privacy.firstparty.isolate",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gStatePartitioningMVPEnabled",
+  "browser.contentblocking.state-partitioning.mvp.ui.enabled",
   false
 );
 
@@ -266,7 +276,22 @@ function dataCollectionCheckboxHandler({
 }
 
 // Sets the "Learn how" SUMO link in the Strict/Custom options of Content Blocking.
-function addCustomBlockingLearnMore() {
+function setUpContentBlockingWarnings() {
+  if (gStatePartitioningMVPEnabled) {
+    let warnings = document.querySelectorAll(
+      ".content-blocking-warning-description"
+    );
+    for (let warning of warnings) {
+      document.l10n.setAttributes(
+        warning,
+        "content-blocking-and-isolating-etp-warning-description-2"
+      );
+    }
+    document.getElementById(
+      "fpiIncompatibilityWarning"
+    ).hidden = !gIsFirstPartyIsolated;
+  }
+
   let links = document.querySelectorAll(".contentBlockWarningLink");
   let contentBlockingWarningUrl =
     Services.urlFormatter.formatURLPref("app.support.baseURL") +
@@ -447,18 +472,25 @@ var gPrivacyPane = {
     httpsOnlyBox.removeAttribute("hidehttpsonly");
 
     let link = document.getElementById("httpsOnlyLearnMore");
-    let httpsOnlyURL = Services.urlFormatter.formatURLPref(
-      "domsecurity.httpsonly.infoURL"
-    );
+    let httpsOnlyURL =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "https-only-prefs";
     link.setAttribute("href", httpsOnlyURL);
 
-    setSyncFromPrefListener("httpsOnlyRadioGroup", () =>
+    // Set radio-value based on the pref value
+    this.syncFromHttpsOnlyPref();
+
+    // Create event listener for when the user clicks
+    // on one of the radio buttons
+    setEventListener(
+      "httpsOnlyRadioGroup",
+      "command",
+      this.syncToHttpsOnlyPref
+    );
+    // Update radio-value when the pref changes
+    Preferences.get("dom.security.https_only_mode").on("change", () =>
       this.syncFromHttpsOnlyPref()
     );
-    setSyncToPrefListener("httpsOnlyRadioGroup", () =>
-      this.syncToHttpsOnlyPref()
-    );
-
     Preferences.get("dom.security.https_only_mode_pbm").on("change", () =>
       this.syncFromHttpsOnlyPref()
     );
@@ -512,10 +544,6 @@ var gPrivacyPane = {
       "change",
       gPrivacyPane.networkCookieBehaviorReadPrefs.bind(gPrivacyPane)
     );
-
-    setEventListener("a11yPrivacyCheckbox", "command", ev => {
-      this.updateA11yPrefs(ev.target.checked);
-    });
 
     setEventListener(
       "trackingProtectionExceptions",
@@ -600,6 +628,8 @@ var gPrivacyPane = {
 
     this._initPasswordGenerationUI();
     this._initMasterPasswordUI();
+
+    this.initListenersForExtensionControllingPasswordManager();
     // set up the breach alerts Learn More link with the correct URL
     const breachAlertsLearnMoreLink = document.getElementById(
       "breachAlertsLearnMoreLink"
@@ -741,7 +771,7 @@ var gPrivacyPane = {
       }
       this.initAddonRecommendationsCheckbox();
     }
-    this._initA11yState();
+
     let signonBundle = document.getElementById("signonBundle");
     let pkiBundle = document.getElementById("pkiBundle");
     appendSearchKeywords("showPasswords", [
@@ -781,7 +811,6 @@ var gPrivacyPane = {
    * Initializes the content blocking section.
    */
   initContentBlocking() {
-    setEventListener("changeBlockListLink", "click", this.showBlockLists);
     setEventListener(
       "contentBlockingTrackingProtectionCheckbox",
       "command",
@@ -886,13 +915,22 @@ var gPrivacyPane = {
       let contentBlockOptionSocialMedia = document.getElementById(
         "blockCookiesSocialMedia"
       );
+      let l10nID = gStatePartitioningMVPEnabled
+        ? "sitedata-option-block-cross-site-tracking-cookies-including-social-media"
+        : "sitedata-option-block-cross-site-and-social-media-trackers";
+      document.l10n.setAttributes(contentBlockOptionSocialMedia, l10nID);
+    }
+    if (gStatePartitioningMVPEnabled) {
+      let contentBlockOptionIsolate = document.getElementById(
+        "isolateCookiesSocialMedia"
+      );
       document.l10n.setAttributes(
-        contentBlockOptionSocialMedia,
-        "sitedata-option-block-cross-site-and-social-media-trackers"
+        contentBlockOptionIsolate,
+        "sitedata-option-block-cross-site-cookies-including-social-media"
       );
     }
 
-    addCustomBlockingLearnMore();
+    setUpContentBlockingWarnings();
   },
 
   populateCategoryContents() {
@@ -977,6 +1015,9 @@ var gPrivacyPane = {
       document.querySelector(selector + " .all-cookies-option").hidden = true;
       document.querySelector(
         selector + " .unvisited-cookies-option"
+      ).hidden = true;
+      document.querySelector(
+        selector + " .cross-site-cookies-option"
       ).hidden = true;
       document.querySelector(
         selector + " .third-party-tracking-cookies-option"
@@ -1070,9 +1111,10 @@ var gPrivacyPane = {
             ).hidden = false;
             break;
           case "cookieBehavior5":
-            document.querySelector(
-              selector + " .third-party-tracking-cookies-plus-isolate-option"
-            ).hidden = false;
+            let cookieSelector = gStatePartitioningMVPEnabled
+              ? " .cross-site-cookies-option"
+              : " .third-party-tracking-cookies-plus-isolate-option";
+            document.querySelector(selector + cookieSelector).hidden = false;
             break;
         }
       }
@@ -1459,7 +1501,7 @@ var gPrivacyPane = {
   showClearPrivateDataSettings() {
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sanitize.xhtml",
-      "resizable=no"
+      { features: "resizable=no" }
     );
   },
 
@@ -1475,19 +1517,17 @@ var gPrivacyPane = {
       ts.value = 0;
     }
 
-    gSubDialog.open(
-      "chrome://browser/content/sanitize.xhtml",
-      "resizable=no",
-      null,
-      () => {
+    gSubDialog.open("chrome://browser/content/sanitize.xhtml", {
+      features: "resizable=no",
+      closingCallback: () => {
         // reset the timeSpan pref
         if (aClearEverything) {
           ts.value = timeSpanOrig;
         }
 
         Services.obs.notifyObservers(null, "clear-private-data");
-      }
-    );
+      },
+    });
   },
 
   /**
@@ -1585,7 +1625,7 @@ var gPrivacyPane = {
     };
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/permissions.xhtml",
-      null,
+      undefined,
       params
     );
   },
@@ -1595,8 +1635,7 @@ var gPrivacyPane = {
    */
   showBlockLists() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/dialogs/blocklists.xhtml",
-      null
+      "chrome://browser/content/preferences/dialogs/blocklists.xhtml"
     );
   },
 
@@ -1762,7 +1801,7 @@ var gPrivacyPane = {
     };
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/permissions.xhtml",
-      null,
+      undefined,
       params
     );
   },
@@ -1821,7 +1860,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sitePermissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1837,7 +1876,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sitePermissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1853,7 +1892,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sitePermissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1869,7 +1908,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sitePermissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1885,7 +1924,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sitePermissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1897,7 +1936,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/sitePermissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1919,7 +1958,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/permissions.xhtml",
-      "resizable=yes",
+      { features: "resizable=yes" },
       params
     );
   },
@@ -1964,7 +2003,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/permissions.xhtml",
-      null,
+      undefined,
       params
     );
   },
@@ -2033,12 +2072,9 @@ var gPrivacyPane = {
       Services.prompt.alert(window, title, desc);
       this._initMasterPasswordUI();
     } else {
-      gSubDialog.open(
-        "chrome://mozapps/content/preferences/removemp.xhtml",
-        null,
-        null,
-        this._initMasterPasswordUI.bind(this)
-      );
+      gSubDialog.open("chrome://mozapps/content/preferences/removemp.xhtml", {
+        closingCallback: this._initMasterPasswordUI.bind(this),
+      });
     }
   },
 
@@ -2075,12 +2111,10 @@ var gPrivacyPane = {
       }
     }
 
-    gSubDialog.open(
-      "chrome://mozapps/content/preferences/changemp.xhtml",
-      "resizable=no",
-      null,
-      this._initMasterPasswordUI.bind(this)
-    );
+    gSubDialog.open("chrome://mozapps/content/preferences/changemp.xhtml", {
+      features: "resizable=no",
+      closingCallback: this._initMasterPasswordUI.bind(this),
+    });
   },
 
   /**
@@ -2110,29 +2144,42 @@ var gPrivacyPane = {
   /**
    * Enables/disables dependent controls related to password saving
    * When password saving is not enabled, we need to also disable the password generation checkbox
-   * The Exceptions button is used to configure sites where
-   * passwords are never saved. When browser is set to start in Private
-   * Browsing mode, the "Remember passwords" UI is useless, so we disable it.
+   * The Exceptions button is used to configure sites where passwords are never saved.
    */
   readSavePasswords() {
-    var pref = Preferences.get("signon.rememberSignons");
-    var excepts = document.getElementById("passwordExceptions");
-    var generatePasswords = document.getElementById("generatePasswords");
-    var autofillCheckbox = document.getElementById("passwordAutofillCheckbox");
-
-    if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
-      document.getElementById("savePasswords").disabled = true;
-      excepts.disabled = true;
-      generatePasswords.disabled = true;
-      autofillCheckbox.disabled = true;
-      return false;
-    }
-    excepts.disabled = !pref.value;
-    generatePasswords.disabled = !pref.value;
-    autofillCheckbox.disabled = !pref.value;
+    var prefValue = Preferences.get("signon.rememberSignons").value;
+    document.getElementById("passwordExceptions").disabled = !prefValue;
+    document.getElementById("generatePasswords").disabled = !prefValue;
+    document.getElementById("passwordAutofillCheckbox").disabled = !prefValue;
 
     // don't override pref value in UI
     return undefined;
+  },
+
+  /**
+   * Initalizes pref listeners for the password manager.
+   *
+   * This ensures that the user is always notified if an extension is controlling the password manager.
+   */
+  initListenersForExtensionControllingPasswordManager() {
+    this._passwordManagerCheckbox = document.getElementById("savePasswords");
+    this._disableExtensionButton = document.getElementById(
+      "disablePasswordManagerExtension"
+    );
+
+    this._disableExtensionButton.addEventListener(
+      "command",
+      makeDisableControllingExtension(
+        PREF_SETTING_TYPE,
+        PASSWORD_MANAGER_PREF_ID
+      )
+    );
+
+    initListenersForPrefChange(
+      PREF_SETTING_TYPE,
+      PASSWORD_MANAGER_PREF_ID,
+      this._passwordManagerCheckbox
+    );
   },
 
   /**
@@ -2262,7 +2309,7 @@ var gPrivacyPane = {
 
     gSubDialog.open(
       "chrome://browser/content/preferences/dialogs/permissions.xhtml",
-      null,
+      undefined,
       params
     );
   },
@@ -2408,12 +2455,7 @@ var gPrivacyPane = {
     let telemetryContainer = document.getElementById("telemetry-container");
 
     Services.prefs.setBoolPref(PREF_UPLOAD_ENABLED, checkbox.checked);
-
-    if (!checkbox.checked) {
-      telemetryContainer.hidden = checkbox.checked;
-    } else {
-      telemetryContainer.hidden = checkbox.checked;
-    }
+    telemetryContainer.hidden = checkbox.checked;
   },
 
   /**
@@ -2487,49 +2529,5 @@ var gPrivacyPane = {
         );
         break;
     }
-  },
-
-  // Accessibility checkbox helpers
-  _initA11yState() {
-    this._initA11yString();
-    let checkbox = document.getElementById("a11yPrivacyCheckbox");
-    switch (Services.prefs.getIntPref("accessibility.force_disabled")) {
-      case 1: // access blocked
-        checkbox.checked = true;
-        break;
-      case -1: // a11y is forced on for testing
-      case 0: // access allowed
-        checkbox.checked = false;
-        break;
-    }
-  },
-
-  _initA11yString() {
-    let a11yLearnMoreLink = Services.urlFormatter.formatURLPref(
-      "accessibility.support.url"
-    );
-    document
-      .getElementById("a11yLearnMoreLink")
-      .setAttribute("href", a11yLearnMoreLink);
-  },
-
-  async updateA11yPrefs(checked) {
-    let buttonIndex = await confirmRestartPrompt(checked, 0, true, false);
-    if (buttonIndex == CONFIRM_RESTART_PROMPT_RESTART_NOW) {
-      Services.prefs.setIntPref(
-        "accessibility.force_disabled",
-        checked ? 1 : 0
-      );
-      Services.telemetry.scalarSet(
-        "preferences.prevent_accessibility_services",
-        true
-      );
-      Services.startup.quit(
-        Ci.nsIAppStartup.eAttemptQuit | Ci.nsIAppStartup.eRestart
-      );
-    }
-
-    // Revert the checkbox in case we didn't quit
-    document.getElementById("a11yPrivacyCheckbox").checked = !checked;
   },
 };

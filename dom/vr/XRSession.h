@@ -9,9 +9,11 @@
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
-#include "nsRefreshDriver.h"
+#include "nsRefreshObservers.h"
 
 #include "gfxVR.h"
+
+class nsRefreshDriver;
 
 namespace mozilla {
 namespace gfx {
@@ -87,8 +89,8 @@ class XRSession final : public DOMEventTargetHelper, public nsARefreshObserver {
   IMPL_EVENT_HANDLER(visibilitychange);
 
   // Non WebIDL Members
-  gfx::VRDisplayClient* GetDisplayClient();
-  XRRenderState* GetActiveRenderState();
+  gfx::VRDisplayClient* GetDisplayClient() const;
+  XRRenderState* GetActiveRenderState() const;
   bool IsEnded() const;
   bool IsImmersive() const;
   MOZ_CAN_RUN_SCRIPT

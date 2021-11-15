@@ -12,10 +12,15 @@
 
 #include "jsapi.h"
 
+#include "js/friend/ErrorMessages.h"  // JSMSG_*
+#include "js/friend/StackLimits.h"  // js::CheckRecursionLimit, js::GetNativeStackLimit
+#include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy, js::ToWindowProxyIfWindow
 #include "js/PropertySpec.h"
+#include "js/Value.h"  // JS::ObjectValue
 #include "js/Wrapper.h"
 #include "proxy/DeadObjectProxy.h"
 #include "proxy/ScriptedProxyHandler.h"
+#include "vm/Interpreter.h"  // js::CallGetter
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
@@ -27,6 +32,101 @@
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
+
+// Used by private fields to manipulate the ProxyExpando:
+// All the following methods are called iff the handler for the proxy
+// returns true for useProxyExpandoObjectForPrivateFields.
+static bool ProxySetOnExpando(JSContext* cx, HandleObject proxy, HandleId id,
+                              HandleValue v, HandleValue receiver,
+                              ObjectOpResult& result) {
+  MOZ_ASSERT(id.isPrivateName());
+
+  // For BaseProxyHandler, private names are stored in the expando object.
+  RootedObject expando(cx, proxy->as<ProxyObject>().expando().toObjectOrNull());
+
+  // SetPrivateElementOperation checks for hasOwn first, which ensures the
+  // expando exsists.
+  MOZ_ASSERT(expando);
+
+  Rooted<PropertyDescriptor> ownDesc(cx);
+  if (!GetOwnPropertyDescriptor(cx, expando, id, &ownDesc)) {
+    return false;
+  }
+  ownDesc.assertCompleteIfFound();
+
+  MOZ_ASSERT(ownDesc.object());
+
+  RootedValue expandoValue(cx, proxy->as<ProxyObject>().expando());
+  return SetPropertyIgnoringNamedGetter(cx, expando, id, v, expandoValue,
+                                        ownDesc, result);
+}
+
+static bool ProxyGetOnExpando(JSContext* cx, HandleObject proxy,
+                              HandleValue receiver, HandleId id,
+                              MutableHandleValue vp) {
+  // For BaseProxyHandler, private names are stored in the expando object.
+  RootedObject expando(cx, proxy->as<ProxyObject>().expando().toObjectOrNull());
+
+  // We must have the expando, or GetPrivateElemOperation didn't call
+  // hasPrivate first.
+  MOZ_ASSERT(expando);
+
+  // Because we controlled the creation of the expando, we know it's not a
+  // proxy, and so can safely call internal methods on it without worrying about
+  // exposing information about private names.
+  Rooted<PropertyDescriptor> desc(cx);
+  if (!GetOwnPropertyDescriptor(cx, expando, id, &desc)) {
+    return false;
+  }
+
+  // If the private name has a getter, delegate to that.
+  if (desc.hasGetterObject()) {
+    RootedValue getter(cx, JS::ObjectValue(*desc.getterObject().get()));
+    return js::CallGetter(cx, receiver, getter, vp);
+  }
+
+  // We must have the object, same reasoning as the expando.
+  MOZ_ASSERT(desc.object());
+  MOZ_ASSERT(desc.hasValue());
+  MOZ_ASSERT(desc.isDataDescriptor());
+
+  vp.set(desc.value());
+  return true;
+}
+
+static bool ProxyHasOnExpando(JSContext* cx, HandleObject proxy, HandleId id,
+                              bool* bp) {
+  // For BaseProxyHandler, private names are stored in the expando object.
+  RootedObject expando(cx, proxy->as<ProxyObject>().expando().toObjectOrNull());
+
+  // If there is no expando object, then there is no private field.
+  if (!expando) {
+    *bp = false;
+    return true;
+  }
+
+  return HasOwnProperty(cx, expando, id, bp);
+}
+
+static bool ProxyDefineOnExpando(JSContext* cx, HandleObject proxy, HandleId id,
+                                 Handle<PropertyDescriptor> desc,
+                                 ObjectOpResult& result) {
+  MOZ_ASSERT(id.isPrivateName());
+
+  // For BaseProxyHandler, private names are stored in the expando object.
+  RootedObject expando(cx, proxy->as<ProxyObject>().expando().toObjectOrNull());
+
+  if (!expando) {
+    expando = NewObjectWithGivenProto<PlainObject>(cx, nullptr);
+    if (!expando) {
+      return false;
+    }
+
+    proxy->as<ProxyObject>().setExpando(expando);
+  }
+
+  return DefineProperty(cx, expando, id, desc, result);
+}
 
 void js::AutoEnterPolicy::reportErrorIfExceptionIsNotPending(JSContext* cx,
                                                              HandleId id) {
@@ -87,8 +187,11 @@ bool Proxy::getOwnPropertyDescriptor(JSContext* cx, HandleObject proxy,
     return policy.returnValue();
   }
 
-  // Private names shouldn't take this path
-  MOZ_ASSERT_IF(JSID_IS_SYMBOL(id), !JSID_TO_SYMBOL(id)->isPrivateName());
+  // Unless we implment ProxyGetOwnPropertyDescriptorFromExpando,
+  // this would be incorrect.
+  MOZ_ASSERT_IF(handler->useProxyExpandoObjectForPrivateFields(),
+                !id.isPrivateName());
+
   return handler->getOwnPropertyDescriptor(cx, proxy, id, desc);
 }
 
@@ -111,10 +214,8 @@ bool Proxy::defineProperty(JSContext* cx, HandleObject proxy, HandleId id,
   // of proxy involved, and so take a different path compared to regular
   // [[Get]] operations. For example, scripted handlers don't fire traps
   // when accessing private fields (because of the WeakMap semantics)
-  bool isPrivate = JSID_IS_SYMBOL(id) && JSID_TO_SYMBOL(id)->isPrivateName();
-  if (isPrivate) {
-    return proxy->as<ProxyObject>().handler()->definePrivateField(cx, proxy, id,
-                                                                  desc, result);
+  if (id.isPrivateName() && handler->useProxyExpandoObjectForPrivateFields()) {
+    return ProxyDefineOnExpando(cx, proxy, id, desc, result);
   }
 
   return proxy->as<ProxyObject>().handler()->defineProperty(cx, proxy, id, desc,
@@ -177,7 +278,7 @@ JS_FRIEND_API bool js::AppendUnique(JSContext* cx, MutableHandleIdVector base,
       }
     }
   }
-  return base.appendAll(uniqueOthers);
+  return base.appendAll(std::move(uniqueOthers));
 }
 
 /* static */
@@ -302,9 +403,8 @@ bool Proxy::hasOwn(JSContext* cx, HandleObject proxy, HandleId id, bool* bp) {
   // of proxy involved, and so take a different path compared to regular
   // [[Get]] operations. For example, scripted handlers don't fire traps
   // when accessing private fields (because of the WeakMap semantics)
-  bool isPrivate = JSID_IS_SYMBOL(id) && JSID_TO_SYMBOL(id)->isPrivateName();
-  if (isPrivate) {
-    return handler->hasPrivate(cx, proxy, id, bp);
+  if (id.isPrivateName() && handler->useProxyExpandoObjectForPrivateFields()) {
+    return ProxyHasOnExpando(cx, proxy, id, bp);
   }
 
   return handler->hasOwn(cx, proxy, id, bp);
@@ -347,9 +447,8 @@ MOZ_ALWAYS_INLINE bool Proxy::getInternal(JSContext* cx, HandleObject proxy,
   // of proxy involved, and so take a different path compared to regular
   // [[Get]] operations. For example, scripted handlers don't fire traps
   // when accessing private fields (because of the WeakMap semantics)
-  bool isPrivate = JSID_IS_SYMBOL(id) && JSID_TO_SYMBOL(id)->isPrivateName();
-  if (isPrivate) {
-    return handler->getPrivate(cx, proxy, receiver, id, vp);
+  if (id.isPrivateName() && handler->useProxyExpandoObjectForPrivateFields()) {
+    return ProxyGetOnExpando(cx, proxy, receiver, id, vp);
   }
 
   if (handler->hasPrototype()) {
@@ -422,9 +521,8 @@ MOZ_ALWAYS_INLINE bool Proxy::setInternal(JSContext* cx, HandleObject proxy,
   //
   // This doesn't interact with hasPrototype, as PrivateFields are always
   // own propertiers, and so we never deal with prototype traversals.
-  bool isPrivate = JSID_IS_SYMBOL(id) && JSID_TO_SYMBOL(id)->isPrivateName();
-  if (isPrivate) {
-    return handler->setPrivate(cx, proxy, id, v, receiver, result);
+  if (id.isPrivateName() && handler->useProxyExpandoObjectForPrivateFields()) {
+    return ProxySetOnExpando(cx, proxy, id, v, receiver, result);
   }
 
   // Special case. See the comment on BaseProxyHandler::mHasPrototype.
@@ -712,6 +810,26 @@ void ProxyObject::traceEdgeToTarget(JSTracer* trc, ProxyObject* obj) {
   TraceCrossCompartmentEdge(trc, obj, obj->slotOfPrivate(), "proxy target");
 }
 
+#ifdef DEBUG
+static inline void CheckProxyIsInCCWMap(ProxyObject* proxy) {
+  if (proxy->zone()->isGCCompacting()) {
+    // Skip this check during compacting GC since objects' object groups may be
+    // forwarded. It's not impossible to make this work, but requires adding a
+    // parallel lookupWrapper() path for this one case.
+    return;
+  }
+
+  JSObject* referent = MaybeForwarded(proxy->target());
+  if (referent->compartment() != proxy->compartment()) {
+    // Assert that this proxy is tracked in the wrapper map. We maintain the
+    // invariant that the wrapped object is the key in the wrapper map.
+    ObjectWrapperMap::Ptr p = proxy->compartment()->lookupWrapper(referent);
+    MOZ_ASSERT(p);
+    MOZ_ASSERT(*p->value().unsafeGet() == proxy);
+  }
+}
+#endif
+
 /* static */
 void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   ProxyObject* proxy = &obj->as<ProxyObject>();
@@ -722,16 +840,7 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
 #ifdef DEBUG
   if (TlsContext.get()->isStrictProxyCheckingEnabled() &&
       proxy->is<WrapperObject>()) {
-    JSObject* referent = MaybeForwarded(proxy->target());
-    if (referent->compartment() != proxy->compartment()) {
-      /*
-       * Assert that this proxy is tracked in the wrapper map. We maintain
-       * the invariant that the wrapped object is the key in the wrapper map.
-       */
-      ObjectWrapperMap::Ptr p = proxy->compartment()->lookupWrapper(referent);
-      MOZ_ASSERT(p);
-      MOZ_ASSERT(*p->value().unsafeGet() == proxy);
-    }
+    CheckProxyIsInCCWMap(proxy);
   }
 #endif
 

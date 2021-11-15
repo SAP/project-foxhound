@@ -7,6 +7,7 @@
 // Functions that handle capturing QLOG traces.
 
 use std::convert::TryFrom;
+use std::ops::RangeInclusive;
 use std::string::String;
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ use qlog::{self, event::Event, PacketHeader, QuicFrame};
 
 use neqo_common::{hex, qinfo, qlog::NeqoQlog, Decoder};
 
+use crate::connection::State;
 use crate::frame::{self, Frame};
 use crate::packet::{DecryptedPacket, PacketNumber, PacketType, PublicPacket};
 use crate::path::Path;
@@ -43,7 +45,7 @@ pub fn connection_tparams_set(qlog: &mut NeqoQlog, tph: &TransportParametersHand
             } else {
                 None
             },
-            if remote.get_empty(tparams::DISABLE_MIGRATION).is_some() {
+            if remote.get_empty(tparams::DISABLE_MIGRATION) {
                 Some(true)
             } else {
                 None
@@ -109,13 +111,41 @@ fn connection_started(qlog: &mut NeqoQlog, path: &Path) {
     })
 }
 
-pub fn packet_sent(qlog: &mut NeqoQlog, pt: PacketType, pn: PacketNumber, body: &[u8]) {
+pub fn connection_state_updated(qlog: &mut NeqoQlog, new: &State) {
+    qlog.add_event(|| {
+        Some(Event::connection_state_updated_min(match new {
+            State::Init => qlog::ConnectionState::Attempted,
+            State::WaitInitial => qlog::ConnectionState::Attempted,
+            State::Handshaking => qlog::ConnectionState::Handshake,
+            State::Connected => qlog::ConnectionState::Active,
+            State::Confirmed => qlog::ConnectionState::Active,
+            State::Closing { .. } => qlog::ConnectionState::Draining,
+            State::Draining { .. } => qlog::ConnectionState::Draining,
+            State::Closed { .. } => qlog::ConnectionState::Closed,
+        }))
+    })
+}
+
+pub fn packet_sent(
+    qlog: &mut NeqoQlog,
+    pt: PacketType,
+    pn: PacketNumber,
+    plen: usize,
+    body: &[u8],
+) {
     qlog.add_event_with_stream(|stream| {
         let mut d = Decoder::from(body);
 
         stream.add_event(Event::packet_sent_min(
             to_qlog_pkt_type(pt),
-            PacketHeader::new(pn, None, None, None, None, None),
+            PacketHeader::new(
+                pn,
+                Some(u64::try_from(plen).unwrap()),
+                None,
+                None,
+                None,
+                None,
+            ),
             Some(Vec::new()),
         ))?;
 
@@ -139,7 +169,7 @@ pub fn packet_dropped(qlog: &mut NeqoQlog, payload: &PublicPacket) {
     qlog.add_event(|| {
         Some(Event::packet_dropped(
             Some(to_qlog_pkt_type(payload.packet_type())),
-            Some(u64::try_from(payload.packet_len()).unwrap()),
+            Some(u64::try_from(payload.len()).unwrap()),
             None,
         ))
     })
@@ -160,13 +190,24 @@ pub fn packets_lost(qlog: &mut NeqoQlog, pkts: &[SentPacket]) {
     })
 }
 
-pub fn packet_received(qlog: &mut NeqoQlog, payload: &DecryptedPacket) {
+pub fn packet_received(
+    qlog: &mut NeqoQlog,
+    public_packet: &PublicPacket,
+    payload: &DecryptedPacket,
+) {
     qlog.add_event_with_stream(|stream| {
         let mut d = Decoder::from(&payload[..]);
 
         stream.add_event(Event::packet_received(
             to_qlog_pkt_type(payload.packet_type()),
-            PacketHeader::new(payload.pn(), None, None, None, None, None),
+            PacketHeader::new(
+                payload.pn(),
+                Some(u64::try_from(public_packet.len()).unwrap()),
+                None,
+                None,
+                None,
+                None,
+            ),
             Some(Vec::new()),
             None,
             None,
@@ -185,44 +226,6 @@ pub fn packet_received(qlog: &mut NeqoQlog, payload: &DecryptedPacket) {
 
         stream.finish_frames()
     })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CongestionState {
-    SlowStart,
-    CongestionAvoidance,
-    ApplicationLimited,
-    Recovery,
-}
-
-impl CongestionState {
-    fn to_str(&self) -> &str {
-        match self {
-            Self::SlowStart => "slow_start",
-            Self::CongestionAvoidance => "congestion_avoidance",
-            Self::ApplicationLimited => "application_limited",
-            Self::Recovery => "recovery",
-        }
-    }
-}
-
-pub fn congestion_state_updated(
-    qlog: &mut NeqoQlog,
-    curr_state: &mut CongestionState,
-    new_state: CongestionState,
-) {
-    qlog.add_event(|| {
-        if *curr_state != new_state {
-            let evt = Event::congestion_state_updated(
-                Some(curr_state.to_str().to_owned()),
-                new_state.to_str().to_owned(),
-            );
-            *curr_state = new_state;
-            Some(evt)
-        } else {
-            None
-        }
-    });
 }
 
 #[allow(dead_code)]
@@ -310,10 +313,20 @@ fn frame_to_qlogframe(frame: &Frame) -> QuicFrame {
             first_ack_range,
             ack_ranges,
         } => {
-            let ack_ranges =
+            let ranges =
                 Frame::decode_ack_frame(*largest_acknowledged, *first_ack_range, ack_ranges).ok();
 
-            QuicFrame::ack(Some(ack_delay.to_string()), ack_ranges, None, None, None)
+            QuicFrame::ack(
+                Some(ack_delay.to_string()),
+                ranges.map(|all| {
+                    all.into_iter()
+                        .map(RangeInclusive::into_inner)
+                        .collect::<Vec<_>>()
+                }),
+                None,
+                None,
+                None,
+            )
         }
         Frame::ResetStream {
             stream_id,

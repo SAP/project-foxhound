@@ -26,6 +26,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StyleSheet.h"
+#include "nsIWebProgressListener.h"
 
 static mozilla::LazyLogModule gReferrerInfoLog("ReferrerInfo");
 #define LOG(msg) MOZ_LOG(gReferrerInfoLog, mozilla::LogLevel::Debug, msg)
@@ -939,13 +940,12 @@ HashNumber ReferrerInfo::Hash() const {
       static_cast<uint32_t>(mPolicy), mSendReferrer, mOverridePolicyByDefault,
       mozilla::HashString(originalReferrerSpec),
       mozilla::HashString(mComputedReferrer.isSome() ? mComputedReferrer.value()
-                                                     : EmptyCString()));
+                                                     : ""_ns));
 }
 
 NS_IMETHODIMP
 ReferrerInfo::Init(nsIReferrerInfo::ReferrerPolicyIDL aReferrerPolicy,
-                   bool aSendReferrer, nsIURI* aOriginalReferrer,
-                   JSContext* aCx) {
+                   bool aSendReferrer, nsIURI* aOriginalReferrer) {
   MOZ_ASSERT(!mInitialized);
   if (mInitialized) {
     return NS_ERROR_ALREADY_INITIALIZED;
@@ -1163,7 +1163,7 @@ nsresult ReferrerInfo::ComputeReferrer(nsIHttpChannel* aChannel) {
   // computed the referrer and the result referrer value is empty (not send
   // referrer). So any early return later than this line will use that empty
   // referrer.
-  mComputedReferrer.emplace(EmptyCString());
+  mComputedReferrer.emplace(""_ns);
 
   if (!mSendReferrer || !mOriginalReferrer ||
       mPolicy == ReferrerPolicy::No_referrer) {

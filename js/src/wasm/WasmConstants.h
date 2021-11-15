@@ -62,12 +62,17 @@ enum class TypeCode {
   // A function pointer with any signature
   FuncRef = 0x70,  // SLEB128(-0x10)
 
-  // A reference to any host type. This is exposed to JS as 'externref' and
-  // will eventually be renamed in code as well.
-  AnyRef = 0x6f,  // SLEB128(-0x11)
+  // A reference to any host value.
+  ExternRef = 0x6f,  // SLEB128(-0x11)
 
-  // Type constructor for reference types.
-  OptRef = 0x6c,
+  // A reference to a struct/array value.
+  EqRef = 0x6d,  // SLEB128(-0x12)
+
+  // Type constructor for nullable reference types.
+  NullableRef = 0x6c,  // SLEB128(-0x14)
+
+  // Type constructor for non-nullable reference types.
+  Ref = 0x6b,  // SLEB128(-0x15)
 
   // Type constructor for function types
   Func = 0x60,  // SLEB128(-0x20)
@@ -86,6 +91,16 @@ enum class TypeCode {
 // reference typecode then the logic in that function MUST change.
 
 static constexpr TypeCode LowestPrimitiveTypeCode = TypeCode::V128;
+
+// An arbitrary reference type used as the result of
+// UnpackTypeCodeTypeAbstracted() when a value type is a reference.
+
+static constexpr TypeCode AbstractReferenceTypeCode = TypeCode::ExternRef;
+
+// A type code used to represent (ref null? typeindex) whether or not the type
+// is encoded with 'Ref' or 'NullableRef'.
+
+static constexpr TypeCode AbstractReferenceTypeIndexCode = TypeCode::Ref;
 
 enum class FuncTypeIdDescKind { None, Immediate, Global };
 
@@ -377,6 +392,10 @@ enum class Op {
   RefIsNull = 0xd1,
   RefFunc = 0xd2,
 
+  // Function references
+  RefAsNonNull = 0xd3,
+  BrOnNull = 0xd4,
+
   // GC (experimental)
   RefEq = 0xd5,
 
@@ -404,6 +423,11 @@ enum class GcOp {
 };
 
 // Opcode list from the SIMD proposal post-renumbering in May, 2020.
+
+// Opcodes with suffix 'Experimental' are proposed but not standardized, and are
+// compatible with those same opcodes in V8.  No opcode labeled 'Experimental'
+// will ship in a Release build where SIMD is enabled by default.
+
 enum class SimdOp {
   V128Load = 0x00,
   I16x8LoadS8x8 = 0x01,
@@ -591,7 +615,7 @@ enum class SimdOp {
   I32x4MinU = 0xb7,
   I32x4MaxS = 0xb8,
   I32x4MaxU = 0xb9,
-  // AvgrS = 0xba
+  I32x4DotSI16x8 = 0xba,
   // AvgrU = 0xbb
   // Unused = 0xbc
   // Unused = 0xbd
@@ -621,14 +645,14 @@ enum class SimdOp {
   I64x2Mul = 0xd5,
   // MinS = 0xd6
   // MinU = 0xd7
-  // MaxS = 0xd8
-  // MaxU = 0xd9
-  // AvgrS = 0xda
-  // AvgrU = 0xdb
-  // Unused = 0xdc
-  // Unused = 0xdd
-  // Unused = 0xde
-  // Unused = 0xdf
+  F32x4Ceil = 0xd8,
+  F32x4Floor = 0xd9,
+  F32x4Trunc = 0xda,
+  F32x4Nearest = 0xdb,
+  F64x2Ceil = 0xdc,
+  F64x2Floor = 0xdd,
+  F64x2Trunc = 0xde,
+  F64x2Nearest = 0xdf,
   F32x4Abs = 0xe0,
   F32x4Neg = 0xe1,
   // Round = 0xe2
@@ -639,8 +663,8 @@ enum class SimdOp {
   F32x4Div = 0xe7,
   F32x4Min = 0xe8,
   F32x4Max = 0xe9,
-  // PMin = 0xea
-  // PMax = 0xeb
+  F32x4PMin = 0xea,
+  F32x4PMax = 0xeb,
   F64x2Abs = 0xec,
   F64x2Neg = 0xed,
   // Round = 0xee
@@ -651,13 +675,15 @@ enum class SimdOp {
   F64x2Div = 0xf3,
   F64x2Min = 0xf4,
   F64x2Max = 0xf5,
-  // PMin = 0xf6
-  // PMax = 0xf7
+  F64x2PMin = 0xf6,
+  F64x2PMax = 0xf7,
   I32x4TruncSSatF32x4 = 0xf8,
   I32x4TruncUSatF32x4 = 0xf9,
   F32x4ConvertSI32x4 = 0xfa,
   F32x4ConvertUI32x4 = 0xfb,
-  // Unused = 0xfc and up
+  V128Load32Zero = 0xfc,
+  V128Load64Zero = 0xfd,
+  // Unused = 0xfe and up
 
   Limit
 };
@@ -865,8 +891,16 @@ static const unsigned MaxParams = 1000;
 // `env->funcMaxResults()` to get the correct value for a module.
 static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 1000;
-static const unsigned MaxMemoryLimitField = 65536;
-static const unsigned MaxMemoryPages = INT32_MAX / PageSize;
+static const unsigned MaxMemory32LimitField = 65536;
+#ifdef JS_64BIT
+// FIXME (large ArrayBuffer): This should be upped to UINT32_MAX / PageSize
+// initially, then to (size_t(UINT32_MAX) + 1) / PageSize subsequently, see the
+// companion FIXME in WasmMemoryObject::grow() for additional information.
+static const unsigned MaxMemory32Pages = INT32_MAX / PageSize;
+#else
+static const unsigned MaxMemory32Pages = INT32_MAX / PageSize;
+#endif
+static const size_t MaxMemory32Bytes = size_t(MaxMemory32Pages) * PageSize;
 static const unsigned MaxStringBytes = 100000;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;
@@ -875,6 +909,7 @@ static const unsigned MaxFunctionBytes = 7654321;
 
 static const unsigned MaxBrTableElems = 1000000;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
+static const unsigned MaxArgsForJitInlineCall = 8;
 static const unsigned MaxResultsForJitEntry = 1;
 static const unsigned MaxResultsForJitExit = 1;
 static const unsigned MaxResultsForJitInlineCall = MaxResultsForJitEntry;
@@ -890,6 +925,27 @@ static const unsigned FailFP = 0xbad;
 // Asserted by Decoder::readVarU32.
 
 static const unsigned MaxVarU32DecodedBytes = 5;
+
+// Which backend to use in the case of the optimized tier.
+
+enum class OptimizedBackend {
+  Ion,
+  Cranelift,
+};
+
+// The CompileMode controls how compilation of a module is performed (notably,
+// how many times we compile it).
+
+enum class CompileMode { Once, Tier1, Tier2 };
+
+// Typed enum for whether debugging is enabled.
+
+enum class DebugEnabled { False, True };
+
+// A wasm module can either use no memory, a unshared memory (ArrayBuffer) or
+// shared memory (SharedArrayBuffer).
+
+enum class MemoryUsage { None = false, Unshared = 1, Shared = 2 };
 
 }  // namespace wasm
 }  // namespace js

@@ -16,9 +16,7 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 using mozilla::ipc::FileDescriptorSetParent;
 using mozilla::ipc::PBackgroundParent;
@@ -268,7 +266,7 @@ void CacheOpParent::ProcessCrossOriginResourcePolicyHeader(
         it->mValue.type() != ResponseType::Opaqueredirect) {
       continue;
     }
-    corp.Assign(EmptyCString());
+    corp.Assign(""_ns);
     for (auto headerIt = it->mValue.headers().cbegin();
          headerIt != it->mValue.headers().cend(); ++headerIt) {
       if (headerIt->name().Equals("Cross-Origin-Resource-Policy"_ns)) {
@@ -315,6 +313,4 @@ void CacheOpParent::ProcessCrossOriginResourcePolicyHeader(
   }
 }
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache

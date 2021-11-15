@@ -83,21 +83,16 @@ function trr_clear_prefs() {
 /// This class sends a DNS query and can be awaited as a promise to get the
 /// response.
 class TRRDNSListener {
-  constructor(
-    name,
-    expectedAnswer,
-    expectedSuccess = true,
-    delay,
-    trrServer = "",
-    expectEarlyFail = false
-  ) {
+  constructor(name, options = {}) {
     this.name = name;
-    this.expectedAnswer = expectedAnswer;
-    this.expectedSuccess = expectedSuccess;
-    this.delay = delay;
+    this.options = options;
+    this.expectedAnswer = options.expectedAnswer ?? undefined;
+    this.expectedSuccess = options.expectedSuccess ?? true;
+    this.delay = options.delay;
     this.promise = new Promise(resolve => {
       this.resolve = resolve;
     });
+    let trrServer = options.trrServer || "";
 
     const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
       Ci.nsIDNSService
@@ -107,29 +102,22 @@ class TRRDNSListener {
     );
     const currentThread = threadManager.currentThread;
 
-    if (trrServer == "") {
+    let resolverInfo =
+      trrServer == "" ? null : dns.newTRRResolverInfo(trrServer);
+    try {
       this.request = dns.asyncResolve(
         name,
-        0,
+        Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
+        this.options.flags || 0,
+        resolverInfo,
         this,
         currentThread,
         {} // defaultOriginAttributes
       );
-    } else {
-      try {
-        this.request = dns.asyncResolveWithTrrServer(
-          name,
-          trrServer,
-          0,
-          this,
-          currentThread,
-          {} // defaultOriginAttributes
-        );
-        Assert.ok(!expectEarlyFail);
-      } catch (e) {
-        Assert.ok(expectEarlyFail);
-        this.resolve([e]);
-      }
+      Assert.ok(!options.expectEarlyFail);
+    } catch (e) {
+      Assert.ok(options.expectEarlyFail);
+      this.resolve([e]);
     }
   }
 
@@ -147,12 +135,14 @@ class TRRDNSListener {
     }
 
     Assert.equal(inStatus, Cr.NS_OK, "Checking status");
+    inRecord.QueryInterface(Ci.nsIDNSAddrRecord);
     let answer = inRecord.getNextAddrAsString();
     Assert.equal(
       answer,
       this.expectedAnswer,
       `Checking result for ${this.name}`
     );
+    inRecord.rewind(); // In case the caller also checks the addresses
 
     if (this.delay !== undefined) {
       Assert.greaterOrEqual(
@@ -274,23 +264,47 @@ function trrQueryHandler(req, resp, url) {
 
   function processRequest(req, resp, payload) {
     let dnsQuery = global.dnsPacket.decode(payload);
-    let answers =
+    let response =
       global.dns_query_answers[
         `${dnsQuery.questions[0].name}/${dnsQuery.questions[0].type}`
-      ] || [];
+      ] || {};
 
+    let flags = global.dnsPacket.RECURSION_DESIRED;
+    if (
+      (!response.answers || !response.answers.length) &&
+      response.additionals &&
+      response.additionals.length > 0
+    ) {
+      flags |= global.dnsPacket.rcodes.toRcode("SERVFAIL");
+    }
     let buf = global.dnsPacket.encode({
       type: "response",
       id: dnsQuery.id,
-      flags: global.dnsPacket.RECURSION_DESIRED,
+      flags,
       questions: dnsQuery.questions,
-      answers,
+      answers: response.answers || [],
+      additionals: response.additionals || [],
     });
 
-    resp.setHeader("Content-Length", buf.length);
-    resp.writeHead(200, { "Content-Type": "application/dns-message" });
-    resp.write(buf);
-    resp.end("");
+    let writeResponse = (resp, buf) => {
+      resp.setHeader("Content-Length", buf.length);
+      resp.writeHead(200, { "Content-Type": "application/dns-message" });
+      resp.write(buf);
+      resp.end("");
+    };
+
+    if (response.delay) {
+      setTimeout(
+        arg => {
+          writeResponse(arg[0], arg[1]);
+        },
+        response.delay,
+        [resp, buf]
+      );
+      return;
+    }
+
+    writeResponse(resp, buf);
   }
 }
 
@@ -339,10 +353,12 @@ class TRRServer {
   ///          flush: false,
   ///          data: "1.2.3.4",
   ///        }]
-  async registerDoHAnswers(name, type, answers) {
-    let text = `global.dns_query_answers["${name}/${type}"] = ${JSON.stringify(
-      answers
-    )}`;
+  async registerDoHAnswers(name, type, answers, additionals, delay = 0) {
+    let text = `global.dns_query_answers["${name}/${type}"] = ${JSON.stringify({
+      answers,
+      additionals,
+      delay,
+    })}`;
     return this.execute(text);
   }
 }

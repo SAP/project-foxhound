@@ -96,10 +96,10 @@ namespace frontend {
 // clang-format on
 
 struct UnboundPrivateName {
-  JSAtom* atom;
+  const ParserAtom* atom;
   TokenPos position;
 
-  UnboundPrivateName(JSAtom* atom, TokenPos position)
+  UnboundPrivateName(const ParserAtom* atom, TokenPos position)
       : atom(atom), position(position) {}
 };
 
@@ -165,7 +165,8 @@ class UsedNameTracker {
     mozilla::Maybe<TokenPos> pos() { return firstUsePos_; }
   };
 
-  using UsedNameMap = HashMap<JSAtom*, UsedNameInfo, DefaultHasher<JSAtom*>>;
+  using UsedNameMap = HashMap<const ParserAtom*, UsedNameInfo,
+                              DefaultHasher<const ParserAtom*>>;
 
  private:
   // The map of names to chains of uses.
@@ -177,9 +178,16 @@ class UsedNameTracker {
   // Monotonically increasing id for all nested scopes.
   uint32_t scopeCounter_;
 
+  // Set if a private name was encountered.
+  // Used to short circuit some private field early error checks
+  bool hasPrivateNames_;
+
  public:
   explicit UsedNameTracker(JSContext* cx)
-      : map_(cx), scriptCounter_(0), scopeCounter_(0) {}
+      : map_(cx),
+        scriptCounter_(0),
+        scopeCounter_(0),
+        hasPrivateNames_(false) {}
 
   uint32_t nextScriptId() {
     MOZ_ASSERT(scriptCounter_ != UINT32_MAX,
@@ -192,11 +200,13 @@ class UsedNameTracker {
     return scopeCounter_++;
   }
 
-  UsedNameMap::Ptr lookup(JSAtom* name) const { return map_.lookup(name); }
+  UsedNameMap::Ptr lookup(const ParserAtom* name) const {
+    return map_.lookup(name);
+  }
 
   MOZ_MUST_USE bool noteUse(
-      JSContext* cx, JSAtom* name, NameVisibility visbility, uint32_t scriptId,
-      uint32_t scopeId,
+      JSContext* cx, const ParserAtom* name, NameVisibility visibility,
+      uint32_t scriptId, uint32_t scopeId,
       mozilla::Maybe<TokenPos> tokenPosition = mozilla::Nothing());
 
   // Fill maybeUnboundName with the first (source order) unbound name, or

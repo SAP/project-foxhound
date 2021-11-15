@@ -16,6 +16,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "PartnerLinkAttribution",
+  "resource:///modules/PartnerLinkAttribution.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm"
 );
@@ -23,11 +28,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "TopSiteAttribution",
-  "resource:///modules/TopSiteAttribution.jsm"
 );
 
 const LINK_BLOCKED_EVENT = "newtab-linkBlocked";
@@ -279,9 +279,7 @@ class PlacesFeed {
     const params = {
       private: isPrivate,
       targetBrowser: action._target.browser,
-      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
-        {}
-      ),
+      fromChrome: false, // This ensure we maintain user preference for how to open new tabs.
     };
 
     // Always include the referrer (even for http links) if we have one
@@ -303,13 +301,38 @@ class PlacesFeed {
     const urlToOpen =
       action.data.type === "pocket" ? action.data.open_url : action.data.url;
 
+    try {
+      let uri = Services.io.newURI(urlToOpen);
+      if (!["http", "https"].includes(uri.scheme)) {
+        throw new Error(
+          `Can't open link using ${uri.scheme} protocol from the new tab page.`
+        );
+      }
+    } catch (e) {
+      Cu.reportError(e);
+      return;
+    }
+
     // Mark the page as typed for frecency bonus before opening the link
     if (typedBonus) {
       PlacesUtils.history.markPageAsTyped(Services.io.newURI(urlToOpen));
     }
 
     const win = action._target.browser.ownerGlobal;
-    win.openLinkIn(urlToOpen, where || win.whereToOpenLink(event), params);
+    win.openTrustedLinkIn(
+      urlToOpen,
+      where || win.whereToOpenLink(event),
+      params
+    );
+
+    // If there's an original URL e.g. using the unprocessed %YYYYMMDDHH% tag,
+    // add a visit for that so it may become a frecent top site.
+    if (action.data.original_url) {
+      PlacesUtils.history.insert({
+        url: action.data.original_url,
+        visits: [{ transition: PlacesUtils.history.TRANSITION_TYPED }],
+      });
+    }
   }
 
   async saveToPocket(site, browser) {
@@ -367,14 +390,16 @@ class PlacesFeed {
   }
 
   fillSearchTopSiteTerm({ _target, data }) {
-    _target.browser.ownerGlobal.gURLBar.search(`${data.label} `);
+    _target.browser.ownerGlobal.gURLBar.search(data.label, {
+      searchModeEntry: "topsites_newtab",
+    });
   }
 
   _getSearchPrefix(isPrivateWindow) {
     const searchAliases =
       Services.search[
         isPrivateWindow ? "defaultPrivateEngine" : "defaultEngine"
-      ].wrappedJSObject.__internalAliases;
+      ].aliases;
     if (searchAliases && searchAliases.length) {
       return `${searchAliases[0]} `;
     }
@@ -391,8 +416,9 @@ class PlacesFeed {
     if (!data || !data.text) {
       urlBar.setHiddenFocus();
     } else {
-      // Pass the provided text to the awesomebar. Prepend the @engine shortcut.
-      urlBar.search(`${searchAlias}${data.text}`);
+      urlBar.search(searchAlias + data.text, {
+        searchModeEntry: "handoff",
+      });
       isFirstChange = false;
     }
 
@@ -403,7 +429,7 @@ class PlacesFeed {
       if (isFirstChange) {
         isFirstChange = false;
         urlBar.removeHiddenFocus();
-        urlBar.search(searchAlias);
+        urlBar.search(searchAlias, { searchModeEntry: "handoff" });
         this.store.dispatch(
           ac.OnlyToOneContent({ type: at.HIDE_SEARCH }, meta.fromTarget)
         );
@@ -453,6 +479,14 @@ class PlacesFeed {
       case at.UNINIT:
         this.removeObservers();
         break;
+      case at.ABOUT_SPONSORED_TOP_SITES: {
+        const url = `${Services.urlFormatter.formatURLPref(
+          "app.support.baseURL"
+        )}sponsor-privacy`;
+        const win = action._target.browser.ownerGlobal;
+        win.openTrustedLinkIn(url, "tab");
+        break;
+      }
       case at.BLOCK_URL: {
         if (action.data) {
           action.data.forEach(site => {
@@ -504,8 +538,8 @@ class PlacesFeed {
         this.openLink(action);
         break;
       }
-      case at.TOP_SITES_ATTRIBUTION:
-        TopSiteAttribution.makeRequest(action.data);
+      case at.PARTNER_LINK_ATTRIBUTION:
+        PartnerLinkAttribution.makeRequest(action.data);
         break;
     }
   }

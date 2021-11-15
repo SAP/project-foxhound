@@ -262,7 +262,8 @@ class ResponsiveUI {
     // If our tab is about to be closed, there's not enough time to exit
     // gracefully, but that shouldn't be a problem since the tab will go away.
     // So, skip any waiting when we're about to close the tab.
-    const isTabDestroyed = !this.tab.linkedBrowser;
+    const isTabDestroyed =
+      !this.tab.linkedBrowser || this.responsiveFront.isDestroyed();
     const isWindowClosing =
       (options && options.reason === "unload") || isTabDestroyed;
     const isTabContentDestroying =
@@ -293,7 +294,7 @@ class ResponsiveUI {
         [this.targetList.TYPES.FRAME],
         this.onTargetAvailable
       );
-      this.targetList.stopListening();
+      this.targetList.destroy();
     }
 
     this.tab.removeEventListener("TabClose", this);
@@ -669,17 +670,10 @@ class ResponsiveUI {
   }
 
   async onScreenshot() {
-    const captureScreenshotSupported = await this.currentTarget.actorHasMethod(
-      "responsive",
-      "captureScreenshot"
-    );
+    const data = await this.responsiveFront.captureScreenshot();
+    await saveScreenshot(this.browserWindow, {}, data);
 
-    if (captureScreenshotSupported) {
-      const data = await this.responsiveFront.captureScreenshot();
-      await saveScreenshot(this.browserWindow, {}, data);
-
-      message.post(this.rdmFrame.contentWindow, "screenshot-captured");
-    }
+    message.post(this.rdmFrame.contentWindow, "screenshot-captured");
   }
 
   onToggleLeftAlignment(event) {
@@ -865,7 +859,7 @@ class ResponsiveUI {
       );
 
       reloadNeeded = await this.responsiveFront.setTouchEventsOverride(
-        Ci.nsIDocShell.TOUCHEVENTS_OVERRIDE_ENABLED
+        "enabled"
       );
 
       if (metaViewportEnabled) {
@@ -895,19 +889,11 @@ class ResponsiveUI {
    *        reloaded/navigated to, so we should not be simulating "orientationchange".
    */
   async updateScreenOrientation(type, angle, isViewportRotated = false) {
-    const simulateOrientationChangeSupported = await this.currentTarget.actorHasMethod(
-      "responsive",
-      "simulateScreenOrientationChange"
+    await this.responsiveFront.simulateScreenOrientationChange(
+      type,
+      angle,
+      isViewportRotated
     );
-
-    // Ensure that simulateScreenOrientationChange is supported.
-    if (simulateOrientationChangeSupported) {
-      await this.responsiveFront.simulateScreenOrientationChange(
-        type,
-        angle,
-        isViewportRotated
-      );
-    }
 
     // Used by tests.
     if (!isViewportRotated) {
@@ -922,14 +908,7 @@ class ResponsiveUI {
    *        Whether or not touch is enabled for the simulated device.
    */
   async updateMaxTouchPointsEnabled(touchSimulationEnabled) {
-    const setMaxTouchPointsSupported = await this.currentTarget.actorHasMethod(
-      "responsive",
-      "setMaxTouchPoints"
-    );
-
-    if (setMaxTouchPointsSupported) {
-      await this.responsiveFront.setMaxTouchPoints(touchSimulationEnabled);
-    }
+    return this.responsiveFront.setMaxTouchPoints(touchSimulationEnabled);
   }
 
   /**
@@ -1036,6 +1015,10 @@ class ResponsiveUI {
   }
 
   async onTargetAvailable({ targetFront }) {
+    if (this.destroying) {
+      return;
+    }
+
     if (targetFront.isTopLevel) {
       this.responsiveFront = await targetFront.getFront("responsive");
       await this.restoreActorState();

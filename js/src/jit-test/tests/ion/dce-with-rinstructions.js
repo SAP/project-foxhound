@@ -1,9 +1,11 @@
 // |jit-test| --ion-limit-script-size=off
 
-setJitCompilerOption("baseline.warmup.trigger", 10);
+setJitCompilerOption("baseline.warmup.trigger", 9);
 setJitCompilerOption("ion.warmup.trigger", 20);
 setJitCompilerOption("ion.full.warmup.trigger", 20);
 var i;
+
+var warp = getJitCompilerOptions()["warp.enable"];
 
 // Prevent GC from cancelling/discarding Ion compilations.
 gczeal(0);
@@ -1162,12 +1164,9 @@ function rstring_replace_g(i) {
 
 var uceFault_typeof = eval(`(${uceFault})`.replace('uceFault', 'uceFault_typeof'))
 function rtypeof(i) {
-    var inputs = [ {}, [], 1, true, undefined, function(){}, null ];
-    var types = [ "object", "object", "number", "boolean", "undefined", "function", "object"];
-    if (typeof Symbol === "function") {
-      inputs.push(Symbol());
-      types.push("symbol");
-    }
+    var inputs = [ {}, [], 1, true, undefined, function(){}, null, Symbol() ];
+    var types = [ "object", "object", "number", "boolean", "undefined", "function", "object", "symbol"];
+
     var x = typeof (inputs[i % inputs.length]);
     var y = types[i % types.length];
 
@@ -1336,8 +1335,15 @@ function rrandom(i) {
     if(config.debug) setRNGState(2, 1+i);
 
     var x = Math.random();
-    if (uceFault_random(i) || uceFault_random(i))
-        assertEq(x, config.debug ? setRNGState(2, 1+i) || Math.random() : x);
+    if (uceFault_random(i) || uceFault_random(i)) {
+      // TODO(Warp): Conditional operator ?: prevents recovering operands.
+      // assertEq(x, config.debug ? setRNGState(2, 1+i) || Math.random() : x);
+      if (config.debug) {
+        assertEq(x, setRNGState(2, 1+i) || Math.random());
+      } else {
+        assertEq(x, x);
+      }
+    }
     assertRecoveredOnBailout(x, true);
     return i;
 }
@@ -1479,7 +1485,13 @@ for (j = 100 - max; j < 100; j++) {
     rsqrt_object(i);
     ratan2_number(i);
     ratan2_object(i);
-    rstr_split(i);
+    if (!warp) {
+      // TODO(Warp): Warp doesn't currently support a compiler constraints like
+      // system to elide checks for modified built-ins. Additionally this test
+      // requires to inline the self-hosted function and to elide all type
+      // checks before the StringSplitString intrinsic is called.
+      rstr_split(i);
+    }
     rregexp_exec(i);
     rregexp_y_exec(i);
     rregexp_y_literal_exec(i);
@@ -1517,7 +1529,10 @@ for (j = 100 - max; j < 100; j++) {
     rtofloat32_object(i);
     rtrunc_to_int32_number(i);
     rtrunc_to_int32_object(i);
-    rtrunc_to_int32_string(i);
+    if (!warp) {
+      // TODO(Warp): Bitwise operations on strings not optimised in Warp.
+      rtrunc_to_int32_string(i);
+    }
     rhypot_number_2args(i);
     rhypot_number_3args(i);
     rhypot_number_4args(i);

@@ -47,10 +47,8 @@ class OpusDataDecoder : public MediaDataDecoder,
  private:
   nsresult DecodeHeader(const unsigned char* aData, size_t aLength);
 
-  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
-
-  const AudioInfo& mInfo;
-  const RefPtr<TaskQueue> mTaskQueue;
+  const AudioInfo mInfo;
+  nsCOMPtr<nsISerialEventTarget> mThread;
 
   // Opus decoder state
   UniquePtr<OpusParser> mOpusParser;

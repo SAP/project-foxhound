@@ -26,7 +26,7 @@ update check or confirm that you run the latest version).
 
    If you came here looking for regular ASan builds (e.g. for fuzzing or
    as a developer to reproduce a crash), you should probably go to the
-   :ref:`Firefox and Address Sanitizer` doc instead.
+   :ref:`Address Sanitizer` doc instead.
 
 .. _Requirements:
 
@@ -40,9 +40,9 @@ Current requirements are:
 -  Special ASan Nightly Firefox Build
 
    -  `Linux
-      Download <https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.nightly.latest.firefox.linux64-asan-reporter-opt/artifacts/public/build/target.tar.bz2>`__
+      Download <https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.shippable.latest.firefox.linux64-asan-reporter-opt/artifacts/public/build/target.tar.bz2>`__
    -  `Windows
-      Download <https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.nightly.latest.firefox.win64-asan-reporter-nightly-repackage-signing/artifacts/public/build/target.installer.exe>`__
+      Download <https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.shippable.latest.firefox.win64-asan-reporter-shippable-repackage-signing/artifacts/public/build/target.installer.exe>`__
 
 If you are already using regular Nightly, it should be safe to share the
 profile with the regular Nightly instance. If you normally use a beta or

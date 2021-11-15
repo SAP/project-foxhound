@@ -33,6 +33,7 @@
 #include "OSXNotificationCenter.h"
 
 #include "nsDeviceContextSpecX.h"
+#include "nsPrinterListCUPS.h"
 #include "nsPrintSettingsServiceX.h"
 #include "nsPrintDialogX.h"
 #include "nsPrintSession.h"
@@ -62,7 +63,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsHTMLFormatConverter)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsClipboardHelper)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDragService)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDeviceContextSpecX)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsPrinterListX)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsPrinterListCUPS)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrintSettingsServiceX, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrintDialogServiceX, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrintSession, Init)
@@ -124,7 +125,7 @@ NS_DEFINE_NAMED_CID(NS_MACFINDERPROGRESS_CID);
 NS_DEFINE_NAMED_CID(NS_MACSHARINGSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_MACWEBAPPUTILS_CID);
 NS_DEFINE_NAMED_CID(NS_STANDALONENATIVEMENU_CID);
-NS_DEFINE_NAMED_CID(NS_MACSYSTEMSTATUSBAR_CID);
+NS_DEFINE_NAMED_CID(NS_SYSTEMSTATUSBAR_CID);
 NS_DEFINE_NAMED_CID(NS_TOUCHBARUPDATER_CID);
 NS_DEFINE_NAMED_CID(NS_GFXINFO_CID);
 
@@ -143,7 +144,7 @@ static const mozilla::Module::CIDEntry kWidgetCIDs[] = {
     {&kNS_SCREENMANAGER_CID, false, NULL, ScreenManagerConstructor,
      mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_DEVICE_CONTEXT_SPEC_CID, false, NULL, nsDeviceContextSpecXConstructor},
-    {&kNS_PRINTER_LIST_CID, false, NULL, nsPrinterListXConstructor,
+    {&kNS_PRINTER_LIST_CID, false, NULL, nsPrinterListCUPSConstructor,
      mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_PRINTSESSION_CID, false, NULL, nsPrintSessionConstructor},
     {&kNS_PRINTSETTINGSSERVICE_CID, false, NULL, nsPrintSettingsServiceXConstructor},
@@ -156,7 +157,7 @@ static const mozilla::Module::CIDEntry kWidgetCIDs[] = {
     {&kNS_MACSHARINGSERVICE_CID, false, NULL, nsMacSharingServiceConstructor},
     {&kNS_MACWEBAPPUTILS_CID, false, NULL, nsMacWebAppUtilsConstructor},
     {&kNS_STANDALONENATIVEMENU_CID, false, NULL, nsStandaloneNativeMenuConstructor},
-    {&kNS_MACSYSTEMSTATUSBAR_CID, false, NULL, nsSystemStatusBarCocoaConstructor},
+    {&kNS_SYSTEMSTATUSBAR_CID, false, NULL, nsSystemStatusBarCocoaConstructor},
     {&kNS_TOUCHBARUPDATER_CID, false, NULL, nsTouchBarUpdaterConstructor},
     {&kNS_GFXINFO_CID, false, NULL, mozilla::widget::GfxInfoConstructor},
     {NULL}};
@@ -186,7 +187,7 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
     {"@mozilla.org/widget/macsharingservice;1", &kNS_MACSHARINGSERVICE_CID},
     {"@mozilla.org/widget/mac-web-app-utils;1", &kNS_MACWEBAPPUTILS_CID},
     {"@mozilla.org/widget/standalonenativemenu;1", &kNS_STANDALONENATIVEMENU_CID},
-    {"@mozilla.org/widget/macsystemstatusbar;1", &kNS_MACSYSTEMSTATUSBAR_CID},
+    {"@mozilla.org/widget/systemstatusbar;1", &kNS_SYSTEMSTATUSBAR_CID},
     {"@mozilla.org/widget/touchbarupdater;1", &kNS_TOUCHBARUPDATER_CID},
     {"@mozilla.org/gfx/info;1", &kNS_GFXINFO_CID},
     {NULL}};

@@ -192,8 +192,6 @@ using NewObjectMetadataState =
     mozilla::Variant<ImmediateMetadata, DelayMetadata, PendingMetadata>;
 
 class MOZ_RAII AutoSetNewObjectMetadata {
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER;
-
   JSContext* cx_;
   Rooted<NewObjectMetadataState> prevState_;
 
@@ -201,8 +199,7 @@ class MOZ_RAII AutoSetNewObjectMetadata {
   void operator=(const AutoSetNewObjectMetadata& aOther) = delete;
 
  public:
-  explicit AutoSetNewObjectMetadata(
-      JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  explicit AutoSetNewObjectMetadata(JSContext* cx);
   ~AutoSetNewObjectMetadata();
 };
 
@@ -360,11 +357,6 @@ class JS::Realm : public JS::shadow::Realm {
   const js::AllocationMetadataBuilder* allocationMetadataBuilder_ = nullptr;
   void* realmPrivate_ = nullptr;
 
-  // This pointer is controlled by the embedder. If it is non-null, and if
-  // cx->enableAccessValidation is true, then we assert that *validAccessPtr
-  // is true before running any code in this realm.
-  bool* validAccessPtr_ = nullptr;
-
   js::WeakHeapPtr<js::ArgumentsObject*> mappedArgumentsTemplate_{nullptr};
   js::WeakHeapPtr<js::ArgumentsObject*> unmappedArgumentsTemplate_{nullptr};
   js::WeakHeapPtr<js::PlainObject*> iterResultTemplate_{nullptr};
@@ -388,6 +380,10 @@ class JS::Realm : public JS::shadow::Realm {
   unsigned enterRealmDepthIgnoringJit_ = 0;
 
  public:
+  // Various timers for collecting time spent delazifying, jit compiling,
+  // executing, etc
+  JS::JSTimers timers;
+
   struct DebuggerVectorEntry {
     // The debugger relies on iterating through the DebuggerVector to know what
     // debuggers to notify about certain actions, which it does using this
@@ -417,11 +413,7 @@ class JS::Realm : public JS::shadow::Realm {
     DebuggerObservesAllExecution = 1 << 1,
     DebuggerObservesAsmJS = 1 << 2,
     DebuggerObservesCoverage = 1 << 3,
-    DebuggerNeedsDelazification = 1 << 4
   };
-  static const unsigned DebuggerObservesMask =
-      IsDebuggee | DebuggerObservesAllExecution | DebuggerObservesCoverage |
-      DebuggerObservesAsmJS;
   unsigned debugModeBits_ = 0;
   friend class js::AutoRestoreRealmDebugMode;
 
@@ -767,19 +759,6 @@ class JS::Realm : public JS::shadow::Realm {
   bool collectCoverageForDebug() const;
   bool collectCoverageForPGO() const;
 
-  bool needsDelazificationForDebugger() const {
-    return debugModeBits_ & DebuggerNeedsDelazification;
-  }
-
-  // Schedule the realm to be delazified. Called from BaseScript::CreateLazy.
-  void scheduleDelazificationForDebugger() {
-    debugModeBits_ |= DebuggerNeedsDelazification;
-  }
-
-  // If we scheduled delazification for turning on debug mode, delazify all
-  // scripts.
-  bool ensureDelazifyScriptsForDebugger(JSContext* cx);
-
   // Get or allocate the associated LCovRealm.
   js::coverage::LCovRealm* lcovRealm();
 
@@ -792,11 +771,6 @@ class JS::Realm : public JS::shadow::Realm {
   }
 
   mozilla::HashCodeScrambler randomHashCodeScrambler();
-
-  bool isAccessValid() const {
-    return validAccessPtr_ ? *validAccessPtr_ : true;
-  }
-  void setValidAccessPtr(bool* accessp) { validAccessPtr_ = accessp; }
 
   bool ensureJitRealmExists(JSContext* cx);
   void traceWeakEdgesInJitRealm(JSTracer* trc);
@@ -839,31 +813,27 @@ class JS::Realm : public JS::shadow::Realm {
 
 inline js::Handle<js::GlobalObject*> JSContext::global() const {
   /*
-   * It's safe to use |unsafeGet()| here because any realm that is
-   * on-stack will be marked automatically, so there's no need for a read
-   * barrier on it. Once the realm is popped, the handle is no longer
-   * safe to use.
+   * It's safe to use |unbarrieredGet()| here because any realm that is on-stack
+   * will be marked automatically, so there's no need for a read barrier on
+   * it. Once the realm is popped, the handle is no longer safe to use.
    */
   MOZ_ASSERT(realm_, "Caller needs to enter a realm first");
   return js::Handle<js::GlobalObject*>::fromMarkedLocation(
-      realm_->global_.unsafeGet());
+      realm_->global_.unbarrieredAddress());
 }
 
 namespace js {
 
 class MOZ_RAII AssertRealmUnchanged {
  public:
-  explicit AssertRealmUnchanged(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : cx(cx), oldRealm(cx->realm()) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  explicit AssertRealmUnchanged(JSContext* cx)
+      : cx(cx), oldRealm(cx->realm()) {}
 
   ~AssertRealmUnchanged() { MOZ_ASSERT(cx->realm() == oldRealm); }
 
  protected:
   JSContext* const cx;
   JS::Realm* const oldRealm;
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 // AutoRealm can be used to enter the realm of a JSObject, JSScript or

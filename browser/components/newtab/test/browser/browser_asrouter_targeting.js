@@ -47,6 +47,16 @@ ChromeUtils.defineModuleGetter(
   "Region",
   "resource://gre/modules/Region.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "HomePage",
+  "resource:///modules/HomePage.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "AboutNewTab",
+  "resource:///modules/AboutNewTab.jsm"
+);
 
 // ASRouterTargeting.findMatchingMessage
 add_task(async function find_matching_message() {
@@ -73,11 +83,7 @@ add_task(async function return_nothing_for_no_matching_message() {
     context,
   });
 
-  is(
-    match,
-    undefined,
-    "should return nothing since no matching message exists"
-  );
+  ok(!match, "should return nothing since no matching message exists");
 });
 
 add_task(async function check_other_error_handling() {
@@ -98,11 +104,7 @@ add_task(async function check_other_error_handling() {
     onError,
   });
 
-  is(
-    match,
-    undefined,
-    "should return nothing since no valid matching message exists"
-  );
+  ok(!match, "should return nothing since no valid matching message exists");
 
   Assert.ok(called, "Attribute error caught");
 });
@@ -229,9 +231,8 @@ add_task(async function check_isFxAEnabled() {
   );
 
   const message = { id: "foo", targeting: "isFxAEnabled" };
-  is(
-    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
-    undefined,
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
     "should not select a message if fxa is disabled"
   );
 });
@@ -260,9 +261,8 @@ add_task(async function check_totalBookmarksCount() {
   const results = await ASRouterTargeting.findMatchingMessage({
     messages: [message],
   });
-  is(
-    results ? JSON.stringify(results) : results,
-    undefined,
+  ok(
+    !(results ? JSON.stringify(results) : results),
     "Should not select any message because bookmarks count is not 0"
   );
 
@@ -525,9 +525,8 @@ add_task(async function checkFrecentSites() {
     id: "foo",
     targeting: "'non-existent.com' in topFrecentSites|mapToProperty('host')",
   };
-  is(
-    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
-    undefined,
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
     "should not select incorrect item by host in topFrecentSites"
   );
 
@@ -547,9 +546,8 @@ add_task(async function checkFrecentSites() {
     targeting:
       "'mozilla2.com' in topFrecentSites[.frecency >= 600]|mapToProperty('host')",
   };
-  is(
-    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
-    undefined,
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
     "should not select incorrect item when filtering by frecency"
   );
 
@@ -571,9 +569,8 @@ add_task(async function checkFrecentSites() {
       0
     ) - 1}]|mapToProperty('host')`,
   };
-  is(
-    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
-    undefined,
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
     "should not select incorrect item when filtering by lastVisitDate"
   );
 
@@ -839,7 +836,7 @@ add_task(async function check_blockedCountByType() {
 add_task(async function checkCFRPinnedTabsTargetting() {
   const now = Date.now();
   const timeMinutesAgo = numMinutes => now - numMinutes * 60 * 1000;
-  const messages = CFRMessageProvider.getMessages();
+  const messages = await CFRMessageProvider.getMessages();
   const trigger = {
     id: "frequentVisits",
     context: {
@@ -852,9 +849,8 @@ add_task(async function checkCFRPinnedTabsTargetting() {
     param: { host: "github.com", url: "https://google.com" },
   };
 
-  is(
-    await ASRouterTargeting.findMatchingMessage({ messages, trigger }),
-    undefined,
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages, trigger })),
     "should not select PIN_TAB mesage with only 2 visits in past hour"
   );
 
@@ -870,9 +866,8 @@ add_task(async function checkCFRPinnedTabsTargetting() {
     async browser => {
       let tab = gBrowser.getTabForBrowser(browser);
       gBrowser.pinTab(tab);
-      is(
-        await ASRouterTargeting.findMatchingMessage({ messages, trigger }),
-        undefined,
+      ok(
+        !(await ASRouterTargeting.findMatchingMessage({ messages, trigger })),
         "should not select PIN_TAB mesage if there is a pinned tab already"
       );
       gBrowser.unpinTab(tab);
@@ -880,9 +875,8 @@ add_task(async function checkCFRPinnedTabsTargetting() {
   );
 
   trigger.param = { host: "foo.bar", url: "https://foo.bar" };
-  is(
-    await ASRouterTargeting.findMatchingMessage({ messages, trigger }),
-    undefined,
+  ok(
+    !(await ASRouterTargeting.findMatchingMessage({ messages, trigger })),
     "should not select PIN_TAB mesage with a trigger param/host not in our hostlist"
   );
 });
@@ -917,7 +911,7 @@ add_task(async function checkPatternMatches() {
 });
 
 add_task(async function checkPatternsValid() {
-  const messages = CFRMessageProvider.getMessages().filter(
+  const messages = (await CFRMessageProvider.getMessages()).filter(
     m => m.trigger.patterns
   );
 
@@ -981,5 +975,163 @@ add_task(async function check_userId() {
     await ASRouterTargeting.Environment.userId,
     "foo123",
     "should read userID from normandy user id pref"
+  );
+});
+
+add_task(async function check_profileRestartCount() {
+  ok(
+    !isNaN(ASRouterTargeting.Environment.profileRestartCount),
+    "it should return a number"
+  );
+});
+
+add_task(async function check_homePageSettings_default() {
+  let settings = ASRouterTargeting.Environment.homePageSettings;
+
+  ok(settings.isDefault, "should set as default");
+  ok(!settings.isLocked, "should not set as locked");
+  ok(!settings.isWebExt, "should not be web extension");
+  ok(!settings.isCustomUrl, "should not be custom URL");
+  is(settings.urls.length, 1, "should be an 1-entry array");
+  is(settings.urls[0].url, "about:home", "should be about:home");
+  is(settings.urls[0].host, "", "should be an empty string");
+});
+
+add_task(async function check_homePageSettings_locked() {
+  const PREF = "browser.startup.homepage";
+  Services.prefs.lockPref(PREF);
+  let settings = ASRouterTargeting.Environment.homePageSettings;
+
+  ok(settings.isDefault, "should set as default");
+  ok(settings.isLocked, "should set as locked");
+  ok(!settings.isWebExt, "should not be web extension");
+  ok(!settings.isCustomUrl, "should not be custom URL");
+  is(settings.urls.length, 1, "should be an 1-entry array");
+  is(settings.urls[0].url, "about:home", "should be about:home");
+  is(settings.urls[0].host, "", "should be an empty string");
+  Services.prefs.unlockPref(PREF);
+});
+
+add_task(async function check_homePageSettings_customURL() {
+  await HomePage.set("https://www.google.com");
+  let settings = ASRouterTargeting.Environment.homePageSettings;
+
+  ok(!settings.isDefault, "should not be the default");
+  ok(!settings.isLocked, "should set as locked");
+  ok(!settings.isWebExt, "should not be web extension");
+  ok(settings.isCustomUrl, "should be custom URL");
+  is(settings.urls.length, 1, "should be an 1-entry array");
+  is(settings.urls[0].url, "https://www.google.com", "should be a custom URL");
+  is(
+    settings.urls[0].host,
+    "google.com",
+    "should be the host name without 'www.'"
+  );
+
+  HomePage.reset();
+});
+
+add_task(async function check_homePageSettings_customURL_multiple() {
+  await HomePage.set("https://www.google.com|https://www.youtube.com");
+  let settings = ASRouterTargeting.Environment.homePageSettings;
+
+  ok(!settings.isDefault, "should not be the default");
+  ok(!settings.isLocked, "should not set as locked");
+  ok(!settings.isWebExt, "should not be web extension");
+  ok(settings.isCustomUrl, "should be custom URL");
+  is(settings.urls.length, 2, "should be a 2-entry array");
+  is(settings.urls[0].url, "https://www.google.com", "should be a custom URL");
+  is(
+    settings.urls[0].host,
+    "google.com",
+    "should be the host name without 'www.'"
+  );
+  is(settings.urls[1].url, "https://www.youtube.com", "should be a custom URL");
+  is(
+    settings.urls[1].host,
+    "youtube.com",
+    "should be the host name without 'www.'"
+  );
+
+  HomePage.reset();
+});
+
+add_task(async function check_homePageSettings_webExtension() {
+  const extURI =
+    "moz-extension://0d735548-ba3c-aa43-a0e4-7089584fbb53/homepage.html";
+  await HomePage.set(extURI);
+  let settings = ASRouterTargeting.Environment.homePageSettings;
+
+  ok(!settings.isDefault, "should not be the default");
+  ok(!settings.isLocked, "should not set as locked");
+  ok(settings.isWebExt, "should be a web extension");
+  ok(!settings.isCustomUrl, "should be custom URL");
+  is(settings.urls.length, 1, "should be an 1-entry array");
+  is(settings.urls[0].url, extURI, "should be a webExtension URI");
+  is(settings.urls[0].host, "", "should be an empty string");
+
+  HomePage.reset();
+});
+
+add_task(async function check_newtabSettings_default() {
+  let settings = ASRouterTargeting.Environment.newtabSettings;
+
+  ok(settings.isDefault, "should set as default");
+  ok(!settings.isWebExt, "should not be web extension");
+  ok(!settings.isCustomUrl, "should not be custom URL");
+  is(settings.url, "about:newtab", "should be about:home");
+  is(settings.host, "", "should be an empty string");
+});
+
+add_task(async function check_newTabSettings_customURL() {
+  AboutNewTab.newTabURL = "https://www.google.com";
+  let settings = ASRouterTargeting.Environment.newtabSettings;
+
+  ok(!settings.isDefault, "should not be the default");
+  ok(!settings.isWebExt, "should not be web extension");
+  ok(settings.isCustomUrl, "should be custom URL");
+  is(settings.url, "https://www.google.com", "should be a custom URL");
+  is(settings.host, "google.com", "should be the host name without 'www.'");
+
+  AboutNewTab.resetNewTabURL();
+});
+
+add_task(async function check_newTabSettings_webExtension() {
+  const extURI =
+    "moz-extension://0d735548-ba3c-aa43-a0e4-7089584fbb53/homepage.html";
+  AboutNewTab.newTabURL = extURI;
+  let settings = ASRouterTargeting.Environment.newtabSettings;
+
+  ok(!settings.isDefault, "should not be the default");
+  ok(settings.isWebExt, "should not be web extension");
+  ok(!settings.isCustomUrl, "should be custom URL");
+  is(settings.url, extURI, "should be the web extension URI");
+  is(settings.host, "", "should be an empty string");
+
+  AboutNewTab.resetNewTabURL();
+});
+
+add_task(async function check_openUrlTrigger_context() {
+  const message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "YOUTUBE_ENHANCE_3"
+    ),
+    targeting: "visitsCount == 3",
+  };
+  const trigger = {
+    id: "openURL",
+    context: { visitsCount: 3 },
+    param: { host: "youtube.com", url: "https://www.youtube.com" },
+  };
+
+  is(
+    (
+      await ASRouterTargeting.findMatchingMessage({
+        messages: [message],
+        trigger,
+      })
+    ).id,
+    message.id,
+    `should select ${message.id} mesage`
   );
 });

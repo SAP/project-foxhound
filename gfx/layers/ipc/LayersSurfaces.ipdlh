@@ -85,6 +85,7 @@ comparable struct SurfaceTextureDescriptor {
 
 comparable struct SurfaceDescriptorAndroidHardwareBuffer {
   FileDescriptor handle;
+  uint64_t bufferId;
   IntSize size;
   SurfaceFormat format;
 };
@@ -109,6 +110,7 @@ comparable union RemoteDecoderVideoSubDescriptor {
   SurfaceDescriptorD3D10;
   SurfaceDescriptorDXGIYCbCr;
   SurfaceDescriptorDMABuf;
+  SurfaceDescriptorMacIOSurface;
   null_t;
 };
 
@@ -136,6 +138,7 @@ comparable struct RGBDescriptor {
 };
 
 comparable struct YCbCrDescriptor {
+  IntRect display;
   IntSize ySize;
   uint32_t yStride;
   IntSize cbCrSize;
@@ -174,7 +177,7 @@ comparable struct SurfaceDescriptorShared
 };
 
 comparable struct SurfaceDescriptorRecorded {
-  uintptr_t drawTarget;
+  int64_t textureId;
 };
 
 comparable union SurfaceDescriptor {

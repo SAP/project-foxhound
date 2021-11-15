@@ -567,7 +567,7 @@ bool OculusSession::LoadOvrLib() {
   libName.AppendPrintf("LibOVRRT%d_%d.dll", BUILD_BITS, OVR_PRODUCT_VERSION);
 
   // search the path/module dir
-  libSearchPaths.InsertElementsAt(0, 1, EmptyString());
+  libSearchPaths.InsertElementsAt(0, 1, u""_ns);
 
   // If the env var is present, we override libName
   if (_wgetenv(L"OVR_LIB_PATH")) {
@@ -1054,6 +1054,7 @@ bool OculusSession::InitState(VRSystemState& aSystemState) {
                                        texSize[VRDisplayState::Eye_Right].w);
   state.eyeResolution.height = std::max(texSize[VRDisplayState::Eye_Left].h,
                                         texSize[VRDisplayState::Eye_Right].h);
+  state.nativeFramebufferScaleFactor = 1.0f;
 
   // default to an identity quaternion
   aSystemState.sensorState.pose.orientation[3] = 1.0f;

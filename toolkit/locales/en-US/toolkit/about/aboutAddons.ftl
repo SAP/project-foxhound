@@ -410,6 +410,10 @@ addon-detail-last-updated-label = Last Updated
 addon-detail-homepage-label = Homepage
 addon-detail-rating-label = Rating
 
+# Message for add-ons with a staged pending update.
+install-postponed-message = This extension will be updated when { -brand-short-name } restarts.
+install-postponed-button = Update Now
+
 # The average rating that the add-on has received.
 # Variables:
 #   $rating (number) - A number between 0 and 5. The translation should show at most one digit after the comma.
@@ -453,11 +457,20 @@ addon-detail-private-browsing-help = When allowed, the extension will have acces
 addon-detail-private-browsing-allow = Allow
 addon-detail-private-browsing-disallow = Don’t Allow
 
-# This is the tooltip text for the recommended badge for an extension in about:addons. The
-# badge is a small icon displayed next to an extension when it is recommended on AMO.
+## This is the tooltip text for the recommended badges for an extension in about:addons. The
+## badge is a small icon displayed next to an extension when it is recommended on AMO.
+
 addon-badge-recommended2 =
   .title = { -brand-product-name } only recommends extensions that meet our standards for security and performance
   .aria-label = { addon-badge-recommended2.title }
+addon-badge-line2 =
+  .title = This is an official extension built by the creators of { -brand-product-name }
+  .aria-label = { addon-badge-line2.title }
+addon-badge-verified2 =
+  .title = This extension has been reviewed to meet our standards for security and performance
+  .aria-label = { addon-badge-verified2.title }
+
+##
 
 available-updates-heading = Available Updates
 recent-updates-heading = Recent Updates
@@ -466,6 +479,9 @@ release-notes-loading = Loading…
 release-notes-error = Sorry, but there was an error loading the release notes.
 
 addon-permissions-empty = This extension doesn’t require any permissions
+addon-permissions-required = Required permissions for core functionality:
+addon-permissions-optional = Optional permissions for added functionality:
+addon-permissions-learnmore = Learn more about permissions
 
 recommended-extensions-heading = Recommended Extensions
 recommended-themes-heading = Recommended Themes

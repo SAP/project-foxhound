@@ -45,8 +45,7 @@
 #  include "nsContentUtils.h"  // For assertions.
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::dom::quota;
@@ -446,15 +445,15 @@ int16_t IDBFactory::Cmp(JSContext* aCx, JS::Handle<JS::Value> aFirst,
                         JS::Handle<JS::Value> aSecond, ErrorResult& aRv) {
   Key first, second;
   auto result = first.SetFromJSVal(aCx, aFirst);
-  if (!result.Is(Ok)) {
-    aRv = result.ExtractErrorResult(
+  if (result.isErr()) {
+    aRv = result.unwrapErr().ExtractErrorResult(
         InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
     return 0;
   }
 
   result = second.SetFromJSVal(aCx, aSecond);
-  if (!result.Is(Ok)) {
-    aRv = result.ExtractErrorResult(
+  if (result.isErr()) {
+    aRv = result.unwrapErr().ExtractErrorResult(
         InvalidMapsTo<NS_ERROR_DOM_INDEXEDDB_DATA_ERR>);
     return 0;
   }
@@ -802,5 +801,4 @@ JSObject* IDBFactory::WrapObject(JSContext* aCx,
   return IDBFactory_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

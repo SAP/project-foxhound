@@ -71,7 +71,8 @@ extern crate malloc_size_of_derive;
 extern crate serde;
 #[macro_use]
 extern crate tracy_rs;
-
+#[macro_use]
+extern crate derive_more;
 extern crate malloc_size_of;
 extern crate svg_fmt;
 
@@ -104,7 +105,6 @@ mod glyph_rasterizer;
 mod gpu_cache;
 mod gpu_types;
 mod hit_test;
-mod intern;
 mod internal_types;
 mod lru_cache;
 mod picture;
@@ -131,6 +131,12 @@ mod texture_cache;
 mod tile_cache;
 mod util;
 mod visibility;
+mod api_resources;
+mod image_tiling;
+///
+pub mod intern;
+///
+pub mod render_api;
 
 mod shader_source {
     include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
@@ -199,13 +205,12 @@ extern crate png;
 #[cfg(test)]
 extern crate rand;
 
-#[macro_use]
 pub extern crate api;
 extern crate webrender_build;
 
 #[doc(hidden)]
-pub use crate::composite::{CompositorConfig, Compositor, CompositorCapabilities};
-pub use crate::composite::{NativeSurfaceId, NativeTileId, NativeSurfaceInfo};
+pub use crate::composite::{CompositorConfig, Compositor, CompositorCapabilities, CompositorSurfaceTransform};
+pub use crate::composite::{NativeSurfaceId, NativeTileId, NativeSurfaceInfo, PartialPresentCompositor};
 pub use crate::device::{UploadMethod, VertexUsageHint, get_gl_target, get_unoptimized_shader_source};
 pub use crate::device::{ProgramBinary, ProgramCache, ProgramCacheObserver, FormatDesc};
 pub use crate::device::Device;
@@ -228,3 +233,5 @@ pub use crate::picture::{TileDescriptor, TileId, InvalidationReason};
 pub use crate::picture::{PrimitiveCompareResult, PrimitiveCompareResultDetail, CompareHelperResult};
 pub use crate::picture::{TileNode, TileNodeKind, TileSerializer, TileCacheInstanceSerializer, TileOffset, TileCacheLoggerUpdateLists};
 pub use crate::intern::ItemUid;
+pub use crate::render_api::*;
+pub use crate::tile_cache::{PictureCacheDebugInfo, DirtyTileDebugInfo, TileDebugInfo, SliceDebugInfo};

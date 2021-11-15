@@ -60,6 +60,7 @@
 
 #include "mozilla/AppShutdown.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/PreXULSkeletonUI.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MiscEvents.h"
@@ -211,6 +212,7 @@
 #include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/KnowsCompositor.h"
+#include "mozilla/layers/ScrollInputMethods.h"
 #include "InputData.h"
 
 #include "mozilla/Telemetry.h"
@@ -600,6 +602,7 @@ nsWindow::nsWindow(bool aIsChildWindow)
   mMouseInDraggableArea = false;
   mDestroyCalled = false;
   mIsEarlyBlankWindow = false;
+  mIsShowingPreXULSkeletonUI = false;
   mResizable = false;
   mHasTaskbarIconBeenCreated = false;
   mMouseTransparent = false;
@@ -722,16 +725,10 @@ static bool ShouldCacheTitleBarInfo(nsWindowType aWindowType,
 }
 
 void nsWindow::SendAnAPZEvent(InputData& aEvent) {
-  RefPtr<nsWindow> strongThis(this);
-  if (::IsWindowVisible(mWnd)) {
-    nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
-    if (rollupListener) {
-      nsCOMPtr<nsIWidget> popup = rollupListener->GetRollupWidget();
-      if (popup) {
-        uint32_t popupsToRollup = UINT32_MAX;
-        rollupListener->Rollup(popupsToRollup, true, nullptr, nullptr);
-      }
-    }
+  LRESULT popupHandlingResult;
+  if (DealWithPopups(mWnd, MOZ_WM_DMANIP, 0, 0, &popupHandlingResult)) {
+    // We need to consume the event after using it to roll up the popup(s).
+    return;
   }
 
   APZEventResult result;
@@ -747,14 +744,14 @@ void nsWindow::SendAnAPZEvent(InputData& aEvent) {
 
   if (aEvent.mInputType == PANGESTURE_INPUT) {
     PanGestureInput& panInput = aEvent.AsPanGestureInput();
-    WidgetWheelEvent event = panInput.ToWidgetWheelEvent(this);
+    WidgetWheelEvent event = panInput.ToWidgetEvent(this);
     ProcessUntransformedAPZEvent(&event, result);
 
     return;
   }
 
   PinchGestureInput& pinchInput = aEvent.AsPinchGestureInput();
-  WidgetWheelEvent event = pinchInput.ToWidgetWheelEvent(this);
+  WidgetWheelEvent event = pinchInput.ToWidgetEvent(this);
   ProcessUntransformedAPZEvent(&event, result);
 }
 
@@ -895,9 +892,47 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
       aInitData->mWindowType == eWindowType_plugin_ipc_content) {
     style |= WS_DISABLED;
   }
-  mWnd = ::CreateWindowExW(extendedStyle, className, L"", style, aRect.X(),
-                           aRect.Y(), aRect.Width(), GetHeight(aRect.Height()),
-                           parent, nullptr, nsToolkit::mDllInstance, nullptr);
+
+  if (aInitData->mWindowType == eWindowType_toplevel && !aParent) {
+    mWnd = ConsumePreXULSkeletonUIHandle();
+    if (mWnd) {
+      MOZ_ASSERT(style == kPreXULSkeletonUIWindowStyle,
+                 "The skeleton UI window style should match the expected "
+                 "style for the first window created");
+      MOZ_ASSERT(extendedStyle == kPreXULSkeletonUIWindowStyleEx,
+                 "The skeleton UI window extended style should match the "
+                 "expected extended style for the first window created");
+      mIsShowingPreXULSkeletonUI = true;
+
+      // If we successfully consumed the pre-XUL skeleton UI, just update
+      // our internal state to match what is currently being displayed.
+      mIsVisible = true;
+      mSizeMode = WasPreXULSkeletonUIMaximized() ? nsSizeMode_Maximized
+                                                 : nsSizeMode_Normal;
+
+      // These match the margins set in browser-tabsintitlebar.js with
+      // default prefs on Windows. Bug 1673092 tracks lining this up with
+      // that more correctly instead of hard-coding it.
+      LayoutDeviceIntMargin margins(0, 2, 2, 2);
+      SetNonClientMargins(margins);
+
+      // Reset the WNDPROC for this window and its whole class, as we had
+      // to use our own WNDPROC when creating the the skeleton UI window.
+      ::SetWindowLongPtrW(mWnd, GWLP_WNDPROC,
+                          reinterpret_cast<LONG_PTR>(
+                              WinUtils::NonClientDpiScalingDefWindowProcW));
+      ::SetClassLongPtrW(mWnd, GCLP_WNDPROC,
+                         reinterpret_cast<LONG_PTR>(
+                             WinUtils::NonClientDpiScalingDefWindowProcW));
+    }
+  }
+
+  if (!mWnd) {
+    mWnd =
+        ::CreateWindowExW(extendedStyle, className, L"", style, aRect.X(),
+                          aRect.Y(), aRect.Width(), GetHeight(aRect.Height()),
+                          parent, nullptr, nsToolkit::mDllInstance, nullptr);
+  }
 
   if (!mWnd) {
     NS_WARNING("nsWindow CreateWindowEx failed.");
@@ -1559,6 +1594,13 @@ already_AddRefed<SourceSurface> nsWindow::GetFallbackScrollSnapshot(
  **************************************************************/
 
 void nsWindow::Show(bool bState) {
+  if (bState) {
+    // The first time we decide to actually show the window is when we decide
+    // that we've taken over the window from the skeleton UI, and we should
+    // no longer treat resizes / moves specially.
+    mIsShowingPreXULSkeletonUI = false;
+  }
+
   if (mWindowType == eWindowType_popup) {
     // See bug 603793. When we try to draw D3D9/10 windows with a drop shadow
     // without the DWM on a secondary monitor, windows fails to composite
@@ -1907,24 +1949,56 @@ void nsWindow::Move(double aX, double aY) {
       }
     }
 #endif
-    ClearThemeRegion();
 
-    UINT flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE;
-    // Workaround SetWindowPos bug with D3D9. If our window has a clip
-    // region, some drivers or OSes may incorrectly copy into the clipped-out
-    // area.
-    if (IsPlugin() && !mLayerManager && mClipRects &&
-        (mClipRectCount != 1 ||
-         !mClipRects[0].IsEqualInterior(
-             LayoutDeviceIntRect(0, 0, mBounds.Width(), mBounds.Height())))) {
-      flags |= SWP_NOCOPYBITS;
-    }
-    double oldScale = mDefaultScale;
-    mResizeState = IN_SIZEMOVE;
-    VERIFY(::SetWindowPos(mWnd, nullptr, x, y, 0, 0, flags));
-    mResizeState = NOT_RESIZING;
-    if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
-      ChangedDPI();
+    // Normally, when the skeleton UI is disabled, we resize+move the window
+    // before showing it in order to ensure that it restores to the correct
+    // position when the user un-maximizes it. However, when we are using the
+    // skeleton UI, this results in the skeleton UI window being moved around
+    // undesirably before being locked back into the maximized position. To
+    // avoid this, we simply set the placement to restore to via
+    // SetWindowPlacement. It's a little bit more of a dance, though, since we
+    // need to convert the workspace coords that SetWindowPlacement uses to the
+    // screen space coordinates we normally use with SetWindowPos.
+    if (mIsShowingPreXULSkeletonUI && WasPreXULSkeletonUIMaximized()) {
+      WINDOWPLACEMENT pl = {sizeof(WINDOWPLACEMENT)};
+      VERIFY(::GetWindowPlacement(mWnd, &pl));
+
+      HMONITOR monitor = ::MonitorFromWindow(mWnd, MONITOR_DEFAULTTONULL);
+      if (NS_WARN_IF(!monitor)) {
+        return;
+      }
+      MONITORINFO mi = {sizeof(MONITORINFO)};
+      VERIFY(::GetMonitorInfo(monitor, &mi));
+
+      int32_t deltaX =
+          x + mi.rcWork.left - mi.rcMonitor.left - pl.rcNormalPosition.left;
+      int32_t deltaY =
+          y + mi.rcWork.top - mi.rcMonitor.top - pl.rcNormalPosition.top;
+      pl.rcNormalPosition.left += deltaX;
+      pl.rcNormalPosition.right += deltaX;
+      pl.rcNormalPosition.top += deltaY;
+      pl.rcNormalPosition.bottom += deltaY;
+      VERIFY(::SetWindowPlacement(mWnd, &pl));
+    } else {
+      ClearThemeRegion();
+
+      UINT flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSIZE;
+      // Workaround SetWindowPos bug with D3D9. If our window has a clip
+      // region, some drivers or OSes may incorrectly copy into the clipped-out
+      // area.
+      if (IsPlugin() && !mLayerManager && mClipRects &&
+          (mClipRectCount != 1 ||
+           !mClipRects[0].IsEqualInterior(
+               LayoutDeviceIntRect(0, 0, mBounds.Width(), mBounds.Height())))) {
+        flags |= SWP_NOCOPYBITS;
+      }
+      double oldScale = mDefaultScale;
+      mResizeState = IN_SIZEMOVE;
+      VERIFY(::SetWindowPos(mWnd, nullptr, x, y, 0, 0, flags));
+      mResizeState = NOT_RESIZING;
+      if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
+        ChangedDPI();
+      }
     }
 
     SetThemeRegion();
@@ -1960,24 +2034,36 @@ void nsWindow::Resize(double aWidth, double aHeight, bool aRepaint) {
   mBounds.SizeTo(width, height);
 
   if (mWnd) {
-    UINT flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE;
+    // Refer to the comment above a similar check in nsWindow::Move
+    if (mIsShowingPreXULSkeletonUI && WasPreXULSkeletonUIMaximized()) {
+      WINDOWPLACEMENT pl = {sizeof(WINDOWPLACEMENT)};
+      VERIFY(::GetWindowPlacement(mWnd, &pl));
+      pl.rcNormalPosition.right = pl.rcNormalPosition.left + width;
+      pl.rcNormalPosition.bottom = pl.rcNormalPosition.top + GetHeight(height);
+      mResizeState = RESIZING;
+      VERIFY(::SetWindowPlacement(mWnd, &pl));
+      mResizeState = NOT_RESIZING;
+    } else {
+      UINT flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE;
 
-    if (!aRepaint) {
-      flags |= SWP_NOREDRAW;
+      if (!aRepaint) {
+        flags |= SWP_NOREDRAW;
+      }
+
+      ClearThemeRegion();
+      double oldScale = mDefaultScale;
+      mResizeState = RESIZING;
+      VERIFY(
+          ::SetWindowPos(mWnd, nullptr, 0, 0, width, GetHeight(height), flags));
+
+      mResizeState = NOT_RESIZING;
+      if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
+        ChangedDPI();
+      }
+      SetThemeRegion();
+
+      ResizeDirectManipulationViewport();
     }
-
-    ClearThemeRegion();
-    double oldScale = mDefaultScale;
-    mResizeState = RESIZING;
-    VERIFY(
-        ::SetWindowPos(mWnd, nullptr, 0, 0, width, GetHeight(height), flags));
-    mResizeState = NOT_RESIZING;
-    if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
-      ChangedDPI();
-    }
-    SetThemeRegion();
-
-    ResizeDirectManipulationViewport();
   }
 
   if (aRepaint) Invalidate();
@@ -2014,30 +2100,55 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
   mBounds.SetRect(x, y, width, height);
 
   if (mWnd) {
-    UINT flags = SWP_NOZORDER | SWP_NOACTIVATE;
-    if (!aRepaint) {
-      flags |= SWP_NOREDRAW;
-    }
+    // Refer to the comment above a similar check in nsWindow::Move
+    if (mIsShowingPreXULSkeletonUI && WasPreXULSkeletonUIMaximized()) {
+      WINDOWPLACEMENT pl = {sizeof(WINDOWPLACEMENT)};
+      VERIFY(::GetWindowPlacement(mWnd, &pl));
 
-    ClearThemeRegion();
-    double oldScale = mDefaultScale;
-    mResizeState = RESIZING;
-    VERIFY(
-        ::SetWindowPos(mWnd, nullptr, x, y, width, GetHeight(height), flags));
-    mResizeState = NOT_RESIZING;
-    if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
-      ChangedDPI();
-    }
-    if (mTransitionWnd) {
-      // If we have a fullscreen transition window, we need to make
-      // it topmost again, otherwise the taskbar may be raised by
-      // the system unexpectedly when we leave fullscreen state.
-      ::SetWindowPos(mTransitionWnd, HWND_TOPMOST, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    }
-    SetThemeRegion();
+      HMONITOR monitor = ::MonitorFromWindow(mWnd, MONITOR_DEFAULTTONULL);
+      if (NS_WARN_IF(!monitor)) {
+        return;
+      }
+      MONITORINFO mi = {sizeof(MONITORINFO)};
+      VERIFY(::GetMonitorInfo(monitor, &mi));
 
-    ResizeDirectManipulationViewport();
+      int32_t deltaX =
+          x + mi.rcWork.left - mi.rcMonitor.left - pl.rcNormalPosition.left;
+      int32_t deltaY =
+          y + mi.rcWork.top - mi.rcMonitor.top - pl.rcNormalPosition.top;
+      pl.rcNormalPosition.left += deltaX;
+      pl.rcNormalPosition.right = pl.rcNormalPosition.left + width;
+      pl.rcNormalPosition.top += deltaY;
+      pl.rcNormalPosition.bottom = pl.rcNormalPosition.top + GetHeight(height);
+      VERIFY(::SetWindowPlacement(mWnd, &pl));
+    } else {
+      UINT flags = SWP_NOZORDER | SWP_NOACTIVATE;
+      if (!aRepaint) {
+        flags |= SWP_NOREDRAW;
+      }
+
+      ClearThemeRegion();
+
+      double oldScale = mDefaultScale;
+      mResizeState = RESIZING;
+      VERIFY(
+          ::SetWindowPos(mWnd, nullptr, x, y, width, GetHeight(height), flags));
+      mResizeState = NOT_RESIZING;
+      if (WinUtils::LogToPhysFactor(mWnd) != oldScale) {
+        ChangedDPI();
+      }
+
+      if (mTransitionWnd) {
+        // If we have a fullscreen transition window, we need to make
+        // it topmost again, otherwise the taskbar may be raised by
+        // the system unexpectedly when we leave fullscreen state.
+        ::SetWindowPos(mTransitionWnd, HWND_TOPMOST, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      }
+      SetThemeRegion();
+
+      ResizeDirectManipulationViewport();
+    }
   }
 
   if (aRepaint) Invalidate();
@@ -2156,6 +2267,14 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
   // (This is needed to prevent problems when calling window.minimize(), which
   // calls us directly, and then the OS triggers another call to us.)
   if (aMode == mSizeMode) return;
+
+  // If we are still displaying a maximized pre-XUL skeleton UI, ignore the
+  // noise of sizemode changes. Once we have "shown" the window for the first
+  // time (called nsWindow::Show(true), even though the window is already
+  // technically displayed), we will again accept sizemode changes.
+  if (mIsShowingPreXULSkeletonUI && WasPreXULSkeletonUIMaximized()) {
+    return;
+  }
 
   // save the requested state
   mLastSizeMode = mSizeMode;
@@ -4561,8 +4680,9 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
       }
       break;
     case eMouseExitFromWidget:
-      event.mExitFrom = IsTopLevelMouseExit(mWnd) ? WidgetMouseEvent::eTopLevel
-                                                  : WidgetMouseEvent::eChild;
+      event.mExitFrom =
+          Some(IsTopLevelMouseExit(mWnd) ? WidgetMouseEvent::eTopLevel
+                                         : WidgetMouseEvent::eChild);
       break;
     default:
       break;
@@ -5204,7 +5324,9 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       break;
 
     case WM_SYSCOLORCHANGE:
-      NotifyThemeChanged();
+      // No need to invalidate layout for system color changes, but we need to
+      // invalidate style.
+      NotifyThemeChanged(widget::ThemeChangeKind::Style);
       break;
 
     case WM_THEMECHANGED: {
@@ -5215,7 +5337,8 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       UpdateNonClientMargins();
       nsUXThemeData::UpdateNativeThemeInfo();
 
-      NotifyThemeChanged();
+      // We assume pretty much everything could've changed here.
+      NotifyThemeChanged(widget::ThemeChangeKind::StyleAndLayout);
 
       // Invalidate the window so that the repaint will
       // pick up the new theme.
@@ -5259,7 +5382,9 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       if (wParam == SPI_SETCLIENTAREAANIMATION ||
           // CaretBlinkTime is cached in nsLookAndFeel
           wParam == SPI_SETKEYBOARDDELAY) {
-        NotifyThemeChanged();
+        // This only affects reduced motion settings and and carent blink time,
+        // so no need to invalidate style / layout.
+        NotifyThemeChanged(widget::ThemeChangeKind::MediaQueriesOnly);
         break;
       }
       if (wParam == SPI_SETFONTSMOOTHING ||
@@ -5270,7 +5395,9 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       if (lParam) {
         auto lParamString = reinterpret_cast<const wchar_t*>(lParam);
         if (!wcscmp(lParamString, L"ImmersiveColorSet")) {
-          NotifyThemeChanged();
+          // This affects system colors (-moz-win-accentcolor), so gotta pass
+          // the style flag.
+          NotifyThemeChanged(widget::ThemeChangeKind::Style);
           break;
         }
         if (IsWin10OrLater() && mWindowType == eWindowType_invisible) {
@@ -5293,12 +5420,15 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         // DBT_DEVTYP_DEVICEINTERFACE in the filter for
         // RegisterDeviceNotification.
         if (hdr->dbch_devicetype == DBT_DEVTYP_DEVICEINTERFACE) {
-          NotifyThemeChanged();
+          // This can only change media queries (any-hover/any-pointer).
+          NotifyThemeChanged(widget::ThemeChangeKind::MediaQueriesOnly);
         }
       }
     } break;
 
     case WM_NCCALCSIZE: {
+      // NOTE: the following block is mirrored in PreXULSkeletonUI.cpp, and
+      // will need to be kept in sync.
       if (mCustomNonClient) {
         // If `wParam` is `FALSE`, `lParam` points to a `RECT` that contains
         // the proposed window rectangle for our window.  During our
@@ -6136,7 +6266,9 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
       UpdateNonClientMargins();
       BroadcastMsg(mWnd, WM_DWMCOMPOSITIONCHANGED);
-      NotifyThemeChanged();
+      // TODO: Why is NotifyThemeChanged needed, what does it affect? And can we
+      // make it more granular by tweaking the ChangeKind we pass?
+      NotifyThemeChanged(widget::ThemeChangeKind::StyleAndLayout);
       UpdateGlass();
       Invalidate(true, true, true);
       break;
@@ -7183,6 +7315,9 @@ bool nsWindow::OnGesture(WPARAM wParam, LPARAM lParam) {
     bool endFeedback = true;
 
     if (mGesture.PanDeltaToPixelScroll(wheelEvent)) {
+      mozilla::Telemetry::Accumulate(
+          mozilla::Telemetry::SCROLL_INPUT_METHODS,
+          (uint32_t)ScrollInputMethod::MainThreadTouch);
       DispatchEvent(&wheelEvent, status);
     }
 
@@ -7346,6 +7481,8 @@ void nsWindow::OnDestroy() {
   // Prevent the widget from sending additional events.
   mWidgetListener = nullptr;
   mAttachedWidgetListener = nullptr;
+
+  DestroyDirectManipulation();
 
   if (mWnd == mLastKillFocusWindow) {
     mLastKillFocusWindow = nullptr;
@@ -7537,6 +7674,7 @@ void nsWindow::OnDPIChanged(int32_t x, int32_t y, int32_t width,
 
     Resize(x, y, width, height, true);
   }
+  UpdateNonClientMargins();
   ChangedDPI();
   ResetLayout();
 }
@@ -7966,13 +8104,18 @@ static bool IsDifferentThreadWindow(HWND aWnd) {
 }
 
 // static
-bool nsWindow::EventIsInsideWindow(nsWindow* aWindow) {
+bool nsWindow::EventIsInsideWindow(nsWindow* aWindow,
+                                   Maybe<POINT> aEventPoint) {
   RECT r;
   ::GetWindowRect(aWindow->mWnd, &r);
-  DWORD pos = ::GetMessagePos();
   POINT mp;
-  mp.x = GET_X_LPARAM(pos);
-  mp.y = GET_Y_LPARAM(pos);
+  if (aEventPoint) {
+    mp = *aEventPoint;
+  } else {
+    DWORD pos = ::GetMessagePos();
+    mp.x = GET_X_LPARAM(pos);
+    mp.y = GET_Y_LPARAM(pos);
+  }
 
   // was the event inside this window?
   return static_cast<bool>(::PtInRect(&r, mp));
@@ -7980,7 +8123,8 @@ bool nsWindow::EventIsInsideWindow(nsWindow* aWindow) {
 
 // static
 bool nsWindow::GetPopupsToRollup(nsIRollupListener* aRollupListener,
-                                 uint32_t* aPopupsToRollup) {
+                                 uint32_t* aPopupsToRollup,
+                                 Maybe<POINT> aEventPoint) {
   // If we're dealing with menus, we probably have submenus and we don't want
   // to rollup some of them if the click is in a parent menu of the current
   // submenu.
@@ -7989,7 +8133,7 @@ bool nsWindow::GetPopupsToRollup(nsIRollupListener* aRollupListener,
   uint32_t sameTypeCount = aRollupListener->GetSubmenuWidgetChain(&widgetChain);
   for (uint32_t i = 0; i < widgetChain.Length(); ++i) {
     nsIWidget* widget = widgetChain[i];
-    if (EventIsInsideWindow(static_cast<nsWindow*>(widget))) {
+    if (EventIsInsideWindow(static_cast<nsWindow*>(widget), aEventPoint)) {
       // Don't roll up if the mouse event occurred within a menu of the
       // same type. If the mouse event occurred in a menu higher than that,
       // roll up, but pass the number of popups to Rollup so that only those
@@ -8092,20 +8236,25 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
       if (!pointerEvents.ShouldRollupOnPointerEvent(nativeMessage, aWParam)) {
         return false;
       }
-      if (!GetPopupsToRollup(rollupListener, &popupsToRollup)) {
-        return false;
-      }
-      // Can't use EventIsInsideWindow to check whether the event is inside
-      // the popup window. It's because EventIsInsideWindow gets message
-      // coordinates by GetMessagePos, which returns physical screen
-      // coordinates at WM_POINTERDOWN.
       POINT pt;
       pt.x = GET_X_LPARAM(aLParam);
       pt.y = GET_Y_LPARAM(aLParam);
-      RECT r;
-      ::GetWindowRect(popupWindow->mWnd, &r);
-      if (::PtInRect(&r, pt) != 0) {
+      if (!GetPopupsToRollup(rollupListener, &popupsToRollup, Some(pt))) {
+        return false;
+      }
+      if (EventIsInsideWindow(popupWindow, Some(pt))) {
         // Don't roll up if the event is inside the popup window.
+        return false;
+      }
+    } break;
+    case MOZ_WM_DMANIP: {
+      POINT pt;
+      ::GetCursorPos(&pt);
+      if (!GetPopupsToRollup(rollupListener, &popupsToRollup, Some(pt))) {
+        return false;
+      }
+      if (EventIsInsideWindow(popupWindow, Some(pt))) {
+        // Don't roll up if the event is inside the popup window
         return false;
       }
     } break;
@@ -8651,6 +8800,12 @@ void nsWindow::GetCompositorWidgetInitData(
 
 bool nsWindow::SynchronouslyRepaintOnResize() {
   return !gfxWindowsPlatform::GetPlatform()->DwmCompositionEnabled();
+}
+
+void nsWindow::MaybeDispatchInitialFocusEvent() {
+  if (mIsShowingPreXULSkeletonUI && ::GetActiveWindow() == mWnd) {
+    DispatchFocusToTopLevelWindow(true);
+  }
 }
 
 already_AddRefed<nsIWidget> nsIWidget::CreateTopLevelWindow() {

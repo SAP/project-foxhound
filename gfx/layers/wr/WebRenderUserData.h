@@ -157,9 +157,9 @@ class WebRenderImageData : public WebRenderUserData {
   void CreateAsyncImageWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder, ImageContainer* aContainer,
       const StackingContextHelper& aSc, const LayoutDeviceRect& aBounds,
-      const LayoutDeviceRect& aSCBounds, const gfx::Matrix4x4& aSCTransform,
-      const gfx::MaybeIntSize& aScaleToSize, const wr::ImageRendering& aFilter,
-      const wr::MixBlendMode& aMixBlendMode, bool aIsBackfaceVisible);
+      const LayoutDeviceRect& aSCBounds, VideoInfo::Rotation aRotation,
+      const wr::ImageRendering& aFilter, const wr::MixBlendMode& aMixBlendMode,
+      bool aIsBackfaceVisible);
 
   void CreateImageClientIfNeeded();
 

@@ -28,7 +28,6 @@
 #include "mozilla/CallState.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/GuardObjects.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskCategory.h"
 #include "mozilla/TimeStamp.h"
@@ -455,6 +454,14 @@ class nsContentUtils {
    */
   static nsINode* GetCommonAncestorUnderInteractiveContent(nsINode* aNode1,
                                                            nsINode* aNode2);
+
+  /**
+   * Returns the common BrowserParent ancestor, if any, for two given
+   * BrowserParent.
+   */
+  static mozilla::dom::BrowserParent* GetCommonBrowserParentAncestor(
+      mozilla::dom::BrowserParent* aBrowserParent1,
+      mozilla::dom::BrowserParent* aBrowserParent2);
 
   /**
    * Returns true if aNode1 is before aNode2 in the same connected
@@ -1042,7 +1049,7 @@ class nsContentUtils {
    *   @param aCategory Name of module reporting error.
    *   @param aDocument Reference to the document which triggered the message.
    *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
               containing error.
@@ -1061,7 +1068,7 @@ class nsContentUtils {
   static nsresult ReportToConsoleNonLocalized(
       const nsAString& aErrorText, uint32_t aErrorFlags,
       const nsACString& aCategory, const Document* aDocument,
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = EmptyString(),
+      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
       uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0,
       MissingErrorLocationMode aLocationMode = eUSE_CALLING_LOCATION);
 
@@ -1074,7 +1081,7 @@ class nsContentUtils {
    *   @param [aInnerWindowID] Inner window ID for document which triggered the
    *          message.
    *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
               containing error.
@@ -1087,7 +1094,7 @@ class nsContentUtils {
   static nsresult ReportToConsoleByWindowID(
       const nsAString& aErrorText, uint32_t aErrorFlags,
       const nsACString& aCategory, uint64_t aInnerWindowID,
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = EmptyString(),
+      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
       uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0,
       MissingErrorLocationMode aLocationMode = eUSE_CALLING_LOCATION);
 
@@ -1101,7 +1108,7 @@ class nsContentUtils {
    *   @param [aParams=empty-array] (Optional) Parameters to be substituted into
               localized message.
    *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=EmptyString()] (Optional) The text of the line that
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
               contains the error (may be empty).
    *   @param [aLineNumber=0] (Optional) Line number within resource
               containing error.
@@ -1131,7 +1138,7 @@ class nsContentUtils {
       uint32_t aErrorFlags, const nsACString& aCategory,
       const Document* aDocument, PropertiesFile aFile, const char* aMessageName,
       const nsTArray<nsString>& aParams = nsTArray<nsString>(),
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = EmptyString(),
+      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
       uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0);
 
   static void ReportEmptyGetElementByIdArg(const Document* aDoc);
@@ -1828,6 +1835,25 @@ class nsContentUtils {
                                      uint32_t aWrapCol);
 
   /**
+   * Creates a 'loaded-as-data' HTML document that takes that principal,
+   * script global, and URL from the argument, which may be null.
+   */
+  static already_AddRefed<Document> CreateInertHTMLDocument(
+      const Document* aTemplate);
+
+  /**
+   * Creates a 'loaded-as-data' XML document that takes that principal,
+   * script global, and URL from the argument, which may be null.
+   */
+  static already_AddRefed<Document> CreateInertXMLDocument(
+      const Document* aTemplate);
+
+ private:
+  static already_AddRefed<Document> CreateInertDocument(
+      const Document* aTemplate, DocumentFlavor aFlavor);
+
+ public:
+  /**
    * Sets the text contents of a node by replacing all existing children
    * with a single text child.
    *
@@ -2440,10 +2466,12 @@ class nsContentUtils {
   static Document* GetRootDocument(Document* aDoc);
 
   /**
-   * Returns true if aWin and the current pointer lock document
-   * have common scriptable top window.
+   * Returns true if aContext and the current pointer lock document
+   * have common top BrowsingContext.
+   * Note that this method returns true only if caller is in the same process
+   * as pointer lock document.
    */
-  static bool IsInPointerLockContext(nsPIDOMWindowOuter* aWin);
+  static bool IsInPointerLockContext(mozilla::dom::BrowsingContext* aContext);
 
   static void GetShiftText(nsAString& text);
   static void GetControlText(nsAString& text);
@@ -2784,7 +2812,9 @@ class nsContentUtils {
    * otherwise it just outputs the hostname in aHost.
    */
   static nsresult GetHostOrIPv6WithBrackets(nsIURI* aURI, nsAString& aHost);
-  static nsresult GetHostOrIPv6WithBrackets(nsIURI* aURI, nsCString& aHost);
+  static nsresult GetHostOrIPv6WithBrackets(nsIURI* aURI, nsACString& aHost);
+  static nsresult GetHostOrIPv6WithBrackets(nsIPrincipal* aPrincipal,
+                                            nsACString& aHost);
 
   /*
    * Call the given callback on all remote children of the given top-level
@@ -3166,7 +3196,11 @@ class nsContentUtils {
 
   // Alternate data MIME type used by the ScriptLoader to register and read
   // bytecode out of the nsCacheInfoChannel.
-  static nsCString& JSBytecodeMimeType() { return *sJSBytecodeMimeType; }
+  static MOZ_MUST_USE bool InitJSBytecodeMimeType();
+  static nsCString& JSBytecodeMimeType() {
+    MOZ_ASSERT(sJSBytecodeMimeType);
+    return *sJSBytecodeMimeType;
+  }
 
   /**
    * Checks if the passed-in name is one of the special names: "_blank", "_top",
@@ -3265,6 +3299,13 @@ class nsContentUtils {
   static uint32_t SecondsFromPRTime(PRTime aTime) {
     return uint32_t(int64_t(aTime) / int64_t(PR_USEC_PER_SEC));
   }
+
+  /**
+   * Converts the given URL to a string and truncates it to the given length.
+   *
+   * Returns an empty string if aURL is null.
+   */
+  static nsCString TruncatedURLForDisplay(nsIURI* aURL, uint32_t aMaxLen = 128);
 
  private:
   static bool InitializeEventTable();
@@ -3412,6 +3453,7 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_AUDIOWORKLET:
     case nsIContentPolicy::TYPE_INTERNAL_PAINTWORKLET:
     case nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT:
+    case nsIContentPolicy::TYPE_INTERNAL_FRAME_MESSAGEMANAGER_SCRIPT:
       return nsIContentPolicy::TYPE_SCRIPT;
 
     case nsIContentPolicy::TYPE_INTERNAL_EMBED:
@@ -3447,6 +3489,9 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_FONT_PRELOAD:
       return nsIContentPolicy::TYPE_FONT;
 
+    case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
+      return nsIContentPolicy::TYPE_FETCH;
+
     default:
       return aType;
   }
@@ -3468,14 +3513,10 @@ nsContentUtils::InternalContentPolicyTypeToExternalOrWorker(
 
 class MOZ_RAII nsAutoScriptBlocker {
  public:
-  explicit nsAutoScriptBlocker(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    nsContentUtils::AddScriptBlocker();
-  }
+  explicit nsAutoScriptBlocker() { nsContentUtils::AddScriptBlocker(); }
   ~nsAutoScriptBlocker() { nsContentUtils::RemoveScriptBlocker(); }
 
  private:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 class MOZ_STACK_CLASS nsAutoScriptBlockerSuppressNodeRemoved

@@ -7,10 +7,13 @@
 #include "MemoryBlobImpl.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/SHA1.h"
+#include "nsMemory.h"
 #include "nsPrintfCString.h"
+#include "nsRFPService.h"
+#include "nsStringStream.h"
+#include "prtime.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_ADDREF(MemoryBlobImpl::DataOwnerAdapter)
 NS_IMPL_RELEASE(MemoryBlobImpl::DataOwnerAdapter)
@@ -56,7 +59,7 @@ nsresult MemoryBlobImpl::DataOwnerAdapter::Create(DataOwner* aDataOwner,
 
   rv = NS_NewByteInputStream(
       getter_AddRefs(stream),
-      MakeSpan(static_cast<const char*>(aDataOwner->mData) + aStart, aLength),
+      Span(static_cast<const char*>(aDataOwner->mData) + aStart, aLength),
       NS_ASSIGNMENT_DEPEND);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -187,5 +190,4 @@ void MemoryBlobImpl::DataOwner::EnsureMemoryReporterRegistered() {
   sMemoryReporterRegistered = true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
